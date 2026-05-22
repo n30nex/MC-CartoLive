@@ -24,10 +24,11 @@ type PublicNode struct {
 }
 
 type PublicRouteEndpoint struct {
-	NodeID string  `json:"nodeId"`
-	Label  string  `json:"label"`
-	Lat    float64 `json:"lat"`
-	Lng    float64 `json:"lng"`
+	NodeID    string  `json:"nodeId"`
+	Label     string  `json:"label"`
+	Lat       float64 `json:"lat"`
+	Lng       float64 `json:"lng"`
+	PathHash3 string  `json:"pathHash3,omitempty"`
 }
 
 type PublicRouteSegment struct {
@@ -115,8 +116,9 @@ type PublicLiveState struct {
 }
 
 func BuildPublicLiveState(state State, stats PublicStats) PublicLiveState {
-	routes, routesByPacket := BuildPublicRoutes(state.RecentEdgeEvents)
-	recentPulses := BuildPublicRoutePulses(state.RecentEdgeEvents, 80, state.ServerTime-20_000)
+	pathHash3ByNodeID := BuildPublicPathHash3Index(state.Nodes, state.Observers)
+	routes, routesByPacket := BuildPublicRoutes(state.RecentEdgeEvents, pathHash3ByNodeID)
+	recentPulses := BuildPublicRoutePulses(state.RecentEdgeEvents, 80, state.ServerTime-20_000, pathHash3ByNodeID)
 	observerLocations := BuildPublicObserverLocationIndex(state.Nodes, state.Observers)
 	activity := make([]PublicActivity, 0, len(state.RecentPackets))
 	for _, packet := range state.RecentPackets {
@@ -163,6 +165,27 @@ func PublicNodeFromNode(node Node) (PublicNode, bool) {
 	}, true
 }
 
+func BuildPublicPathHash3Index(nodes []Node, observers []Observer) map[string]string {
+	out := map[string]string{}
+	for _, node := range nodes {
+		hash := pathHash3FromPublicKey(node.PublicKey)
+		if hash == "" {
+			continue
+		}
+		out[node.NodeID] = hash
+		out[publicNodeID(node.PublicKey)] = hash
+	}
+	for _, observer := range observers {
+		hash := pathHash3FromPublicKey(observer.PublicKey)
+		if hash == "" {
+			continue
+		}
+		out[observer.PublicKey] = hash
+		out[publicNodeID(observer.PublicKey)] = hash
+	}
+	return out
+}
+
 func PublicActivityFromPacket(packet PacketObservation, routeIDs []string, observerLocation *PublicObserverLocation) PublicActivity {
 	ids := uniqueSorted(routeIDs)
 	hasRoute := len(ids) > 0
@@ -197,7 +220,8 @@ func PublicActivityFromPacket(packet PacketObservation, routeIDs []string, obser
 	}
 }
 
-func PublicRoutePulseFromEdge(edge EdgeEvent) (PublicRoutePulse, bool) {
+func PublicRoutePulseFromEdge(edge EdgeEvent, pathHash3Indexes ...map[string]string) (PublicRoutePulse, bool) {
+	pathHash3ByNodeID := firstPathHash3Index(pathHash3Indexes)
 	segments := make([]PublicRouteSegment, 0, len(edge.Segments))
 	labels := []string{}
 	for _, segment := range edge.Segments {
@@ -206,8 +230,8 @@ func PublicRoutePulseFromEdge(edge EdgeEvent) (PublicRoutePulse, bool) {
 		}
 		publicSegment := PublicRouteSegment{
 			RouteID:    PublicRouteID(segment.From.NodeID, segment.To.NodeID),
-			From:       publicEndpoint(segment.From),
-			To:         publicEndpoint(segment.To),
+			From:       publicEndpoint(segment.From, pathHash3ByNodeID),
+			To:         publicEndpoint(segment.To, pathHash3ByNodeID),
 			DistanceKM: segment.DistanceKM,
 		}
 		segments = append(segments, publicSegment)
@@ -401,7 +425,8 @@ func PublicResolutionCounters(activity []PublicActivity) map[string]map[string]i
 	return out
 }
 
-func BuildPublicRoutes(edges []EdgeEvent) ([]PublicRoute, map[string][]string) {
+func BuildPublicRoutes(edges []EdgeEvent, pathHash3Indexes ...map[string]string) ([]PublicRoute, map[string][]string) {
+	pathHash3ByNodeID := firstPathHash3Index(pathHash3Indexes)
 	type aggregate struct {
 		route        PublicRoute
 		payloadTypes map[string]struct{}
@@ -419,8 +444,8 @@ func BuildPublicRoutes(edges []EdgeEvent) ([]PublicRoute, map[string][]string) {
 				item = &aggregate{
 					route: PublicRoute{
 						ID:         id,
-						From:       publicEndpoint(segment.From),
-						To:         publicEndpoint(segment.To),
+						From:       publicEndpoint(segment.From, pathHash3ByNodeID),
+						To:         publicEndpoint(segment.To, pathHash3ByNodeID),
 						DistanceKM: segment.DistanceKM,
 					},
 					payloadTypes: map[string]struct{}{},
@@ -459,7 +484,8 @@ func BuildPublicRoutes(edges []EdgeEvent) ([]PublicRoute, map[string][]string) {
 	return routes, routesByPacket
 }
 
-func BuildPublicRoutePulses(edges []EdgeEvent, limit int, minHeardAt int64) []PublicRoutePulse {
+func BuildPublicRoutePulses(edges []EdgeEvent, limit int, minHeardAt int64, pathHash3Indexes ...map[string]string) []PublicRoutePulse {
+	pathHash3ByNodeID := firstPathHash3Index(pathHash3Indexes)
 	if limit <= 0 {
 		limit = 80
 	}
@@ -468,7 +494,7 @@ func BuildPublicRoutePulses(edges []EdgeEvent, limit int, minHeardAt int64) []Pu
 		if edge.HeardAt < minHeardAt {
 			continue
 		}
-		pulse, ok := PublicRoutePulseFromEdge(edge)
+		pulse, ok := PublicRoutePulseFromEdge(edge, pathHash3ByNodeID)
 		if !ok {
 			continue
 		}
@@ -489,13 +515,51 @@ func PublicRouteID(a string, b string) string {
 	return fmt.Sprintf("r-%08x", h.Sum32())
 }
 
-func publicEndpoint(endpoint EdgeEndpoint) PublicRouteEndpoint {
+func publicEndpoint(endpoint EdgeEndpoint, pathHash3Indexes ...map[string]string) PublicRouteEndpoint {
+	pathHash3ByNodeID := firstPathHash3Index(pathHash3Indexes)
 	return PublicRouteEndpoint{
-		NodeID: publicNodeID(endpoint.NodeID),
-		Label:  displayLabel(endpoint.Name, "unknown"),
-		Lat:    endpoint.Lat,
-		Lng:    endpoint.Lng,
+		NodeID:    publicNodeID(endpoint.NodeID),
+		Label:     displayLabel(endpoint.Name, "unknown"),
+		Lat:       endpoint.Lat,
+		Lng:       endpoint.Lng,
+		PathHash3: publicEndpointPathHash3(endpoint, pathHash3ByNodeID),
 	}
+}
+
+func publicEndpointPathHash3(endpoint EdgeEndpoint, pathHash3ByNodeID map[string]string) string {
+	if hash := publicPathHash3(endpoint.PathHash3); hash != "" {
+		return hash
+	}
+	if hash := publicPathHash3(pathHash3ByNodeID[endpoint.NodeID]); hash != "" {
+		return hash
+	}
+	if hash := publicPathHash3(pathHash3ByNodeID[publicNodeID(endpoint.NodeID)]); hash != "" {
+		return hash
+	}
+	return pathHash3FromPublicKey(endpoint.NodeID)
+}
+
+func publicPathHash3(value string) string {
+	value = strings.ToUpper(strings.TrimSpace(value))
+	if len(value) != 6 || !looksSensitiveHex(value, 6) {
+		return ""
+	}
+	return value
+}
+
+func pathHash3FromPublicKey(value string) string {
+	value = strings.ToUpper(strings.TrimSpace(value))
+	if len(value) < 6 || !looksSensitiveHex(value[:6], 6) {
+		return ""
+	}
+	return value[:6]
+}
+
+func firstPathHash3Index(indexes []map[string]string) map[string]string {
+	if len(indexes) == 0 || indexes[0] == nil {
+		return map[string]string{}
+	}
+	return indexes[0]
 }
 
 func messageAnchorFromRouteSegments(segments []PublicRouteSegment) *PublicMessageAnchor {

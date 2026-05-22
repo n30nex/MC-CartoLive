@@ -16,14 +16,17 @@ import CanadaMap, { type MapAction } from './map/CanadaMap';
 import HotRoutes from './components/HotRoutes';
 import Legend from './components/Legend';
 import LinkBar from './components/LinkBar';
+import PlotRoutesPanel, { type PlotMode, type PlotResult } from './components/PlotRoutesPanel';
 import SelectionDrawer from './components/SelectionDrawer';
 import StatusBar from './components/StatusBar';
 import {
   buildConnectivityGraph,
   directConnectivity,
   highlightedPathForTarget,
-  phonebookGroupsForNode
+  phonebookGroupsForNode,
+  shortestPathBetween
 } from './connectivity';
+import { boundsFromPoints, meshcorePathCopyText, messageHistoryForNode, routeNodeIDs, routesInBounds, type MapPoint } from './routeTools';
 import {
   clearSelection as clearSelectionState,
   selectNodeSelection,
@@ -46,6 +49,11 @@ export default function App() {
   const [selectedNodeID, setSelectedNodeID] = useState<string | null>(() => sharedViewRef.current?.node ?? null);
   const [selectedRouteID, setSelectedRouteID] = useState<string | null>(() => sharedViewRef.current?.route ?? null);
   const [highlightedPathTargetID, setHighlightedPathTargetID] = useState<string | null>(null);
+  const [plotMode, setPlotMode] = useState<PlotMode>('off');
+  const [plotFirstNodeID, setPlotFirstNodeID] = useState<string | null>(null);
+  const [plotAreaFirstPoint, setPlotAreaFirstPoint] = useState<MapPoint | null>(null);
+  const [plotResult, setPlotResult] = useState<PlotResult | null>(null);
+  const [pathCopyToast, setPathCopyToast] = useState<string | null>(null);
   const [mapView, setMapView] = useState<MapViewState | null>(() => {
     const shared = sharedViewRef.current;
     return shared ? { lat: shared.lat, lng: shared.lng, z: shared.z } : null;
@@ -205,8 +213,27 @@ export default function App() {
   const selectedConnectivity = useMemo(() => directConnectivity(connectivityGraph, selectedNodeID), [connectivityGraph, selectedNodeID]);
   const phonebookGroups = useMemo(() => phonebookGroupsForNode(connectivityGraph, selectedNodeID), [connectivityGraph, selectedNodeID]);
   const highlightedPath = useMemo(() => highlightedPathForTarget(phonebookGroups, highlightedPathTargetID), [phonebookGroups, highlightedPathTargetID]);
-  const highlightedPathRouteIDs = useMemo(() => new Set(highlightedPath?.routeIDs ?? []), [highlightedPath]);
-  const highlightedPathNodeIDs = useMemo(() => new Set(highlightedPath?.nodeIDs ?? []), [highlightedPath]);
+  const selectedPhonebookPath = useMemo(
+    () => phonebookGroups.flatMap((group) => group.nodes).find((item) => item.node.id === highlightedPathTargetID) ?? null,
+    [phonebookGroups, highlightedPathTargetID]
+  );
+  const plotFirstNode = useMemo(() => state.nodes.find((node) => node.id === plotFirstNodeID) ?? null, [plotFirstNodeID, state.nodes]);
+  const plotHighlightedRouteIDs = useMemo(() => {
+    if (plotResult?.type === 'path') return new Set(plotResult.path?.pathRouteIDs ?? []);
+    if (plotResult?.type === 'area') return new Set(plotResult.routes.map((route) => route.id));
+    return new Set<string>();
+  }, [plotResult]);
+  const plotHighlightedNodeIDs = useMemo(() => {
+    if (plotResult?.type === 'path') return new Set(plotResult.path?.pathNodeIDs ?? []);
+    if (plotResult?.type === 'area') return routeNodeIDs(plotResult.routes);
+    return new Set<string>();
+  }, [plotResult]);
+  const highlightedPathRouteIDs = useMemo(() => new Set([...(highlightedPath?.routeIDs ?? []), ...plotHighlightedRouteIDs]), [highlightedPath, plotHighlightedRouteIDs]);
+  const highlightedPathNodeIDs = useMemo(() => new Set([...(highlightedPath?.nodeIDs ?? []), ...plotHighlightedNodeIDs]), [highlightedPath, plotHighlightedNodeIDs]);
+  const selectedNodeMessageHistory = useMemo(
+    () => messageHistoryForNode(selectedNode, visibleRoutes, state.activity),
+    [selectedNode, state.activity, visibleRoutes]
+  );
 
   const activityClock = Math.max(liveClock, state.serverTime, state.activity[0]?.heardAt ?? 0, state.routeTraces.at(-1)?.heardAt ?? 0);
   const routeActivityByID = useMemo(() => summarizeRouteActivity(state.routeTraces, activityClock), [state.routeTraces, activityClock]);
@@ -257,13 +284,80 @@ export default function App() {
     applySelection(selectPathTargetSelection({ selectedNodeID, selectedRouteID, highlightedPathTargetID }, nodeID));
   }, [applySelection, highlightedPathTargetID, selectedNodeID, selectedRouteID]);
 
+  const startNodePlot = useCallback(() => {
+    setPlotMode('node');
+    setPlotFirstNodeID(null);
+    setPlotAreaFirstPoint(null);
+    setPlotResult(null);
+  }, []);
+
+  const startAreaPlot = useCallback(() => {
+    setPlotMode('area');
+    setPlotFirstNodeID(null);
+    setPlotAreaFirstPoint(null);
+    setPlotResult(null);
+  }, []);
+
+  const clearPlotRoutes = useCallback(() => {
+    setPlotMode('off');
+    setPlotFirstNodeID(null);
+    setPlotAreaFirstPoint(null);
+    setPlotResult(null);
+  }, []);
+
+  const handlePlotNodePick = useCallback((nodeID: string) => {
+    if (plotMode !== 'node') return;
+    if (!plotFirstNodeID) {
+      setPlotFirstNodeID(nodeID);
+      return;
+    }
+    if (plotFirstNodeID === nodeID) return;
+    const source = state.nodes.find((node) => node.id === plotFirstNodeID);
+    const target = state.nodes.find((node) => node.id === nodeID);
+    if (!source || !target) return;
+    setPlotResult({ type: 'path', source, target, path: shortestPathBetween(connectivityGraph, source.id, target.id) });
+    setPlotMode('off');
+    setPlotFirstNodeID(null);
+  }, [connectivityGraph, plotFirstNodeID, plotMode, state.nodes]);
+
+  const handlePlotMapPoint = useCallback((point: MapPoint) => {
+    if (plotMode !== 'area') return;
+    if (!plotAreaFirstPoint) {
+      setPlotAreaFirstPoint(point);
+      return;
+    }
+    const bounds = boundsFromPoints(plotAreaFirstPoint, point);
+    setPlotResult({ type: 'area', bounds, routes: routesInBounds(visibleRoutes, bounds) });
+    setPlotMode('off');
+    setPlotAreaFirstPoint(null);
+  }, [plotAreaFirstPoint, plotMode, visibleRoutes]);
+
+  const copyMeshcorePath = useCallback(async (path: Parameters<typeof meshcorePathCopyText>[0]) => {
+    const text = meshcorePathCopyText(path);
+    if (!text) {
+      setPathCopyToast('No 3-byte path available');
+      window.setTimeout(() => setPathCopyToast(null), 2200);
+      return;
+    }
+    try {
+      await copyTextToClipboard(text);
+      setPathCopyToast('3-byte path copied');
+    } catch {
+      setPathCopyToast('Copy failed');
+    }
+    window.setTimeout(() => setPathCopyToast(null), 2200);
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') clearSelection();
+      if (event.key === 'Escape') {
+        clearSelection();
+        clearPlotRoutes();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [clearSelection]);
+  }, [clearPlotRoutes, clearSelection]);
 
   const shareView = useCallback(async () => {
     const view = mapView ?? (sharedViewRef.current ? { lat: sharedViewRef.current.lat, lng: sharedViewRef.current.lng, z: sharedViewRef.current.z } : null);
@@ -300,6 +394,7 @@ export default function App() {
         selectedRouteID={selectedRouteID}
         highlightedPathRouteIDs={highlightedPathRouteIDs}
         highlightedPathNodeIDs={highlightedPathNodeIDs}
+        plotMode={plotMode}
         mapAction={mapAction}
         initialView={sharedViewRef.current}
         loading={loadingPositionedNodes}
@@ -307,6 +402,8 @@ export default function App() {
         onViewChange={handleViewChange}
         onSelectNode={selectNode}
         onSelectRoute={selectRoute}
+        onPlotNodePick={handlePlotNodePick}
+        onPlotMapPoint={handlePlotMapPoint}
         onClearSelection={clearSelection}
       />
       {loadingPositionedNodes && <NodeLoadingToast failed={nodeLoadFailed} drawing={initialNodesReceived} />}
@@ -351,6 +448,19 @@ export default function App() {
         <span>Live Follow</span>
       </button>
 
+      <PlotRoutesPanel
+        mode={plotMode}
+        firstNode={plotFirstNode}
+        areaPointCount={plotAreaFirstPoint ? 1 : 0}
+        result={plotResult}
+        copyStatus={pathCopyToast}
+        onStartNodePlot={startNodePlot}
+        onStartAreaPlot={startAreaPlot}
+        onCancel={clearPlotRoutes}
+        onCopyPath={copyMeshcorePath}
+        onSelectRoute={selectRoute}
+      />
+
       <section className="search-panel">
         <Search size={16} />
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search nodes, roles, regions" />
@@ -368,9 +478,13 @@ export default function App() {
         route={selectedRoute}
         connectedRoutes={selectedConnectivity.routes}
         phonebookGroups={phonebookGroups}
+        selectedPath={selectedPhonebookPath}
         selectedPathTargetID={highlightedPathTargetID}
+        messageHistory={selectedNodeMessageHistory}
+        copyStatus={pathCopyToast}
         onRouteSelect={selectRoute}
         onPhonebookSelect={selectPhonebookPath}
+        onCopyPath={copyMeshcorePath}
         onClose={clearSelection}
       />
     </div>

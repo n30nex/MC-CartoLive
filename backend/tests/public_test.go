@@ -92,8 +92,8 @@ func TestPublicLiveStateStripsSensitiveFieldsAndInvalidCoordinates(t *testing.T)
 				RenderReason:    "resolved_path_high_confidence",
 				Segments: []live.EdgeSegment{
 					{
-						From:       live.EdgeEndpoint{NodeID: "node-a", Name: publicKey[:8], Lat: 43.45, Lng: -80.49},
-						To:         live.EdgeEndpoint{NodeID: publicKey, Name: publicKey[:8], Lat: 43.65, Lng: -79.38},
+						From:       live.EdgeEndpoint{NodeID: "node-a", Name: publicKey[:8], Lat: 43.45, Lng: -80.49, PathHash3: publicKey[:6]},
+						To:         live.EdgeEndpoint{NodeID: publicKey, Name: publicKey[:8], Lat: 43.65, Lng: -79.38, PathHash3: publicKey[:6]},
 						DistanceKM: 94,
 					},
 				},
@@ -113,6 +113,9 @@ func TestPublicLiveStateStripsSensitiveFieldsAndInvalidCoordinates(t *testing.T)
 	}
 	if publicState.Routes[0].To.NodeID == publicKey {
 		t.Fatalf("public route endpoint leaked a public key")
+	}
+	if publicState.Routes[0].To.PathHash3 != publicKey[:6] {
+		t.Fatalf("public route endpoint pathHash3 = %q, want 3-byte MeshCore prefix", publicState.Routes[0].To.PathHash3)
 	}
 	if publicState.RecentActivity[0].AnimationState != live.PublicAnimationRoute || publicState.RecentActivity[0].ResolutionBucket != live.PublicBucketRouted {
 		t.Fatalf("routed activity metadata = %#v, want route/routed", publicState.RecentActivity[0])

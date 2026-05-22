@@ -4,6 +4,7 @@ export interface ConnectivityGraph {
   nodesByID: Map<string, PublicNode>;
   routesByID: Map<string, PublicRoute>;
   adjacency: Map<string, GraphEdge[]>;
+  pathHash3ByNodeID: Map<string, string>;
 }
 
 export interface GraphEdge {
@@ -29,6 +30,8 @@ export interface ReachableNode {
   totalRoutePackets: number;
   lastHeard: number;
   endpointLabels: string[];
+  pathHash3: string[];
+  meshcorePath3: string;
 }
 
 export interface PhonebookGroup {
@@ -52,15 +55,19 @@ interface PathCandidate {
   totalRoutePackets: number;
   lastHeard: number;
   endpointLabels: string[];
+  pathHash3: string[];
 }
 
 export function buildConnectivityGraph(nodes: PublicNode[], routes: PublicRoute[]): ConnectivityGraph {
   const nodesByID = new Map(nodes.map((node) => [node.id, node]));
   const routesByID = new Map<string, PublicRoute>();
   const adjacency = new Map<string, GraphEdge[]>();
+  const pathHash3ByNodeID = new Map<string, string>();
 
   for (const route of routes) {
     if (!nodesByID.has(route.from.nodeId) || !nodesByID.has(route.to.nodeId)) continue;
+    registerPathHash3(pathHash3ByNodeID, route.from.nodeId, route.from.pathHash3);
+    registerPathHash3(pathHash3ByNodeID, route.to.nodeId, route.to.pathHash3);
     routesByID.set(route.id, route);
     appendEdge(adjacency, route.from.nodeId, { route, fromNodeID: route.from.nodeId, toNodeID: route.to.nodeId });
     appendEdge(adjacency, route.to.nodeId, { route, fromNodeID: route.to.nodeId, toNodeID: route.from.nodeId });
@@ -70,7 +77,7 @@ export function buildConnectivityGraph(nodes: PublicNode[], routes: PublicRoute[
     edges.sort(compareGraphEdges);
   }
 
-  return { nodesByID, routesByID, adjacency };
+  return { nodesByID, routesByID, adjacency, pathHash3ByNodeID };
 }
 
 export function directConnectivity(graph: ConnectivityGraph, selectedNodeID: string | null): DirectConnectivity {
@@ -114,7 +121,9 @@ export function phonebookGroupsForNode(graph: ConnectivityGraph, selectedNodeID:
       strongestRoutePacketCount: path.strongestRoutePacketCount,
       totalRoutePackets: path.totalRoutePackets,
       lastHeard: path.lastHeard,
-      endpointLabels: path.endpointLabels
+      endpointLabels: path.endpointLabels,
+      pathHash3: path.pathHash3,
+      meshcorePath3: meshcorePath3(path.pathHash3)
     };
     groups.set(path.hopCount, [...(groups.get(path.hopCount) ?? []), item]);
   }
@@ -142,6 +151,28 @@ export function highlightedPathForTarget(groups: PhonebookGroup[], targetNodeID:
   return null;
 }
 
+export function shortestPathBetween(graph: ConnectivityGraph, sourceNodeID: string | null, targetNodeID: string | null): ReachableNode | null {
+  if (!sourceNodeID || !targetNodeID || sourceNodeID === targetNodeID || !graph.nodesByID.has(sourceNodeID) || !graph.nodesByID.has(targetNodeID)) {
+    return null;
+  }
+  const path = reachablePaths(graph, sourceNodeID).get(targetNodeID);
+  const node = graph.nodesByID.get(targetNodeID);
+  if (!path || !node) return null;
+  return {
+    node,
+    hopCount: path.hopCount,
+    pathRouteIDs: path.routeIDs,
+    pathNodeIDs: path.nodeIDs,
+    totalDistanceKm: path.totalDistanceKm,
+    strongestRoutePacketCount: path.strongestRoutePacketCount,
+    totalRoutePackets: path.totalRoutePackets,
+    lastHeard: path.lastHeard,
+    endpointLabels: path.endpointLabels,
+    pathHash3: path.pathHash3,
+    meshcorePath3: meshcorePath3(path.pathHash3)
+  };
+}
+
 function reachablePaths(graph: ConnectivityGraph, selectedNodeID: string): Map<string, PathCandidate> {
   const start: PathCandidate = {
     nodeID: selectedNodeID,
@@ -152,7 +183,8 @@ function reachablePaths(graph: ConnectivityGraph, selectedNodeID: string): Map<s
     strongestRoutePacketCount: 0,
     totalRoutePackets: 0,
     lastHeard: 0,
-    endpointLabels: []
+    endpointLabels: [],
+    pathHash3: []
   };
   const best = new Map<string, PathCandidate>([[selectedNodeID, start]]);
   const queue: PathCandidate[] = [start];
@@ -171,7 +203,8 @@ function reachablePaths(graph: ConnectivityGraph, selectedNodeID: string): Map<s
         strongestRoutePacketCount: Math.max(current.strongestRoutePacketCount, route.packetCount),
         totalRoutePackets: current.totalRoutePackets + route.packetCount,
         lastHeard: Math.max(current.lastHeard, route.lastHeard),
-        endpointLabels: [...current.endpointLabels, route.from.nodeId === edge.fromNodeID ? route.to.label : route.from.label]
+        endpointLabels: [...current.endpointLabels, route.from.nodeId === edge.fromNodeID ? route.to.label : route.from.label],
+        pathHash3: [...current.pathHash3, graph.pathHash3ByNodeID.get(edge.toNodeID) ?? '']
       };
       const existing = best.get(next.nodeID);
       if (!existing || comparePathCandidates(next, existing) < 0) {
@@ -187,6 +220,22 @@ function reachablePaths(graph: ConnectivityGraph, selectedNodeID: string): Map<s
 
 function appendEdge(adjacency: Map<string, GraphEdge[]>, nodeID: string, edge: GraphEdge) {
   adjacency.set(nodeID, [...(adjacency.get(nodeID) ?? []), edge]);
+}
+
+function registerPathHash3(pathHash3ByNodeID: Map<string, string>, nodeID: string, value: string | undefined) {
+  const normalized = normalizePathHash3(value);
+  if (normalized && !pathHash3ByNodeID.has(nodeID)) {
+    pathHash3ByNodeID.set(nodeID, normalized);
+  }
+}
+
+function normalizePathHash3(value: string | undefined): string {
+  const normalized = (value ?? '').trim().toUpperCase();
+  return /^[0-9A-F]{6}$/.test(normalized) ? normalized : '';
+}
+
+function meshcorePath3(prefixes: string[]): string {
+  return prefixes.map(normalizePathHash3).filter(Boolean).join(',');
 }
 
 function compareGraphEdges(left: GraphEdge, right: GraphEdge): number {

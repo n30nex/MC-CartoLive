@@ -97,7 +97,7 @@ docker compose up -d
 
 ## Runtime Notes
 
-- Version 1.2 exposes the app version/build in the top project bar. CI builds use
+- Version 1.3 exposes the app version/build in the top project bar. CI builds use
   the Git commit SHA when available; local Docker builds use a timestamp fallback.
 - `PUBLIC_BASE_URL` must match the public browser origin so WebSocket origin checks pass.
 - `PUBLIC_IATAS` should stay restricted to supported Canada IATA region codes.

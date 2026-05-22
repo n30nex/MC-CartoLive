@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0
+
+- Added MeshCore 3-byte route copy support from selected phonebook paths.
+- Added a Plot routes control for selecting two node endpoints and highlighting the shortest valid public route path.
+- Added map-square route lookup by selecting two map corners, with matching routes highlighted and listed.
+- Added decoded chatter history on selected node panels using sanitized public message text from the current live window.
+- Documented the new route-copy privacy boundary: full public keys remain private, but six-character 3-byte route prefixes are public for verified path copy.
+
 ## 1.2.0
 
 - Added node connectivity focus for repeaters, observers, rooms, companions, and sensors.

@@ -18,6 +18,7 @@ export interface PublicRouteEndpoint {
   label: string;
   lat: number;
   lng: number;
+  pathHash3?: string;
 }
 
 export interface PublicRouteSegment {

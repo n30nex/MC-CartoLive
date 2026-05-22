@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v1.2
+# MeshCore MQTT Live Map v1.3
 
 Also known as **MC-CartoLive**.
 
@@ -31,14 +31,17 @@ Real public map data from the local production container:
 - Resolves RF paths conservatively, without drawing guessed routes.
 - Shows low-zoom cluster activity and high-zoom route/node detail.
 - Lets users select repeaters, observers, rooms, companions, or sensors to highlight directly served RF routes and connected nodes.
-- Adds a reachable-node phonebook that groups valid public route paths by hop count and highlights a selected multi-hop path.
+- Adds a reachable-node phonebook that groups valid public route paths by hop count, highlights a selected multi-hop path, and can copy MeshCore 3-byte route prefixes.
+- Adds a Plot routes control for choosing two node endpoints or two map corners and highlighting matching public RF routes.
+- Shows decoded public chatter history for the selected node when sanitized message text is available in the live window.
 - Animates live packet comets, observer bursts, route payload glows, and message bubbles.
 - Includes a compact project bar with MeshCore Canada, GitHub, version, and build links.
 - Provides a red Live Follow control for smoothly following areas with fresh packet movement.
 - Prioritizes the map on mobile by moving controls to the bottom and hiding secondary panels/toasts.
 - Serves public state from a backend memory cache instead of rebuilding every request from SQLite.
 - Filters public traffic through the Canada IATA allowlist.
-- Keeps private broker credentials, channel secrets, live DB files, packet hashes, public keys, path hex, and resolver debug details out of public responses.
+- Keeps private broker credentials, channel secrets, live DB files, packet hashes, full public keys, raw path hex, and resolver debug details out of public responses.
+- Publishes only six-character MeshCore 3-byte route prefixes for route-copy workflows.
 
 ## Architecture
 
@@ -140,7 +143,7 @@ docker compose build
 
 ## Production Hosting
 
-The recommended v1.2 release path is clone + Docker Compose on a VPS or local
+The recommended v1.3 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

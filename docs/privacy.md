@@ -17,7 +17,7 @@ Keep these out of git, logs, issues, screenshots, and public artifacts:
 Public endpoints should expose only sanitized live-map data needed for display.
 They must not expose:
 
-- public keys
+- full public keys
 - observer public keys
 - packet hashes
 - raw packet summaries
@@ -25,9 +25,15 @@ They must not expose:
 - resolver debug reasons
 - raw packet payloads
 
+The public route API may expose a six-character `pathHash3` for positioned
+route endpoints. This is the 3-byte MeshCore route prefix shown in the mobile
+app's Set Path flow. It is intentionally limited to the route-copy workflow and
+must not be expanded into full public keys.
+
 Decoded message text is exposed only as sanitized public bubble text when the
 backend can decode it from public packet data or from private channel secrets
-provided locally by the operator.
+provided locally by the operator. The frontend can reuse that same sanitized
+message text as short node chatter history for selected nodes.
 
 ## IATA Allowlist
 

@@ -1,5 +1,6 @@
-import { X } from 'lucide-react';
+import { Copy, MessageSquareText, X } from 'lucide-react';
 import type { PhonebookGroup, ReachableNode } from '../connectivity';
+import { meshcorePathAvailable, meshcorePathCopyText, type NodeMessageHistoryItem } from '../routeTools';
 import type { PublicNode, PublicRoute } from '../types';
 
 interface Props {
@@ -7,9 +8,13 @@ interface Props {
   route: PublicRoute | null;
   connectedRoutes: PublicRoute[];
   phonebookGroups: PhonebookGroup[];
+  selectedPath: ReachableNode | null;
   selectedPathTargetID: string | null;
+  messageHistory: NodeMessageHistoryItem[];
+  copyStatus: string | null;
   onRouteSelect: (routeID: string) => void;
   onPhonebookSelect: (nodeID: string) => void;
+  onCopyPath: (path: ReachableNode | null) => void;
   onClose: () => void;
 }
 
@@ -18,9 +23,13 @@ export default function SelectionDrawer({
   route,
   connectedRoutes,
   phonebookGroups,
+  selectedPath,
   selectedPathTargetID,
+  messageHistory,
+  copyStatus,
   onRouteSelect,
   onPhonebookSelect,
+  onCopyPath,
   onClose
 }: Props) {
   if (!node && !route) return null;
@@ -56,6 +65,7 @@ export default function SelectionDrawer({
                 ))}
               </div>
             )}
+            <NodeMessageHistory items={messageHistory} />
           </>
         )}
         {!node && route && (
@@ -80,6 +90,7 @@ export default function SelectionDrawer({
           <span className="eyebrow">phonebook</span>
           <h2>Reachable nodes</h2>
           <p className="phonebook-summary">{reachableCount.toLocaleString()} nodes through valid public routes</p>
+          {selectedPath && <PhonebookCopyCard item={selectedPath} copyStatus={copyStatus} onCopyPath={onCopyPath} />}
           {phonebookGroups.length === 0 ? (
             <p className="phonebook-empty">No reachable nodes in the current public route graph.</p>
           ) : (
@@ -104,6 +115,51 @@ export default function SelectionDrawer({
         </aside>
       )}
     </div>
+  );
+}
+
+function PhonebookCopyCard({ item, copyStatus, onCopyPath }: { item: ReachableNode; copyStatus: string | null; onCopyPath: (path: ReachableNode | null) => void }) {
+  const copyText = meshcorePathCopyText(item);
+  return (
+    <div className="phonebook-copy-card">
+      <span>
+        <strong>{item.node.label}</strong>
+        <em>{item.hopCount} {item.hopCount === 1 ? 'hop' : 'hops'} / MeshCore 3-byte</em>
+      </span>
+      <code>{copyText || 'No 3-byte path available'}</code>
+      <button type="button" disabled={!meshcorePathAvailable(item)} onClick={() => onCopyPath(item)}>
+        <Copy size={13} />
+        <span>Copy route</span>
+      </button>
+      {copyStatus && <em className="copy-status">{copyStatus}</em>}
+    </div>
+  );
+}
+
+function NodeMessageHistory({ items }: { items: NodeMessageHistoryItem[] }) {
+  return (
+    <section className="node-message-history" aria-label="Decoded chatter through selected node">
+      <h3>
+        <MessageSquareText size={13} />
+        <span>Chatter history</span>
+      </h3>
+      {items.length === 0 ? (
+        <p>No decoded public chatter in the current live window.</p>
+      ) : (
+        <div className="node-message-list">
+          {items.map((item) => (
+            <article key={item.id} className="node-message-row">
+              <header>
+                <strong>{item.sender}</strong>
+                <time>{formatRelative(item.heardAt)}</time>
+              </header>
+              <p>{item.text}</p>
+              <em>{item.routeLabels[0] ?? item.payloadTypeName}</em>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

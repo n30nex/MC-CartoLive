@@ -397,10 +397,11 @@ func (a *Application) observerEndpoint(ctx context.Context, msg imqtt.Normalized
 	for _, observer := range observers {
 		if observer.PublicKey == msg.TopicInfo.PublisherPK && observer.IATA == msg.TopicInfo.IATA && observer.Latitude != nil && observer.Longitude != nil && validMapCoords(*observer.Latitude, *observer.Longitude) {
 			return live.EdgeEndpoint{
-				NodeID: observer.PublicKey,
-				Name:   displayName(observer.Name, observer.PublicKey),
-				Lat:    *observer.Latitude,
-				Lng:    *observer.Longitude,
+				NodeID:    observer.PublicKey,
+				Name:      displayName(observer.Name, observer.PublicKey),
+				Lat:       *observer.Latitude,
+				Lng:       *observer.Longitude,
+				PathHash3: pathHash3(observer.PublicKey),
 			}, true
 		}
 	}
@@ -557,16 +558,32 @@ func validMapCoords(lat float64, lng float64) bool {
 }
 
 func nodeEndpoint(n live.Node) live.EdgeEndpoint {
-	return live.EdgeEndpoint{NodeID: n.NodeID, Name: displayName(n.Name, n.PublicKey), Lat: *n.Latitude, Lng: *n.Longitude}
+	return live.EdgeEndpoint{NodeID: n.NodeID, Name: displayName(n.Name, n.PublicKey), Lat: *n.Latitude, Lng: *n.Longitude, PathHash3: pathHash3(n.PublicKey)}
 }
 
 func candidateEndpoint(candidate resolve.Candidate) live.EdgeEndpoint {
 	return live.EdgeEndpoint{
-		NodeID: candidate.NodeID,
-		Name:   displayName(candidate.Name, candidate.PublicKey),
-		Lat:    *candidate.Latitude,
-		Lng:    *candidate.Longitude,
+		NodeID:    candidate.NodeID,
+		Name:      displayName(candidate.Name, candidate.PublicKey),
+		Lat:       *candidate.Latitude,
+		Lng:       *candidate.Longitude,
+		PathHash3: pathHash3(candidate.PublicKey),
 	}
+}
+
+func pathHash3(publicKey string) string {
+	publicKey = strings.ToUpper(strings.TrimSpace(publicKey))
+	if len(publicKey) < 6 {
+		return ""
+	}
+	prefix := publicKey[:6]
+	for _, char := range prefix {
+		if (char >= '0' && char <= '9') || (char >= 'A' && char <= 'F') {
+			continue
+		}
+		return ""
+	}
+	return prefix
 }
 
 func appendEndpoint(endpoints []live.EdgeEndpoint, endpoint live.EdgeEndpoint) []live.EdgeEndpoint {

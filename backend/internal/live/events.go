@@ -53,10 +53,11 @@ type PacketObservation struct {
 }
 
 type EdgeEndpoint struct {
-	NodeID string  `json:"nodeId"`
-	Name   string  `json:"name"`
-	Lat    float64 `json:"lat"`
-	Lng    float64 `json:"lng"`
+	NodeID    string  `json:"nodeId"`
+	Name      string  `json:"name"`
+	Lat       float64 `json:"lat"`
+	Lng       float64 `json:"lng"`
+	PathHash3 string  `json:"pathHash3,omitempty"`
 }
 
 type EdgeSegment struct {

@@ -299,6 +299,7 @@ button {
 .status-bar,
 .top-actions,
 .follow-traffic-button,
+.plot-routes-panel,
 .search-panel,
 .legend-panel,
 .hot-routes,
@@ -646,6 +647,10 @@ button {
 .icon-button:hover,
 .icon-button:focus-visible,
 .search-panel button:hover,
+.plot-route-button:hover,
+.plot-route-button:focus-visible,
+.copy-path-button:hover,
+.copy-path-button:focus-visible,
 .hot-route:hover,
 .drawer-route-list button:hover {
   border-color: rgba(56, 189, 248, 0.64);
@@ -710,6 +715,149 @@ button {
     0 16px 36px rgba(0, 0, 0, 0.36),
     0 0 26px rgba(248, 113, 113, 0.38),
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.plot-routes-panel {
+  left: 10px;
+  bottom: 56px;
+  z-index: 7;
+  width: min(360px, calc(100vw - 20px));
+  pointer-events: auto;
+}
+
+.plot-route-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.plot-route-button,
+.copy-path-button,
+.phonebook-copy-card button {
+  min-height: 31px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: #dffbff;
+  background: rgba(7, 16, 29, 0.88);
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 7px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.plot-route-button.primary {
+  color: #fef9c3;
+  background:
+    linear-gradient(135deg, rgba(161, 98, 7, 0.94), rgba(113, 63, 18, 0.86)),
+    radial-gradient(circle at 18% 22%, rgba(254, 240, 138, 0.2), transparent 44%);
+  border-color: rgba(253, 224, 71, 0.38);
+}
+
+.plot-route-button.active {
+  color: #ffffff;
+  border-color: rgba(250, 204, 21, 0.72);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.38), 0 0 22px rgba(250, 204, 21, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.plot-route-button.icon-only {
+  width: 31px;
+  padding: 0;
+}
+
+.plot-route-toast {
+  display: grid;
+  gap: 8px;
+  margin-top: 7px;
+  padding: 10px;
+  color: #dbeafe;
+  background: linear-gradient(135deg, rgba(5, 10, 20, 0.94), rgba(10, 18, 32, 0.9));
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.44), 0 0 18px rgba(56, 189, 248, 0.08);
+}
+
+.plot-route-toast p,
+.plot-result-block {
+  min-width: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.plot-route-toast p {
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  color: #bae6fd;
+  font-size: 12px;
+}
+
+.plot-result-block strong {
+  min-width: 0;
+  color: #f8fafc;
+  font-size: 13px;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
+}
+
+.plot-result-block span,
+.plot-copy-status {
+  color: #9db2ca;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.plot-result-block code,
+.phonebook-copy-card code {
+  min-width: 0;
+  padding: 6px 7px;
+  color: #fef9c3;
+  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid rgba(250, 204, 21, 0.22);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.plot-area-route-list {
+  display: grid;
+  gap: 5px;
+  max-height: 170px;
+  overflow: auto;
+}
+
+.plot-area-route-list button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 7px;
+  color: #dbeafe;
+  text-align: left;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(125, 211, 252, 0.14);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.plot-area-route-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plot-area-route-list em {
+  color: #fde68a;
+  font-size: 11px;
+  font-style: normal;
 }
 
 .server-status {
@@ -808,6 +956,7 @@ button {
 .link-bar,
 .status-pill,
 .follow-traffic-button,
+.plot-routes-panel,
 .search-panel,
 .legend-panel,
 .hot-routes,
@@ -1360,6 +1509,43 @@ button {
   padding: 10px 0 2px;
 }
 
+.phonebook-copy-card {
+  display: grid;
+  gap: 7px;
+  padding: 9px;
+  background:
+    linear-gradient(135deg, rgba(30, 41, 59, 0.86), rgba(15, 23, 42, 0.72)),
+    radial-gradient(circle at 0 0, rgba(250, 204, 21, 0.12), transparent 48%);
+  border: 1px solid rgba(250, 204, 21, 0.34);
+  border-radius: 7px;
+  box-shadow: inset 2px 0 0 rgba(250, 204, 21, 0.66), 0 0 16px rgba(250, 204, 21, 0.08);
+}
+
+.phonebook-copy-card span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.phonebook-copy-card strong {
+  color: #f8fafc;
+  font-size: 12px;
+  line-height: 1.16;
+}
+
+.phonebook-copy-card em,
+.copy-status {
+  color: #c4b5fd;
+  font-size: 10.5px;
+  font-style: normal;
+}
+
+.phonebook-copy-card button:disabled,
+.copy-path-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.54;
+}
+
 .phonebook-groups {
   display: grid;
   gap: 11px;
@@ -1454,6 +1640,82 @@ button {
 .phonebook-row-path {
   grid-column: 1 / -1;
   color: #c4b5fd;
+}
+
+.node-message-history {
+  display: grid;
+  gap: 7px;
+  padding-top: 2px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.node-message-history h3 {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #a5f3fc;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.node-message-history > p {
+  margin: 0;
+  color: #8fa2bb;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.node-message-list {
+  display: grid;
+  gap: 6px;
+  max-height: 170px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.node-message-row {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  background: rgba(15, 23, 42, 0.62);
+  border: 1px solid rgba(125, 211, 252, 0.12);
+  border-radius: 7px;
+}
+
+.node-message-row header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.node-message-row strong {
+  overflow: hidden;
+  color: #f8fafc;
+  font-size: 12px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-message-row time,
+.node-message-row em {
+  color: #8fa2bb;
+  font-size: 10px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.node-message-row p {
+  margin: 0;
+  color: #dbeafe;
+  font-size: 12px;
+  line-height: 1.32;
+  overflow-wrap: anywhere;
 }
 
 .selection-drawer {
@@ -2023,6 +2285,29 @@ button {
     min-height: 30px;
     padding: 0 9px;
     font-size: 10px;
+  }
+
+  .plot-routes-panel {
+    left: 10px;
+    bottom: calc(47px + env(safe-area-inset-bottom, 0px));
+    width: min(330px, calc(100vw - 20px));
+  }
+
+  .plot-route-toast {
+    max-height: 28vh;
+    overflow: auto;
+    padding: 8px;
+  }
+
+  .plot-route-button {
+    min-height: 30px;
+    padding: 0 8px;
+    font-size: 10px;
+  }
+
+  .plot-area-route-list,
+  .node-message-list {
+    max-height: 115px;
   }
 
   .node-hover-toast {

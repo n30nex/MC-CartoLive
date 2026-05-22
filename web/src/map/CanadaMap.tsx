@@ -61,6 +61,7 @@ interface Props {
   selectedRouteID: string | null;
   highlightedPathRouteIDs: Set<string>;
   highlightedPathNodeIDs: Set<string>;
+  plotMode: 'off' | 'node' | 'area';
   mapAction: MapAction;
   initialView: SharedViewState | null;
   loading: boolean;
@@ -68,6 +69,8 @@ interface Props {
   onViewChange: (view: MapViewState) => void;
   onSelectNode: (nodeID: string) => void;
   onSelectRoute: (routeID: string) => void;
+  onPlotNodePick: (nodeID: string) => void;
+  onPlotMapPoint: (point: { lat: number; lng: number }) => void;
   onClearSelection: () => void;
 }
 
@@ -444,6 +447,7 @@ export default function CanadaMap({
   selectedRouteID,
   highlightedPathRouteIDs,
   highlightedPathNodeIDs,
+  plotMode,
   mapAction,
   initialView,
   loading,
@@ -451,6 +455,8 @@ export default function CanadaMap({
   onViewChange,
   onSelectNode,
   onSelectRoute,
+  onPlotNodePick,
+  onPlotMapPoint,
   onClearSelection
 }: Props) {
   const [hoveredRouteID, setHoveredRouteID] = useState<string | null>(null);
@@ -501,6 +507,9 @@ export default function CanadaMap({
   const viewChangeRef = useRef(onViewChange);
   const selectedNodeRef = useRef(onSelectNode);
   const selectedRouteRef = useRef(onSelectRoute);
+  const plotModeRef = useRef(plotMode);
+  const plotNodePickRef = useRef(onPlotNodePick);
+  const plotMapPointRef = useRef(onPlotMapPoint);
   const clearSelectionRef = useRef(onClearSelection);
 
   const showMessageBubble = (map: maplibregl.Map, bubble: MessageBubble | null) => {
@@ -600,8 +609,11 @@ export default function CanadaMap({
     viewChangeRef.current = onViewChange;
     selectedNodeRef.current = onSelectNode;
     selectedRouteRef.current = onSelectRoute;
+    plotModeRef.current = plotMode;
+    plotNodePickRef.current = onPlotNodePick;
+    plotMapPointRef.current = onPlotMapPoint;
     clearSelectionRef.current = onClearSelection;
-  }, [onPositionedNodesRendered, onViewChange, onSelectNode, onSelectRoute, onClearSelection]);
+  }, [onPositionedNodesRendered, onViewChange, onSelectNode, onSelectRoute, plotMode, onPlotNodePick, onPlotMapPoint, onClearSelection]);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -695,7 +707,7 @@ export default function CanadaMap({
       }
       try {
         addPublicLayers(map);
-        bindLayerEvents(map, nodesRef, selectedNodeRef, selectedRouteRef, clearSelectionRef, setHoveredRouteID, setHoveredNode);
+        bindLayerEvents(map, nodesRef, selectedNodeRef, selectedRouteRef, plotModeRef, plotNodePickRef, plotMapPointRef, clearSelectionRef, setHoveredRouteID, setHoveredNode);
         try {
           addBaseMapLayer(map);
         } catch {
@@ -1909,6 +1921,9 @@ function bindLayerEvents(
   nodesRef: MutableRefObject<PublicNode[]>,
   selectedNodeRef: MutableRefObject<(nodeID: string) => void>,
   selectedRouteRef: MutableRefObject<(routeID: string) => void>,
+  plotModeRef: MutableRefObject<'off' | 'node' | 'area'>,
+  plotNodePickRef: MutableRefObject<(nodeID: string) => void>,
+  plotMapPointRef: MutableRefObject<(point: { lat: number; lng: number }) => void>,
   clearSelectionRef: MutableRefObject<() => void>,
   setHoveredRouteID: Dispatch<SetStateAction<string | null>>,
   setHoveredNode: Dispatch<SetStateAction<HoveredNodeToast | null>>
@@ -1947,7 +1962,17 @@ function bindLayerEvents(
       : undefined;
     const nodeID = nodeFeature?.properties?.id;
     if (typeof nodeID === 'string') {
+      if (plotModeRef.current === 'node') {
+        plotNodePickRef.current(nodeID);
+        return;
+      }
       selectedNodeRef.current(nodeID);
+      return;
+    }
+
+    if (plotModeRef.current === 'area') {
+      const lngLat = event.lngLat;
+      plotMapPointRef.current({ lat: lngLat.lat, lng: lngLat.lng });
       return;
     }
 
@@ -1963,6 +1988,7 @@ function bindLayerEvents(
       : undefined;
     const routeID = routeFeature?.properties?.id;
     if (typeof routeID === 'string') {
+      if (plotModeRef.current === 'node') return;
       selectedRouteRef.current(routeID);
       return;
     }
@@ -2086,7 +2112,7 @@ function routesToGeoJSON(
   hoveredRouteID: string | null,
   focus: NodeFocus
 ): FeatureCollection {
-  const hasFocusedRoute = Boolean(selectedRouteID || hoveredRouteID || focus.selectedNodeID);
+  const hasFocusedRoute = Boolean(selectedRouteID || hoveredRouteID || focus.selectedNodeID || focus.pathRouteIDs.size > 0);
   return {
     type: 'FeatureCollection',
     features: routes

@@ -3,7 +3,8 @@ import {
   buildConnectivityGraph,
   directConnectivity,
   highlightedPathForTarget,
-  phonebookGroupsForNode
+  phonebookGroupsForNode,
+  shortestPathBetween
 } from './connectivity';
 import type { PublicNode, PublicRoute, PublicRouteEndpoint } from './types';
 
@@ -23,7 +24,8 @@ const endpoint = (nodeId: string): PublicRouteEndpoint => ({
   nodeId,
   label: nodeId.toUpperCase(),
   lat: 43,
-  lng: -79
+  lng: -79,
+  pathHash3: `${nodeId}${nodeId}${nodeId}${nodeId}${nodeId}${nodeId}`.slice(0, 6).toUpperCase()
 });
 
 const route = (id: string, from: string, to: string, packetCount: number, lastHeard: number, distanceKm = 1): PublicRoute => ({
@@ -113,5 +115,17 @@ describe('connectivity graph', () => {
       routeIDs: ['a-b', 'b-c'],
       nodeIDs: ['a', 'b', 'c']
     });
+  });
+
+  it('builds MeshCore 3-byte copy paths from public endpoint prefixes', () => {
+    const graph = buildConnectivityGraph(
+      [node('a'), node('b'), node('c')],
+      [route('a-b', 'a', 'b', 10, 100), route('b-c', 'b', 'c', 5, 90)]
+    );
+
+    const path = shortestPathBetween(graph, 'a', 'c');
+
+    expect(path?.pathHash3).toEqual(['BBBBBB', 'CCCCCC']);
+    expect(path?.meshcorePath3).toBe('BBBBBB,CCCCCC');
   });
 });
