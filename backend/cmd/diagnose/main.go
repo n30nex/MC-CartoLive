@@ -16,13 +16,15 @@ import (
 )
 
 type diagnosticFilters struct {
-	DBPath      string
-	IATA        string
-	Name        string
-	Label       string
-	ID          string
-	PublicIATAs string
-	Limit       int
+	DBPath        string
+	Region        string
+	IATA          string
+	Name          string
+	Label         string
+	ID            string
+	PublicRegions string
+	PublicIATAs   string
+	Limit         int
 }
 
 type nodeRow struct {
@@ -45,15 +47,18 @@ type activitySummary struct {
 func main() {
 	filters := diagnosticFilters{}
 	flag.StringVar(&filters.DBPath, "db", envString("DB_PATH", "data/meshcore-live.db"), "SQLite database path")
-	flag.StringVar(&filters.IATA, "iata", "", "IATA/region code to inspect")
+	flag.StringVar(&filters.Region, "region", "", "broker region label to inspect")
+	flag.StringVar(&filters.IATA, "iata", "", "legacy alias for --region")
 	flag.StringVar(&filters.Name, "name", "", "case-insensitive node or observer name search")
 	flag.StringVar(&filters.Label, "label", "", "case-insensitive sanitized public label search")
 	flag.StringVar(&filters.ID, "id", "", "operator-local node ID or public key lookup")
-	flag.StringVar(&filters.PublicIATAs, "public-iatas", os.Getenv("PUBLIC_IATAS"), "comma-separated public IATA allowlist")
+	flag.StringVar(&filters.PublicRegions, "public-regions", os.Getenv("PUBLIC_REGIONS"), "comma-separated public region allowlist")
+	flag.StringVar(&filters.PublicIATAs, "public-iatas", os.Getenv("PUBLIC_IATAS"), "legacy alias for --public-regions")
 	flag.IntVar(&filters.Limit, "limit", 25, "maximum rows per section")
 	flag.Parse()
-	if strings.TrimSpace(filters.IATA) == "" && strings.TrimSpace(filters.Name) == "" && strings.TrimSpace(filters.Label) == "" && strings.TrimSpace(filters.ID) == "" {
-		fmt.Fprintln(os.Stderr, "provide at least one of --iata, --name, --label, or --id")
+	filters = normalizeDiagnosticFilters(filters)
+	if strings.TrimSpace(filters.Region) == "" && strings.TrimSpace(filters.Name) == "" && strings.TrimSpace(filters.Label) == "" && strings.TrimSpace(filters.ID) == "" {
+		fmt.Fprintln(os.Stderr, "provide at least one of --region, --iata, --name, --label, or --id")
 		os.Exit(2)
 	}
 	report, err := buildDiagnosticReport(context.Background(), filters)
@@ -73,12 +78,31 @@ func buildDiagnosticReport(ctx context.Context, filters diagnosticFilters) (stri
 	return reportFromDB(ctx, db, filters)
 }
 
+func normalizeDiagnosticFilters(filters diagnosticFilters) diagnosticFilters {
+	filters.Region = strings.ToUpper(strings.TrimSpace(filters.Region))
+	filters.IATA = strings.ToUpper(strings.TrimSpace(filters.IATA))
+	if filters.Region == "" {
+		filters.Region = filters.IATA
+	}
+	if filters.IATA == "" {
+		filters.IATA = filters.Region
+	}
+	if strings.TrimSpace(filters.PublicRegions) == "" {
+		filters.PublicRegions = filters.PublicIATAs
+	}
+	if strings.TrimSpace(filters.PublicIATAs) == "" {
+		filters.PublicIATAs = filters.PublicRegions
+	}
+	return filters
+}
+
 func reportFromDB(ctx context.Context, db *sql.DB, filters diagnosticFilters) (string, error) {
+	filters = normalizeDiagnosticFilters(filters)
 	if filters.Limit <= 0 || filters.Limit > 200 {
 		filters.Limit = 25
 	}
-	publicIATAs := csv(filters.PublicIATAs)
-	filter := live.NewPublicIATAFilter(publicIATAs)
+	publicRegions := csv(filters.PublicRegions)
+	filter := live.NewPublicIATAFilter(publicRegions)
 	nodes, err := queryNodes(ctx, db, filters)
 	if err != nil {
 		return "", err
@@ -98,8 +122,9 @@ func reportFromDB(ctx context.Context, db *sql.DB, filters diagnosticFilters) (s
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "MC-CartoLive operator diagnostic\n")
-	fmt.Fprintf(&b, "filters: iata=%q name=%q label=%q id=%q db=%q\n", strings.ToUpper(strings.TrimSpace(filters.IATA)), strings.TrimSpace(filters.Name), strings.TrimSpace(filters.Label), safeID(filters.ID), filters.DBPath)
-	fmt.Fprintf(&b, "public_iatas=%q\n", strings.Join(publicIATAs, ","))
+	fmt.Fprintf(&b, "filters: region=%q iata=%q name=%q label=%q id=%q db=%q\n", strings.ToUpper(strings.TrimSpace(filters.Region)), strings.ToUpper(strings.TrimSpace(filters.IATA)), strings.TrimSpace(filters.Name), strings.TrimSpace(filters.Label), safeID(filters.ID), filters.DBPath)
+	fmt.Fprintf(&b, "public_regions=%q\n", strings.Join(publicRegions, ","))
+	fmt.Fprintf(&b, "public_iatas=%q legacy_alias=true\n", strings.Join(publicRegions, ","))
 	fmt.Fprintf(&b, "live_confidence_note=\"packet ingest freshness, map motion, and mappability are separate checks\"\n\n")
 
 	fmt.Fprintf(&b, "nodes (%d)\n", len(nodes))
@@ -113,7 +138,7 @@ func reportFromDB(ctx context.Context, db *sql.DB, filters diagnosticFilters) (s
 			display(row.node.Name, row.node.NodeID),
 			row.node.Role,
 			strings.Join(row.node.IATAsHeardIn, ","),
-			publicIATAMatch(row.node.IATAsHeardIn, publicIATAs, filter),
+			publicIATAMatch(row.node.IATAsHeardIn, publicRegions, filter),
 			coordString(row.node.Latitude, row.node.Longitude),
 			coordinateStatus(row.node.Latitude, row.node.Longitude),
 			timeString(row.node.LastSeen),
@@ -139,7 +164,7 @@ func reportFromDB(ctx context.Context, db *sql.DB, filters diagnosticFilters) (s
 		fmt.Fprintf(&b, "- %s actual_iata=%s public_iata=%s coords=%s coord_status=%s last_seen=%s packets=%d map=%s",
 			display(row.observer.Name, row.observer.IATA+" observer"),
 			row.observer.IATA,
-			publicIATAMatch([]string{row.observer.IATA}, publicIATAs, filter),
+			publicIATAMatch([]string{row.observer.IATA}, publicRegions, filter),
 			coordString(row.observer.Latitude, row.observer.Longitude),
 			coordinateStatus(row.observer.Latitude, row.observer.Longitude),
 			timeString(row.observer.LastSeen),
@@ -347,7 +372,8 @@ func writeActivitySection(b *strings.Builder, title string, items []activitySumm
 		return
 	}
 	for _, item := range items {
-		fmt.Fprintf(b, "- iata=%s observer=%s kind=%s count=%d last=%s status=%s\n",
+		fmt.Fprintf(b, "- region=%s iata=%s observer=%s kind=%s count=%d last=%s status=%s\n",
+			item.IATA,
 			item.IATA, display(item.Label, "unknown"), item.Kind, item.Count, timeString(item.LastHeard), item.LastStatus)
 	}
 }

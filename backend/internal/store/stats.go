@@ -30,7 +30,7 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 		{&stats.Packets, `SELECT COUNT(*) FROM packets`},
 		{&stats.Observations, `SELECT COUNT(*) FROM packet_observations`},
 		{&stats.Nodes, `SELECT COUNT(*) FROM nodes`},
-		{&stats.NodesWithPosition, `SELECT COUNT(*) FROM nodes WHERE ` + mappableCoordinatesSQL},
+		{&stats.NodesWithPosition, `SELECT COUNT(*) FROM nodes WHERE ` + s.coordPolicy().SQL("latitude", "longitude")},
 		{&stats.Observers, `SELECT COUNT(*) FROM observers`},
 		{&stats.Ambiguous, `SELECT COUNT(*) FROM packet_observations WHERE resolution_status='ambiguous'`},
 		{&stats.Unresolved, `SELECT COUNT(*) FROM packet_observations WHERE resolution_status='unresolved'`},

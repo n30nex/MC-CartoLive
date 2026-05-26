@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
-	"math"
 	"os"
 	"strings"
 	"sync"
@@ -51,10 +50,13 @@ type yamlConfig struct {
 }
 
 func NewApplication(ctx context.Context, cfg Config, log *slog.Logger) (*Application, error) {
+	coordinatePolicy := live.NewCoordinatePolicy(cfg.MapBounds)
+	live.SetCoordinatePolicy(coordinatePolicy)
 	st, err := store.Open(ctx, cfg.DBPath)
 	if err != nil {
 		return nil, err
 	}
+	st.SetCoordinatePolicy(coordinatePolicy)
 	yc := loadYAMLConfig(cfg.ConfigYAML, log)
 	for _, node := range yc.ManualNodes {
 		if node.PublicKey != "" {
@@ -65,7 +67,7 @@ func NewApplication(ctx context.Context, cfg Config, log *slog.Logger) (*Applica
 	}
 	hub := live.NewHub(log, cfg.WSClientQueueSize, cfg.PublicBaseURL)
 	publicHub := live.NewHub(log, cfg.WSClientQueueSize, cfg.PublicBaseURL)
-	publicCache := live.NewPublicStateCache(live.NewPublicIATAFilter(publicIATAs(cfg.PublicIATAs, yc)))
+	publicCache := live.NewPublicStateCache(live.NewPublicIATAFilter(publicIATAs(cfg.PublicRegions, yc)))
 	resolver := resolve.New(st, yc.ForwarderRoles)
 	app := &Application{Config: cfg, Log: log, Store: st, Hub: hub, PublicHub: publicHub, PublicCache: publicCache, Runtime: live.NewRuntimeStats(), Resolver: resolver}
 	app.MQTT = imqtt.NewClient(imqtt.ClientConfig{
@@ -94,6 +96,8 @@ func (a *Application) Start(ctx context.Context) error {
 		"strictRFOnly", a.Config.StrictRFOnly,
 		"distanceGateKm", a.Config.MaxUnverifiedEdgeKM,
 		"mqttQueueSize", a.Config.MQTTIngestQueueSize,
+		"mapRegionPreset", a.Config.MapRegionPreset,
+		"mapBounds", a.Config.MapBounds,
 	)
 	dbInfo := a.Store.RuntimeInfo(ctx)
 	a.Log.Info("sqlite runtime",
@@ -625,16 +629,7 @@ func candidateHasCoords(candidate resolve.Candidate) bool {
 }
 
 func validMapCoords(lat float64, lng float64) bool {
-	return !math.IsNaN(lat) &&
-		!math.IsNaN(lng) &&
-		!math.IsInf(lat, 0) &&
-		!math.IsInf(lng, 0) &&
-		lat != 0 &&
-		lng != 0 &&
-		lat >= 41 &&
-		lat <= 84 &&
-		lng >= -142 &&
-		lng <= -52
+	return live.ValidPublicCoords(lat, lng)
 }
 
 func nodeEndpoint(n live.Node) live.EdgeEndpoint {

@@ -11,16 +11,17 @@ import (
 )
 
 type PublicNode struct {
-	ID            string   `json:"id"`
-	Label         string   `json:"label"`
-	Role          string   `json:"role"`
-	IsObserver    bool     `json:"isObserver,omitempty"`
-	Latitude      float64  `json:"latitude"`
-	Longitude     float64  `json:"longitude"`
-	LastSeen      int64    `json:"lastSeen"`
-	FirstSeen     int64    `json:"firstSeen"`
-	IATAsHeardIn  []string `json:"iatasHeardIn"`
-	ActivityCount int64    `json:"activityCount"`
+	ID             string   `json:"id"`
+	Label          string   `json:"label"`
+	Role           string   `json:"role"`
+	IsObserver     bool     `json:"isObserver,omitempty"`
+	Latitude       float64  `json:"latitude"`
+	Longitude      float64  `json:"longitude"`
+	LastSeen       int64    `json:"lastSeen"`
+	FirstSeen      int64    `json:"firstSeen"`
+	IATAsHeardIn   []string `json:"iatasHeardIn"`
+	RegionsHeardIn []string `json:"regionsHeardIn,omitempty"`
+	ActivityCount  int64    `json:"activityCount"`
 }
 
 type PublicRouteEndpoint struct {
@@ -55,6 +56,7 @@ type PublicActivity struct {
 	PayloadTypeName  string                  `json:"payloadTypeName"`
 	RouteTypeName    string                  `json:"routeTypeName,omitempty"`
 	IATA             string                  `json:"iata,omitempty"`
+	Region           string                  `json:"region,omitempty"`
 	HeardAt          int64                   `json:"heardAt"`
 	HopCount         int                     `json:"hopCount"`
 	HasRoute         bool                    `json:"hasRoute"`
@@ -69,10 +71,11 @@ type PublicActivity struct {
 }
 
 type PublicObserverLocation struct {
-	Label string  `json:"label"`
-	IATA  string  `json:"iata,omitempty"`
-	Lat   float64 `json:"lat"`
-	Lng   float64 `json:"lng"`
+	Label  string  `json:"label"`
+	IATA   string  `json:"iata,omitempty"`
+	Region string  `json:"region,omitempty"`
+	Lat    float64 `json:"lat"`
+	Lng    float64 `json:"lng"`
 }
 
 type PublicMessageAnchor struct {
@@ -86,6 +89,7 @@ type PublicMessageAnchor struct {
 type PublicRoutePulse struct {
 	ID              string               `json:"id"`
 	IATA            string               `json:"iata,omitempty"`
+	Region          string               `json:"region,omitempty"`
 	PayloadTypeName string               `json:"payloadTypeName"`
 	MessageSender   string               `json:"messageSender,omitempty"`
 	MessageText     string               `json:"messageText,omitempty"`
@@ -98,6 +102,7 @@ type PublicPacketPath struct {
 	ID              string               `json:"id"`
 	At              int64                `json:"at"`
 	IATA            string               `json:"iata,omitempty"`
+	Region          string               `json:"region,omitempty"`
 	PayloadTypeName string               `json:"payloadTypeName"`
 	MessageSender   string               `json:"messageSender,omitempty"`
 	MessageText     string               `json:"messageText,omitempty"`
@@ -126,15 +131,25 @@ type PublicStats struct {
 	ServerTime        int64                       `json:"serverTime"`
 	ResolutionBuckets map[string]map[string]int64 `json:"resolutionBuckets,omitempty"`
 	ExcludedIATAs     map[string]int64            `json:"excludedIatas,omitempty"`
+	ExcludedRegions   map[string]int64            `json:"excludedRegions,omitempty"`
 }
 
 type PublicLiveState struct {
 	ServerTime     int64              `json:"serverTime"`
+	Map            PublicMapConfig    `json:"map,omitempty"`
 	Stats          PublicStats        `json:"stats"`
 	Nodes          []PublicNode       `json:"nodes"`
 	Routes         []PublicRoute      `json:"routes"`
 	RecentPulses   []PublicRoutePulse `json:"recentPulses,omitempty"`
 	RecentActivity []PublicActivity   `json:"recentActivity"`
+}
+
+type PublicMapConfig struct {
+	RegionPreset  string           `json:"regionPreset,omitempty"`
+	DefaultRegion string           `json:"defaultRegion,omitempty"`
+	DefaultCenter []float64        `json:"defaultCenter,omitempty"`
+	DefaultZoom   float64          `json:"defaultZoom,omitempty"`
+	Bounds        CoordinateBounds `json:"bounds,omitempty"`
 }
 
 type PublicHistoryEvent struct {
@@ -218,15 +233,16 @@ func PublicNodeFromNode(node Node) (PublicNode, bool) {
 		return PublicNode{}, false
 	}
 	return PublicNode{
-		ID:            node.NodeID,
-		Label:         displayLabel(node.Name, node.Role),
-		Role:          normalizeRole(node.Role),
-		Latitude:      *node.Latitude,
-		Longitude:     *node.Longitude,
-		LastSeen:      node.LastSeen,
-		FirstSeen:     node.FirstSeen,
-		IATAsHeardIn:  append([]string{}, node.IATAsHeardIn...),
-		ActivityCount: node.ObservationCount,
+		ID:             node.NodeID,
+		Label:          displayLabel(node.Name, node.Role),
+		Role:           normalizeRole(node.Role),
+		Latitude:       *node.Latitude,
+		Longitude:      *node.Longitude,
+		LastSeen:       node.LastSeen,
+		FirstSeen:      node.FirstSeen,
+		IATAsHeardIn:   append([]string{}, node.IATAsHeardIn...),
+		RegionsHeardIn: append([]string{}, node.IATAsHeardIn...),
+		ActivityCount:  node.ObservationCount,
 	}, true
 }
 
@@ -240,16 +256,17 @@ func PublicNodeFromObserver(observer Observer) (PublicNode, bool) {
 		iatas = append(iatas, iata)
 	}
 	return PublicNode{
-		ID:            publicObserverNodeID(observer),
-		Label:         publicObserverLabel(observer.Name, observer.IATA),
-		Role:          "unknown",
-		IsObserver:    true,
-		Latitude:      *observer.Latitude,
-		Longitude:     *observer.Longitude,
-		LastSeen:      observer.LastSeen,
-		FirstSeen:     observer.LastSeen,
-		IATAsHeardIn:  iatas,
-		ActivityCount: observer.PacketCount,
+		ID:             publicObserverNodeID(observer),
+		Label:          publicObserverLabel(observer.Name, observer.IATA),
+		Role:           "unknown",
+		IsObserver:     true,
+		Latitude:       *observer.Latitude,
+		Longitude:      *observer.Longitude,
+		LastSeen:       observer.LastSeen,
+		FirstSeen:      observer.LastSeen,
+		IATAsHeardIn:   iatas,
+		RegionsHeardIn: append([]string{}, iatas...),
+		ActivityCount:  observer.PacketCount,
 	}, true
 }
 
@@ -295,6 +312,7 @@ func PublicActivityFromPacket(packet PacketObservation, routeIDs []string, obser
 		PayloadTypeName:  packet.PayloadTypeName,
 		RouteTypeName:    packet.RouteTypeName,
 		IATA:             packet.IATA,
+		Region:           packet.IATA,
 		HeardAt:          packet.HeardAt,
 		HopCount:         packet.HopCount,
 		HasRoute:         hasRoute,
@@ -336,6 +354,7 @@ func PublicRoutePulseFromEdge(edge EdgeEvent, pathHash3Indexes ...map[string]str
 	return PublicRoutePulse{
 		ID:              fmt.Sprintf("pulse-%d", edge.ID),
 		IATA:            strings.ToUpper(edge.IATA),
+		Region:          strings.ToUpper(edge.IATA),
 		PayloadTypeName: edge.PayloadTypeName,
 		MessageSender:   publicMessageSender(edge.MessageSender),
 		MessageText:     messageText,
@@ -372,6 +391,7 @@ func PublicPacketPathFromPulse(pulse PublicRoutePulse) (PublicPacketPath, bool) 
 		ID:              strings.TrimSpace(pulse.ID),
 		At:              pulse.HeardAt,
 		IATA:            strings.ToUpper(strings.TrimSpace(pulse.IATA)),
+		Region:          strings.ToUpper(strings.TrimSpace(pulse.IATA)),
 		PayloadTypeName: strings.TrimSpace(pulse.PayloadTypeName),
 		MessageSender:   publicMessageSender(pulse.MessageSender),
 		MessageText:     publicMessageText(pulse.MessageText),
@@ -409,6 +429,7 @@ func PublicActivityFromEdge(edge EdgeEvent) (PublicActivity, bool) {
 		RouteIDs:         uniqueSorted(routeIDs),
 		EndpointLabels:   uniqueConsecutive(labels),
 		IATA:             strings.ToUpper(edge.IATA),
+		Region:           strings.ToUpper(edge.IATA),
 		MessageSender:    publicMessageSender(edge.MessageSender),
 		MessageText:      publicMessageText(edge.MessageText),
 		MessageAnchor:    pulse.MessageAnchor,
@@ -438,10 +459,11 @@ func BuildPublicObserverLocationIndex(nodes []Node, observers []Observer) Public
 			continue
 		}
 		out[observerLocationKey(observer.PublicKey, observer.IATA)] = PublicObserverLocation{
-			Label: publicObserverLabel(observer.Name, observer.IATA),
-			IATA:  strings.ToUpper(observer.IATA),
-			Lat:   *observer.Latitude,
-			Lng:   *observer.Longitude,
+			Label:  publicObserverLabel(observer.Name, observer.IATA),
+			IATA:   strings.ToUpper(observer.IATA),
+			Region: strings.ToUpper(observer.IATA),
+			Lat:    *observer.Latitude,
+			Lng:    *observer.Longitude,
 		}
 	}
 	for _, node := range nodes {
@@ -458,6 +480,7 @@ func BuildPublicObserverLocationIndex(nodes []Node, observers []Observer) Public
 		}
 		for _, iata := range node.IATAsHeardIn {
 			location.IATA = strings.ToUpper(iata)
+			location.Region = strings.ToUpper(iata)
 			if _, exists := out[observerLocationKey(node.PublicKey, iata)]; !exists {
 				out[observerLocationKey(node.PublicKey, iata)] = location
 			}
@@ -476,6 +499,7 @@ func (i PublicObserverLocationIndex) LocationForPublicKey(publicKey string, iata
 	if location, ok := i[observerLocationKey(publicKey, "")]; ok {
 		if location.IATA == "" {
 			location.IATA = strings.ToUpper(iata)
+			location.Region = strings.ToUpper(iata)
 		}
 		return &location
 	}
@@ -491,10 +515,11 @@ func PublicObserverLocationFromNode(node Node, iata string) *PublicObserverLocat
 		return nil
 	}
 	return &PublicObserverLocation{
-		Label: displayLabel(node.Name, node.Role),
-		IATA:  strings.ToUpper(iata),
-		Lat:   *node.Latitude,
-		Lng:   *node.Longitude,
+		Label:  displayLabel(node.Name, node.Role),
+		IATA:   strings.ToUpper(iata),
+		Region: strings.ToUpper(iata),
+		Lat:    *node.Latitude,
+		Lng:    *node.Longitude,
 	}
 }
 
@@ -503,10 +528,11 @@ func PublicObserverLocationFromObserver(observer Observer) *PublicObserverLocati
 		return nil
 	}
 	return &PublicObserverLocation{
-		Label: publicObserverLabel(observer.Name, observer.IATA),
-		IATA:  strings.ToUpper(observer.IATA),
-		Lat:   *observer.Latitude,
-		Lng:   *observer.Longitude,
+		Label:  publicObserverLabel(observer.Name, observer.IATA),
+		IATA:   strings.ToUpper(observer.IATA),
+		Region: strings.ToUpper(observer.IATA),
+		Lat:    *observer.Latitude,
+		Lng:    *observer.Longitude,
 	}
 }
 
@@ -768,16 +794,7 @@ func validEndpoint(endpoint EdgeEndpoint) bool {
 }
 
 func validPublicCoords(lat float64, lng float64) bool {
-	return !math.IsNaN(lat) &&
-		!math.IsNaN(lng) &&
-		!math.IsInf(lat, 0) &&
-		!math.IsInf(lng, 0) &&
-		lat != 0 &&
-		lng != 0 &&
-		lat >= 41 &&
-		lat <= 84 &&
-		lng >= -142 &&
-		lng <= -52
+	return ValidPublicCoords(lat, lng)
 }
 
 func frequencyBucket(count int, maxCount int) int {

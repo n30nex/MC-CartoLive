@@ -30,13 +30,13 @@ const packet = (overrides: Partial<PublicPacketPath> = {}): PublicPacketPath => 
 });
 
 describe('packet page helpers', () => {
-  it('filters true path packets by search, IATA, payload, hop count, and message presence', () => {
+  it('filters true path packets by search, region, payload, hop count, and message presence', () => {
     const items = [
       packet({ messageText: 'hello mesh' }),
-      packet({ id: 'pulse-2', iata: 'YOW', payloadTypeName: 'TRACE', hopCount: 1, endpointLabels: ['Delta'], messageText: '' })
+      packet({ id: 'pulse-2', iata: 'YOW', region: 'r2', payloadTypeName: 'TRACE', hopCount: 1, endpointLabels: ['Delta'], messageText: '' })
     ];
     expect(filterPackets(items, { ...DEFAULT_PACKET_FILTERS, query: 'hello' }).map((item) => item.id)).toEqual(['pulse-1']);
-    expect(filterPackets(items, { ...DEFAULT_PACKET_FILTERS, iata: 'YOW' }).map((item) => item.id)).toEqual(['pulse-2']);
+    expect(filterPackets(items, { ...DEFAULT_PACKET_FILTERS, iata: 'r2' }).map((item) => item.id)).toEqual(['pulse-2']);
     expect(filterPackets(items, { ...DEFAULT_PACKET_FILTERS, payload: 'TRACE' }).map((item) => item.id)).toEqual(['pulse-2']);
     expect(filterPackets(items, { ...DEFAULT_PACKET_FILTERS, minHops: 2 }).map((item) => item.id)).toEqual(['pulse-1']);
     expect(filterPackets(items, { ...DEFAULT_PACKET_FILTERS, messageOnly: true }).map((item) => item.id)).toEqual(['pulse-1']);

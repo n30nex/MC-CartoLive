@@ -9,7 +9,7 @@ describe('NetGraphPanel', () => {
     );
     expect(html).toContain('NetGraph');
     expect(html).toContain('Live Network Graph');
-    expect(html).toContain('Search nodes, routes, IATA');
+    expect(html).toContain('Search nodes, routes, region');
     expect(html).toContain('Close');
     expect(html).not.toContain('packet hash');
     expect(html).not.toContain('raw path');

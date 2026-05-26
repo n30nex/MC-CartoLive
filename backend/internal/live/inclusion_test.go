@@ -9,7 +9,7 @@ func TestPublicMapInclusionReasons(t *testing.T) {
 	lat := 43.65
 	lng := -79.38
 	zero := 0.0
-	outside := 12.0
+	outside := 89.0
 	nan := math.NaN()
 	filter := NewPublicIATAFilter([]string{"YYZ"})
 
@@ -57,6 +57,19 @@ func TestPublicMapInclusionReasons(t *testing.T) {
 				t.Fatalf("PublicNodeMapInclusion() = %#v, want %#v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCoordinatePolicyPresets(t *testing.T) {
+	australiaLat := -33.86
+	australiaLng := 151.21
+	world := NewCoordinatePolicy(WorldCoordinateBounds())
+	if !world.Valid(australiaLat, australiaLng) {
+		t.Fatalf("world coordinate policy rejected Sydney coordinates")
+	}
+	canada := NewCoordinatePolicy(CanadaCoordinateBounds())
+	if canada.Valid(australiaLat, australiaLng) {
+		t.Fatalf("Canada coordinate policy accepted Sydney coordinates")
 	}
 }
 

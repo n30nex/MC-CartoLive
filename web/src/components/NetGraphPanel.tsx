@@ -572,7 +572,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
         <div className="netgraph-toolbar">
           <label className="netgraph-search">
             <Search size={15} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search nodes, routes, IATA" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search nodes, routes, region" />
           </label>
           <button type="button" onClick={fitGraph} title="Fit graph">
             <Maximize2 size={16} />
@@ -653,7 +653,7 @@ function NetGraphInspector({
             <div><dt>Observer</dt><dd>{selectedNode.isObserver ? 'Yes' : 'No'}</dd></div>
             <div><dt>Direct routes</dt><dd>{directRouteCount.toLocaleString()}</dd></div>
             <div><dt>Activity</dt><dd>{selectedNode.activityCount.toLocaleString()} packets</dd></div>
-            <div><dt>IATA</dt><dd>{selectedNode.iatasHeardIn.join(', ') || 'unknown'}</dd></div>
+            <div><dt>Region</dt><dd>{selectedNode.iatasHeardIn.join(', ') || 'unknown'}</dd></div>
             <div><dt>Last seen</dt><dd>{formatAge(Date.now() - selectedNode.lastSeen)}</dd></div>
           </dl>
         </>

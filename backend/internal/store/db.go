@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"meshcore-canada-live-map/backend/internal/live"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -16,8 +18,9 @@ import (
 var schemaSQL string
 
 type Store struct {
-	db   *sql.DB
-	path string
+	db               *sql.DB
+	path             string
+	coordinatePolicy live.CoordinatePolicy
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {
@@ -30,7 +33,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(4)
 	db.SetMaxIdleConns(4)
-	s := &Store{db: db, path: path}
+	s := &Store{db: db, path: path, coordinatePolicy: live.CurrentCoordinatePolicy()}
 	if err := s.Migrate(ctx); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -44,7 +47,7 @@ func OpenMemory(ctx context.Context) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db, path: "file::memory:?cache=shared"}
+	s := &Store{db: db, path: "file::memory:?cache=shared", coordinatePolicy: live.CurrentCoordinatePolicy()}
 	if err := s.Migrate(ctx); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -84,6 +87,20 @@ func sqliteDSN(path string) string {
 
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+func (s *Store) SetCoordinatePolicy(policy live.CoordinatePolicy) {
+	if s == nil {
+		return
+	}
+	s.coordinatePolicy = live.NewCoordinatePolicy(policy.Bounds)
+}
+
+func (s *Store) coordPolicy() live.CoordinatePolicy {
+	if s == nil {
+		return live.CurrentCoordinatePolicy()
+	}
+	return live.NewCoordinatePolicy(s.coordinatePolicy.Bounds)
 }
 
 func (s *Store) Ping(ctx context.Context) error {

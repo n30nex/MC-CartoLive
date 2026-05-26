@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"math"
 	"strings"
 	"time"
 
@@ -16,13 +15,10 @@ import (
 	"meshcore-canada-live-map/backend/internal/resolve"
 )
 
-const mappableCoordinatesSQL = `latitude IS NOT NULL AND longitude IS NOT NULL AND latitude != 0 AND longitude != 0 AND latitude BETWEEN 41 AND 84 AND longitude BETWEEN -142 AND -52`
-const mappableNodeCoordinatesSQL = `n.latitude IS NOT NULL AND n.longitude IS NOT NULL AND n.latitude != 0 AND n.longitude != 0 AND n.latitude BETWEEN 41 AND 84 AND n.longitude BETWEEN -142 AND -52`
-
 func (s *Store) UpsertAdvertNode(ctx context.Context, iata string, advert meshcore.Advert, heardAt int64) (live.Node, error) {
 	nodeID := uuid.NewString()
 	name := advert.Name
-	lat, lng := nullableMapLatLng(advert.Latitude, advert.Longitude)
+	lat, lng := s.nullableMapLatLng(advert.Latitude, advert.Longitude)
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO nodes (
   node_id, public_key, name, node_type, role, latitude, longitude, location_source,
@@ -65,7 +61,7 @@ ON CONFLICT(public_key) DO UPDATE SET
 
 func (s *Store) UpsertObserver(ctx context.Context, msg mq.NormalizedMessage) error {
 	lat, lng := mq.StatusLatLng(msg.Payload)
-	dbLat, dbLng := nullableMapLatLng(lat, lng)
+	dbLat, dbLng := s.nullableMapLatLng(lat, lng)
 	name := msg.ObserverName
 	if name == "" {
 		name = firstPayloadString(msg.Payload, "origin", "name", "node_name")
@@ -107,7 +103,7 @@ VALUES (?, ?, ?, ?)`,
 func (s *Store) upsertStatusNode(ctx context.Context, msg mq.NormalizedMessage, name string, lat, lng *float64) error {
 	role, nodeType := observerRole(msg.Payload, name)
 	locationSource := ""
-	dbLat, dbLng := nullableMapLatLng(lat, lng)
+	dbLat, dbLng := s.nullableMapLatLng(lat, lng)
 	if dbLat.Valid && dbLng.Valid {
 		locationSource = "status"
 	}
@@ -195,7 +191,7 @@ FROM nodes n`
 		args = append(args, strings.ToUpper(iata))
 	}
 	if positioned {
-		where = append(where, mappableNodeCoordinatesSQL)
+		where = append(where, s.coordPolicy().SQL("n.latitude", "n.longitude"))
 	}
 	if len(where) > 0 {
 		query += ` WHERE ` + strings.Join(where, ` AND `)
@@ -498,7 +494,7 @@ func observerRole(m map[string]any, name string) (string, int) {
 }
 
 func (s *Store) ApplyManualNode(ctx context.Context, publicKey, name string, lat, lng float64, source string) error {
-	if !validMapCoords(lat, lng) {
+	if !s.validMapCoords(lat, lng) {
 		return nil
 	}
 	now := time.Now().UnixMilli()
@@ -524,22 +520,13 @@ func EncodeSegments(segments []live.EdgeSegment) string {
 	return string(b)
 }
 
-func nullableMapLatLng(lat, lng *float64) (sql.NullFloat64, sql.NullFloat64) {
-	if lat == nil || lng == nil || !validMapCoords(*lat, *lng) {
+func (s *Store) nullableMapLatLng(lat, lng *float64) (sql.NullFloat64, sql.NullFloat64) {
+	if lat == nil || lng == nil || !s.validMapCoords(*lat, *lng) {
 		return sql.NullFloat64{}, sql.NullFloat64{}
 	}
 	return nullableFloat(lat), nullableFloat(lng)
 }
 
-func validMapCoords(lat float64, lng float64) bool {
-	return !math.IsNaN(lat) &&
-		!math.IsNaN(lng) &&
-		!math.IsInf(lat, 0) &&
-		!math.IsInf(lng, 0) &&
-		lat != 0 &&
-		lng != 0 &&
-		lat >= 41 &&
-		lat <= 84 &&
-		lng >= -142 &&
-		lng <= -52
+func (s *Store) validMapCoords(lat float64, lng float64) bool {
+	return s.coordPolicy().Valid(lat, lng)
 }

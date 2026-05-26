@@ -77,7 +77,7 @@ import {
   type ThemeMode,
   type ThemePalette
 } from './theme';
-import type { PublicActivity, PublicHistorySummaryBucket, PublicLiveEnvelope, PublicPacketPath } from './types';
+import type { PublicActivity, PublicHistorySummaryBucket, PublicLiveEnvelope, PublicMapConfig, PublicPacketPath } from './types';
 
 interface VcrUiState {
   mode: VcrMode;
@@ -102,6 +102,7 @@ const VCR_MAX_REPLAY_EVENTS = 2000;
 export default function App() {
   const sharedViewRef = useRef(parseSharedView(window.location.search));
   const [state, setState] = useState<AppState>(emptyState);
+  const [publicMapConfig, setPublicMapConfig] = useState<PublicMapConfig | null>(null);
   const [socketStatus, setSocketStatus] = useState('starting');
   const [paused, setPaused] = useState(false);
   const [followTraffic, setFollowTraffic] = useState(false);
@@ -271,6 +272,7 @@ export default function App() {
     fetchPublicState()
       .then((liveState) => {
         if (vcrModeRef.current !== 'live') return;
+        setPublicMapConfig(liveState.map ?? null);
         setState(initialAppState(liveState));
         if ((liveState.nodes?.length ?? 0) > 0) {
           setInitialNodesReceived(true);
@@ -448,6 +450,7 @@ export default function App() {
       fetchPublicState()
         .then((liveState) => {
           if (cancelled) return;
+          setPublicMapConfig(liveState.map ?? null);
           setState(initialAppState(liveState));
           if ((liveState.nodes?.length ?? 0) > 0) {
             setInitialNodesReceived(true);
@@ -505,6 +508,7 @@ export default function App() {
       fetchPublicState().then((liveState) => {
         if (!active) return;
         if (vcrModeRef.current !== 'live') return;
+        setPublicMapConfig(liveState.map ?? null);
         setState(initialAppState(liveState));
         if ((liveState.nodes?.length ?? 0) > 0) {
           setInitialNodesReceived(true);
@@ -569,6 +573,7 @@ export default function App() {
         .then((liveState) => {
           if (!active) return;
           if (vcrModeRef.current !== 'live') return;
+          setPublicMapConfig(liveState.map ?? null);
           setState(initialAppState(liveState));
           if ((liveState.nodes?.length ?? 0) > 0) {
             setInitialNodesReceived(true);
@@ -915,6 +920,7 @@ export default function App() {
         baseMode={mapBaseMode}
         themeMode={themeMode}
         initialView={sharedViewRef.current}
+        mapConfig={publicMapConfig}
         loading={loadingPositionedNodes}
         onPositionedNodesRendered={handlePositionedNodesRendered}
         onViewChange={handleViewChange}

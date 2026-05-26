@@ -25,6 +25,7 @@ export const DEFAULT_PACKET_FILTERS: PacketFilters = {
 export function packetSearchFields(packet: PublicPacketPath): string[] {
   return [
     packet.id,
+    packet.region ?? '',
     packet.iata ?? '',
     packet.payloadTypeName,
     packet.messageSender ?? '',
@@ -37,7 +38,7 @@ export function packetSearchFields(packet: PublicPacketPath): string[] {
 
 export function packetMatchesFilters(packet: PublicPacketPath, filters: PacketFilters): boolean {
   const query = filters.query.trim().toLowerCase();
-  if (filters.iata && (packet.iata ?? '').toUpperCase() !== filters.iata.toUpperCase()) return false;
+  if (filters.iata && packetRegion(packet).toUpperCase() !== filters.iata.toUpperCase()) return false;
   if (filters.payload && packet.payloadTypeName.toUpperCase() !== filters.payload.toUpperCase()) return false;
   if (filters.minHops > 0 && packet.hopCount < filters.minHops) return false;
   if (filters.messageOnly && !packet.messageText?.trim()) return false;
@@ -53,6 +54,7 @@ export function packetToPulse(packet: PublicPacketPath, now = Date.now(), replay
   return {
     id: `${packet.id}-replay-${now}`,
     iata: packet.iata,
+    region: packet.region ?? packet.iata,
     payloadTypeName: packet.payloadTypeName,
     messageSender: packet.messageSender,
     messageText: packet.messageText,
@@ -62,6 +64,10 @@ export function packetToPulse(packet: PublicPacketPath, now = Date.now(), replay
     segments: packet.segments,
     replayOptions
   };
+}
+
+export function packetRegion(packet: Pick<PublicPacketPath, 'region' | 'iata'>): string {
+  return packet.region ?? packet.iata ?? '';
 }
 
 export function packetRouteIDs(packet: PublicPacketPath | null): Set<string> {

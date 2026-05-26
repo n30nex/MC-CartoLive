@@ -4,7 +4,8 @@ param(
   [string]$KeyPath = (Join-Path $env:USERPROFILE ".ssh\neonx"),
   [string]$RepoPath = "/opt/MC-CartoLive",
   [string]$Service = "meshcore-live-map",
-  [string]$DiagnoseIata = "YTR",
+  [Alias("DiagnoseIata")]
+  [string]$DiagnoseRegion = "YTR",
   [string]$ExpectedVersion = "",
   [string]$ExpectedGitSha = "",
   [string]$ExpectedBuildTime = ""
@@ -121,7 +122,7 @@ test -n "$cid"
 echo "containerId=$cid"
 echo "containerHealth=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cid")"
 docker compose ps "__SERVICE__"
-docker compose exec -T "__SERVICE__" sh -lc '/app/mc-diagnose --db /app/data/meshcore-live.db --iata "$1" --public-iatas "$PUBLIC_IATAS"' sh "__IATA__"
+docker compose exec -T "__SERVICE__" sh -lc 'regions="${PUBLIC_REGIONS:-${PUBLIC_IATAS:-}}"; /app/mc-diagnose --db /app/data/meshcore-live.db --region "$1" --public-regions "$regions"' sh "__IATA__"
 '@
   $remoteScript = $remoteScript.Replace("__REPO_PATH__", $RemoteRepo).Replace("__SERVICE__", $ComposeService).Replace("__IATA__", $Iata)
 
@@ -182,7 +183,7 @@ try {
   Assert-Smoke ($hello.seq -gt 0) "WebSocket hello sequence was not positive"
   Write-Pass "WebSocket hello seq=$($hello.seq)"
 
-  $remote = Invoke-RemoteSmoke $SshTarget $KeyPath $RepoPath $Service $DiagnoseIata
+  $remote = Invoke-RemoteSmoke $SshTarget $KeyPath $RepoPath $Service $DiagnoseRegion
   if (-not [string]::IsNullOrWhiteSpace($ExpectedGitSha)) {
     Assert-Smoke ($remote -match "gitSha=$([regex]::Escape($ExpectedGitSha))") "remote git SHA did not match expected $ExpectedGitSha"
   }
@@ -191,7 +192,7 @@ try {
   $diagnosticStart = $remote.IndexOf("MC-CartoLive operator diagnostic")
   $diagnosticText = $remote.Substring($diagnosticStart)
   Assert-Smoke (-not ($diagnosticText -match "\b[0-9A-Fa-f]{64}\b")) "mc-diagnose output included a raw 64-character hex identifier"
-  Write-Pass "remote container healthy and mc-diagnose ran for $DiagnoseIata"
+  Write-Pass "remote container healthy and mc-diagnose ran for $DiagnoseRegion"
 
   $summary = [ordered]@{
     baseUrl = $BaseUrl
@@ -208,7 +209,7 @@ try {
     packetPaths = $packets.window.count
     websocketType = $hello.type
     remoteTarget = $SshTarget
-    diagnoseIata = $DiagnoseIata
+    diagnoseRegion = $DiagnoseRegion
   }
   $summary | ConvertTo-Json -Depth 4
   Write-Pass "live smoke complete"

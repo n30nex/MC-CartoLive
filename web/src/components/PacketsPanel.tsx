@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Clock3, Copy, Filter, MessageSquareText, Play, RefreshCw, Route, Search, X } from 'lucide-react';
 import { fetchPublicPackets } from '../api';
-import { DEFAULT_PACKET_FILTERS, packetEndpointSummary, PACKETS_SCOPE_OPTIONS, packetWindowForScope, type PacketFilters } from '../packets';
+import { DEFAULT_PACKET_FILTERS, packetEndpointSummary, PACKETS_SCOPE_OPTIONS, packetRegion, packetWindowForScope, type PacketFilters } from '../packets';
 import { payloadLegendVisuals, payloadVisual } from '../payloadVisuals';
 import type { PublicHistoryWindow, PublicPacketPath } from '../types';
 
@@ -215,7 +215,7 @@ export default function PacketsPanel({
           <span>Region</span>
           <input
             value={filters.iata}
-            maxLength={8}
+            maxLength={16}
             onChange={(event) => setFilters((current) => ({ ...current, iata: normalizeIataFilter(event.target.value) }))}
             placeholder="Any"
             aria-label="Filter packet region"
@@ -310,7 +310,7 @@ function PacketRow({
           <em>{formatRelative(packet.at)}</em>
         </span>
         <span className="packet-row-meta">
-          <span>{packet.iata || 'unknown'}</span>
+          <span>{packetRegion(packet) || 'unknown'}</span>
           <span>{packet.hopCount} {packet.hopCount === 1 ? 'hop' : 'hops'}</span>
           <span>{packet.distanceKm.toFixed(1)} km</span>
           <span>{packet.segmentCount} {packet.segmentCount === 1 ? 'segment' : 'segments'}</span>
@@ -360,7 +360,7 @@ function PacketDetail({
         <strong>{packetEndpointSummary(packet)}</strong>
       </div>
       <dl className="packet-detail-grid">
-        <div><dt>IATA</dt><dd>{packet.iata || 'unknown'}</dd></div>
+        <div><dt>Region</dt><dd>{packetRegion(packet) || 'unknown'}</dd></div>
         <div><dt>Heard</dt><dd>{new Date(packet.at).toLocaleString()}</dd></div>
         <div><dt>Age</dt><dd>{formatRelative(packet.at)}</dd></div>
         <div><dt>Path</dt><dd>{packet.hopCount} hops / {packet.segmentCount} segments</dd></div>
@@ -414,12 +414,12 @@ function dedupePackets(items: PublicPacketPath[]): PublicPacketPath[] {
 }
 
 function normalizeIataFilter(value: string): string {
-  return value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+  return value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 16);
 }
 
 function filtersToParams(filters: PacketFilters) {
   return {
-    iata: filters.iata || undefined,
+    region: filters.iata || undefined,
     payload: filters.payload || undefined,
     minHops: filters.minHops || undefined,
     messageOnly: filters.messageOnly || undefined,

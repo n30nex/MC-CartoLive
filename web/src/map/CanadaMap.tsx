@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import maplibregl from 'maplibre-gl';
-import type { PublicMessageAnchor, PublicNode, PublicObserverBurst, PublicRoute, PublicRoutePulse } from '../types';
+import type { PublicMapConfig, PublicMessageAnchor, PublicNode, PublicObserverBurst, PublicRoute, PublicRoutePulse } from '../types';
 import { routeAssetIcons } from '../assets/routes/assets';
 import { parseSharedView, type MapViewState, type SharedViewState } from '../shareView';
 import { normalizePayloadType, payloadVisual } from '../payloadVisuals';
@@ -89,6 +89,7 @@ interface Props {
   baseMode: MapBaseMode;
   themeMode: MapThemeMode;
   initialView: SharedViewState | null;
+  mapConfig?: PublicMapConfig | null;
   loading: boolean;
   onPositionedNodesRendered: () => void;
   onViewChange: (view: MapViewState) => void;
@@ -192,6 +193,7 @@ const DEFAULT_OPENFREEMAP_MAP_BEARING = -11;
 const DEFAULT_OPENFREEMAP_STYLE_URL = '';
 const DEFAULT_OPENFREEMAP_TILEJSON_URL = 'https://tiles.openfreemap.org/planet';
 const DEFAULT_TERRAIN_TILEJSON_URL = 'https://demotiles.maplibre.org/terrain-tiles/tiles.json';
+const DEFAULT_WORLD_CENTER = { lat: 20, lng: 0, z: 1.8 };
 const OPENFREEMAP_STYLE_URL = envURL('VITE_OPENFREEMAP_STYLE_URL', DEFAULT_OPENFREEMAP_STYLE_URL);
 const OPENFREEMAP_TILEJSON_URL = envURL('VITE_OPENFREEMAP_TILEJSON_URL', DEFAULT_OPENFREEMAP_TILEJSON_URL);
 const TERRAIN_TILEJSON_URL = envURL('VITE_TERRAIN_TILEJSON_URL', DEFAULT_TERRAIN_TILEJSON_URL);
@@ -957,6 +959,14 @@ function defaultBearingForMode(mode: MapBaseMode): number {
   return mode === 'openfreemap' ? DEFAULT_OPENFREEMAP_MAP_BEARING : DEFAULT_ORIGINAL_MAP_BEARING;
 }
 
+function defaultMapViewFromConfig(config?: PublicMapConfig | null): MapViewState {
+  const center = config?.defaultCenter;
+  const lng = Array.isArray(center) && Number.isFinite(center[0]) ? center[0] : DEFAULT_WORLD_CENTER.lng;
+  const lat = Array.isArray(center) && Number.isFinite(center[1]) ? center[1] : DEFAULT_WORLD_CENTER.lat;
+  const z = Number.isFinite(config?.defaultZoom) ? Number(config?.defaultZoom) : DEFAULT_WORLD_CENTER.z;
+  return { lat, lng, z };
+}
+
 export default function CanadaMap({
   nodes,
   routes,
@@ -977,6 +987,7 @@ export default function CanadaMap({
   baseMode,
   themeMode,
   initialView,
+  mapConfig,
   loading,
   onPositionedNodesRendered,
   onViewChange,
@@ -988,8 +999,9 @@ export default function CanadaMap({
   const [hoveredNode, setHoveredNode] = useState<HoveredNodeToast | null>(null);
   const [screenNodeLabels, setScreenNodeLabels] = useState<ScreenNodeLabel[]>([]);
   const [messageBubbles, setMessageBubbles] = useState<MessageBubble[]>([]);
-  const [mapZoom, setMapZoom] = useState(3.35);
-  const [mapCenter, setMapCenter] = useState({ lat: 56.1304, lng: -106.3468 });
+  const initialDefaultView = defaultMapViewFromConfig(mapConfig);
+  const [mapZoom, setMapZoom] = useState(initialDefaultView.z);
+  const [mapCenter, setMapCenter] = useState({ lat: initialDefaultView.lat, lng: initialDefaultView.lng });
   const [mapInitError, setMapInitError] = useState('');
   const [nodeLabelClock, setNodeLabelClock] = useState(() => Date.now());
   const nodeFocus = useMemo(
@@ -1031,6 +1043,8 @@ export default function CanadaMap({
   const pageHiddenRef = useRef(typeof document !== 'undefined' ? document.hidden : false);
   const pausedRef = useRef(paused);
   const initialViewRef = useRef(initialView);
+  const mapConfigRef = useRef(mapConfig);
+  const mapConfigAppliedRef = useRef(false);
   const baseModeRef = useRef<MapBaseMode>(baseMode);
   const nodesRef = useRef(nodes);
   const routesRef = useRef(routes);
@@ -1197,6 +1211,15 @@ export default function CanadaMap({
   }, [nodes]);
 
   useEffect(() => {
+    mapConfigRef.current = mapConfig;
+    const map = mapRef.current;
+    if (!map || initialViewRef.current || mapConfigAppliedRef.current || !mapConfig) return;
+    const view = defaultMapViewFromConfig(mapConfig);
+    mapConfigAppliedRef.current = true;
+    map.easeTo({ center: [view.lng, view.lat], zoom: view.z, duration: 0 });
+  }, [mapConfig]);
+
+  useEffect(() => {
     routesRef.current = routes;
   }, [routes]);
 
@@ -1254,15 +1277,16 @@ export default function CanadaMap({
   useEffect(() => {
     if (!containerRef.current || !canvasRef.current || mapRef.current) return;
     const startupView = initialViewRef.current ?? parseSharedView(window.location.search);
+    const defaultView = defaultMapViewFromConfig(mapConfigRef.current);
     if (startupView) initialViewRef.current = startupView;
     if (startupView) fitInitialNodesRef.current = true;
-    setMapZoom(Number((startupView?.z ?? 3.35).toFixed(2)));
+    setMapZoom(Number((startupView?.z ?? defaultView.z).toFixed(2)));
     const initialStyle = mapStyleForMode(baseModeRef.current, themeModeRef.current);
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: initialStyle,
-      center: startupView ? [startupView.lng, startupView.lat] : [-106.3468, 56.1304],
-      zoom: startupView?.z ?? 3.35,
+      center: startupView ? [startupView.lng, startupView.lat] : [defaultView.lng, defaultView.lat],
+      zoom: startupView?.z ?? defaultView.z,
       pitch: startupView?.pitch ?? defaultPitchForMode(baseModeRef.current),
       bearing: startupView?.bearing ?? defaultBearingForMode(baseModeRef.current),
       minZoom: 2.4,

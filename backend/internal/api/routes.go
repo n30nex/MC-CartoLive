@@ -21,18 +21,22 @@ import (
 )
 
 type Config struct {
-	RecentPacketLimit    int
-	RecentEdgeEventLimit int
-	DefaultCenterLat     float64
-	DefaultCenterLng     float64
-	DefaultZoom          float64
-	PublicMode           bool
-	StrictRFOnly         bool
-	MaxUnverifiedEdgeKM  float64
-	AppVersion           string
-	GitSHA               string
-	BuildTime            string
-	PublicIATARestricted bool
+	RecentPacketLimit      int
+	RecentEdgeEventLimit   int
+	DefaultCenterLat       float64
+	DefaultCenterLng       float64
+	DefaultZoom            float64
+	DefaultRegion          string
+	MapRegionPreset        string
+	MapBounds              live.CoordinateBounds
+	PublicMode             bool
+	StrictRFOnly           bool
+	MaxUnverifiedEdgeKM    float64
+	AppVersion             string
+	GitSHA                 string
+	BuildTime              string
+	PublicIATARestricted   bool
+	PublicRegionRestricted bool
 }
 
 type Server struct {
@@ -140,6 +144,12 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 		"version":                fallbackString(s.Config.AppVersion, "dev"),
 		"gitSha":                 fallbackString(s.Config.GitSHA, "unknown"),
 		"buildTime":              fallbackString(s.Config.BuildTime, "unknown"),
+		"mapRegionPreset":        s.Config.MapRegionPreset,
+		"mapBounds":              s.Config.MapBounds,
+		"defaultRegion":          s.Config.DefaultRegion,
+		"defaultCenter":          []float64{s.Config.DefaultCenterLng, s.Config.DefaultCenterLat},
+		"defaultZoom":            s.Config.DefaultZoom,
+		"publicRegionRestricted": s.Config.PublicRegionRestricted || s.Config.PublicIATARestricted,
 		"publicStateRequests":    runtime.PublicStateRequests,
 		"publicStateErrors":      runtime.PublicStateErrors,
 		"publicHistoryRequests":  runtime.PublicHistoryRequests,
@@ -317,6 +327,7 @@ func (s *Server) publicState(w http.ResponseWriter, r *http.Request) {
 			state.Stats.MQTTConnected = s.mqttConnected()
 			state.Stats.MQTTMessages = s.mqttTotal()
 			state.Stats.WSClients = s.wsClientCount()
+			state.Map = s.publicMapConfig()
 			writeJSON(w, http.StatusOK, state)
 			failed = false
 			return
@@ -337,14 +348,26 @@ func (s *Server) publicState(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, live.BuildPublicLiveState(state, live.PublicStats{
+	publicState := live.BuildPublicLiveState(state, live.PublicStats{
 		Packets:       stats.Packets,
 		MQTTConnected: s.mqttConnected(),
 		MQTTMessages:  s.mqttTotal(),
 		WSClients:     s.wsClientCount(),
 		ServerTime:    time.Now().UnixMilli(),
-	}))
+	})
+	publicState.Map = s.publicMapConfig()
+	writeJSON(w, http.StatusOK, publicState)
 	failed = false
+}
+
+func (s *Server) publicMapConfig() live.PublicMapConfig {
+	return live.PublicMapConfig{
+		RegionPreset:  s.Config.MapRegionPreset,
+		DefaultRegion: s.Config.DefaultRegion,
+		DefaultCenter: []float64{s.Config.DefaultCenterLng, s.Config.DefaultCenterLat},
+		DefaultZoom:   s.Config.DefaultZoom,
+		Bounds:        s.Config.MapBounds,
+	}
 }
 
 const (
@@ -733,12 +756,25 @@ type publicPacketFilters struct {
 func publicPacketFiltersFromRequest(r *http.Request) publicPacketFilters {
 	query := r.URL.Query()
 	return publicPacketFilters{
-		iata:        strings.ToUpper(strings.TrimSpace(query.Get("iata"))),
+		iata:        firstUpperQuery(query, "region", "iata"),
 		payload:     strings.ToUpper(strings.TrimSpace(query.Get("payload"))),
 		minHops:     maxInt(0, queryInt(r, "minHops", 0)),
 		messageOnly: queryBool(query.Get("messageOnly")),
 		query:       strings.ToLower(trimBounded(query.Get("q"), 120)),
 	}
+}
+
+func firstUpperQuery(query map[string][]string, keys ...string) string {
+	for _, key := range keys {
+		if values, ok := query[key]; ok {
+			for _, value := range values {
+				if item := strings.ToUpper(strings.TrimSpace(value)); item != "" {
+					return item
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func publicPacketMatchesFilters(packet live.PublicPacketPath, filters publicPacketFilters) bool {
@@ -965,7 +1001,7 @@ func (s *Server) liveState(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) nodes(w http.ResponseWriter, r *http.Request) {
 	positioned := r.URL.Query().Get("positioned") == "true"
-	iata := strings.ToUpper(r.URL.Query().Get("iata"))
+	iata := firstUpperQuery(r.URL.Query(), "region", "iata")
 	nodes, err := s.Store.Nodes(r.Context(), positioned, iata)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)

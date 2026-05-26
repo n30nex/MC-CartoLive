@@ -159,6 +159,7 @@ func (c *PublicStateCache) Replace(state PublicLiveState, excluded map[string]in
 	state.RecentActivity = limitPublicActivity(state.RecentActivity)
 	c.mu.Lock()
 	state.Stats.ExcludedIATAs = mergeCounters(excluded, c.anomalies)
+	state.Stats.ExcludedRegions = copyCounter(state.Stats.ExcludedIATAs)
 	c.state = copyPublicState(state)
 	c.ready = true
 	c.updatedAt = time.Now()
@@ -290,6 +291,7 @@ func copyPublicState(state PublicLiveState) PublicLiveState {
 	state.RecentActivity = append([]PublicActivity{}, state.RecentActivity...)
 	state.Stats.ResolutionBuckets = copyNestedCounter(state.Stats.ResolutionBuckets)
 	state.Stats.ExcludedIATAs = copyCounter(state.Stats.ExcludedIATAs)
+	state.Stats.ExcludedRegions = copyCounter(state.Stats.ExcludedRegions)
 	return state
 }
 

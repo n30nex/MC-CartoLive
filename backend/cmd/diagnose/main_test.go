@@ -37,6 +37,8 @@ INSERT INTO live_edge_events VALUES
 		t.Fatal(err)
 	}
 	for _, want := range []string{
+		`filters: region="YTR" iata="YTR"`,
+		`public_regions="YTR,YGK"`,
 		"DD0236FF",
 		"actual_iatas=YTR",
 		"public_iata=allowed:YTR",
@@ -71,6 +73,14 @@ INSERT INTO live_edge_events VALUES
 	}
 	if !strings.Contains(labelReport, "Positioned Observer") || !strings.Contains(labelReport, "coord_status=valid") {
 		t.Fatalf("label report should support sanitized label lookup:\n%s", labelReport)
+	}
+
+	regionReport, err := reportFromDB(context.Background(), db, diagnosticFilters{Region: "ytr", PublicRegions: "ytr,ygk", Limit: 25})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(regionReport, "DD0236FF") || !strings.Contains(regionReport, `public_regions="YTR,YGK"`) {
+		t.Fatalf("region aliases should behave like legacy IATA filters:\n%s", regionReport)
 	}
 }
 

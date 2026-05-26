@@ -39,20 +39,21 @@ export function fetchPublicHistory({ from, to, limit, cursor }: PublicHistoryPar
 
 export interface PublicPacketsParams extends PublicHistoryParams {
   iata?: string;
+  region?: string;
   payload?: string;
   minHops?: number;
   messageOnly?: boolean;
   q?: string;
 }
 
-export function fetchPublicPackets({ from, to, limit, cursor, iata, payload, minHops, messageOnly, q }: PublicPacketsParams): Promise<PublicPacketsResponse> {
+export function fetchPublicPackets({ from, to, limit, cursor, iata, region, payload, minHops, messageOnly, q }: PublicPacketsParams): Promise<PublicPacketsResponse> {
   const params = new URLSearchParams({
     from: Math.round(from).toString(),
     to: Math.round(to).toString()
   });
   if (limit !== undefined) params.set('limit', Math.round(limit).toString());
   if (cursor) params.set('cursor', cursor);
-  if (iata) params.set('iata', iata);
+  if (region || iata) params.set('region', region ?? iata ?? '');
   if (payload) params.set('payload', payload);
   if (minHops !== undefined && minHops > 0) params.set('minHops', Math.round(minHops).toString());
   if (messageOnly) params.set('messageOnly', 'true');

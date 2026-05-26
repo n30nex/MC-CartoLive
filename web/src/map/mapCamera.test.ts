@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { isFollowPoint, mapViewFromMap } from './mapCamera';
 
 describe('mapCamera', () => {
-  it('accepts only finite public Canada-area follow points', () => {
+  it('accepts finite worldwide follow points', () => {
     expect(isFollowPoint([-79.38, 43.65])).toBe(true);
-    expect(isFollowPoint([-20, 43.65])).toBe(false);
+    expect(isFollowPoint([151.21, -33.86])).toBe(true);
+    expect(isFollowPoint([181, 43.65])).toBe(false);
     expect(isFollowPoint([-79.38, Number.NaN])).toBe(false);
   });
 

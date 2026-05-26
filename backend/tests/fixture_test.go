@@ -11,8 +11,20 @@ import (
 	imqtt "meshcore-canada-live-map/backend/internal/mqtt"
 )
 
-func TestSyntheticFixtureNormalizesAndParsesPackets(t *testing.T) {
-	f, err := os.Open("../../examples/fixtures/synthetic-live.ndjson")
+func TestFixturesNormalizeAndParsePackets(t *testing.T) {
+	for _, path := range []string{
+		"../../examples/fixtures/synthetic-live.ndjson",
+		"../../examples/fixtures/worldwide-r1.ndjson",
+	} {
+		t.Run(path, func(t *testing.T) {
+			assertFixtureNormalizesAndParsesPackets(t, path)
+		})
+	}
+}
+
+func assertFixtureNormalizesAndParsesPackets(t *testing.T, path string) {
+	t.Helper()
+	f, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}

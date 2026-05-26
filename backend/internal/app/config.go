@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"meshcore-canada-live-map/backend/internal/live"
 )
 
 type Config struct {
@@ -37,12 +39,15 @@ type Config struct {
 	DefaultCenterLng        float64
 	DefaultZoom             float64
 	DefaultRegion           string
+	MapRegionPreset         string
+	MapBounds               live.CoordinateBounds
 	PublicMode              bool
 	RecentPacketLimit       int
 	RecentEdgeEventLimit    int
 	WSClientQueueSize       int
 	MQTTIngestQueueSize     int
 	PublicIATAs             []string
+	PublicRegions           []string
 	PublicCacheRefreshSec   int
 	ConfigYAML              string
 	FixtureReplayPath       string
@@ -51,9 +56,17 @@ type Config struct {
 
 func LoadConfig() (Config, error) {
 	_ = loadDotEnv(".env")
+	mapPreset := configuredMapRegionPreset()
+	mapBounds := mapBoundsForPreset(mapPreset)
+	if parsed, ok := envMapBounds("MAP_BOUNDS"); ok {
+		mapBounds = parsed
+		mapPreset = "custom"
+	}
+	defaultCenterLat, defaultCenterLng, defaultZoom, defaultRegion := mapDefaultsForPreset(mapPreset, mapBounds)
+	publicRegions := configuredPublicRegions(mapPreset)
 	cfg := Config{
 		ListenAddr:              envString("LISTEN_ADDR", ":8080"),
-		AppVersion:              envString("APP_VERSION", "2.4.9"),
+		AppVersion:              envString("APP_VERSION", "2.5.0"),
 		GitSHA:                  envString("GIT_SHA", envString("VITE_GIT_SHA", "")),
 		BuildTime:               envString("BUILD_TIME", envString("VITE_BUILD_TIME", "")),
 		PublicBaseURL:           envString("PUBLIC_BASE_URL", "http://localhost:8080"),
@@ -75,16 +88,19 @@ func LoadConfig() (Config, error) {
 		RequireRSSIOrSNRForEdge: envBool("REQUIRE_RSSI_OR_SNR_FOR_EDGE", true),
 		MaxUnverifiedEdgeKM:     envFloat("MAX_UNVERIFIED_EDGE_KM", 150),
 		AllowLongTraceEdges:     envBool("ALLOW_LONG_TRACE_EDGES", true),
-		DefaultCenterLat:        envFloat("DEFAULT_CENTER_LAT", 56.1304),
-		DefaultCenterLng:        envFloat("DEFAULT_CENTER_LNG", -106.3468),
-		DefaultZoom:             envFloat("DEFAULT_ZOOM", 3.5),
-		DefaultRegion:           envString("DEFAULT_REGION", "CANADA"),
+		DefaultCenterLat:        envFloat("DEFAULT_CENTER_LAT", defaultCenterLat),
+		DefaultCenterLng:        envFloat("DEFAULT_CENTER_LNG", defaultCenterLng),
+		DefaultZoom:             envFloat("DEFAULT_ZOOM", defaultZoom),
+		DefaultRegion:           envString("DEFAULT_REGION", defaultRegion),
+		MapRegionPreset:         mapPreset,
+		MapBounds:               mapBounds,
 		PublicMode:              envBool("PUBLIC_MODE", true),
 		RecentPacketLimit:       envInt("RECENT_PACKET_LIMIT", 1000),
 		RecentEdgeEventLimit:    envInt("RECENT_EDGE_EVENT_LIMIT", 2000),
 		WSClientQueueSize:       envInt("WS_CLIENT_QUEUE_SIZE", 512),
 		MQTTIngestQueueSize:     envInt("MQTT_INGEST_QUEUE_SIZE", 4096),
-		PublicIATAs:             envListFallback("PUBLIC_IATAS", defaultPublicIATAs()),
+		PublicIATAs:             publicRegions,
+		PublicRegions:           append([]string{}, publicRegions...),
 		PublicCacheRefreshSec:   envInt("PUBLIC_CACHE_REFRESH_SECONDS", 10),
 		ConfigYAML:              envString("CONFIG_YAML", "./data/config.yaml"),
 		FixtureReplayPath:       os.Getenv("FIXTURE_REPLAY_PATH"),
@@ -166,6 +182,97 @@ func envListFallback(key string, fallback []string) []string {
 		return append([]string{}, fallback...)
 	}
 	return out
+}
+
+func configuredPublicRegions(mapPreset string) []string {
+	if regions := envList("PUBLIC_REGIONS"); len(regions) > 0 {
+		return normalizeRegionList(regions)
+	}
+	if legacy := envList("PUBLIC_IATAS"); len(legacy) > 0 {
+		return normalizeRegionList(legacy)
+	}
+	if mapPreset == "canada" {
+		return defaultPublicIATAs()
+	}
+	return nil
+}
+
+func configuredMapRegionPreset() string {
+	if raw, ok := os.LookupEnv("MAP_REGION_PRESET"); ok {
+		if strings.TrimSpace(raw) != "" {
+			return normalizeMapRegionPreset(raw)
+		}
+	}
+	if len(envList("PUBLIC_REGIONS")) == 0 && len(envList("PUBLIC_IATAS")) > 0 {
+		return "canada"
+	}
+	return "world"
+}
+
+func normalizeRegionList(items []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.ToUpper(strings.TrimSpace(item))
+		if item == "" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return out
+}
+
+func normalizeMapRegionPreset(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "canada", "ca":
+		return "canada"
+	case "custom":
+		return "custom"
+	default:
+		return "world"
+	}
+}
+
+func mapBoundsForPreset(preset string) live.CoordinateBounds {
+	if preset == "canada" {
+		return live.CanadaCoordinateBounds()
+	}
+	return live.WorldCoordinateBounds()
+}
+
+func mapDefaultsForPreset(preset string, bounds live.CoordinateBounds) (float64, float64, float64, string) {
+	if preset == "canada" {
+		return 56.1304, -106.3468, 3.5, "CANADA"
+	}
+	return (bounds.MinLat + bounds.MaxLat) / 2, (bounds.MinLng + bounds.MaxLng) / 2, 1.8, strings.ToUpper(preset)
+}
+
+func envMapBounds(key string) (live.CoordinateBounds, bool) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return live.CoordinateBounds{}, false
+	}
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	})
+	if len(fields) != 4 {
+		return live.CoordinateBounds{}, false
+	}
+	values := [4]float64{}
+	for i, field := range fields {
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(field), 64)
+		if err != nil {
+			return live.CoordinateBounds{}, false
+		}
+		values[i] = parsed
+	}
+	bounds := live.CoordinateBounds{MinLat: values[0], MinLng: values[1], MaxLat: values[2], MaxLng: values[3]}
+	policy := live.NewCoordinatePolicy(bounds)
+	return policy.Bounds, true
 }
 
 func defaultPublicIATAs() []string {

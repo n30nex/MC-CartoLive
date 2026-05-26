@@ -42,6 +42,8 @@ docker compose up --build
 
 The fixture at `examples/fixtures/synthetic-live.ndjson` contains fake public
 keys, fake node names, and synthetic decoded message text.
+`examples/fixtures/worldwide-r1.ndjson` covers non-Canada coordinates and
+private `r1`/`r2` broker regions for worldwide package testing.
 
 ## Backend
 
@@ -128,7 +130,7 @@ Use this checklist after map, playback, or styling changes:
   cleanly to live mode.
 - Search, compact Legend, panel restore, dark/light mode, and palette choices
   remain readable on desktop and mobile.
-- `mc-diagnose` explains missing nodes/observers by IATA, coordinate status,
+- `mc-diagnose` explains missing nodes/observers by region, coordinate status,
   label hints, position source, and mappability reason.
 
 ## Release Checks
@@ -174,10 +176,10 @@ Run production smoke from your workstation after a droplet deploy:
 ```
 
 Use overrides when testing a branch, alternate host, expected build, or another
-diagnostic IATA:
+diagnostic region:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.4.9 -ExpectedGitSha <short-sha> -DiagnoseIata YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.5.0 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
 Check privacy before committing:

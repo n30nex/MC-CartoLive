@@ -69,7 +69,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.4.9
+  ghcr.io/n30nex/mc-cartolive:2.5.0
 ```
 
 For production, keep private settings in an env file and mount persistent data:
@@ -79,7 +79,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.4.9
+  ghcr.io/n30nex/mc-cartolive:2.5.0
 ```
 
 The published image runs as non-root `appuser`, includes OCI source/version
@@ -132,7 +132,7 @@ docker compose up -d
 
 ## Runtime Notes
 
-- Version 2.4.9 exposes the app version/build in the top project bar. CI builds use
+- Version 2.5.0 exposes the app version/build in the top project bar. CI builds use
   the Git commit SHA when available; local Docker builds use a timestamp fallback
   plus a separate ISO build time for build-age display.
 - Runtime liveness and readiness are split: `/healthz` stays cheap for Docker
@@ -148,7 +148,12 @@ docker compose up -d
   to the source commit and operators can choose self-hosted OpenFreeMap/terrain
   TileJSON sources.
 - `PUBLIC_BASE_URL` must match the public browser origin so WebSocket origin checks pass.
-- `PUBLIC_IATAS` should stay restricted to supported Canada IATA region codes.
+- `MAP_REGION_PRESET=world` is the package default. Use `canada` for the
+  hosted Canada map or `custom` with `MAP_BOUNDS=minLat,minLng,maxLat,maxLng`
+  for private regional deployments.
+- `PUBLIC_REGIONS` is the preferred public allowlist. Empty means all safe
+  broker region labels are allowed. `PUBLIC_IATAS` remains a deprecated alias
+  for existing Canada env files.
 - Keep `PUBLIC_MODE=true` on public hosts.
 - The compose file mounts `./data` read/write and `./examples` read-only.
 - Container logs are rotated by Docker Compose to avoid unbounded local log growth.
@@ -161,22 +166,22 @@ docker compose up -d
 
 ```bash
 cd backend
-go run ./cmd/diagnose --db ../data/meshcore-live.db --iata YTR --public-iatas "$PUBLIC_IATAS"
-go run ./cmd/diagnose --db ../data/meshcore-live.db --name Krabs --public-iatas "$PUBLIC_IATAS"
-go run ./cmd/diagnose --db ../data/meshcore-live.db --label Corebot --public-iatas "$PUBLIC_IATAS"
+go run ./cmd/diagnose --db ../data/meshcore-live.db --region YTR --public-regions "$PUBLIC_REGIONS"
+go run ./cmd/diagnose --db ../data/meshcore-live.db --name Krabs --public-regions "$PUBLIC_REGIONS"
+go run ./cmd/diagnose --db ../data/meshcore-live.db --label Corebot --public-regions "$PUBLIC_REGIONS"
 ```
 
 On a Docker host, run the bundled diagnostic binary inside the container:
 
 ```bash
-docker compose exec meshcore-live-map /app/mc-diagnose --db /app/data/meshcore-live.db --iata YTR --public-iatas "$PUBLIC_IATAS"
+docker compose exec meshcore-live-map /app/mc-diagnose --db /app/data/meshcore-live.db --region YTR --public-regions "$PUBLIC_REGIONS"
 ```
 
 The report uses the same mappability reasons as the public-state builder:
 `mappable`, `missing_coords`, `zero_coords`, `outside_bounds`, and
-`iata_filtered`. It also reports actual IATA values, public allowlist status,
-coordinate status, label IATA hints, and whether the position came from a node
-or observer record.
+`iata_filtered` (legacy name for region-filtered records). It also reports
+actual region/IATA values, public allowlist status, coordinate status, label
+hints, and whether the position came from a node or observer record.
 - SQLite runs in WAL mode with a busy timeout. For long-running hosts, keep
   regular backups and periodically restart/rebuild during maintenance windows
   if WAL files grow unexpectedly.

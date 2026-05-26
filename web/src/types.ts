@@ -10,6 +10,7 @@ export interface PublicNode {
   lastSeen: number;
   firstSeen: number;
   iatasHeardIn: string[];
+  regionsHeardIn?: string[];
   activityCount: number;
 }
 
@@ -52,6 +53,7 @@ export type PublicResolutionBucket =
 export interface PublicObserverLocation {
   label: string;
   iata?: string;
+  region?: string;
   lat: number;
   lng: number;
 }
@@ -70,6 +72,7 @@ export interface PublicActivity {
   payloadTypeName: string;
   routeTypeName?: string;
   iata?: string;
+  region?: string;
   heardAt: number;
   receivedAt?: number;
   displayAt?: number;
@@ -102,6 +105,7 @@ export interface PublicObserverBurst {
 export interface PublicRoutePulse {
   id: string;
   iata?: string;
+  region?: string;
   payloadTypeName: string;
   messageSender?: string;
   messageText?: string;
@@ -124,6 +128,7 @@ export interface PublicPacketPath {
   id: string;
   at: number;
   iata?: string;
+  region?: string;
   payloadTypeName: string;
   messageSender?: string;
   messageText?: string;
@@ -145,10 +150,25 @@ export interface PublicStats {
   serverTime: number;
   resolutionBuckets?: Record<string, Record<string, number>>;
   excludedIatas?: Record<string, number>;
+  excludedRegions?: Record<string, number>;
+}
+
+export interface PublicMapConfig {
+  regionPreset?: string;
+  defaultRegion?: string;
+  defaultCenter?: [number, number];
+  defaultZoom?: number;
+  bounds?: {
+    minLat: number;
+    maxLat: number;
+    minLng: number;
+    maxLng: number;
+  };
 }
 
 export interface PublicLiveState {
   serverTime: number;
+  map?: PublicMapConfig;
   stats: PublicStats;
   nodes: PublicNode[];
   routes: PublicRoute[];

@@ -44,14 +44,18 @@ backend can decode it from public packet data or from private channel secrets
 provided locally by the operator. The frontend can reuse that same sanitized
 message text as short node chatter history for selected nodes.
 
-## IATA Allowlist
+## Region Allowlist
 
-The public map filters state and live events through `PUBLIC_IATAS`. Unsupported
-or unexpected IATA traffic is counted as an anomaly and excluded from the public
-map.
+The public map filters state and live events through `PUBLIC_REGIONS`.
+Unsupported or unexpected region traffic is counted as an anomaly and excluded
+from the public map. `PUBLIC_IATAS` remains a deprecated 2.x alias so existing
+Canada deployments keep working.
 
-Keep the allowlist to supported Canada IATA region codes unless there is an
-explicit product decision to publish another region.
+Empty `PUBLIC_REGIONS` means allow all safe broker region labels, which is the
+package-friendly default for private or worldwide brokers. Public hosted maps
+should set an explicit allowlist when the operator wants to limit what appears.
+IATA codes are still valid region labels, but MC-CartoLive no longer requires a
+global airport-code list for correctness.
 
 ## Route Truth
 

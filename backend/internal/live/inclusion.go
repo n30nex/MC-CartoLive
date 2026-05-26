@@ -1,10 +1,5 @@
 package live
 
-import (
-	"math"
-	"strings"
-)
-
 const (
 	MapIncludeMappable             = "mappable"
 	MapIncludeMissingCoords        = "missing_coords"
@@ -45,19 +40,5 @@ func PublicObserverFallbackInclusion(observer Observer, filter PublicIATAFilter)
 }
 
 func coordinateInclusion(lat *float64, lng *float64, positionSource string) PublicMapInclusion {
-	if lat == nil || lng == nil {
-		return PublicMapInclusion{Reason: MapIncludeMissingCoords}
-	}
-	if *lat == 0 || *lng == 0 {
-		return PublicMapInclusion{Reason: MapIncludeZeroCoords}
-	}
-	if math.IsNaN(*lat) || math.IsNaN(*lng) || math.IsInf(*lat, 0) || math.IsInf(*lng, 0) ||
-		*lat < 41 || *lat > 84 || *lng < -142 || *lng > -52 {
-		return PublicMapInclusion{Reason: MapIncludeOutsideBounds}
-	}
-	return PublicMapInclusion{
-		Mappable:       true,
-		Reason:         MapIncludeMappable,
-		PositionSource: strings.TrimSpace(positionSource),
-	}
+	return CurrentCoordinatePolicy().Inclusion(lat, lng, positionSource)
 }

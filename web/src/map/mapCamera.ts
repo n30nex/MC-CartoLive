@@ -60,7 +60,7 @@ export function overviewRoutePadding(map: maplibregl.Map): maplibregl.PaddingOpt
 
 export function isFollowPoint(point: [number, number]): boolean {
   const [lng, lat] = point;
-  return Number.isFinite(lat) && Number.isFinite(lng) && lat >= 41 && lat <= 84 && lng >= -142 && lng <= -52;
+  return Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0 && lat >= -85 && lat <= 85 && lng >= -180 && lng <= 180;
 }
 
 export function followTrafficPadding(map: maplibregl.Map): maplibregl.PaddingOptions {

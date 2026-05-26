@@ -5,9 +5,10 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.4.9` is the current production baseline.
+Version `2.5.0 "World"` is the current production baseline.
 
-- Public map behavior is feature-frozen for the 2.4 line.
+- Public map behavior remains stable while package installs now support
+  worldwide/private brokers through configurable region labels and map bounds.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.

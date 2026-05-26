@@ -43,7 +43,7 @@ your workstation:
 Common overrides:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -SshTarget root@134.122.45.228 -KeyPath "$env:USERPROFILE\.ssh\neonx" -ExpectedGitSha <short-sha> -DiagnoseIata YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -SshTarget root@134.122.45.228 -KeyPath "$env:USERPROFILE\.ssh\neonx" -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
 The live smoke verifies `/healthz`, `/readyz`, public state, public history,
@@ -77,16 +77,16 @@ Run the local diagnostic command from the backend folder:
 
 ```bash
 cd backend
-go run ./cmd/diagnose --db ../data/meshcore-live.db --iata YTR --public-iatas "$PUBLIC_IATAS"
-go run ./cmd/diagnose --db ../data/meshcore-live.db --name Krabs --public-iatas "$PUBLIC_IATAS"
-go run ./cmd/diagnose --db ../data/meshcore-live.db --name Corebot --public-iatas "$PUBLIC_IATAS"
-go run ./cmd/diagnose --db ../data/meshcore-live.db --label Corebot --public-iatas "$PUBLIC_IATAS"
+go run ./cmd/diagnose --db ../data/meshcore-live.db --region YTR --public-regions "$PUBLIC_REGIONS"
+go run ./cmd/diagnose --db ../data/meshcore-live.db --name Krabs --public-regions "$PUBLIC_REGIONS"
+go run ./cmd/diagnose --db ../data/meshcore-live.db --name Corebot --public-regions "$PUBLIC_REGIONS"
+go run ./cmd/diagnose --db ../data/meshcore-live.db --label Corebot --public-regions "$PUBLIC_REGIONS"
 ```
 
 On the production Docker host, use the bundled container binary:
 
 ```bash
-docker compose exec meshcore-live-map /app/mc-diagnose --db /app/data/meshcore-live.db --iata YTR --public-iatas "$PUBLIC_IATAS"
+docker compose exec meshcore-live-map /app/mc-diagnose --db /app/data/meshcore-live.db --region YTR --public-regions "$PUBLIC_REGIONS"
 ```
 
 Map reasons:
@@ -94,15 +94,17 @@ Map reasons:
 - `mappable`: valid public coordinate and not filtered.
 - `missing_coords`: no usable latitude/longitude.
 - `zero_coords`: coordinate is `0,0` or one side is zero.
-- `outside_bounds`: coordinate is outside public Canada map bounds.
-- `iata_filtered`: record belongs only to an IATA outside the public allowlist.
+- `outside_bounds`: coordinate is outside configured public map bounds.
+- `iata_filtered`: legacy reason name for records outside the public region
+  allowlist.
 
-Names are labels, not identity. If a node name contains `YTR` but its IATA is
-`YGK`, the map treats it as `YGK`.
+Names are labels, not identity. If a node name contains `YTR` but its broker
+region is `YGK`, the map treats it as `YGK`.
 
-The 2.2 diagnostic output also shows `actual_iatas`, `public_iata`,
-`coord_status`, `source`, and `label_iata_hint` so coordinate/IATA truth is
-visible without exposing raw keys or packet hashes.
+The diagnostic output shows `actual_iatas`, `public_iata`, `public_regions`,
+`coord_status`, `source`, and `label_iata_hint` so coordinate/region truth is
+visible without exposing raw keys or packet hashes. The `iata` names are kept in
+the report for 2.x database/API compatibility.
 
 ## Verify Live Motion
 

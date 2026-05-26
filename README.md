@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.4.9
+# MeshCore MQTT Live Map v2.5.0
 
 Also known as **MC-CartoLive**.
 
@@ -23,7 +23,11 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.4.9 Feature Gallery
+### v2.5.0 World Feature Gallery
+
+Version 2.5.0 "World" keeps the Canada deployment intact while making the
+published package work for worldwide/private brokers with configurable map
+bounds and generic region labels.
 
 OpenFreeMap 3D turns the public live map into a terrain-aware network view with
 procedural node models, elevated public route arcs, and 3D packet motion.
@@ -52,7 +56,8 @@ with live pulses, search, fit/reset, and compact node/pathway inspectors.
 - Ingests MeshCore MQTT traffic read-only, decodes public-safe packet metadata,
   and stores observations in SQLite.
 - Resolves only high-confidence RF routes. Ambiguous, unresolved, unmappable, or
-  disallowed-IATA traffic is counted for diagnostics but not guessed onto the map.
+  disallowed-region traffic is counted for diagnostics but not guessed onto the
+  map.
 - Serves a MapLibre public dashboard with clustered overview, detail zoom,
   live packet comets, observer activity, message bubbles, Plot Routes, a
   reachable-node phonebook, OpenFreeMap 3D mode, light/dark themes, and palette
@@ -86,7 +91,7 @@ GET /readyz
 GET /api/v1/public/state
 GET /api/v1/public/history?from=<ms>&to=<ms>&limit=<n>&cursor=<token>
 GET /api/v1/public/history/summary?from=<ms>&to=<ms>&bucketMs=<n>
-GET /api/v1/public/packets?from=<ms>&to=<ms>&limit=<n>&cursor=<token>&iata=&payload=&minHops=&messageOnly=&q=
+GET /api/v1/public/packets?from=<ms>&to=<ms>&limit=<n>&cursor=<token>&region=&iata=&payload=&minHops=&messageOnly=&q=
 GET /ws/public
 ```
 
@@ -119,6 +124,11 @@ without MQTT credentials. To connect to live MQTT, edit your private `.env`, set
 `MQTT_ENABLED=true`, clear `FIXTURE_REPLAY_PATH`, and add your MQTT username and
 password.
 
+The package default is worldwide: valid non-zero coordinates inside normal
+world map bounds are allowed, and broker topic labels such as `YKF`, `r1`,
+`AUS`, or `EU-W` are treated as generic regions. Hosted Canada deployments can
+set `MAP_REGION_PRESET=canada` and a `PUBLIC_REGIONS` allowlist.
+
 ## Published Docker Image
 
 Tagged releases publish a built image to GitHub Container Registry:
@@ -137,7 +147,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.4.9
+  ghcr.io/n30nex/mc-cartolive:2.5.0
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -148,7 +158,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.4.9
+  ghcr.io/n30nex/mc-cartolive:2.5.0
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -170,10 +180,53 @@ Important settings:
 | `MQTT_BROKER_URL` | yes when MQTT is enabled | Defaults to the MeshCore Canada MQTT broker URL. |
 | `MQTT_USERNAME` / `MQTT_PASSWORD` | yes when `MESHCORE_AUTH_MODE=subscriber` and MQTT is enabled | Keep private. |
 | `MESHCORE_CHANNEL_SECRETS` | optional | Keep private. Used only to decode sanitized public message bubble text. |
-| `PUBLIC_IATAS` | yes | Canada IATA allowlist for public map state/events. |
+| `MAP_REGION_PRESET` | optional | `world` by default. Use `canada` for the hosted Canada map, or `custom` with `MAP_BOUNDS`. |
+| `MAP_BOUNDS` | optional | Custom bounds as `minLat,minLng,maxLat,maxLng`, for example `-45,110,-10,155` for Australia-style bounds. |
+| `PUBLIC_REGIONS` | optional | Preferred public region allowlist. Empty means allow all safe broker region labels. |
+| `PUBLIC_IATAS` | optional | Deprecated 2.x alias for `PUBLIC_REGIONS`; kept for existing Canada deployments. |
 | `DB_PATH` | yes | SQLite database path inside the container. |
 | `CONFIG_YAML` | optional | Private local node/observer coordinate overrides. |
 | `FIXTURE_REPLAY_PATH` | optional | Synthetic replay file for demos without MQTT credentials. |
+
+## Worldwide Region Support
+
+MC-CartoLive no longer requires Canadian coordinates or airport-style IATA
+labels. IATA codes exist worldwide and remain valid region labels, but the app
+now treats the broker topic segment after `meshcore/` as a generic region label.
+Accepted labels are public-safe `A-Z`, `0-9`, `_`, and `-` strings from 1 to 16
+characters. Existing DB/public fields named `iata` remain for 2.x compatibility;
+new responses also include `region` aliases where useful.
+
+Routes are still true RF routes. Worldwide support does not infer links from
+coordinate proximity, node names, or label similarity. The resolver remains
+region-scoped and still rejects ambiguous prefixes, duplicate matches, missing
+coordinates, invalid roles, missing RF evidence, and distance-gated paths.
+
+Examples:
+
+```env
+# Worldwide or private broker: allow all safe regions and world coordinates.
+MAP_REGION_PRESET=world
+PUBLIC_REGIONS=
+MQTT_TOPIC=meshcore/#
+```
+
+```env
+# Hosted Canada-style public map.
+MAP_REGION_PRESET=canada
+PUBLIC_REGIONS=YYZ,YOW,YKF,YGK,YTR,YUL,YVR,YYC,YEG
+DEFAULT_REGION=CANADA
+```
+
+```env
+# Australia-style private deployment with custom bounds and private regions.
+MAP_REGION_PRESET=custom
+MAP_BOUNDS=-45,110,-10,155
+DEFAULT_CENTER_LAT=-25
+DEFAULT_CENTER_LNG=134
+DEFAULT_ZOOM=4
+PUBLIC_REGIONS=r1,r2,AUS
+```
 
 ## Credential-Free Demo
 
@@ -191,6 +244,9 @@ docker compose up --build
 ```
 
 The fixture uses fake public keys and synthetic messages. It is not copied from live traffic.
+An additional `examples/fixtures/worldwide-r1.ndjson` fixture demonstrates
+non-Canada coordinates and private `r1`/`r2` broker regions for worldwide
+package testing.
 
 ## Development
 
@@ -219,7 +275,7 @@ docker compose build
 
 ## Production Hosting
 
-The recommended v2.4.9 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.0 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

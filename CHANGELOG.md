@@ -4,6 +4,27 @@
 
 - No unreleased changes.
 
+## 2.5.0 - 2026-05-26
+
+- Released `2.5.0 "World"` to make the packaged app work outside Canada while
+  preserving the hosted Canada deployment scope through env config.
+- Added configurable map region support with `MAP_REGION_PRESET=world|canada|custom`,
+  `MAP_BOUNDS=minLat,minLng,maxLat,maxLng`, and preferred `PUBLIC_REGIONS`.
+- Kept `PUBLIC_IATAS` as a deprecated 2.x compatibility alias; legacy Canada
+  env files that only set `PUBLIC_IATAS` continue to use Canada bounds.
+- Replaced Canada-only coordinate checks with one shared coordinate policy used
+  by store writes, public inclusion, stats, diagnostics, and API map metadata.
+- Treated MQTT topic labels as generic safe regions, accepting labels such as
+  `YKF`, `r1`, `AUS`, and `EU-W` while keeping route resolution region-scoped.
+- Added `region` aliases to public-safe nodes, packets, pulses, activities, and
+  observer locations without removing existing `iata` fields.
+- Updated frontend labels, Packets filters, NetGraph search, and initial map
+  camera setup to use configured regions and bounds.
+- Added a bundled `worldwide-r1.ndjson` fixture for non-Canada package smoke
+  testing with private `r1`/`r2` topics and a routed pulse.
+- Updated docs, `.env.example`, operator diagnostics, and live smoke scripts
+  around worldwide/private broker deployments.
+
 ## 2.4.9 - 2026-05-25
 
 - Upgraded OpenFreeMap mode with a lazy-loaded Three.js custom 3D layer for
