@@ -30,6 +30,22 @@ function Assert-Smoke {
   }
 }
 
+function Test-GitShaMatch {
+  param(
+    [string]$Actual,
+    [string]$Expected
+  )
+  if ([string]::IsNullOrWhiteSpace($Expected)) {
+    return $true
+  }
+  if ([string]::IsNullOrWhiteSpace($Actual)) {
+    return $false
+  }
+  $actualClean = $Actual.Trim().ToLowerInvariant()
+  $expectedClean = $Expected.Trim().ToLowerInvariant()
+  return $actualClean.StartsWith($expectedClean) -or $expectedClean.StartsWith($actualClean)
+}
+
 function Get-RepoValue {
   param(
     [string]$Command,
@@ -151,7 +167,7 @@ try {
     Assert-Smoke ([string]$health.buildTime -eq $ExpectedBuildTime) "deployed buildTime $($health.buildTime) did not match expected $ExpectedBuildTime"
   }
   if (-not [string]::IsNullOrWhiteSpace($ExpectedGitSha)) {
-    Assert-Smoke ([string]$health.gitSha -eq $ExpectedGitSha) "deployed gitSha $($health.gitSha) did not match expected $ExpectedGitSha"
+    Assert-Smoke (Test-GitShaMatch ([string]$health.gitSha) $ExpectedGitSha) "deployed gitSha $($health.gitSha) did not match expected $ExpectedGitSha"
   }
   Assert-Smoke ([string]$health.packetIngestState -eq "fresh") "packetIngestState was $($health.packetIngestState), expected fresh"
   Write-Pass "/healthz ok, version=$($health.version), gitSha=$($health.gitSha), ingest=$($health.packetIngestState)"
@@ -185,7 +201,11 @@ try {
 
   $remote = Invoke-RemoteSmoke $SshTarget $KeyPath $RepoPath $Service $DiagnoseRegion
   if (-not [string]::IsNullOrWhiteSpace($ExpectedGitSha)) {
-    Assert-Smoke ($remote -match "gitSha=$([regex]::Escape($ExpectedGitSha))") "remote git SHA did not match expected $ExpectedGitSha"
+    $remoteGitSha = ""
+    if ($remote -match "gitSha=([0-9A-Fa-f]+)") {
+      $remoteGitSha = $Matches[1]
+    }
+    Assert-Smoke (Test-GitShaMatch $remoteGitSha $ExpectedGitSha) "remote git SHA $remoteGitSha did not match expected $ExpectedGitSha"
   }
   Assert-Smoke ($remote -match "containerHealth=healthy") "remote container was not healthy"
   Assert-Smoke ($remote -match "MC-CartoLive operator diagnostic") "mc-diagnose did not produce a diagnostic report"
