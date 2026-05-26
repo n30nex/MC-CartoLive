@@ -67,3 +67,15 @@ func TestPublicPacketsNextCursorTokenContinuesWhenRawScanIsCapped(t *testing.T) 
 		t.Fatalf("exhausted scan cursor = %q, want empty", got)
 	}
 }
+
+func TestPublicPacketsRawPageSizeKeepsDefaultPagesBounded(t *testing.T) {
+	if got := publicPacketsRawPageSize(1000, publicPacketFilters{}); got != 1000 {
+		t.Fatalf("default raw page size = %d, want 1000", got)
+	}
+	if got := publicPacketsRawPageSize(1000, publicPacketFilters{query: "ottawa"}); got != 1200 {
+		t.Fatalf("filtered raw page size = %d, want 1200", got)
+	}
+	if got := publicPacketsRawPageSize(20, publicPacketFilters{}); got != 200 {
+		t.Fatalf("small raw page size = %d, want 200", got)
+	}
+}

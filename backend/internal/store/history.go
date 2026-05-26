@@ -115,6 +115,75 @@ LIMIT ?`
 	return scanHistoryEvents(rows)
 }
 
+func (s *Store) PublicPacketEdgeEvents(ctx context.Context, query HistoryQuery) ([]live.EdgeEvent, error) {
+	limit := query.Limit
+	if limit <= 0 || limit > 2500 {
+		limit = 1000
+	}
+	to := boundedHistoryTo(query.To)
+	sqlText := `
+SELECT e.id, e.packet_hash, e.observation_id, COALESCE(po.iata, '') AS edge_iata,
+  e.payload_type, e.payload_type_name, e.message_sender, e.message_text,
+  e.message_anchor_json, e.heard_at_ms, e.segments_json, e.render_reason
+FROM live_edge_events e
+LEFT JOIN packet_observations po ON po.id=e.observation_id
+WHERE e.heard_at_ms >= ? AND e.heard_at_ms <= ?`
+	args := []any{query.From, to}
+	if iata := strings.ToUpper(strings.TrimSpace(query.IATA)); iata != "" {
+		sqlText += ` AND UPPER(COALESCE(po.iata, '')) = ?`
+		args = append(args, iata)
+	}
+	if payload := strings.ToUpper(strings.TrimSpace(query.PayloadTypeName)); payload != "" {
+		sqlText += ` AND UPPER(COALESCE(e.payload_type_name, '')) = ?`
+		args = append(args, payload)
+	}
+	if query.Cursor != nil {
+		sqlText += ` AND (e.heard_at_ms < ? OR (e.heard_at_ms = ? AND e.id < ?))`
+		args = append(args, query.Cursor.At, query.Cursor.At, query.Cursor.ID)
+	}
+	sqlText += `
+ORDER BY e.heard_at_ms DESC, e.id DESC
+LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []live.EdgeEvent{}
+	for rows.Next() {
+		var edge live.EdgeEvent
+		var messageAnchorJSON string
+		var segmentsJSON string
+		if err := rows.Scan(
+			&edge.ID,
+			&edge.PacketHash,
+			&edge.ObservationID,
+			&edge.IATA,
+			&edge.PayloadType,
+			&edge.PayloadTypeName,
+			&edge.MessageSender,
+			&edge.MessageText,
+			&messageAnchorJSON,
+			&edge.HeardAt,
+			&segmentsJSON,
+			&edge.RenderReason,
+		); err != nil {
+			return nil, err
+		}
+		_ = json.Unmarshal([]byte(segmentsJSON), &edge.Segments)
+		if messageAnchorJSON != "" {
+			var anchor live.MessageAnchor
+			if err := json.Unmarshal([]byte(messageAnchorJSON), &anchor); err == nil {
+				edge.MessageAnchor = &anchor
+			}
+		}
+		out = append(out, edge)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) PublicHistorySummary(ctx context.Context, from int64, to int64, bucketMs int64) ([]HistorySummaryRow, error) {
 	if bucketMs <= 0 {
 		bucketMs = int64(time.Hour / time.Millisecond)

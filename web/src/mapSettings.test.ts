@@ -15,7 +15,7 @@ describe('map settings', () => {
   it('clamps packet visuals and preserves layer booleans', () => {
     const settings = normalizeMapSettings({
       layers: { clusters: false, nodes: false, liveComets: false },
-      packets: { speed: 99, brightness: 0.1, trail: 8, animationStyle: 'pulse' }
+      packets: { speed: 99, brightness: 0.1, trail: 8, animationStyle: 'pulse', showLiveCometsAtAllZooms: true }
     });
     expect(settings.layers.clusters).toBe(false);
     expect(settings.layers.nodes).toBe(false);
@@ -29,6 +29,7 @@ describe('map settings', () => {
     expect(settings.packets.brightness).toBe(0.4);
     expect(settings.packets.trail).toBe(2);
     expect(settings.packets.animationStyle).toBe('pulse');
+    expect(settings.packets.showLiveCometsAtAllZooms).toBe(true);
   });
 
   it('normalizes persisted OpenFreeMap 3D layer toggles', () => {

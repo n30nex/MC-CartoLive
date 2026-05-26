@@ -3,7 +3,7 @@ import { isMappableEndpoint } from './geo';
 import type { NodeFocus } from './nodeFocus';
 import { routeArcCoordinates } from './routeArcs';
 
-export const routeColors = ['#2563eb', '#06b6d4', '#22c55e', '#f97316', '#ef4444'];
+export const routeColors = ['#1d4ed8', '#0891b2', '#15803d', '#c2410c', '#be123c'];
 export const ROUTE_FRESH_MS = 15 * 60_000;
 export const ROUTE_RECENT_MS = 60 * 60_000;
 export const ROUTE_KNOWN_MS = 6 * 60 * 60_000;

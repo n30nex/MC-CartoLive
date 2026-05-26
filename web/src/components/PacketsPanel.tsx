@@ -18,7 +18,9 @@ interface PacketsPanelProps {
   onReplayPacket: (packet: PublicPacketPath) => void;
 }
 
-const PACKETS_PAGE_LIMIT = 500;
+const PACKETS_PAGE_LIMIT = 1000;
+const PACKETS_RETAINED_LIMIT = 5000;
+const PACKETS_FILTER_SCAN_PAGES = 3;
 const PACKET_ROW_HEIGHT = 112;
 const PACKET_LIST_OVERSCAN = 5;
 const PACKET_FILTER_DEBOUNCE_MS = 250;
@@ -41,6 +43,7 @@ export default function PacketsPanel({
   const [lastCheckedAt, setLastCheckedAt] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [searchState, setSearchState] = useState<'idle' | 'searching' | 'more' | 'end'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [listHeight, setListHeight] = useState(460);
@@ -48,6 +51,7 @@ export default function PacketsPanel({
   const mountedRef = useRef(true);
   const listRef = useRef<HTMLDivElement | null>(null);
   const requestGenerationRef = useRef(0);
+  const requestInFlightRef = useRef(false);
   const debouncedFilters = useDebouncedValue(filters, PACKET_FILTER_DEBOUNCE_MS);
   const selectedFromList = useMemo(() => packets.find((packet) => packet.id === selectedPacketID) ?? null, [packets, selectedPacketID]);
   const activePacket = selectedPacket ?? selectedFromList;
@@ -59,51 +63,70 @@ export default function PacketsPanel({
   }, []);
 
   const refresh = useCallback(() => {
+    if (requestInFlightRef.current) return () => undefined;
     let active = true;
+    requestInFlightRef.current = true;
     const generation = requestGenerationRef.current + 1;
     requestGenerationRef.current = generation;
     setLoading(true);
     setError(null);
+    setSearchState(hasActivePacketFilters(debouncedFilters) ? 'searching' : 'idle');
     const window = packetWindowForScope(Date.now(), scopeMs);
-    fetchPublicPackets({ ...window, limit: PACKETS_PAGE_LIMIT, ...filtersToParams(debouncedFilters) })
+    fetchPacketPages({ window, filters: debouncedFilters, targetCount: PACKETS_PAGE_LIMIT })
       .then((response) => {
         if (!active || !mountedRef.current || generation !== requestGenerationRef.current) return;
-        setPackets(dedupePackets(response.packets));
+        setPackets(capPackets(response.packets));
         setWindowInfo(response.window);
         setNextCursor(response.nextCursor ?? '');
+        setSearchState(response.nextCursor ? 'more' : 'end');
         setLastCheckedAt(Date.now());
         setScrollTop(0);
         if (listRef.current) listRef.current.scrollTop = 0;
       })
       .catch((err: unknown) => {
         if (!active || !mountedRef.current || generation !== requestGenerationRef.current) return;
-        setError(err instanceof Error ? err.message : 'Unable to load packet paths');
+        setError(packetRequestErrorMessage(err));
       })
       .finally(() => {
-        if (active && mountedRef.current && generation === requestGenerationRef.current) setLoading(false);
+        if (active && mountedRef.current && generation === requestGenerationRef.current) {
+          requestInFlightRef.current = false;
+          setLoading(false);
+        }
       });
     return () => {
       active = false;
+      requestInFlightRef.current = false;
     };
   }, [debouncedFilters, scopeMs]);
 
   const loadOlder = useCallback(() => {
-    if (!windowInfo || !nextCursor || loadingMore) return;
+    if (!windowInfo || !nextCursor || loadingMore || requestInFlightRef.current) return;
     const generation = requestGenerationRef.current;
+    requestInFlightRef.current = true;
     setLoadingMore(true);
     setError(null);
-    fetchPublicPackets({ from: windowInfo.from, to: windowInfo.to, limit: PACKETS_PAGE_LIMIT, cursor: nextCursor, ...filtersToParams(debouncedFilters) })
+    setSearchState(hasActivePacketFilters(debouncedFilters) ? 'searching' : 'idle');
+    fetchPacketPages({
+      window: { from: windowInfo.from, to: windowInfo.to },
+      filters: debouncedFilters,
+      cursor: nextCursor,
+      targetCount: PACKETS_PAGE_LIMIT
+    })
       .then((response) => {
         if (!mountedRef.current || generation !== requestGenerationRef.current) return;
-        setPackets((current) => dedupePackets([...current, ...response.packets]));
+        setPackets((current) => capPackets([...current, ...response.packets]));
         setNextCursor(response.nextCursor ?? '');
         setWindowInfo(response.window);
+        setSearchState(response.nextCursor ? 'more' : 'end');
       })
       .catch((err: unknown) => {
-        if (mountedRef.current && generation === requestGenerationRef.current) setError(err instanceof Error ? err.message : 'Unable to load older packet paths');
+        if (mountedRef.current && generation === requestGenerationRef.current) setError(packetRequestErrorMessage(err));
       })
       .finally(() => {
-        if (mountedRef.current && generation === requestGenerationRef.current) setLoadingMore(false);
+        if (mountedRef.current && generation === requestGenerationRef.current) {
+          requestInFlightRef.current = false;
+          setLoadingMore(false);
+        }
       });
   }, [debouncedFilters, loadingMore, nextCursor, windowInfo]);
 
@@ -192,7 +215,7 @@ export default function PacketsPanel({
 
       <div className="packets-summary-strip">
         <PacketSummary icon={<Route size={15} />} label="Loaded" value={packets.length.toLocaleString()} />
-        <PacketSummary icon={<Filter size={15} />} label="Server page" value={windowInfo?.count.toLocaleString() ?? 'loading'} />
+        <PacketSummary icon={<Filter size={15} />} label="Page" value={windowInfo?.count.toLocaleString() ?? 'loading'} />
         <PacketSummary icon={<Clock3 size={15} />} label="Window" value={formatWindow(windowInfo)} />
         <PacketSummary icon={<MessageSquareText size={15} />} label="Updated" value={lastCheckedAt ? new Date(lastCheckedAt).toLocaleTimeString() : 'loading'} />
       </div>
@@ -276,9 +299,9 @@ export default function PacketsPanel({
       </div>
 
       <footer className="packets-footer">
-        <span>{activePacket ? `Selected ${packetEndpointSummary(activePacket)}` : 'Select a packet to focus its real path on the map.'}</span>
+        <span>{packetFooterStatus(activePacket, searchState, nextCursor, loadingMore)}</span>
         <button type="button" disabled={!nextCursor || loadingMore} onClick={loadOlder}>
-          {loadingMore ? 'Loading...' : nextCursor ? 'Load older' : 'No older page'}
+          {loadingMore ? 'Searching...' : nextCursor ? 'Load older' : 'End of window'}
         </button>
       </footer>
     </section>
@@ -402,6 +425,45 @@ function PacketSummary({ icon, label, value }: { icon: ReactNode; label: string;
   );
 }
 
+async function fetchPacketPages({
+  window,
+  filters,
+  cursor,
+  targetCount
+}: {
+  window: { from: number; to: number };
+  filters: PacketFilters;
+  cursor?: string;
+  targetCount: number;
+}): Promise<{ packets: PublicPacketPath[]; nextCursor: string; window: PublicHistoryWindow }> {
+  const activeFilters = hasActivePacketFilters(filters);
+  const packets: PublicPacketPath[] = [];
+  let nextCursor = cursor ?? '';
+  let latestWindow: PublicHistoryWindow | null = null;
+  let pages = 0;
+
+  do {
+    const response = await fetchPublicPackets({
+      from: window.from,
+      to: window.to,
+      limit: PACKETS_PAGE_LIMIT,
+      cursor: nextCursor || undefined,
+      ...filtersToParams(filters)
+    });
+    packets.push(...response.packets);
+    latestWindow = response.window;
+    nextCursor = response.nextCursor ?? '';
+    pages += 1;
+    if (!activeFilters) break;
+  } while (nextCursor && packets.length < targetCount && pages < PACKETS_FILTER_SCAN_PAGES);
+
+  return {
+    packets: dedupePackets(packets).slice(0, targetCount),
+    nextCursor,
+    window: latestWindow ?? { from: window.from, to: window.to, count: 0 }
+  };
+}
+
 function dedupePackets(items: PublicPacketPath[]): PublicPacketPath[] {
   const seen = new Set<string>();
   const out: PublicPacketPath[] = [];
@@ -411,6 +473,30 @@ function dedupePackets(items: PublicPacketPath[]): PublicPacketPath[] {
     out.push(item);
   }
   return out;
+}
+
+function capPackets(items: PublicPacketPath[]): PublicPacketPath[] {
+  return dedupePackets(items).slice(0, PACKETS_RETAINED_LIMIT);
+}
+
+function hasActivePacketFilters(filters: PacketFilters): boolean {
+  return Boolean(filters.query.trim() || filters.iata || filters.payload || filters.minHops || filters.messageOnly);
+}
+
+function packetFooterStatus(packet: PublicPacketPath | null, state: 'idle' | 'searching' | 'more' | 'end', nextCursor: string, loadingMore: boolean): string {
+  if (loadingMore || state === 'searching') return 'Searching older packets across the selected window...';
+  if (packet) return `Selected ${packetEndpointSummary(packet)}`;
+  if (nextCursor || state === 'more') return 'More packet paths are available in this window.';
+  if (state === 'end') return 'End of the selected history window.';
+  return 'Select a packet to focus its real path on the map.';
+}
+
+function packetRequestErrorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err || '');
+  if (message.includes('context deadline') || message.includes('500')) {
+    return 'Packet search is still catching up. Try a narrower window, region, payload, or hop filter.';
+  }
+  return message || 'Unable to load packet paths';
 }
 
 function normalizeIataFilter(value: string): string {

@@ -21,6 +21,7 @@ export interface PacketVisualSettings {
   brightness: number;
   trail: number;
   animationStyle: PacketAnimationStyle;
+  showLiveCometsAtAllZooms: boolean;
 }
 
 export interface MapSettings {
@@ -50,7 +51,8 @@ export const DEFAULT_PACKET_VISUAL_SETTINGS: PacketVisualSettings = {
   speed: 1,
   brightness: 1,
   trail: 1,
-  animationStyle: 'comet'
+  animationStyle: 'comet',
+  showLiveCometsAtAllZooms: false
 };
 
 export const DEFAULT_MAP_SETTINGS: MapSettings = {
@@ -91,7 +93,8 @@ export function normalizePacketVisualSettings(input: unknown): PacketVisualSetti
     speed: clampNumber(raw.speed, 0.5, 3, DEFAULT_PACKET_VISUAL_SETTINGS.speed),
     brightness: clampNumber(raw.brightness, 0.4, 1.6, DEFAULT_PACKET_VISUAL_SETTINGS.brightness),
     trail: clampNumber(raw.trail, 0, 2, DEFAULT_PACKET_VISUAL_SETTINGS.trail),
-    animationStyle: isPacketAnimationStyle(raw.animationStyle) ? raw.animationStyle : DEFAULT_PACKET_VISUAL_SETTINGS.animationStyle
+    animationStyle: isPacketAnimationStyle(raw.animationStyle) ? raw.animationStyle : DEFAULT_PACKET_VISUAL_SETTINGS.animationStyle,
+    showLiveCometsAtAllZooms: boolOrDefault(raw.showLiveCometsAtAllZooms, DEFAULT_PACKET_VISUAL_SETTINGS.showLiveCometsAtAllZooms)
   };
 }
 
@@ -134,7 +137,7 @@ export function layerSettingsSignature(settings: MapLayerSettings): string {
 }
 
 export function packetVisualSignature(settings: PacketVisualSettings): string {
-  return `${settings.speed.toFixed(2)}:${settings.brightness.toFixed(2)}:${settings.trail.toFixed(2)}:${settings.animationStyle}`;
+  return `${settings.speed.toFixed(2)}:${settings.brightness.toFixed(2)}:${settings.trail.toFixed(2)}:${settings.animationStyle}:${settings.showLiveCometsAtAllZooms ? '1' : '0'}`;
 }
 
 function boolOrDefault(value: unknown, fallback: boolean): boolean {

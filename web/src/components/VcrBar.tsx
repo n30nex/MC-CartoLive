@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties, type PointerEvent } from 'react';
-import { Clock, Gauge, Pause, Play, RadioTower, Rewind, RotateCcw } from 'lucide-react';
+import { Gauge, LoaderCircle, Pause, Play, RadioTower, Rewind, RotateCcw, Sparkles } from 'lucide-react';
 import type { PublicHistorySummaryBucket } from '../types';
 import {
   missedReplayState,
@@ -31,7 +31,9 @@ interface Props {
   onScope: (scopeMs: number) => void;
   onScrub: (timestamp: number) => void;
   onPlayFromScrub: () => void;
+  onLaserShow: () => void;
   onClose: () => void;
+  laserShowActive?: boolean;
 }
 
 export default function VcrBar({
@@ -52,7 +54,9 @@ export default function VcrBar({
   onScope,
   onScrub,
   onPlayFromScrub,
-  onClose
+  onLaserShow,
+  onClose,
+  laserShowActive = false
 }: Props) {
   const [hoverTimestamp, setHoverTimestamp] = useState<number | null>(null);
   const start = Math.max(0, timelineNow - scopeMs);
@@ -68,6 +72,7 @@ export default function VcrBar({
   const primaryIcon = mode === 'paused' ? <Play size={16} /> : <Pause size={16} />;
   const primaryLabel = mode === 'live' ? 'Pause live' : mode === 'replay' ? 'Pause replay' : 'Play replay';
   const liveLabel = 'Live';
+  const readoutBusy = status === 'loading' || laserShowActive;
 
   useEffect(() => {
     if (mode === 'live') setHoverTimestamp(null);
@@ -107,6 +112,17 @@ export default function VcrBar({
           <Gauge size={16} />
           <span>{speed}x</span>
         </button>
+        <button
+          className={`vcr-button laser ${laserShowActive ? 'active' : ''}`}
+          type="button"
+          aria-label="Replay today's packet comets as a smart Laser Show"
+          title="Laser Show replays today's routed packet comets in smooth capped batches"
+          disabled={status === 'loading' && !laserShowActive}
+          onClick={onLaserShow}
+        >
+          <Sparkles size={15} />
+          <span>Laser</span>
+        </button>
         <button className="vcr-button icon-only vcr-close" type="button" aria-label="Hide VCR controls and return live" title="Hide VCR controls and return live" onClick={onClose}>
           <Play size={16} />
         </button>
@@ -115,7 +131,11 @@ export default function VcrBar({
       <div className="vcr-readout" aria-live="polite">
         <strong>{readout.statusLabel}</strong>
         <span className={`vcr-live-clock ${activeHoverTimestamp !== null ? 'hover' : mode}`} title={readout.clockTitle}>
-          <Clock className="vcr-live-clock-icon" size={13} aria-hidden="true" />
+          {readoutBusy ? (
+            <LoaderCircle className="vcr-live-clock-icon spinning" size={13} aria-hidden="true" />
+          ) : (
+            <RadioTower className="vcr-live-clock-icon" size={13} aria-hidden="true" />
+          )}
           <span className="vcr-live-clock-label">{readout.clockLabel}</span>
           <time className="vcr-live-clock-time" dateTime={new Date(readoutTimestamp).toISOString()}>
             {formatClock(readoutTimestamp)}

@@ -1057,6 +1057,8 @@ export default function CanadaMap({
   const routeSourceSignatureRef = useRef('');
   const analysisRouteSignatureRef = useRef('');
   const replayActionTimerRef = useRef<number | null>(null);
+  const replayChaseTimerRef = useRef<number | null>(null);
+  const replayChaseCleanupRef = useRef<(() => void) | null>(null);
   const routeColorSignatureRef = useRef('');
   const positionedNodesRenderedRef = useRef(onPositionedNodesRendered);
   const viewChangeRef = useRef(onViewChange);
@@ -1069,6 +1071,15 @@ export default function CanadaMap({
   const destroyOpenFreeMap3D = () => {
     openFreeMap3DRef.current?.destroy();
     openFreeMap3DRef.current = null;
+  };
+
+  const stopReplayChaseCamera = () => {
+    if (replayChaseTimerRef.current !== null) {
+      window.clearTimeout(replayChaseTimerRef.current);
+      replayChaseTimerRef.current = null;
+    }
+    replayChaseCleanupRef.current?.();
+    replayChaseCleanupRef.current = null;
   };
 
   const updateOpenFreeMap3D = () => {
@@ -1116,10 +1127,60 @@ export default function CanadaMap({
       });
   };
 
-  const addPulseTo3D = (map: maplibregl.Map, pulse: PublicRoutePulse, options = {}) => {
-    if (baseModeRef.current !== 'openfreemap' || !layerSettingsRef.current.packetComets3D || !layerSettingsRef.current.liveComets || !isDetailMode(map)) return false;
+  const addPulseTo3D = (map: maplibregl.Map, pulse: PublicRoutePulse, options: { force?: boolean } = {}) => {
+    const allowLowZoom = options.force === true || packetVisualSettingsRef.current.showLiveCometsAtAllZooms;
+    if (baseModeRef.current !== 'openfreemap' || !layerSettingsRef.current.packetComets3D || !layerSettingsRef.current.liveComets || (!allowLowZoom && !isDetailMode(map))) return false;
     updateOpenFreeMap3D();
     return openFreeMap3DRef.current?.addPulse(pulse, options) === true;
+  };
+
+  const startReplayChaseCamera = (map: maplibregl.Map, segments: PublicRoutePulse['segments'], travelDurationMs: number) => {
+    if (baseModeRef.current !== 'openfreemap' || segments.length === 0) return;
+    const path = packetChasePath(segments);
+    if (path.totalDistanceKm <= 0 || path.points.length < 2) return;
+    stopReplayChaseCamera();
+    let cancelled = false;
+    const canvas = map.getCanvas();
+    const cancel = () => {
+      cancelled = true;
+      stopReplayChaseCamera();
+    };
+    canvas.addEventListener('pointerdown', cancel, { once: true });
+    canvas.addEventListener('wheel', cancel, { once: true });
+    replayChaseCleanupRef.current = () => {
+      canvas.removeEventListener('pointerdown', cancel);
+      canvas.removeEventListener('wheel', cancel);
+    };
+
+    const steps = Math.max(6, Math.min(16, Math.round(travelDurationMs / 520)));
+    const stepMs = Math.max(360, Math.round(travelDurationMs / steps));
+    const zoom = chaseZoomForDistance(path.totalDistanceKm, map.getZoom());
+    let index = 0;
+    const step = () => {
+      if (cancelled || !mapRef.current) return;
+      const progress = Math.min(0.98, index / Math.max(1, steps));
+      const nextProgress = Math.min(1, progress + 1 / Math.max(1, steps));
+      const current = pointAlongChasePath(path, progress);
+      const next = pointAlongChasePath(path, nextProgress);
+      map.easeTo({
+        center: [current.lng, current.lat],
+        bearing: bearingBetween(current, next),
+        pitch: 66,
+        zoom,
+        duration: stepMs + 120,
+        essential: true,
+        easing: easeOutCubic
+      });
+      index += 1;
+      if (index <= steps) {
+        replayChaseTimerRef.current = window.setTimeout(step, stepMs);
+      } else {
+        replayChaseTimerRef.current = null;
+        replayChaseCleanupRef.current?.();
+        replayChaseCleanupRef.current = null;
+      }
+    };
+    step();
   };
 
   const showMessageBubble = (map: maplibregl.Map, bubble: MessageBubble | null) => {
@@ -1140,8 +1201,11 @@ export default function CanadaMap({
     const shouldAnimate = shouldAnimateLiveEvent(visualReceivedAt(pulse), Date.now(), pageHiddenRef.current);
     if (!map) return;
     if (shouldAnimate) followTrafficPulse(map, pulse, followTrafficRef.current, followTrafficStateRef);
+    const renderComet = shouldAnimate
+      && layerSettingsRef.current.liveComets
+      && (packetVisualSettingsRef.current.showLiveCometsAtAllZooms || isDetailMode(map));
     if (isClusterMode(map)) {
-      if (shouldAnimate && layerSettingsRef.current.liveComets) animatorRef.current?.add(pulse);
+      if (renderComet && !addPulseTo3D(map, pulse)) animatorRef.current?.add(pulse);
       if (shouldAnimate && layerSettingsRef.current.observerBursts && addPulseClusterActivityGlow(map, clusterActivityGlowRef.current, pulse)) {
         startClusterActivityGlowTimer(map, clusterActivityGlowRef, clusterActivityGlowTimerRef);
       }
@@ -1149,7 +1213,7 @@ export default function CanadaMap({
       setMessageBubbles([]);
       return;
     }
-    if (shouldAnimate && layerSettingsRef.current.liveComets && !addPulseTo3D(map, pulse)) animatorRef.current?.add(pulse);
+    if (renderComet && !addPulseTo3D(map, pulse)) animatorRef.current?.add(pulse);
     addPulseNodeActivity(map, nodeActivityRef.current, pulse);
     addPulseNodeMeshActivity(nodeMeshActivityAtRef.current, pulse);
     if (shouldAnimate && layerSettingsRef.current.analysisPaths) {
@@ -1456,6 +1520,7 @@ export default function CanadaMap({
       if (pulseSchedulerTimerRef.current !== null) window.clearTimeout(pulseSchedulerTimerRef.current);
       if (observerSchedulerTimerRef.current !== null) window.clearTimeout(observerSchedulerTimerRef.current);
       if (replayActionTimerRef.current !== null) window.clearTimeout(replayActionTimerRef.current);
+      stopReplayChaseCamera();
       pulseSchedulerTimerRef.current = null;
       observerSchedulerTimerRef.current = null;
       replayActionTimerRef.current = null;
@@ -1664,6 +1729,7 @@ export default function CanadaMap({
       window.clearTimeout(replayActionTimerRef.current);
       replayActionTimerRef.current = null;
     }
+    stopReplayChaseCamera();
     if (mapAction.type === 'reset') fitToNodes(map, nodesRef.current, 600);
     if (mapAction.type === 'latest-route') {
       const latest = [...routesRef.current].sort((a, b) => b.lastHeard - a.lastHeard)[0];
@@ -1691,6 +1757,7 @@ export default function CanadaMap({
           trailScale: mapAction.pulse.replayOptions?.trailScale,
           animationStyle: mapAction.pulse.replayOptions?.animationStyle
         };
+        startReplayChaseCamera(map, mapAction.segments, mapAction.travelDurationMs);
         if (!addPulseTo3D(map, mapAction.pulse, options)) animatorRef.current?.add(mapAction.pulse, options);
       }, 900 + mapAction.settleMs);
     }
@@ -3174,6 +3241,69 @@ function nodeRoleColor(role: string) {
   if (role === 'room_server') return '#a855f7';
   if (role === 'sensor') return '#65a30d';
   return '#64748b';
+}
+
+interface ChasePoint {
+  lng: number;
+  lat: number;
+  distanceKm: number;
+}
+
+function packetChasePath(segments: PublicRoutePulse['segments']): { points: ChasePoint[]; totalDistanceKm: number } {
+  const points: ChasePoint[] = [];
+  let totalDistanceKm = 0;
+  for (const segment of segments) {
+    const distanceKm = Number.isFinite(segment.distanceKm) ? Math.max(0.001, segment.distanceKm) : routePointDistanceKm(segment.from, segment.to);
+    if (points.length === 0) points.push({ lng: segment.from.lng, lat: segment.from.lat, distanceKm: 0 });
+    totalDistanceKm += distanceKm;
+    points.push({ lng: segment.to.lng, lat: segment.to.lat, distanceKm: totalDistanceKm });
+  }
+  return { points, totalDistanceKm };
+}
+
+function pointAlongChasePath(path: { points: ChasePoint[]; totalDistanceKm: number }, progress: number): ChasePoint {
+  if (path.points.length <= 1 || path.totalDistanceKm <= 0) return path.points[0] ?? { lng: 0, lat: 0, distanceKm: 0 };
+  const target = Math.max(0, Math.min(1, progress)) * path.totalDistanceKm;
+  let previous = path.points[0];
+  for (let index = 1; index < path.points.length; index += 1) {
+    const next = path.points[index];
+    if (next.distanceKm >= target) {
+      const span = Math.max(0.001, next.distanceKm - previous.distanceKm);
+      const local = (target - previous.distanceKm) / span;
+      return {
+        lng: previous.lng + (next.lng - previous.lng) * local,
+        lat: previous.lat + (next.lat - previous.lat) * local,
+        distanceKm: target
+      };
+    }
+    previous = next;
+  }
+  return path.points[path.points.length - 1];
+}
+
+function bearingBetween(from: ChasePoint, to: ChasePoint): number {
+  const fromLat = (from.lat * Math.PI) / 180;
+  const toLat = (to.lat * Math.PI) / 180;
+  const deltaLng = ((to.lng - from.lng) * Math.PI) / 180;
+  const y = Math.sin(deltaLng) * Math.cos(toLat);
+  const x = Math.cos(fromLat) * Math.sin(toLat) - Math.sin(fromLat) * Math.cos(toLat) * Math.cos(deltaLng);
+  return (Math.atan2(y, x) * 180) / Math.PI;
+}
+
+function chaseZoomForDistance(distanceKm: number, currentZoom: number): number {
+  if (distanceKm > 600) return Math.max(5.9, Math.min(8.2, currentZoom + 0.7));
+  if (distanceKm > 160) return Math.max(7.2, Math.min(9.4, currentZoom + 1));
+  return Math.max(9.2, Math.min(12.3, currentZoom + 1.4));
+}
+
+function routePointDistanceKm(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
+  const earthKm = 6371;
+  const dLat = ((to.lat - from.lat) * Math.PI) / 180;
+  const dLng = ((to.lng - from.lng) * Math.PI) / 180;
+  const lat1 = (from.lat * Math.PI) / 180;
+  const lat2 = (to.lat * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return earthKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function envURL(key: string, fallback: string): string {

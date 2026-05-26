@@ -106,7 +106,9 @@ describe('VCR state helpers', () => {
     expect(nextVcrSpeed(0.5)).toBe(1);
     expect(nextVcrSpeed(1)).toBe(2);
     expect(nextVcrSpeed(2)).toBe(4);
-    expect(nextVcrSpeed(4)).toBe(0.5);
+    expect(nextVcrSpeed(4)).toBe(8);
+    expect(nextVcrSpeed(8)).toBe(16);
+    expect(nextVcrSpeed(16)).toBe(0.5);
   });
 
   it('maps timeline ratios and pointer hover positions to timestamps', () => {

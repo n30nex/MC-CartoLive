@@ -15,7 +15,7 @@ import {
 
 const MESHCORE_CANADA_URL = 'https://meshcore.ca/';
 const MESHCORE_CANADA_LOGO = '/meshcore-canada-favicon.png';
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.0';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.1';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 

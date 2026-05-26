@@ -4,6 +4,26 @@
 
 - No unreleased changes.
 
+## 2.5.1 - 2026-05-26
+
+- Polished mobile layout so Packets, VCR, palette picker, and Map Settings open
+  inside safe-area bounds on vertical phone screens.
+- Expanded Packets browsing to request 1000 true-path packets per page, retain up
+  to 5000 loaded rows, and continue cursor-backed server filtering across the
+  selected 1h/6h/24h window.
+- Kept packet focus and replay distinct: selecting a packet fits/highlights the
+  route, while Replay compacts the Packets tray, pauses live traffic, fits the
+  route, waits, then force-animates the selected packet.
+- Added a default zoom gate for live packet comets so low-zoom maps stay clean;
+  forced replay bypasses the gate and a Map Settings override can show live
+  comets at all zoom levels.
+- Added VCR 8x and 16x speeds, replay loading spinner feedback, and a capped
+  Laser Show mode for smooth replay of today's routed packet comets.
+- Added OpenFreeMap packet replay chase-camera behavior for selected packet
+  replays while preserving manual camera cancellation.
+- Darkened route/pathway color tokens to keep route overlays readable in light
+  mode across palettes.
+
 ## 2.5.0 - 2026-05-26
 
 - Released `2.5.0 "World"` to make the packaged app work outside Canada while

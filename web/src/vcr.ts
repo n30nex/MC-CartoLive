@@ -2,10 +2,10 @@ import { liveEnvelopeDisplayAt, sortLiveEnvelopes } from './livePacing';
 import type { PublicHistoryEvent, PublicLiveEnvelope } from './types';
 
 export type VcrMode = 'live' | 'paused' | 'replay';
-export type VcrSpeed = 0.5 | 1 | 2 | 4;
+export type VcrSpeed = 0.5 | 1 | 2 | 4 | 8 | 16;
 export type VcrStatus = 'idle' | 'loading' | 'empty' | 'error' | 'lagged';
 
-export const VCR_SPEEDS: readonly VcrSpeed[] = [0.5, 1, 2, 4] as const;
+export const VCR_SPEEDS: readonly VcrSpeed[] = [0.5, 1, 2, 4, 8, 16] as const;
 export const VCR_LAYOUT_TARGETS = {
   desktopOpenHeightPx: 72,
   desktopClosedHeightPx: 52,

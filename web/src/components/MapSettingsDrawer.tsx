@@ -42,6 +42,9 @@ export default function MapSettingsDrawer({ settings, onChange, onClose }: MapSe
   const updatePacket = (key: keyof MapSettings['packets'], value: number | PacketAnimationStyle) => {
     onChange(normalizeMapSettings({ ...settings, packets: { ...settings.packets, [key]: value } }));
   };
+  const updatePacketToggle = (key: keyof MapSettings['packets'], value: boolean) => {
+    onChange(normalizeMapSettings({ ...settings, packets: { ...settings.packets, [key]: value } }));
+  };
   return (
     <aside className="map-settings-drawer" aria-label="Map settings">
       <header className="map-settings-header">
@@ -90,6 +93,17 @@ export default function MapSettingsDrawer({ settings, onChange, onClose }: MapSe
             </button>
           ))}
         </div>
+        <label className="map-settings-toggle">
+          <span>
+            <strong>All-zoom live comets</strong>
+            <small>Show live packet comets while zoomed out. Replay always bypasses the zoom gate.</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={settings.packets.showLiveCometsAtAllZooms}
+            onChange={(event) => updatePacketToggle('showLiveCometsAtAllZooms', event.target.checked)}
+          />
+        </label>
       </section>
 
       <footer className="map-settings-footer">

@@ -377,7 +377,7 @@ const (
 	publicHistoryDefaultLimit    = 1000
 	publicPacketsMaxLimit        = 1000
 	publicPacketsDefaultLimit    = 250
-	publicPacketsMaxRawScan      = 5000
+	publicPacketsMaxRawScan      = 2500
 	publicHistoryTargetBuckets   = 96
 	publicHistoryMaxBuckets      = 288
 	publicHistoryLocationTTL     = 10 * time.Second
@@ -679,13 +679,12 @@ func (s *Server) publicPackets(w http.ResponseWriter, r *http.Request) {
 	var pathHash3ByNodeID map[string]string
 	locationsReady := false
 	for len(packets) < limit && scannedRaw < publicPacketsMaxRawScan {
-		rawLimit := minInt(historyRawPageSize(limit-len(packets)), publicPacketsMaxRawScan-scannedRaw)
-		rawEvents, err := s.Store.PublicHistoryEvents(ctx, store.HistoryQuery{
+		rawLimit := minInt(publicPacketsRawPageSize(limit-len(packets), filters), publicPacketsMaxRawScan-scannedRaw)
+		rawEvents, err := s.Store.PublicPacketEdgeEvents(ctx, store.HistoryQuery{
 			From:            from,
 			To:              to,
 			Limit:           rawLimit,
 			Cursor:          nextCursor,
-			NewestFirst:     true,
 			IATA:            filters.iata,
 			PayloadTypeName: filters.payload,
 		})
@@ -699,10 +698,10 @@ func (s *Server) publicPackets(w http.ResponseWriter, r *http.Request) {
 			exhausted = true
 			break
 		}
-		for _, rawEvent := range rawEvents {
-			cursorValue := rawEvent.Cursor()
+		for _, edge := range rawEvents {
+			cursorValue := store.HistoryCursor{At: edge.HeardAt, TypeOrder: 2, ID: edge.ID}
 			nextCursor = &cursorValue
-			if rawEvent.Type != "routePulse" || !s.allowsPublicIATA(rawEvent.IATA()) {
+			if !s.allowsPublicIATA(edge.IATA) {
 				continue
 			}
 			if !locationsReady {
@@ -713,7 +712,7 @@ func (s *Server) publicPackets(w http.ResponseWriter, r *http.Request) {
 				}
 				locationsReady = true
 			}
-			packet, ok := publicPacketPath(rawEvent, pathHash3ByNodeID)
+			packet, ok := publicPacketPath(edge, pathHash3ByNodeID)
 			if !ok {
 				continue
 			}
@@ -883,11 +882,8 @@ func publicHistoryEvent(
 	return live.PublicHistoryEvent{}, false
 }
 
-func publicPacketPath(raw store.HistoryEvent, pathHash3ByNodeID map[string]string) (live.PublicPacketPath, bool) {
-	if raw.Type != "routePulse" || raw.Edge == nil {
-		return live.PublicPacketPath{}, false
-	}
-	pulse, ok := live.PublicRoutePulseFromEdge(*raw.Edge, pathHash3ByNodeID)
+func publicPacketPath(edge live.EdgeEvent, pathHash3ByNodeID map[string]string) (live.PublicPacketPath, bool) {
+	pulse, ok := live.PublicRoutePulseFromEdge(edge, pathHash3ByNodeID)
 	if !ok {
 		return live.PublicPacketPath{}, false
 	}
@@ -921,6 +917,17 @@ func historyRawPageSize(remaining int) int {
 		limit = 5000
 	}
 	return limit
+}
+
+func publicPacketsRawPageSize(remaining int, filters publicPacketFilters) int {
+	if remaining <= 0 {
+		return 0
+	}
+	hasLateFilters := filters.minHops > 0 || filters.messageOnly || filters.query != ""
+	if !hasLateFilters {
+		return minInt(maxInt(remaining, 200), 1000)
+	}
+	return minInt(maxInt(remaining*2, 400), 1200)
 }
 
 func publicPacketsNextCursorToken(cursor *store.HistoryCursor, exhausted bool, matched int, limit int, scannedRaw int) string {

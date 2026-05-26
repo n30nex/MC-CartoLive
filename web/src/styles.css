@@ -2324,6 +2324,7 @@ button {
 
 .vcr-button.live.active,
 .vcr-button.missed.available,
+.vcr-button.laser.active,
 .vcr-button:hover,
 .vcr-button:focus-visible,
 .vcr-scope button.active,
@@ -2343,6 +2344,16 @@ button {
   cursor: not-allowed;
   opacity: 0.48;
   transform: none;
+}
+
+@keyframes mc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.vcr-live-clock-icon.spinning {
+  animation: mc-spin 900ms linear infinite;
 }
 
 .vcr-readout {
@@ -4077,18 +4088,34 @@ button {
 
   .perf-panel,
   .packets-panel {
-    top: 88px;
+    top: calc(62px + env(safe-area-inset-top, 0px));
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
     width: calc(100vw - 16px);
-    max-height: calc(100vh - var(--vcr-bar-height, 0px) - 104px);
+    max-height: none;
     padding: 10px;
+    overflow: auto;
   }
 
   .map-settings-drawer {
-    top: 88px;
+    top: calc(62px + env(safe-area-inset-top, 0px));
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
     left: 8px;
     right: 8px;
     width: auto;
-    max-height: calc(100vh - var(--vcr-bar-height, 0px) - 104px);
+    max-height: none;
+    overflow: auto;
+  }
+
+  .top-popover.palette-picker,
+  .top-popover.panel-picker {
+    position: fixed;
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: calc(50px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    max-height: min(62vh, 430px);
+    overflow: auto;
   }
 
   .perf-panel-header h2,
@@ -4416,7 +4443,7 @@ button {
 
   .vcr-controls {
     display: grid;
-    grid-template-columns: repeat(6, minmax(34px, 1fr));
+    grid-template-columns: repeat(7, minmax(34px, 1fr));
     gap: 4px;
   }
 

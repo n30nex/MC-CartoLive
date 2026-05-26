@@ -5,10 +5,12 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.0 "World"` is the current production baseline.
+Version `2.5.1` is the current production baseline.
 
-- Public map behavior remains stable while package installs now support
+- Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
+- Mobile layout, Packets browsing, VCR controls, packet replay, and low-zoom
+  comet visibility are the current patch focus.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -31,6 +33,19 @@ Version `2.5.0 "World"` is the current production baseline.
   operator diagnostic scripts.
 - Keep docs concise enough that new operators can deploy, smoke test, diagnose,
   back up, restore, and upgrade without reading historical planning notes.
+
+## 2.5.1 Patch Focus
+
+- Keep mobile sheets, top buttons, VCR, palette picker, map controls, and live
+  clock inside phone safe-area bounds.
+- Keep Packets server-backed across 1h/6h/24h windows with 1000-row cursor pages
+  and a 5000-row retained client cap.
+- Keep live packet comets readable by suppressing them at low zoom by default,
+  while allowing forced replay and the all-zoom override.
+- Keep VCR replay clear with loading spinner feedback, 8x/16x speeds, and a
+  capped Laser Show mode.
+- Keep OpenFreeMap selected-packet replay cinematic with a cancellable chase
+  camera and unchanged public data schemas.
 
 ## Next Cleanup Candidates
 

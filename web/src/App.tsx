@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Check, Columns3, Eye, EyeOff, Layers, LocateFixed, Moon, Palette, Pause, Play, RadioTower, RotateCcw, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
-import { fetchPublicHistory, fetchPublicHistorySummary, fetchPublicState } from './api';
+import { fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicState } from './api';
 import { connectPublicSocket } from './ws';
 import {
   applyPublicEnvelope,
@@ -98,6 +98,9 @@ const PANEL_MENU_ITEMS: readonly { id: ChromePanelID; label: string }[] = [
 
 const VCR_MAX_BUFFERED_COMETS = 4000;
 const VCR_MAX_REPLAY_EVENTS = 2000;
+const VCR_LASER_MAX_PACKETS = 1600;
+const VCR_LASER_PAGE_LIMIT = 1000;
+const VCR_LASER_MAX_PAGES = 3;
 
 export default function App() {
   const sharedViewRef = useRef(parseSharedView(window.location.search));
@@ -141,6 +144,7 @@ export default function App() {
   const [positionedNodesRendered, setPositionedNodesRendered] = useState(false);
   const [nodeLoadFailed, setNodeLoadFailed] = useState(false);
   const [vcrOpen, setVcrOpen] = useState(false);
+  const [laserShowActive, setLaserShowActive] = useState(false);
   const [chromeVisibility, setChromeVisibility] = useState<ChromeVisibilityState>({
     chromeHidden: false,
     panels: { ...INITIAL_CHROME_PANEL_VISIBILITY }
@@ -261,6 +265,7 @@ export default function App() {
 
   const stopReplay = useCallback(() => {
     vcrGenerationRef.current += 1;
+    setLaserShowActive(false);
     if (vcrReplayTimerRef.current !== null) {
       window.clearTimeout(vcrReplayTimerRef.current);
       vcrReplayTimerRef.current = null;
@@ -310,7 +315,7 @@ export default function App() {
     }));
   }, [movePendingLiveToVcrBuffer, stopReplay]);
 
-  const playReplayEnvelopes = useCallback((inputMessages: PublicLiveEnvelope[], generation: number, doneMode: 'live' | 'paused') => {
+  const playReplayEnvelopes = useCallback((inputMessages: PublicLiveEnvelope[], generation: number, doneMode: 'live' | 'paused', onDone?: () => void) => {
     const messages = inputMessages.slice(0, VCR_MAX_REPLAY_EVENTS);
     recordVcrReplayQueueSize(messages.length);
     let index = 0;
@@ -321,6 +326,7 @@ export default function App() {
         vcrReplayTimerRef.current = null;
         if (doneMode === 'live') {
           recordVcrReplayQueueSize(0);
+          onDone?.();
           returnToLive();
         } else {
           recordVcrReplayQueueSize(vcrBufferedMessagesRef.current.length);
@@ -330,6 +336,7 @@ export default function App() {
             missedCount: vcrBufferedMessagesRef.current.length,
             status: current.status === 'loading' ? 'idle' : current.status
           }));
+          onDone?.();
         }
         return;
       }
@@ -396,6 +403,78 @@ export default function App() {
         setVcr((current) => ({ ...current, mode: 'paused', status: 'error', clock: selected, scrubAt: selected }));
       });
   }, [liveClock, playReplayEnvelopes, state.serverTime, stopReplay, vcr.clock, vcr.scrubAt]);
+
+  const startLaserShow = useCallback(() => {
+    stopReplay();
+    clearPendingLiveFlush();
+    pendingMessagesRef.current = [];
+    vcrBufferedMessagesRef.current = [];
+    recordVcrReplayQueueSize(0);
+    setPaused(false);
+    setClearToken((value) => value + 1);
+    const generation = vcrGenerationRef.current + 1;
+    vcrGenerationRef.current = generation;
+    const now = Date.now();
+    const from = new Date(now);
+    from.setHours(0, 0, 0, 0);
+    setLaserShowActive(true);
+    setVcr((current) => ({ ...current, mode: 'replay', status: 'loading', clock: from.getTime(), scrubAt: from.getTime(), missedCount: 0 }));
+
+    const load = async () => {
+      let cursor: string | undefined;
+      let page = 0;
+      const packets: PublicPacketPath[] = [];
+      while (page < VCR_LASER_MAX_PAGES && packets.length < VCR_LASER_MAX_PACKETS) {
+        const response = await fetchPublicPackets({
+          from: from.getTime(),
+          to: now,
+          limit: VCR_LASER_PAGE_LIMIT,
+          cursor
+        });
+        packets.push(...response.packets);
+        cursor = response.nextCursor;
+        page += 1;
+        if (!cursor) break;
+      }
+      if (!shouldApplyPlaybackGeneration(vcrGenerationRef.current, generation)) return;
+      const unique = dedupePackets(packets)
+        .sort((a, b) => a.at - b.at)
+        .slice(-VCR_LASER_MAX_PACKETS);
+      if (unique.length === 0) {
+        setLaserShowActive(false);
+        setVcr((current) => ({ ...current, mode: 'paused', status: 'empty', clock: from.getTime(), scrubAt: from.getTime() }));
+        return;
+      }
+      const startedAt = Date.now();
+      const spacing = Math.max(24, Math.round(54 / Math.max(0.5, vcrSpeedRef.current)));
+      const envelopes = unique.map((packet, index) => {
+        const pulse = packetToPulse(packet, startedAt + index * spacing, {
+          force: true,
+          travelDurationMs: Math.max(900, Math.round(1800 / Math.max(0.5, vcrSpeedRef.current))),
+          brightness: Math.min(1.75, mapSettings.packets.brightness * 1.2),
+          trailScale: Math.min(2.2, mapSettings.packets.trail * 1.15),
+          animationStyle: mapSettings.packets.animationStyle
+        });
+        return {
+          v: 1,
+          type: 'event',
+          event: 'routePulse',
+          seq: index + 1,
+          serverTime: packet.at,
+          receivedAt: packet.at,
+          displayAt: startedAt + index * spacing,
+          data: pulse
+        } satisfies PublicLiveEnvelope;
+      });
+      playReplayEnvelopes(envelopes, generation, 'paused', () => setLaserShowActive(false));
+    };
+
+    load().catch(() => {
+      if (!shouldApplyPlaybackGeneration(vcrGenerationRef.current, generation)) return;
+      setLaserShowActive(false);
+      setVcr((current) => ({ ...current, mode: 'paused', status: 'error', clock: from.getTime(), scrubAt: from.getTime() }));
+    });
+  }, [clearPendingLiveFlush, mapSettings.packets, playReplayEnvelopes, stopReplay]);
 
   const scrubTimeline = useCallback((timestamp: number) => {
     stopReplay();
@@ -1167,7 +1246,9 @@ export default function App() {
           onScope={setVcrScope}
           onScrub={scrubTimeline}
           onPlayFromScrub={replayFromScrub}
+          onLaserShow={startLaserShow}
           onClose={closeVcr}
+          laserShowActive={laserShowActive}
         />
       )}
 
@@ -1281,6 +1362,18 @@ function cinematicPacketReplayDuration(segmentCount: number, speed: number): num
   const safeSpeed = Number.isFinite(speed) ? Math.max(0.5, Math.min(3, speed)) : 1;
   const hopBonus = Math.min(3000, Math.max(0, segmentCount - 4) * 420);
   return Math.round((6000 + hopBonus) / safeSpeed);
+}
+
+function dedupePackets(packets: PublicPacketPath[]): PublicPacketPath[] {
+  const seen = new Set<string>();
+  const output: PublicPacketPath[] = [];
+  for (const packet of packets) {
+    const key = `${packet.at}:${packet.routeIds.join('|')}:${packet.endpointLabels.join('|')}:${packet.segmentCount}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(packet);
+  }
+  return output;
 }
 
 function paletteSwatchStyle(palette: ThemePalette): CSSProperties {
