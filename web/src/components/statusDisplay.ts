@@ -10,5 +10,8 @@ export function serverStatus(stats: PublicStats | null, socketStatus: string, co
 }
 
 export function formatPacketsTotal(count: number | undefined | null): string {
-  return `${(count ?? 0).toLocaleString()} packets total`;
+  const total = Math.max(0, Math.floor(count ?? 0));
+  if (total >= 1_000_000) return `${(total / 1_000_000).toFixed(total >= 10_000_000 ? 0 : 1)}M packets`;
+  if (total >= 100_000) return `${Math.round(total / 1000).toLocaleString()}k packets`;
+  return `${total.toLocaleString()} packets`;
 }

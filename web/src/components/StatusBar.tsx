@@ -32,33 +32,33 @@ export default function StatusBar({ stats, socketStatus, nodeCount, routeCount, 
         <span className="packet-type-signal" key={latestPacketID ?? latestPayloadTypeName ?? 'none'} />
         <span>{latestPayload.shortLabel}</span>
       </div>
-      <div className="status-pill packets-total">
+      <div className="status-pill packets-total" title={`${(stats?.packets ?? 0).toLocaleString()} packets total`}>
         <Database size={15} />
         <span>{formatPacketsTotal(stats?.packets)}</span>
       </div>
-      <div className="status-pill pulse-rate">
+      <div className="status-pill pulse-rate" title={`${coverage.receivedPerMinute} packets received per minute`}>
         <Zap size={15} />
-        <span>{coverage.receivedPerMinute}/min received</span>
+        <span>{coverage.receivedPerMinute}/min rx</span>
       </div>
-      <div className="status-pill route routed-rate">
+      <div className="status-pill route routed-rate" title={`${coverage.routeAnimatedPerMinute} routed packet comets per minute`}>
         <Route size={15} />
         <span>{coverage.routeAnimatedPerMinute}/min routed</span>
       </div>
-      <div className="status-pill observer">
+      <div className="status-pill observer" title={`${coverage.observerBurstPerMinute} observer bursts per minute`}>
         <Sparkles size={15} />
         <span>{coverage.observerBurstPerMinute}/min bursts</span>
       </div>
-      <div className="status-pill unmapped">
+      <div className="status-pill unmapped" title={`${coverage.unmappedPerMinute} unresolved packets per minute`}>
         <MapPin size={15} />
         <span>{coverage.unmappedPerMinute}/min unresolved</span>
       </div>
-      <div className="status-pill node-count">
+      <div className="status-pill node-count" title={`${nodeCount.toLocaleString()} positioned public nodes`}>
         <Shield size={15} />
-        <span>{nodeCount} nodes</span>
+        <span>{nodeCount.toLocaleString()} nodes</span>
       </div>
-      <div className="status-pill route route-count">
+      <div className="status-pill route route-count" title={`${routeCount.toLocaleString()} public routes`}>
         <Route size={15} />
-        <span>{routeCount} routes</span>
+        <span>{routeCount.toLocaleString()} routes</span>
       </div>
     </header>
   );

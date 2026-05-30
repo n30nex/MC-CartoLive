@@ -51,7 +51,7 @@ export default function PacketsPanel({
   const mountedRef = useRef(true);
   const listRef = useRef<HTMLDivElement | null>(null);
   const requestGenerationRef = useRef(0);
-  const requestInFlightRef = useRef(false);
+  const requestAbortRef = useRef<AbortController | null>(null);
   const debouncedFilters = useDebouncedValue(filters, PACKET_FILTER_DEBOUNCE_MS);
   const selectedFromList = useMemo(() => packets.find((packet) => packet.id === selectedPacketID) ?? null, [packets, selectedPacketID]);
   const activePacket = selectedPacket ?? selectedFromList;
@@ -59,20 +59,22 @@ export default function PacketsPanel({
   useEffect(() => {
     return () => {
       mountedRef.current = false;
+      requestAbortRef.current?.abort();
     };
   }, []);
 
   const refresh = useCallback(() => {
-    if (requestInFlightRef.current) return () => undefined;
     let active = true;
-    requestInFlightRef.current = true;
+    requestAbortRef.current?.abort();
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
     const generation = requestGenerationRef.current + 1;
     requestGenerationRef.current = generation;
     setLoading(true);
     setError(null);
     setSearchState(hasActivePacketFilters(debouncedFilters) ? 'searching' : 'idle');
     const window = packetWindowForScope(Date.now(), scopeMs);
-    fetchPacketPages({ window, filters: debouncedFilters, targetCount: PACKETS_PAGE_LIMIT })
+    fetchPacketPages({ window, filters: debouncedFilters, targetCount: PACKETS_PAGE_LIMIT, signal: controller.signal })
       .then((response) => {
         if (!active || !mountedRef.current || generation !== requestGenerationRef.current) return;
         setPackets(capPackets(response.packets));
@@ -84,25 +86,29 @@ export default function PacketsPanel({
         if (listRef.current) listRef.current.scrollTop = 0;
       })
       .catch((err: unknown) => {
+        if (isAbortError(err)) return;
         if (!active || !mountedRef.current || generation !== requestGenerationRef.current) return;
         setError(packetRequestErrorMessage(err));
       })
       .finally(() => {
         if (active && mountedRef.current && generation === requestGenerationRef.current) {
-          requestInFlightRef.current = false;
+          if (requestAbortRef.current === controller) requestAbortRef.current = null;
           setLoading(false);
         }
       });
     return () => {
       active = false;
-      requestInFlightRef.current = false;
+      controller.abort();
+      if (requestAbortRef.current === controller) requestAbortRef.current = null;
     };
   }, [debouncedFilters, scopeMs]);
 
   const loadOlder = useCallback(() => {
-    if (!windowInfo || !nextCursor || loadingMore || requestInFlightRef.current) return;
+    if (!windowInfo || !nextCursor || loadingMore) return;
+    requestAbortRef.current?.abort();
+    const controller = new AbortController();
+    requestAbortRef.current = controller;
     const generation = requestGenerationRef.current;
-    requestInFlightRef.current = true;
     setLoadingMore(true);
     setError(null);
     setSearchState(hasActivePacketFilters(debouncedFilters) ? 'searching' : 'idle');
@@ -110,23 +116,24 @@ export default function PacketsPanel({
       window: { from: windowInfo.from, to: windowInfo.to },
       filters: debouncedFilters,
       cursor: nextCursor,
-      targetCount: PACKETS_PAGE_LIMIT
+      targetCount: PACKETS_PAGE_LIMIT,
+      signal: controller.signal
     })
       .then((response) => {
-        if (!mountedRef.current || generation !== requestGenerationRef.current) return;
+        if (controller.signal.aborted || !mountedRef.current || generation !== requestGenerationRef.current) return;
         setPackets((current) => capPackets([...current, ...response.packets]));
         setNextCursor(response.nextCursor ?? '');
         setWindowInfo(response.window);
         setSearchState(response.nextCursor ? 'more' : 'end');
       })
       .catch((err: unknown) => {
+        if (isAbortError(err)) return;
         if (mountedRef.current && generation === requestGenerationRef.current) setError(packetRequestErrorMessage(err));
       })
       .finally(() => {
-        if (mountedRef.current && generation === requestGenerationRef.current) {
-          requestInFlightRef.current = false;
-          setLoadingMore(false);
-        }
+        if (!mountedRef.current) return;
+        if (requestAbortRef.current === controller) requestAbortRef.current = null;
+        setLoadingMore(false);
       });
   }, [debouncedFilters, loadingMore, nextCursor, windowInfo]);
 
@@ -429,12 +436,14 @@ async function fetchPacketPages({
   window,
   filters,
   cursor,
-  targetCount
+  targetCount,
+  signal
 }: {
   window: { from: number; to: number };
   filters: PacketFilters;
   cursor?: string;
   targetCount: number;
+  signal?: AbortSignal;
 }): Promise<{ packets: PublicPacketPath[]; nextCursor: string; window: PublicHistoryWindow }> {
   const activeFilters = hasActivePacketFilters(filters);
   const packets: PublicPacketPath[] = [];
@@ -448,6 +457,7 @@ async function fetchPacketPages({
       to: window.to,
       limit: PACKETS_PAGE_LIMIT,
       cursor: nextCursor || undefined,
+      signal,
       ...filtersToParams(filters)
     });
     packets.push(...response.packets);
@@ -462,6 +472,10 @@ async function fetchPacketPages({
     nextCursor,
     window: latestWindow ?? { from: window.from, to: window.to, count: 0 }
   };
+}
+
+function isAbortError(err: unknown): boolean {
+  return Boolean(err && typeof err === 'object' && 'name' in err && (err as { name?: unknown }).name === 'AbortError');
 }
 
 function dedupePackets(items: PublicPacketPath[]): PublicPacketPath[] {

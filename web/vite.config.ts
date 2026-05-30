@@ -56,7 +56,10 @@ export default defineConfig({
     __BUILD_NUMBER__: JSON.stringify(buildNumber()),
     __GIT_SHA__: JSON.stringify(gitSha()),
     __BUILD_TIME__: JSON.stringify(buildTime()),
-    __RELEASE_URL__: JSON.stringify(`${GITHUB_REPO_URL}/releases/tag/v${packageJSON.version ?? '1.0.0'}`)
+    __RELEASE_URL__: JSON.stringify(`${GITHUB_REPO_URL}/releases/tag/v${packageJSON.version ?? '1.0.0'}`),
+    __APP_BRAND_NAME__: JSON.stringify(process.env.VITE_APP_BRAND_NAME || 'MC-CartoLive'),
+    __APP_BRAND_URL__: JSON.stringify(process.env.VITE_APP_BRAND_URL || GITHUB_REPO_URL),
+    __APP_BRAND_LOGO__: JSON.stringify(process.env.VITE_APP_BRAND_LOGO || '')
   },
   test: {
     environment: 'jsdom'

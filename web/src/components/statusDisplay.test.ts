@@ -14,8 +14,9 @@ const coverage = (lastPacketAgeMs: number | null): LiveCoverageStats => ({
 
 describe('status display helpers', () => {
   it('formats total packet copy', () => {
-    expect(formatPacketsTotal(86_779)).toBe('86,779 packets total');
-    expect(formatPacketsTotal(null)).toBe('0 packets total');
+    expect(formatPacketsTotal(86_779)).toBe('86,779 packets');
+    expect(formatPacketsTotal(912_001)).toBe('912k packets');
+    expect(formatPacketsTotal(null)).toBe('0 packets');
   });
 
   it('reports Live only when packets are fresh and transports are healthy', () => {

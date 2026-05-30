@@ -69,7 +69,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.1
+  ghcr.io/n30nex/mc-cartolive:2.5.2
 ```
 
 For production, keep private settings in an env file and mount persistent data:
@@ -79,7 +79,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.1
+  ghcr.io/n30nex/mc-cartolive:2.5.2
 ```
 
 The published image runs as non-root `appuser`, includes OCI source/version
@@ -132,7 +132,7 @@ docker compose up -d
 
 ## Runtime Notes
 
-- Version 2.5.1 exposes the app version/build in the top project bar. CI builds use
+- Version 2.5.2 exposes the app version/build in the top project bar. CI builds use
   the Git commit SHA when available; local Docker builds use a timestamp fallback
   plus a separate ISO build time for build-age display.
 - Runtime liveness and readiness are split: `/healthz` stays cheap for Docker
@@ -147,6 +147,10 @@ docker compose up -d
   `VITE_TERRAIN_EXAGGERATION` build args so release builds can link directly
   to the source commit and operators can choose self-hosted OpenFreeMap/terrain
   TileJSON sources.
+- Docker Compose also forwards optional `VITE_APP_BRAND_NAME`,
+  `VITE_APP_BRAND_URL`, and `VITE_APP_BRAND_LOGO` build args. Package installs
+  default to generic MC-CartoLive branding; the hosted Canada deployment can set
+  MeshCore Canada branding in its private `.env`.
 - `PUBLIC_BASE_URL` must match the public browser origin so WebSocket origin checks pass.
 - `MAP_REGION_PRESET=world` is the package default. Use `canada` for the
   hosted Canada map or `custom` with `MAP_BOUNDS=minLat,minLng,maxLat,maxLng`

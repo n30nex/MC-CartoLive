@@ -4,6 +4,27 @@
 
 - No unreleased changes.
 
+## 2.5.2 - 2026-05-30
+
+- Started the 2.6 production polish track with a detailed local roadmap from
+  2.5.2 through the 2.6.0 release gate.
+- Fixed CI Docker smoke metadata so the expected image version is read from
+  `VERSION` instead of a stale hardcoded release.
+- Added configurable frontend deployment branding through `VITE_APP_BRAND_NAME`,
+  `VITE_APP_BRAND_URL`, and `VITE_APP_BRAND_LOGO`, with a bundled generic
+  MC-CartoLive logo as the package default.
+- Refreshed the top-bar changelog, feature list, and guide copy for the 2.5/2.6
+  track and added icon-led guide sections.
+- Tightened top status pill copy and sizing so the live bar scans more cleanly
+  on desktop.
+- Updated map node rendering so role icons match the legend assets while
+  keeping the existing circles for hit testing and state highlights.
+- Made Packets refreshes abort stale requests so slow older filter searches
+  cannot overwrite newer results.
+- Thinned and lowered the VCR timeline track so the red live track no longer
+  obscures the packet-frequency sparkline while scrubbing.
+- Increased route/path overlay contrast to improve light-mode readability.
+
 ## 2.5.1 - 2026-05-26
 
 - Polished mobile layout so Packets, VCR, palette picker, and Map Settings open

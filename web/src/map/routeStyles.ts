@@ -1,12 +1,12 @@
-export const ROUTE_BASE_OPACITY = 0.13;
-export const ROUTE_DIMMED_OPACITY = 0.055;
-export const ROUTE_ACTIVE_OPACITY = 0.64;
-export const ROUTE_PATH_OPACITY = 0.74;
-export const ROUTE_CONNECTED_OPACITY = 0.58;
-export const ROUTE_BASE_WIDTH = 1.05;
-export const ROUTE_ACTIVE_WIDTH = 3;
-export const ROUTE_PATH_WIDTH = 3.4;
-export const ROUTE_CONNECTED_WIDTH = 2.5;
+export const ROUTE_BASE_OPACITY = 0.2;
+export const ROUTE_DIMMED_OPACITY = 0.075;
+export const ROUTE_ACTIVE_OPACITY = 0.78;
+export const ROUTE_PATH_OPACITY = 0.9;
+export const ROUTE_CONNECTED_OPACITY = 0.7;
+export const ROUTE_BASE_WIDTH = 1.15;
+export const ROUTE_ACTIVE_WIDTH = 3.4;
+export const ROUTE_PATH_WIDTH = 3.8;
+export const ROUTE_CONNECTED_WIDTH = 2.8;
 
 export interface RouteRenderState {
   selected?: boolean;

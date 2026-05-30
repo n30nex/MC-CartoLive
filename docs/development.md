@@ -179,7 +179,7 @@ Use overrides when testing a branch, alternate host, expected build, or another
 diagnostic region:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.5.1 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.5.2 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
 Check privacy before committing:

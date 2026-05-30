@@ -63,6 +63,9 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Read release version
+        run: echo "APP_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+
       - name: Build image
         uses: docker/build-push-action@v6
         with:
@@ -72,7 +75,7 @@ jobs:
           provenance: false
           tags: meshcore-canada-live-map:ci
           build-args: |
-            APP_VERSION=2.5.0
+            APP_VERSION=${{ env.APP_VERSION }}
 
       - name: Smoke built image
         run: |
@@ -94,7 +97,7 @@ jobs:
             fi
             sleep 1
           done
-          grep -q '"version":"2.5.0"' /tmp/mc-health.json
+          grep -q "\"version\":\"${APP_VERSION}\"" /tmp/mc-health.json
           docker exec mc-cartolive-ci test -s /app/examples/fixtures/synthetic-live.ndjson
           for i in $(seq 1 30); do
             curl -fsS 'http://127.0.0.1:18080/api/v1/public/packets?limit=25' >/tmp/mc-packets.json

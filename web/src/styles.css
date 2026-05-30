@@ -533,8 +533,8 @@ button {
   z-index: 7;
   min-height: 34px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: minmax(160px, 1fr) auto minmax(220px, 1fr);
+  gap: 8px;
   align-items: center;
   padding: 5px 8px;
   color: var(--mc-text-normal, #dbeafe);
@@ -613,7 +613,7 @@ button {
 
 .link-bar-build {
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   color: var(--mc-text-normal, #cfe9ff);
   font-size: 11px;
   white-space: nowrap;
@@ -641,6 +641,8 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-height: 23px;
+  white-space: nowrap;
   color: color-mix(in srgb, var(--mc-accent, #38bdf8) 74%, var(--mc-text, #ffffff));
   background: color-mix(in srgb, var(--mc-accent, #38bdf8) 8%, transparent);
 }
@@ -877,21 +879,37 @@ button {
 
 .guide-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
   margin-top: 14px;
 }
 
 .guide-grid section {
-  padding: 12px;
+  padding: 10px;
   background: color-mix(in srgb, var(--mc-control-bg, rgba(8, 16, 28, 0.74)) 72%, transparent);
   border: 1px solid color-mix(in srgb, var(--mc-border, #38bdf8) 40%, transparent);
   border-radius: 8px;
 }
 
 .guide-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   margin-bottom: 8px;
   font-size: 13px;
+}
+
+.guide-card h3 span {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--mc-text, #f8fafc);
+  background: color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-accent, #38bdf8) 34%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--mc-accent, #38bdf8) 16%, transparent);
 }
 
 .perf-panel,
@@ -1601,10 +1619,10 @@ button {
 .status-bar {
   top: 52px;
   left: 10px;
-  right: 226px;
+  right: 388px;
   display: flex;
   flex-wrap: nowrap;
-  gap: 6px;
+  gap: 5px;
   align-items: center;
   overflow: hidden;
 }
@@ -1612,10 +1630,12 @@ button {
 .status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex: 0 0 auto;
-  min-height: 30px;
-  padding: 0 9px;
+  min-width: 72px;
+  min-height: 28px;
+  max-width: 150px;
+  padding: 0 8px;
   color: #dbeafe;
   background: linear-gradient(135deg, rgba(6, 11, 18, 0.9), rgba(10, 20, 35, 0.78));
   border: 1px solid rgba(125, 211, 252, 0.2);
@@ -1625,7 +1645,7 @@ button {
     0 0 14px rgba(56, 189, 248, 0.035),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(16px) saturate(1.2);
-  font-size: 11px;
+  font-size: 10.5px;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   white-space: nowrap;
@@ -1639,6 +1659,16 @@ button {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.status-pill.server-status,
+.status-pill.payload-signal-pill {
+  min-width: 64px;
+  max-width: 88px;
+}
+
+.status-pill.packets-total {
+  min-width: 118px;
 }
 
 .status-pill.good {
@@ -2486,7 +2516,7 @@ button {
 .vcr-timeline-shell {
   position: relative;
   min-width: 0;
-  height: 38px;
+  height: 36px;
   display: grid;
   align-items: center;
   overflow: visible;
@@ -2494,14 +2524,15 @@ button {
 
 .vcr-timeline-track {
   position: absolute;
-  inset: auto 0 10px;
+  inset: auto 0 5px;
   z-index: 1;
-  height: 7px;
+  height: 4px;
   overflow: hidden;
   background: color-mix(in srgb, var(--mc-control-bg, rgba(15, 23, 42, 0.68)) 82%, transparent);
   border: 1px solid var(--vcr-track);
   border-radius: 999px;
-  box-shadow: 0 0 16px var(--vcr-track-glow), inset 0 0 10px rgba(0, 0, 0, 0.42);
+  opacity: 0.78;
+  box-shadow: 0 0 10px var(--vcr-track-glow), inset 0 0 8px rgba(0, 0, 0, 0.36);
   pointer-events: none;
 }
 
@@ -2515,7 +2546,7 @@ button {
 
 .vcr-sparkline {
   position: absolute;
-  inset: 3px 0 9px;
+  inset: 2px 0 11px;
   z-index: 2;
   display: grid;
   grid-auto-flow: column;

@@ -160,6 +160,7 @@ const ROUTE_PAYLOAD_GLOW_SOURCE = 'route-payload-glows';
 const ROUTE_PAYLOAD_GLOW_LAYER = 'route-payload-glow';
 const NODE_HALO_LAYER = 'selected-node-halo';
 const NODE_LAYER = 'node-symbols';
+const NODE_ICON_LAYER = 'node-role-icons';
 const OBSERVER_LAYER = 'observer-symbols';
 const ROUTE_LAYER = 'route-lines';
 const CARTO_DARK_SOURCE = 'carto-dark-tiles';
@@ -824,6 +825,34 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       }
     },
     {
+      id: NODE_ICON_LAYER,
+      type: 'symbol',
+      source: NODE_SOURCE,
+      minzoom: DETAIL_MIN_ZOOM,
+      filter: ['all', ['!', ['has', 'point_count']], ['!=', ['get', 'observer'], true]],
+      layout: {
+        'icon-image': [
+          'match',
+          ['get', 'role'],
+          'repeater',
+          'node-repeater',
+          'companion',
+          'node-companion',
+          'room_server',
+          'node-room_server',
+          'sensor',
+          'node-sensor',
+          'node-unknown'
+        ],
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 7, 0.34, 11, 0.5],
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true
+      },
+      paint: {
+        'icon-opacity': ['case', ['==', ['get', 'selected'], true], 1, ['==', ['get', 'dimmed'], true], 0.3, ['==', ['get', 'staleLevel'], 2], 0.55, 0.92]
+      }
+    },
+    {
       id: OBSERVER_LAYER,
       type: 'symbol',
       source: NODE_SOURCE,
@@ -1367,7 +1396,7 @@ export default function CanadaMap({
     (window as any).__meshcoreMapStyle = initialStyle;
     mapRef.current = map;
     animatorRef.current = new PacketAnimator(map, canvasRef.current, {
-      maskLayerIDs: [CLUSTER_LAYER, NODE_HALO_LAYER, NODE_LAYER],
+      maskLayerIDs: [CLUSTER_LAYER, NODE_HALO_LAYER, NODE_LAYER, NODE_ICON_LAYER, OBSERVER_LAYER],
       layerSettings: layerSettingsRef.current,
       visualSettings: packetVisualSettingsRef.current
     });
@@ -2202,6 +2231,35 @@ function addPublicLayers(map: maplibregl.Map) {
   });
 
   addLayerIfMissing(map, {
+    id: NODE_ICON_LAYER,
+    type: 'symbol',
+    source: NODE_SOURCE,
+    minzoom: DETAIL_MIN_ZOOM,
+    filter: ['all', ['!', ['has', 'point_count']], ['!=', ['get', 'observer'], true]],
+    layout: {
+      'icon-image': [
+        'match',
+        ['get', 'role'],
+        'repeater',
+        'node-repeater',
+        'companion',
+        'node-companion',
+        'room_server',
+        'node-room_server',
+        'sensor',
+        'node-sensor',
+        'node-unknown'
+      ],
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 7, 0.34, 11, 0.5],
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true
+    },
+    paint: {
+      'icon-opacity': ['case', ['==', ['get', 'selected'], true], 1, ['==', ['get', 'dimmed'], true], 0.3, ['==', ['get', 'staleLevel'], 2], 0.55, 0.92]
+    }
+  });
+
+  addLayerIfMissing(map, {
     id: OBSERVER_LAYER,
     type: 'symbol',
     source: NODE_SOURCE,
@@ -2232,7 +2290,7 @@ function applyLayerSettings(map: maplibregl.Map, settings: MapLayerSettings) {
     CLUSTER_COUNT_LAYER,
     ...CLUSTER_ROLE_BADGES.flatMap((badge) => [`${CLUSTER_ROLE_BADGE_LAYER_PREFIX}-${badge.key}-dot`, `${CLUSTER_ROLE_BADGE_LAYER_PREFIX}-${badge.key}-count`])
   ];
-  const nodeLayers = [NODE_HALO_LAYER, NODE_LAYER, OBSERVER_LAYER];
+  const nodeLayers = [NODE_HALO_LAYER, NODE_LAYER, NODE_ICON_LAYER, OBSERVER_LAYER];
   const routeLayers = [ROUTE_LAYER];
   const analysisLayers = [ROUTE_GLOW_LAYER, ROUTE_PAYLOAD_GLOW_LAYER, ANALYSIS_ROUTE_GLOW_LAYER, ANALYSIS_ROUTE_LAYER];
   const observerBurstLayers = [CLUSTER_ACTIVITY_AURA_LAYER, CLUSTER_ACTIVITY_RING_LAYER];
@@ -2884,7 +2942,7 @@ function bindLayerEvents(
     });
   };
   map.on('click', async (event) => {
-    const nodeLayers = [OBSERVER_LAYER, NODE_LAYER].filter((layerID) => map.getLayer(layerID));
+    const nodeLayers = [OBSERVER_LAYER, NODE_ICON_LAYER, NODE_LAYER].filter((layerID) => map.getLayer(layerID));
     const nodeFeature = nodeLayers.length > 0
       ? map.queryRenderedFeatures(event.point, { layers: nodeLayers }).find((feature) => typeof feature.properties?.id === 'string')
       : undefined;
@@ -2913,10 +2971,12 @@ function bindLayerEvents(
     clearSelectionRef.current();
   });
   map.on('mousemove', NODE_LAYER, handleNodePointerMove);
+  map.on('mousemove', NODE_ICON_LAYER, handleNodePointerMove);
   map.on('mousemove', OBSERVER_LAYER, handleNodePointerMove);
   map.on('mouseleave', NODE_LAYER, () => setHoveredNode(null));
+  map.on('mouseleave', NODE_ICON_LAYER, () => setHoveredNode(null));
   map.on('mouseleave', OBSERVER_LAYER, () => setHoveredNode(null));
-  for (const layer of [CLUSTER_LAYER, CLUSTER_COUNT_LAYER, NODE_LAYER, OBSERVER_LAYER]) {
+  for (const layer of [CLUSTER_LAYER, CLUSTER_COUNT_LAYER, NODE_LAYER, NODE_ICON_LAYER, OBSERVER_LAYER]) {
     map.on('mouseenter', layer, () => {
       map.getCanvas().style.cursor = 'pointer';
     });
@@ -3140,14 +3200,14 @@ function routePulsePoints(pulse: PublicRoutePulse): Array<[number, number]> {
 
 function addGeneratedNodeIcons(map: maplibregl.Map) {
   const specs = [
-    ['node-repeater', '#22c55e', 'diamond'],
-    ['node-companion', '#3b82f6', 'triangle'],
-    ['node-room_server', '#a855f7', 'square'],
-    ['node-sensor', '#65a30d', 'pentagon'],
-    ['node-unknown', '#64748b', 'circle']
+    ['node-repeater', routeAssetIcons.repeater, '#22c55e', 'diamond'],
+    ['node-companion', routeAssetIcons.companion, '#3b82f6', 'triangle'],
+    ['node-room_server', routeAssetIcons.room, '#a855f7', 'square'],
+    ['node-sensor', routeAssetIcons.tower, '#65a30d', 'pentagon'],
+    ['node-unknown', routeAssetIcons.tower, '#64748b', 'circle']
   ] as const;
-  for (const [name, color, shape] of specs) {
-    if (!map.hasImage(name)) map.addImage(name, createIcon(color, shape), { pixelRatio: 2 });
+  for (const [name, url, color, shape] of specs) {
+    addMapImageFromURL(map, name, url, createIcon(color, shape));
   }
   addMapImageFromURL(map, 'observer-node', routeAssetIcons.observer, createIcon('#f59e0b', 'observer'));
 }

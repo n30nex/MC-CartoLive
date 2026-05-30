@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { BookOpen, ExternalLink, Gauge, Github, HelpCircle, History, List, Network, Sparkles, X } from 'lucide-react';
-import { appVersion, buildNumber, buildTime, gitSha, releaseURL } from '../buildInfo';
+import { Activity, ExternalLink, Gauge, Github, HelpCircle, History, List, Map, Network, RadioTower, Settings2, Sparkles, X } from 'lucide-react';
+import { appBrandLogo, appBrandName, appBrandURL, appVersion, buildNumber, buildTime, gitSha, releaseURL } from '../buildInfo';
+import { routeAssetIcons } from '../assets/routes/assets';
 import {
   GITHUB_REPO_API_URL,
   GITHUB_REPO_URL,
@@ -13,22 +14,20 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const MESHCORE_CANADA_URL = 'https://meshcore.ca/';
-const MESHCORE_CANADA_LOGO = '/meshcore-canada-favicon.png';
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.1';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.2';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
-  'OpenFreeMap 3D now renders procedural node models, elevated route arcs, 3D packet comets, terrain, and tuned buildings.',
-  'NetGraph adds a closeable live node graph with routed packet comets, observer glows, search, fit/reset, and inspectors.',
-  'Packets is now a true-path packet browser with replay, focus, filters, public segment details, and server-backed paging.',
-  'Map Settings adds layer toggles plus comet speed, brightness, trail length, and animation style controls.',
-  'Perf, health/readiness, live smoke checks, and production docs were expanded for public deployment confidence.'
+  'Release metadata and CI smoke now derive from VERSION so packaged images, health checks, and docs do not drift.',
+  'Packaged deployments can set their own top-bar brand name, link, and logo; hosted Canada can keep MeshCore Canada branding through env config.',
+  'Packets requests are now generation-safe and abort stale filter searches instead of letting older responses replace newer results.',
+  'The top status pills were tightened for scanability, and node map icons now match the legend role icons.',
+  'The VCR timeline track is thinner and moved behind the sparkline so scrubbing detail stays readable.'
 ];
 
 const FEATURE_LIST = [
-  'Live public MeshCore map with route comets, observer bursts, message bubbles, and clustered overview.',
+  'Worldwide-ready public MeshCore map with configurable regions, map bounds, and instance branding.',
   'OpenFreeMap 3D mode with low-poly repeaters, companions, rooms, observer beacons, route arcs, and 3D comets.',
   'True-path Packets page for sanitized 24h packet browsing and cinematic route replay.',
   'NetGraph view for connected public RF topology with live pulses and compact node/pathway inspectors.',
@@ -56,6 +55,9 @@ export default function LinkBar({ perfOpen = false, packetsOpen = false, netGrap
   const [activeInfoPanel, setActiveInfoPanel] = useState<InfoPanel>(null);
   const [welcomeOpen, setWelcomeOpen] = useState(false);
   const [hideWelcomeAgain, setHideWelcomeAgain] = useState(true);
+  const brandName = appBrandName.trim() || 'MC-CartoLive';
+  const brandURL = appBrandURL.trim() || GITHUB_REPO_URL;
+  const brandLogo = appBrandLogo.trim() || routeAssetIcons.app;
   const buildAge = useMemo(() => formatBuildAge(buildTime, now), [now]);
   const buildID = shortBuildID(buildNumber, gitSha);
   const commitURL = commitURLForSha(gitSha || buildNumber);
@@ -105,9 +107,9 @@ export default function LinkBar({ perfOpen = false, packetsOpen = false, netGrap
 
   return (
     <nav className="link-bar" aria-label="Project links">
-      <a className="link-bar-brand" href={MESHCORE_CANADA_URL} target="_blank" rel="noreferrer" title="Open MeshCore Canada">
-        <img src={MESHCORE_CANADA_LOGO} alt="" aria-hidden="true" />
-        <span>MeshCore Canada</span>
+      <a className="link-bar-brand" href={brandURL} target="_blank" rel="noreferrer" title={`Open ${brandName}`}>
+        <img src={brandLogo} alt="" aria-hidden="true" />
+        <span>{brandName}</span>
       </a>
       <div className="link-bar-build" aria-label={`MC-CartoLive version ${appVersion}, build ${buildNumber}`}>
         <strong>MC-CartoLive</strong>
@@ -172,7 +174,7 @@ export default function LinkBar({ perfOpen = false, packetsOpen = false, netGrap
       </div>
       {activeInfoPanel === 'changelog' && (
         <InfoPopover title="Latest Changelog" icon={<History size={14} />} onClose={() => setActiveInfoPanel(null)}>
-          <p>MC-CartoLive v{appVersion} is focused on the new OpenFreeMap 3D live network view and the production tooling around the 2.4 line.</p>
+          <p>MC-CartoLive v{appVersion} is the first 2.6 foundation patch: release hygiene, world-ready branding, request safety, and cleaner live-map chrome.</p>
           <ul>
             {LATEST_CHANGELOG.map((item) => <li key={item}>{item}</li>)}
           </ul>
@@ -243,25 +245,35 @@ function GuideOverlay({ title, onClose }: { title: string; onClose: () => void }
           </button>
         </header>
         <div className="guide-grid">
-          <GuideSection title="Map Views" items={[
+          <GuideSection title="Map Views" icon={<Map size={18} />} items={[
             'Original flat mode keeps the fast dark/light map and 2D route layer.',
             'OpenFreeMap 3D adds terrain, buildings, low-poly nodes, route arcs, and 3D packet comets.',
             'Map Settings can turn layers and 3D effects on or off without changing public data.'
           ]} />
-          <GuideSection title="Traffic Tools" items={[
+          <GuideSection title="Traffic Tools" icon={<Activity size={18} />} items={[
             'Live packet comets show only resolved public paths.',
             'Packets lists true path packets, filters across the selected window, and replays one route at a watchable speed.',
             'VCR can pause, scrub, and replay public route history without exposing private packet details.'
           ]} />
-          <GuideSection title="Analysis" items={[
+          <GuideSection title="Analysis" icon={<Network size={18} />} items={[
             'Plot Routes and Select two compare known public pathways between nodes.',
             'Phonebook shows reachable public nodes from a selected repeater or room.',
             'NetGraph renders the connected RF topology with live pulses and node/path inspectors.'
           ]} />
-          <GuideSection title="Operations" items={[
+          <GuideSection title="Operations" icon={<Gauge size={18} />} items={[
             'Perf shows public-safe runtime health, queues, frame timing, and backend readiness.',
             'Health/readiness and smoke scripts help operators confirm live deployments.',
             'Public APIs stay sanitized: no raw hashes, full public keys, broker secrets, or resolver debug data.'
+          ]} />
+          <GuideSection title="World Deploys" icon={<RadioTower size={18} />} items={[
+            'Package installs can use generic region labels like r1, AUS, or EU-W.',
+            'Operators can set their own brand name, logo, URL, region bounds, and public region allowlist.',
+            'True routes remain resolver-backed; MC-CartoLive does not invent RF links from coordinates.'
+          ]} />
+          <GuideSection title="Controls" icon={<Settings2 size={18} />} items={[
+            'Use palettes and light/dark mode to adapt the map for the room or screen.',
+            'Layer controls can hide routes, nodes, packet comets, observer bursts, and 3D effects.',
+            'VCR and Packets replay pause live traffic intentionally so one path can be inspected.'
           ]} />
         </div>
       </div>
@@ -269,10 +281,10 @@ function GuideOverlay({ title, onClose }: { title: string; onClose: () => void }
   );
 }
 
-function GuideSection({ title, items }: { title: string; items: string[] }) {
+function GuideSection({ title, icon, items }: { title: string; icon: ReactNode; items: string[] }) {
   return (
     <section>
-      <h3>{title}</h3>
+      <h3><span>{icon}</span>{title}</h3>
       <ul>
         {items.map((item) => <li key={item}>{item}</li>)}
       </ul>
