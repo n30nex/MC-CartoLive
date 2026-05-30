@@ -740,6 +740,12 @@ func (s *Server) publicPackets(w http.ResponseWriter, r *http.Request) {
 			To:    to,
 			Count: len(packets),
 		},
+		Scan: live.PublicPacketScan{
+			EventsScanned: scannedRaw,
+			ScanLimit:     publicPacketsMaxRawScan,
+			Filtered:      filters.hasAny(),
+			Partial:       nextCursorToken != "",
+		},
 	})
 	failed = false
 }
@@ -750,6 +756,10 @@ type publicPacketFilters struct {
 	minHops     int
 	messageOnly bool
 	query       string
+}
+
+func (f publicPacketFilters) hasAny() bool {
+	return f.iata != "" || f.payload != "" || f.minHops > 0 || f.messageOnly || f.query != ""
 }
 
 func publicPacketFiltersFromRequest(r *http.Request) publicPacketFilters {

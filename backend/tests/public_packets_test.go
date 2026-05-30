@@ -60,6 +60,9 @@ func TestPublicPacketsEndpointReturnsOnlySanitizedTrueRoutedPackets(t *testing.T
 	if packet.DistanceKM != 360 || len(packet.Segments) != 1 || len(packet.EndpointLabels) != 2 {
 		t.Fatalf("packet path = %#v, want public segment details", packet)
 	}
+	if packets.Scan.EventsScanned == 0 || packets.Scan.ScanLimit == 0 || packets.Scan.Filtered || packets.Scan.Partial {
+		t.Fatalf("scan summary = %#v, want public-safe complete unfiltered scan metadata", packets.Scan)
+	}
 	raw := response.Body.String()
 	for _, forbidden := range []string{
 		"activity",
@@ -187,6 +190,9 @@ func TestPublicPacketsEndpointFiltersAcrossSanitizedPacketFields(t *testing.T) {
 			}
 			if len(packets.Packets) != 1 || packets.Packets[0].IATA != tt.want {
 				t.Fatalf("packets = %#v, want single %s match", packets.Packets, tt.want)
+			}
+			if !packets.Scan.Filtered || packets.Scan.EventsScanned == 0 {
+				t.Fatalf("scan summary = %#v, want filtered scan metadata", packets.Scan)
 			}
 			raw := response.Body.String()
 			if strings.Contains(raw, "hash-filter") || strings.Contains(raw, "private resolver reason") {

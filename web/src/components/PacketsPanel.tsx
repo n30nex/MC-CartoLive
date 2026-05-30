@@ -3,7 +3,7 @@ import { Clock3, Copy, Filter, MessageSquareText, Play, RefreshCw, Route, Search
 import { fetchPublicPackets } from '../api';
 import { DEFAULT_PACKET_FILTERS, packetEndpointSummary, PACKETS_SCOPE_OPTIONS, packetRegion, packetWindowForScope, type PacketFilters } from '../packets';
 import { payloadLegendVisuals, payloadVisual } from '../payloadVisuals';
-import type { PublicHistoryWindow, PublicPacketPath } from '../types';
+import type { PublicHistoryWindow, PublicPacketPath, PublicPacketScan } from '../types';
 
 export type PacketsPanelMode = 'expanded' | 'compactTray';
 
@@ -39,6 +39,7 @@ export default function PacketsPanel({
   const [filters, setFilters] = useState<PacketFilters>(DEFAULT_PACKET_FILTERS);
   const [packets, setPackets] = useState<PublicPacketPath[]>([]);
   const [windowInfo, setWindowInfo] = useState<PublicHistoryWindow | null>(null);
+  const [scanInfo, setScanInfo] = useState<PublicPacketScan | null>(null);
   const [nextCursor, setNextCursor] = useState('');
   const [lastCheckedAt, setLastCheckedAt] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -79,6 +80,7 @@ export default function PacketsPanel({
         if (!active || !mountedRef.current || generation !== requestGenerationRef.current) return;
         setPackets(capPackets(response.packets));
         setWindowInfo(response.window);
+        setScanInfo(response.scan);
         setNextCursor(response.nextCursor ?? '');
         setSearchState(response.nextCursor ? 'more' : 'end');
         setLastCheckedAt(Date.now());
@@ -124,6 +126,7 @@ export default function PacketsPanel({
         setPackets((current) => capPackets([...current, ...response.packets]));
         setNextCursor(response.nextCursor ?? '');
         setWindowInfo(response.window);
+        setScanInfo(response.scan);
         setSearchState(response.nextCursor ? 'more' : 'end');
       })
       .catch((err: unknown) => {
@@ -222,7 +225,7 @@ export default function PacketsPanel({
 
       <div className="packets-summary-strip">
         <PacketSummary icon={<Route size={15} />} label="Loaded" value={packets.length.toLocaleString()} />
-        <PacketSummary icon={<Filter size={15} />} label="Page" value={windowInfo?.count.toLocaleString() ?? 'loading'} />
+        <PacketSummary icon={<Filter size={15} />} label="Matched" value={windowInfo?.count.toLocaleString() ?? 'loading'} />
         <PacketSummary icon={<Clock3 size={15} />} label="Window" value={formatWindow(windowInfo)} />
         <PacketSummary icon={<MessageSquareText size={15} />} label="Updated" value={lastCheckedAt ? new Date(lastCheckedAt).toLocaleTimeString() : 'loading'} />
       </div>
@@ -299,14 +302,18 @@ export default function PacketsPanel({
             </div>
           </div>
           {!loading && packets.length === 0 && (
-            <div className="packets-empty">No true path packets match the current filters.</div>
+            <div className="packets-empty">
+              {scanInfo?.partial
+                ? 'No matches in the scanned slice yet. Load older to keep searching this window.'
+                : 'No true path packets match the current filters.'}
+            </div>
           )}
         </div>
         <PacketDetail packet={activePacket} copyStatus={copyStatus} onFocus={onSelectPacket} onReplay={onReplayPacket} onCopyRouteIDs={copyRouteIDs} />
       </div>
 
       <footer className="packets-footer">
-        <span>{packetFooterStatus(activePacket, searchState, nextCursor, loadingMore)}</span>
+        <span>{packetFooterStatus(activePacket, searchState, nextCursor, loadingMore, scanInfo)}</span>
         <button type="button" disabled={!nextCursor || loadingMore} onClick={loadOlder}>
           {loadingMore ? 'Searching...' : nextCursor ? 'Load older' : 'End of window'}
         </button>
@@ -444,11 +451,13 @@ async function fetchPacketPages({
   cursor?: string;
   targetCount: number;
   signal?: AbortSignal;
-}): Promise<{ packets: PublicPacketPath[]; nextCursor: string; window: PublicHistoryWindow }> {
+}): Promise<{ packets: PublicPacketPath[]; nextCursor: string; window: PublicHistoryWindow; scan: PublicPacketScan }> {
   const activeFilters = hasActivePacketFilters(filters);
   const packets: PublicPacketPath[] = [];
   let nextCursor = cursor ?? '';
   let latestWindow: PublicHistoryWindow | null = null;
+  let eventsScanned = 0;
+  let scanLimit = 0;
   let pages = 0;
 
   do {
@@ -462,15 +471,24 @@ async function fetchPacketPages({
     });
     packets.push(...response.packets);
     latestWindow = response.window;
+    eventsScanned += response.scan?.eventsScanned ?? 0;
+    scanLimit += response.scan?.scanLimit ?? 0;
     nextCursor = response.nextCursor ?? '';
     pages += 1;
     if (!activeFilters) break;
   } while (nextCursor && packets.length < targetCount && pages < PACKETS_FILTER_SCAN_PAGES);
 
+  const deduped = dedupePackets(packets).slice(0, targetCount);
   return {
-    packets: dedupePackets(packets).slice(0, targetCount),
+    packets: deduped,
     nextCursor,
-    window: latestWindow ?? { from: window.from, to: window.to, count: 0 }
+    window: { ...(latestWindow ?? { from: window.from, to: window.to, count: 0 }), count: deduped.length },
+    scan: {
+      eventsScanned,
+      scanLimit,
+      filtered: activeFilters,
+      partial: Boolean(nextCursor)
+    }
   };
 }
 
@@ -497,12 +515,28 @@ function hasActivePacketFilters(filters: PacketFilters): boolean {
   return Boolean(filters.query.trim() || filters.iata || filters.payload || filters.minHops || filters.messageOnly);
 }
 
-function packetFooterStatus(packet: PublicPacketPath | null, state: 'idle' | 'searching' | 'more' | 'end', nextCursor: string, loadingMore: boolean): string {
+export function packetFooterStatus(
+  packet: PublicPacketPath | null,
+  state: 'idle' | 'searching' | 'more' | 'end',
+  nextCursor: string,
+  loadingMore: boolean,
+  scan: PublicPacketScan | null
+): string {
   if (loadingMore || state === 'searching') return 'Searching older packets across the selected window...';
-  if (packet) return `Selected ${packetEndpointSummary(packet)}`;
-  if (nextCursor || state === 'more') return 'More packet paths are available in this window.';
+  const scanStatus = formatPacketScanStatus(scan);
+  if (packet) return scanStatus ? `Selected ${packetEndpointSummary(packet)}. ${scanStatus}` : `Selected ${packetEndpointSummary(packet)}`;
+  if (nextCursor || state === 'more') return scanStatus || 'More packet paths are available in this window.';
   if (state === 'end') return 'End of the selected history window.';
   return 'Select a packet to focus its real path on the map.';
+}
+
+export function formatPacketScanStatus(scan: PublicPacketScan | null): string {
+  if (!scan || !scan.eventsScanned) return '';
+  const scanned = scan.eventsScanned.toLocaleString();
+  if (scan.partial) {
+    return `Searched ${scanned} route events; older packet paths may still match.`;
+  }
+  return `Searched ${scanned} route events through the selected window.`;
 }
 
 function packetRequestErrorMessage(err: unknown): string {

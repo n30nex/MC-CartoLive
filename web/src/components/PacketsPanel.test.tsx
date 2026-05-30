@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import PacketsPanel from './PacketsPanel';
+import PacketsPanel, { formatPacketScanStatus, packetFooterStatus } from './PacketsPanel';
 
 describe('PacketsPanel', () => {
   it('renders the true-path packet shell without exposing private packet concepts', () => {
@@ -54,5 +54,14 @@ describe('PacketsPanel', () => {
     expect(html).toContain('Packet replay');
     expect(html).toContain('Replay again');
     expect(html).toContain('Resume live');
+  });
+
+  it('explains bounded packet scans without private wording', () => {
+    expect(formatPacketScanStatus({ eventsScanned: 2500, scanLimit: 2500, filtered: true, partial: true })).toBe(
+      'Searched 2,500 route events; older packet paths may still match.'
+    );
+    expect(packetFooterStatus(null, 'more', 'cursor', false, { eventsScanned: 5000, scanLimit: 5000, filtered: true, partial: true })).toContain(
+      'older packet paths may still match'
+    );
   });
 });

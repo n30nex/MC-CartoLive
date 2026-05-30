@@ -198,6 +198,14 @@ export interface PublicPacketsResponse {
   packets: PublicPacketPath[];
   nextCursor?: string;
   window: PublicHistoryWindow;
+  scan?: PublicPacketScan;
+}
+
+export interface PublicPacketScan {
+  eventsScanned: number;
+  scanLimit: number;
+  filtered?: boolean;
+  partial?: boolean;
 }
 
 export interface PublicHistorySummaryBucket {

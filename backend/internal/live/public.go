@@ -119,6 +119,14 @@ type PublicPacketsResponse struct {
 	Packets    []PublicPacketPath  `json:"packets"`
 	NextCursor string              `json:"nextCursor,omitempty"`
 	Window     PublicHistoryWindow `json:"window"`
+	Scan       PublicPacketScan    `json:"scan,omitempty"`
+}
+
+type PublicPacketScan struct {
+	EventsScanned int  `json:"eventsScanned"`
+	ScanLimit     int  `json:"scanLimit"`
+	Filtered      bool `json:"filtered,omitempty"`
+	Partial       bool `json:"partial,omitempty"`
 }
 
 type PublicStats struct {

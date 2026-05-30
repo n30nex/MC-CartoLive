@@ -69,7 +69,7 @@ That means:
 
 Goal: fix the highest-risk correctness and release issues found in the audit without adding new public features.
 
-Status: in progress. The first 2.5.2 pass fixed CI version drift, added configurable deployment branding, refreshed top-bar copy, tightened status pills, aligned node icons with the legend, made Packets refreshes abort stale requests, improved VCR timeline readability, and raised route/path contrast. Remaining 2.5.2 follow-up work should focus on backend bounded-scan telemetry, non-Canada fixture smoke coverage in CI, and more explicit rare-filter Packets states.
+Status: in progress. The first 2.5.2 pass fixed CI version drift, added configurable deployment branding, refreshed top-bar copy, tightened status pills, aligned node icons with the legend, made Packets refreshes abort stale requests, improved VCR timeline readability, and raised route/path contrast. The second pass added public-safe Packets scan summaries, clearer rare-filter states, CI smoke coverage for the worldwide `r1` fixture, and restored decoded text message bubbles in clustered map views. Remaining 2.5.2 follow-up work should focus on automated version-drift checks, deeper backend observer hot-path tests, and stale-request frontend tests beyond the current pure-state coverage.
 
 ### Release Hygiene
 
@@ -83,14 +83,14 @@ Status: in progress. The first 2.5.2 pass fixed CI version drift, added configur
 - Replace the Packets panel in-flight request guard with generation-safe abortable requests.
 - Add timeout support to frontend API calls.
 - Queue the newest Packets refresh if filters change while a previous request is still unwinding.
-- Make rare-filter behavior explicit: show `searching older packets`, `more available`, and `end of 24h window` states based on cursor progress.
+- Make rare-filter behavior explicit: show `searching older packets`, `more available`, and `end of 24h window` states based on cursor progress and public-safe scan summaries.
 - Add tests for stale request rejection, abort behavior, and filter changes during slow requests.
 
 ### Backend Hot Path Fixes
 
 - Replace ingestion fallback observer scans with a direct observer lookup or short-lived observer location cache.
 - Add backend tests for observer fallback lookups and region-scoped observer matching.
-- Add public-safe health/readiness fields for public cache truncation and public packet search scan limits.
+- Add public-safe health/readiness fields for public cache truncation and keep per-request public packet search scan limits visible in Packets responses.
 - Add query-plan or bounded-scan tests for `/api/v1/public/packets`.
 
 ### World-Ready Cleanup
@@ -98,6 +98,12 @@ Status: in progress. The first 2.5.2 pass fixed CI version drift, added configur
 - Change user-visible Packets and diagnostics labels from `IATA` to `Region` where public compatibility does not require the old name.
 - Keep `iata` fields and params for API compatibility, but document `region` as the preferred operator term.
 - Add one non-Canada fixture smoke path that uses `meshcore/r1/...` topics and non-Canada coordinates.
+
+### Live Message Bubbles
+
+- Keep decoded public text bubbles visible above the sender node, or the first observer location when the sender has no mappable coordinates.
+- Do not clear message bubbles just because the map is in low-zoom cluster mode; clusters can stay visible while the transient text overlay anchors to the public-safe node or observer coordinate.
+- Keep the Map Settings `Message bubbles` toggle as the user control for disabling this overlay.
 
 ### Acceptance
 
@@ -107,6 +113,9 @@ Status: in progress. The first 2.5.2 pass fixed CI version drift, added configur
 - Live smoke passes on hosted Canada with `MAP_REGION_PRESET=canada`.
 - CI no longer hardcodes stale version values.
 - Packets filters no longer leave the panel stuck because a stale request won a race.
+- Packets rare-filter searches explain whether older packet paths may still match.
+- CI proves the packaged image can replay a non-Canada `world` fixture with generic region labels.
+- Decoded public text bubbles appear in both detail and clustered map views when message bubbles are enabled.
 
 ## 2.5.3 - Mobile And UI Stability Pass
 

@@ -21,6 +21,15 @@
   keeping the existing circles for hit testing and state highlights.
 - Made Packets refreshes abort stale requests so slow older filter searches
   cannot overwrite newer results.
+- Added public-safe Packets scan summaries so rare filtered searches explain
+  when older packet paths may still match without exposing packet hashes or raw
+  paths.
+- Added CI smoke coverage for the worldwide `r1` fixture so packaged builds
+  prove non-Canada coordinates and generic regions still render true public
+  routes.
+- Restored decoded public text bubbles in clustered map views so messages can
+  appear above the mappable sender node or observer fallback location even when
+  the map is zoomed out.
 - Thinned and lowered the VCR timeline track so the red live track no longer
   obscures the packet-frequency sparkline while scrubbing.
 - Increased route/path overlay contrast to improve light-mode readability.

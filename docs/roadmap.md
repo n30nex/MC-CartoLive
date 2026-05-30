@@ -13,7 +13,8 @@ Version `2.5.2` is the active foundation patch toward the next production-ready
   worldwide/private brokers through configurable region labels and map bounds.
 - Current patch focus: release metadata hygiene, configurable instance branding,
   top-bar cleanup, Packets request safety, icon/legend alignment, VCR timeline
-  readability, and light-mode route contrast.
+  readability, light-mode route contrast, Packets scan clarity, and worldwide
+  fixture smoke coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -44,8 +45,14 @@ Version `2.5.2` is the active foundation patch toward the next production-ready
   override top-bar brand name, URL, and logo through env build args.
 - Keep Packets request handling generation-safe so slow stale searches cannot
   replace newer filtered results.
+- Show public-safe Packets scan progress so rare filters explain when older
+  true-path packets may still match.
 - Make status pills, map node icons, VCR scrub visuals, and light-mode routes
   cleaner without changing public API schemas.
+- Keep the CI packaged-image smoke covering both the hosted-style fixture and a
+  worldwide generic-region fixture.
+- Restore decoded public text message bubbles above mappable sender nodes or
+  observer fallback locations, including while the map is clustered.
 
 ## Next Cleanup Candidates
 

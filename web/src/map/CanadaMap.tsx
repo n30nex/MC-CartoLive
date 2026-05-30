@@ -1233,13 +1233,15 @@ export default function CanadaMap({
     const renderComet = shouldAnimate
       && layerSettingsRef.current.liveComets
       && (packetVisualSettingsRef.current.showLiveCometsAtAllZooms || isDetailMode(map));
+    if (shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(pulse)) {
+      showMessageBubble(map, messageBubbleFromPulse(map, pulse));
+    }
     if (isClusterMode(map)) {
       if (renderComet && !addPulseTo3D(map, pulse)) animatorRef.current?.add(pulse);
       if (shouldAnimate && layerSettingsRef.current.observerBursts && addPulseClusterActivityGlow(map, clusterActivityGlowRef.current, pulse)) {
         startClusterActivityGlowTimer(map, clusterActivityGlowRef, clusterActivityGlowTimerRef);
       }
       setScreenNodeLabels([]);
-      setMessageBubbles([]);
       return;
     }
     if (renderComet && !addPulseTo3D(map, pulse)) animatorRef.current?.add(pulse);
@@ -1253,9 +1255,6 @@ export default function CanadaMap({
     if (layerSettingsRef.current.nodeLabels) {
       setScreenNodeLabels(projectNodeLabels(map, nodesRef.current, nodeFocusRef.current, pulse.heardAt, nodeMeshActivityAtRef.current, nodeActivityRef.current));
     }
-    if (shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(pulse)) {
-      showMessageBubble(map, messageBubbleFromPulse(map, pulse));
-    }
     startNodeActivityTimer(map, nodeActivityRef, nodeActivityTimerRef);
   };
 
@@ -1264,18 +1263,17 @@ export default function CanadaMap({
     if (pausedRef.current) return;
     const shouldAnimate = shouldAnimateLiveEvent(visualReceivedAt(burst), Date.now(), pageHiddenRef.current);
     if (map && shouldAnimate) followTrafficObserverBurst(map, burst, followTrafficRef.current, followTrafficStateRef);
+    if (map && shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(burst)) {
+      showMessageBubble(map, messageBubbleFromObserverBurst(map, burst));
+    }
     if (map && isClusterMode(map)) {
       if (shouldAnimate && layerSettingsRef.current.observerBursts && addObserverBurstClusterActivityGlow(map, clusterActivityGlowRef.current, burst)) {
         startClusterActivityGlowTimer(map, clusterActivityGlowRef, clusterActivityGlowTimerRef);
       }
-      setMessageBubbles([]);
       return;
     }
     if (shouldAnimate && layerSettingsRef.current.observerBursts && !(baseModeRef.current === 'openfreemap' && openFreeMap3DRef.current?.addObserverBurst(burst))) {
       animatorRef.current?.addObserverBurst(burst);
-    }
-    if (map && shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(burst)) {
-      showMessageBubble(map, messageBubbleFromObserverBurst(map, burst));
     }
   };
 
