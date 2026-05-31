@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 2.5.8 - 2026-05-31
+
+- Restored cleaner live Public group-text decoding by preferring verified
+  packet-payload decrypts before falling back to broker-provided decoded JSON.
+  This prevents bad upstream text decoding from being carried into public map
+  speech bubbles when the packet itself can be decoded cleanly.
+- Improved the Packets page with an explicit select/replay flow, clearer
+  server-history search status, scanned-event counts, and guidance that replay
+  pauses live, fits the full route, then plays one watchable packet comet.
+- Added backend and frontend tests for the decoder preference and Packets
+  search/status copy.
+- Kept public API response shapes and privacy boundaries unchanged.
+
 ## 2.5.7 - 2026-05-31
 
 - Cleaned up the top status bar with compact two-line metric pills, shorter

@@ -211,7 +211,7 @@ export default function PacketsPanel({
         <div>
           <span className="panel-eyebrow">Packets</span>
           <h2>True Path Packets</h2>
-          <p>Only packets with real public route segments are listed here.</p>
+          <p>Select a packet to focus its public RF path, or replay it as one paused comet on the map.</p>
         </div>
         <div className="packets-panel-actions">
           <button type="button" className="icon-button" title="Refresh true path packets" onClick={refresh}>
@@ -223,9 +223,11 @@ export default function PacketsPanel({
         </div>
       </header>
 
+      <PacketReplayGuide />
+
       <div className="packets-summary-strip">
         <PacketSummary icon={<Route size={15} />} label="Loaded" value={packets.length.toLocaleString()} />
-        <PacketSummary icon={<Filter size={15} />} label="Matched" value={windowInfo?.count.toLocaleString() ?? 'loading'} />
+        <PacketSummary icon={<Filter size={15} />} label="Scanned" value={scanInfo?.eventsScanned ? scanInfo.eventsScanned.toLocaleString() : windowInfo?.count.toLocaleString() ?? 'loading'} />
         <PacketSummary icon={<Clock3 size={15} />} label="Window" value={formatWindow(windowInfo)} />
         <PacketSummary icon={<MessageSquareText size={15} />} label="Updated" value={lastCheckedAt ? new Date(lastCheckedAt).toLocaleTimeString() : 'loading'} />
       </div>
@@ -277,6 +279,7 @@ export default function PacketsPanel({
         </div>
       </div>
 
+      <PacketSearchStatus state={searchState} nextCursor={nextCursor} loading={loading || loadingMore} scan={scanInfo} />
       {error && <div className="packets-error" role="alert">{error}</div>}
       {loading && packets.length === 0 && <div className="packets-loading">Loading true path packets...</div>}
 
@@ -319,6 +322,36 @@ export default function PacketsPanel({
         </button>
       </footer>
     </section>
+  );
+}
+
+function PacketReplayGuide() {
+  return (
+    <div className="packets-replay-guide" aria-label="Packet replay flow">
+      <span><b>1</b> Select focuses the path</span>
+      <span><b>2</b> Replay pauses live</span>
+      <span><b>3</b> Map fits the full route</span>
+      <span><b>4</b> Comet plays at watch speed</span>
+    </div>
+  );
+}
+
+function PacketSearchStatus({
+  state,
+  nextCursor,
+  loading,
+  scan
+}: {
+  state: 'idle' | 'searching' | 'more' | 'end';
+  nextCursor: string;
+  loading: boolean;
+  scan: PublicPacketScan | null;
+}) {
+  const status = packetSearchStatus(state, nextCursor, loading, scan);
+  return (
+    <div className={`packets-search-status ${loading ? 'loading' : ''} ${nextCursor ? 'has-more' : ''}`}>
+      <span>{status}</span>
+    </div>
   );
 }
 
@@ -537,6 +570,20 @@ export function formatPacketScanStatus(scan: PublicPacketScan | null): string {
     return `Searched ${scanned} route events; older packet paths may still match.`;
   }
   return `Searched ${scanned} route events through the selected window.`;
+}
+
+export function packetSearchStatus(state: 'idle' | 'searching' | 'more' | 'end', nextCursor: string, loading: boolean, scan: PublicPacketScan | null): string {
+  const scanStatus = formatPacketScanStatus(scan);
+  if (loading || state === 'searching') {
+    return scanStatus ? `Searching server history. ${scanStatus}` : 'Searching server history for true public packet paths.';
+  }
+  if (nextCursor || state === 'more') {
+    return scanStatus ? `${scanStatus} Load older to continue through the selected window.` : 'More true packet paths are available in this window.';
+  }
+  if (state === 'end') {
+    return scanStatus || 'Finished the selected history window.';
+  }
+  return 'Filters run against server history, not just the rows currently loaded.';
 }
 
 function packetRequestErrorMessage(err: unknown): string {

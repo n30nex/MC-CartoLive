@@ -89,6 +89,22 @@ func TestGroupTextPayloadDecryptsDefaultPublicChannel(t *testing.T) {
 	}
 }
 
+func TestGroupTextPayloadPrefersVerifiedDecryptOverDecodedJSON(t *testing.T) {
+	publicKeyHex := "8b3387e9" +
+		"c5cdea6a" +
+		"c9e5edba" +
+		"a115cd72"
+	payload := encryptGroupTextForTest(t, publicKeyHex, "Sudz", "I'm off!")
+	raw := `{"decoded":{"sender":"Sudz","message":"I\u00e2\u0080\u0099m off!"}}`
+	message := meshcore.DecodePublicMessage(meshcore.PayloadGroupText, payload, raw, nil)
+	if message.Sender != "Sudz" {
+		t.Fatalf("decoded group sender = %q, want Sudz", message.Sender)
+	}
+	if message.Text != "I'm off!" {
+		t.Fatalf("decoded group text = %q, want clean payload decrypt", message.Text)
+	}
+}
+
 func TestGroupTextPayloadDecryptsHashtagChannelName(t *testing.T) {
 	key := sha256.Sum256([]byte("#test"))
 	payload := encryptGroupTextForTest(t, hex.EncodeToString(key[:16]), "Alice", "Hashtag hello")

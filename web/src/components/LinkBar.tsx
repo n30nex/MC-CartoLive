@@ -14,11 +14,13 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.7';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.8';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  'Public group text now prefers verified packet-payload decrypts before broker decoded JSON, keeping new map speech bubbles cleaner.',
+  'Packets now explains the select-to-focus and replay-to-pause-live flow, with visible server-history scan status and scanned event counts.',
   'Top status pills now use compact two-line metrics, shorter logical labels, and theme-aware surfaces for crowded desktop widths.',
   'The full guide now uses color-coded visual cards with larger icons and route/pulse motifs instead of plain text-only sections.',
   'Packets and VCR history requests now reuse a longer public location/hash cache and serialize cold-cache rebuilds to reduce transient 500s under live traffic.',

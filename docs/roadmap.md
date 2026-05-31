@@ -5,14 +5,14 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.7` is the active foundation patch toward the next production-ready
+Version `2.5.8` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: top-bar readability, visual guide polish,
-  Packets/VCR data-path stability, light-mode route contrast, and
+- Current patch focus: public message bubble reliability, Packets page
+  usability, Packets/VCR data-path stability, light-mode route contrast, and
   mobile/browser regression coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
@@ -97,6 +97,15 @@ Version `2.5.7` is the active foundation patch toward the next production-ready
   icon scenes, and route/pulse motifs.
 - Keep this release frontend-only with no public API or privacy-boundary
   changes.
+
+## 2.5.8 Patch Focus
+
+- Prefer verified Public group-text packet decrypts over broker-provided
+  decoded JSON when both are available, so new map speech bubbles use clean
+  sanitized text.
+- Make Packets page selection/replay behavior easier to understand with an
+  explicit replay flow and visible server-history search status.
+- Keep public API shapes and privacy boundaries unchanged.
 
 ## Next Cleanup Candidates
 

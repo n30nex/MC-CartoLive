@@ -51,14 +51,29 @@ const defaultPublicChannelKeyHex = "8b3387e9" +
 	"a115cd72"
 
 func DecodePublicMessage(payloadType int, payload []byte, rawJSON string, channelSecrets []string) DecodedPublicMessage {
+	if payloadType == PayloadGroupText {
+		jsonMessage := decodePublicMessageFromJSON(rawJSON)
+		message := DecodeGroupTextMessage(payload, channelSecrets)
+		if message.Text != "" {
+			if message.Sender == "" {
+				message.Sender = jsonMessage.Sender
+			}
+			return message
+		}
+		return jsonMessage
+	}
+	if message := decodePublicMessageFromJSON(rawJSON); message.Text != "" {
+		return message
+	}
+	return DecodedPublicMessage{Text: DecodeTextPayload(payloadType, payload)}
+}
+
+func decodePublicMessageFromJSON(rawJSON string) DecodedPublicMessage {
 	if text := MessageTextFromJSON(rawJSON); text != "" {
 		sender := MessageSenderFromJSON(rawJSON)
 		return DecodedPublicMessage{Sender: sender, Text: stripSenderPrefix(text, sender)}
 	}
-	if payloadType == PayloadGroupText {
-		return DecodeGroupTextMessage(payload, channelSecrets)
-	}
-	return DecodedPublicMessage{Text: DecodeTextPayload(payloadType, payload)}
+	return DecodedPublicMessage{}
 }
 
 func DecodePublicMessageSender(payloadType int, payload []byte, rawJSON string, channelSecrets []string) string {

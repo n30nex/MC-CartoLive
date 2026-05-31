@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import PacketsPanel, { formatPacketScanStatus, packetFooterStatus } from './PacketsPanel';
+import PacketsPanel, { formatPacketScanStatus, packetFooterStatus, packetSearchStatus } from './PacketsPanel';
 
 describe('PacketsPanel', () => {
   it('renders the true-path packet shell without exposing private packet concepts', () => {
@@ -17,7 +17,8 @@ describe('PacketsPanel', () => {
       />
     );
     expect(html).toContain('True Path Packets');
-    expect(html).toContain('Only packets with real public route segments');
+    expect(html).toContain('Select a packet to focus its public RF path');
+    expect(html).toContain('Map fits the full route');
     expect(html).toContain('Search endpoint, region, route prefix, message');
     expect(html).toContain('Region');
     expect(html).toContain('Returned path');
@@ -62,6 +63,9 @@ describe('PacketsPanel', () => {
     );
     expect(packetFooterStatus(null, 'more', 'cursor', false, { eventsScanned: 5000, scanLimit: 5000, filtered: true, partial: true })).toContain(
       'older packet paths may still match'
+    );
+    expect(packetSearchStatus('more', 'cursor', false, { eventsScanned: 5000, scanLimit: 5000, filtered: true, partial: true })).toContain(
+      'Load older to continue'
     );
   });
 });

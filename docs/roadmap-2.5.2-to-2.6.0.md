@@ -1,8 +1,8 @@
-﻿# MC-CartoLive 2.5.2 to 2.6.0 Roadmap
+# MC-CartoLive 2.5.2 to 2.6.0 Roadmap
 
 Last audited: 2026-05-31
 
-Baseline audited: `v2.5.7` work in progress on `main`
+Baseline audited: `v2.5.8` work in progress on `main`
 
 ## Audit Coverage
 
@@ -299,7 +299,29 @@ route/pulse motifs.
   bullets.
 - No backend API, public schema, or privacy-boundary behavior changes.
 
-## 2.5.8 - OpenFreeMap 3D Production Polish
+## 2.5.8 - Public Message And Packets Usability Polish
+
+Goal: restore trust in live public text bubbles and make Packets easier to
+understand before the larger Packets data-plane/index work.
+
+Status: in progress. The backend group-text decoder now prefers a verified
+packet-payload decrypt before using broker-provided decoded JSON, so bad
+upstream text decoding does not pollute new public speech bubbles when the
+packet itself can be decoded. The Packets panel now explains the select/replay
+flow, shows scanned-event counts, and makes server-history search status
+visible.
+
+### Acceptance
+
+- New Public group text messages decode cleanly from the packet payload when
+  the default Public channel or configured channel key can decrypt them.
+- Map speech bubbles continue to use sanitized public message text only, with
+  no raw packet hashes, raw path hex, full keys, or resolver debug output.
+- Packets page copy makes it clear that selecting focuses the path and replay
+  pauses live, fits the route, then plays one watchable comet.
+- Public API response shapes remain unchanged.
+
+## 2.5.9 - OpenFreeMap 3D Production Polish
 
 Goal: keep the impressive 3D mode while making it reliable and scalable.
 
@@ -333,7 +355,7 @@ Goal: keep the impressive 3D mode while making it reliable and scalable.
 - Toggling 3D on/off disposes resources cleanly.
 - Browser diagnostics show bounded object counts and animation work.
 
-## 2.5.9 - NetGraph Layout Rebuild
+## 2.5.10 - NetGraph Layout Rebuild
 
 Goal: make NetGraph useful and stable instead of jittery.
 
@@ -364,7 +386,7 @@ Goal: make NetGraph useful and stable instead of jittery.
 - Connected components are packed with less empty space.
 - Overlapping route edges are understandable enough for inspection.
 
-## 2.5.10 - Backend Scale And SQLite Operations
+## 2.5.11 - Backend Scale And SQLite Operations
 
 Goal: reduce pressure on SQLite and improve operator confidence for long-running public hosts.
 
@@ -388,7 +410,7 @@ Goal: reduce pressure on SQLite and improve operator confidence for long-running
 - A slow Packets or history request fails cleanly without poisoning live state.
 - Operator runbook contains tested backup/restore commands.
 
-## 2.5.11 - Worldwide Operator Experience
+## 2.5.12 - Worldwide Operator Experience
 
 Goal: make packaged installs feel first-class outside Canada.
 
@@ -426,7 +448,7 @@ Goal: make packaged installs feel first-class outside Canada.
 - Private broker users do not need 3-letter uppercase topic regions.
 - No global IATA list is required for correctness.
 
-## 2.5.12 - Security, Packaging, And Release Automation
+## 2.5.13 - Security, Packaging, And Release Automation
 
 Goal: make releases repeatable and trustworthy.
 

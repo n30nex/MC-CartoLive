@@ -1043,6 +1043,7 @@ button {
 .perf-card h3,
 .perf-status-strip,
 .packets-summary-strip,
+.packets-replay-guide,
 .packets-toolbar,
 .packet-row-top,
 .packet-row-meta,
@@ -1072,6 +1073,72 @@ button {
   color: var(--mc-text-muted, #9fb1c9);
   font-size: 12px;
   font-weight: 700;
+}
+
+.packets-replay-guide {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.packets-replay-guide span,
+.packets-search-status {
+  min-width: 0;
+  padding: 7px 9px;
+  color: var(--mc-text-muted, #9fb1c9);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--mc-control-bg, rgba(7, 16, 29, 0.84)) 88%, transparent), color-mix(in srgb, var(--mc-surface-strong, #111827) 70%, transparent));
+  border: 1px solid color-mix(in srgb, var(--mc-border, rgba(125, 211, 252, 0.26)) 82%, transparent);
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 820;
+  line-height: 1.25;
+}
+
+.packets-replay-guide b {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+  color: color-mix(in srgb, var(--mc-accent, #38bdf8) 24%, #020617);
+  background: color-mix(in srgb, var(--mc-accent, #38bdf8) 78%, #ffffff);
+  border-radius: 999px;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--mc-accent, #38bdf8) 32%, transparent);
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.packets-search-status {
+  position: relative;
+  overflow: hidden;
+}
+
+.packets-search-status.loading::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 34%;
+  content: "";
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent), transparent);
+  animation: packets-search-scan 1.2s linear infinite;
+}
+
+.packets-search-status.has-more {
+  border-color: color-mix(in srgb, var(--mc-secondary, #a78bfa) 44%, var(--mc-border, rgba(125, 211, 252, 0.26)));
+}
+
+.packets-search-status span {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes packets-search-scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(320%);
+  }
 }
 
 .perf-panel-actions,
@@ -4302,7 +4369,8 @@ button {
   }
 
   .perf-status-strip,
-  .packets-summary-strip {
+  .packets-summary-strip,
+  .packets-replay-guide {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
