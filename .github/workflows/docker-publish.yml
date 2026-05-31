@@ -40,7 +40,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
-            version="$(cat VERSION)"
+            version="$(tr -d '\r\n' < VERSION)"
           fi
           short_sha="${GITHUB_SHA::7}"
           build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
