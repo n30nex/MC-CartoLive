@@ -2,7 +2,7 @@
 
 Last audited: 2026-05-31
 
-Baseline audited: `v2.5.5` work in progress on `main`
+Baseline audited: `v2.5.6` work in progress on `main`
 
 ## Audit Coverage
 
@@ -200,7 +200,7 @@ pill copy, and uses darker semantic route/path colors for light mode.
 
 Goal: close two visible UI mismatches before deeper Packets/VCR data-plane work.
 
-Status: started. The first pass centralizes node role visuals for the map and
+Status: shipped. This pass centralized node role visuals for the map and
 Legend, adds missing Sensor and Other legend entries, and moves the VCR timeline
 rail into a subtle baseline so frequency bars remain readable.
 
@@ -228,6 +228,19 @@ rail into a subtle baseline so frequency bars remain readable.
 ## 2.5.6 - Packets And VCR Data Plane
 
 Goal: make Packets and VCR truly production-grade over the full public-safe 24h window.
+
+Status: started. The first 2.5.6 patch reduces Packets/VCR cold-cache pressure
+by extending the public location/hash cache, serializing rebuilds, and giving
+public history/Packets requests a slightly larger bounded timeout under live
+traffic. The indexed projection work remains the larger follow-up.
+
+### Cold-Cache Stability
+
+- Keep public location/hash indexes cached long enough for repeated Packets,
+  VCR, and history requests to reuse them.
+- Serialize cold-cache rebuilds so concurrent requests do not all rebuild the
+  same public index from SQLite.
+- Keep request windows bounded and return compatible public responses.
 
 ### Public Packet Path Index
 

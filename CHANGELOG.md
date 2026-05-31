@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.5.6 - 2026-05-31
+
+- Hardened the public Packets/history data path by extending the public
+  location/hash lookup cache and serializing cold-cache rebuilds so concurrent
+  Packets/VCR requests do not stampede SQLite.
+- Increased public history and Packets request timeouts slightly so cold starts
+  return useful partial data instead of transient `500 Internal Server Error`
+  responses while the live database is warming under production traffic.
+- Kept public API response shapes and privacy boundaries unchanged.
+
 ## 2.5.5 - 2026-05-31
 
 - Centralized map and legend device visuals so repeaters, companions, rooms,

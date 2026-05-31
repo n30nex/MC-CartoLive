@@ -380,8 +380,10 @@ const (
 	publicPacketsMaxRawScan      = 2500
 	publicHistoryTargetBuckets   = 96
 	publicHistoryMaxBuckets      = 288
-	publicHistoryLocationTTL     = 10 * time.Second
+	publicHistoryLocationTTL     = 60 * time.Second
 	publicHistorySummaryRoundMs  = int64(30 * time.Second / time.Millisecond)
+	publicHistoryRequestTimeout  = 10 * time.Second
+	publicPacketsRequestTimeout  = 12 * time.Second
 )
 
 type historyLocationCache struct {
@@ -397,13 +399,10 @@ func (c *historyLocationCache) Get(ctx context.Context, st *store.Store) (live.P
 	}
 	now := time.Now()
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	if now.Before(c.expiresAt) && c.observerLocations != nil && c.pathHash3ByNodeID != nil {
-		locations := c.observerLocations
-		pathHash3 := c.pathHash3ByNodeID
-		c.mu.Unlock()
-		return locations, pathHash3, nil
+		return c.observerLocations, c.pathHash3ByNodeID, nil
 	}
-	c.mu.Unlock()
 
 	nodes, observers, err := publicLocationInputs(ctx, st)
 	if err != nil {
@@ -412,11 +411,9 @@ func (c *historyLocationCache) Get(ctx context.Context, st *store.Store) (live.P
 	locations := live.BuildPublicObserverLocationIndex(nodes, observers)
 	pathHash3 := live.BuildPublicPathHash3Index(nodes, observers)
 
-	c.mu.Lock()
 	c.observerLocations = locations
 	c.pathHash3ByNodeID = pathHash3
 	c.expiresAt = now.Add(publicHistoryLocationTTL)
-	c.mu.Unlock()
 	return locations, pathHash3, nil
 }
 
@@ -486,7 +483,7 @@ func (s *Server) publicHistory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, errors.New("store is not available"))
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 7*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), publicHistoryRequestTimeout)
 	defer cancel()
 	now := time.Now().UnixMilli()
 	from, to := publicHistoryWindow(r, now)
@@ -655,7 +652,7 @@ func (s *Server) publicPackets(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, errors.New("store is not available"))
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 7*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), publicPacketsRequestTimeout)
 	defer cancel()
 	now := time.Now().UnixMilli()
 	from, to := publicHistoryWindow(r, now)

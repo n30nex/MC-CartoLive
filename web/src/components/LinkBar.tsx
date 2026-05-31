@@ -14,11 +14,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.5';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.6';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  'Packets and VCR history requests now reuse a longer public location/hash cache and serialize cold-cache rebuilds to reduce transient 500s under live traffic.',
   'Map device icons now share one role registry with the Legend, including Sensor and Other entries, so the map and guide stay aligned.',
   'VCR timeline bars now sit above a subtle baseline with a separate playhead, making scrub density easier to read without the live rail obscuring activity.',
   'Live Follow now throttles camera moves and uses slower, calmer map motion so it can be left on during normal traffic.',
