@@ -894,11 +894,39 @@ button {
   margin-top: 14px;
 }
 
-.guide-grid section {
+.guide-grid .guide-section {
   padding: 10px;
-  background: color-mix(in srgb, var(--mc-control-bg, rgba(8, 16, 28, 0.74)) 72%, transparent);
-  border: 1px solid color-mix(in srgb, var(--mc-border, #38bdf8) 40%, transparent);
+  --guide-tone: var(--mc-accent, #38bdf8);
+  background:
+    radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--guide-tone) 18%, transparent), transparent 38%),
+    color-mix(in srgb, var(--mc-control-bg, rgba(8, 16, 28, 0.74)) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--guide-tone) 38%, var(--mc-border, #38bdf8) 18%);
   border-radius: 8px;
+  overflow: hidden;
+}
+
+.guide-section-map {
+  --guide-tone: var(--mc-accent, #38bdf8);
+}
+
+.guide-section-traffic {
+  --guide-tone: var(--mc-green, #22c55e);
+}
+
+.guide-section-analysis {
+  --guide-tone: var(--mc-secondary, #a78bfa);
+}
+
+.guide-section-ops {
+  --guide-tone: var(--mc-warn, #facc15);
+}
+
+.guide-section-world {
+  --guide-tone: #2dd4bf;
+}
+
+.guide-section-controls {
+  --guide-tone: #fb7185;
 }
 
 .guide-card h3 {
@@ -916,10 +944,70 @@ button {
   flex: 0 0 auto;
   place-items: center;
   color: var(--mc-text, #f8fafc);
-  background: color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent);
-  border: 1px solid color-mix(in srgb, var(--mc-accent, #38bdf8) 34%, transparent);
+  background: color-mix(in srgb, var(--guide-tone, var(--mc-accent, #38bdf8)) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--guide-tone, var(--mc-accent, #38bdf8)) 34%, transparent);
   border-radius: 8px;
-  box-shadow: 0 0 16px color-mix(in srgb, var(--mc-accent, #38bdf8) 16%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--guide-tone, var(--mc-accent, #38bdf8)) 16%, transparent);
+}
+
+.guide-section-visual {
+  position: relative;
+  height: 54px;
+  margin: 2px 0 9px;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--guide-tone) 10%, transparent), transparent 58%),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--guide-tone) 10%, transparent) 0 1px, transparent 1px 18px);
+  border: 1px solid color-mix(in srgb, var(--guide-tone) 22%, transparent);
+}
+
+.guide-visual-core {
+  position: absolute;
+  left: 13px;
+  top: 12px;
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  color: color-mix(in srgb, var(--guide-tone) 74%, #ffffff 26%);
+  background: color-mix(in srgb, var(--guide-tone) 18%, var(--mc-surface, #0f172a));
+  border: 1px solid color-mix(in srgb, var(--guide-tone) 50%, transparent);
+  border-radius: 999px;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--guide-tone) 32%, transparent);
+}
+
+.guide-visual-route {
+  position: absolute;
+  left: 42px;
+  right: 20px;
+  top: 26px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--guide-tone), transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--guide-tone) 36%, transparent);
+}
+
+.guide-visual-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: color-mix(in srgb, var(--guide-tone) 80%, #ffffff 20%);
+  border-radius: 999px;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--guide-tone) 44%, transparent);
+}
+
+.guide-visual-dot.one {
+  left: 54%;
+  top: 12px;
+}
+
+.guide-visual-dot.two {
+  left: 70%;
+  top: 34px;
+}
+
+.guide-visual-dot.three {
+  right: 14px;
+  top: 22px;
 }
 
 .perf-panel,
@@ -1629,10 +1717,10 @@ button {
 .status-bar {
   top: 52px;
   left: 10px;
-  right: 388px;
+  right: clamp(344px, 30vw, 430px);
   display: flex;
   flex-wrap: nowrap;
-  gap: 4px;
+  gap: 5px;
   align-items: center;
   overflow: hidden;
 }
@@ -1640,22 +1728,22 @@ button {
 .status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   flex: 0 1 auto;
-  min-width: 58px;
-  min-height: 28px;
-  max-width: 124px;
-  padding: 0 7px;
-  color: #dbeafe;
-  background: linear-gradient(135deg, rgba(6, 11, 18, 0.9), rgba(10, 20, 35, 0.78));
-  border: 1px solid rgba(125, 211, 252, 0.2);
+  min-width: 54px;
+  min-height: 30px;
+  max-width: 116px;
+  padding: 0 8px;
+  color: var(--mc-text, #dbeafe);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--mc-control-bg, rgba(6, 11, 18, 0.9)) 94%, transparent), color-mix(in srgb, var(--mc-surface-strong, rgba(10, 20, 35, 0.78)) 78%, transparent));
+  border: 1px solid color-mix(in srgb, var(--mc-border, rgba(125, 211, 252, 0.2)) 70%, transparent);
   border-radius: 6px;
   box-shadow:
     0 12px 28px rgba(0, 0, 0, 0.3),
-    0 0 14px rgba(56, 189, 248, 0.035),
+    0 0 14px color-mix(in srgb, var(--mc-accent, #38bdf8) 8%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(16px) saturate(1.2);
-  font-size: 10.5px;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   white-space: nowrap;
@@ -1677,9 +1765,33 @@ button {
   max-width: 78px;
 }
 
+.status-metric {
+  min-width: 76px;
+}
+
 .status-pill.packets-total {
-  min-width: 104px;
-  max-width: 128px;
+  min-width: 92px;
+  max-width: 118px;
+}
+
+.status-pill-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.status-pill-value {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.status-pill-label {
+  color: color-mix(in srgb, var(--mc-text-muted, #94a3b8) 82%, transparent);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .status-pill.good {

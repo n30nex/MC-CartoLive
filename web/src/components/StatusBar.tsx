@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Database, MapPin, Route, Shield, Sparkles, Zap } from 'lucide-react';
 import { payloadVisual } from '../payloadVisuals';
 import type { LiveCoverageStats } from '../state';
@@ -32,34 +32,33 @@ export default function StatusBar({ stats, socketStatus, nodeCount, routeCount, 
         <span className="packet-type-signal" key={latestPacketID ?? latestPayloadTypeName ?? 'none'} />
         <span>{latestPayload.shortLabel}</span>
       </div>
-      <div className="status-pill packets-total" title={`${(stats?.packets ?? 0).toLocaleString()} packets total`}>
-        <Database size={15} />
-        <span>{formatPacketsTotal(stats?.packets)}</span>
-      </div>
-      <div className="status-pill pulse-rate" title={`${coverage.receivedPerMinute} packets received per minute`}>
-        <Zap size={15} />
-        <span>{coverage.receivedPerMinute}/min rx</span>
-      </div>
-      <div className="status-pill route routed-rate" title={`${coverage.routeAnimatedPerMinute} routed packet comets per minute`}>
-        <Route size={15} />
-        <span>{coverage.routeAnimatedPerMinute}/min route</span>
-      </div>
-      <div className="status-pill observer" title={`${coverage.observerBurstPerMinute} observer bursts per minute`}>
-        <Sparkles size={15} />
-        <span>{coverage.observerBurstPerMinute}/min bursts</span>
-      </div>
-      <div className="status-pill unmapped" title={`${coverage.unmappedPerMinute} unresolved packets per minute`}>
-        <MapPin size={15} />
-        <span>{coverage.unmappedPerMinute}/min unmapped</span>
-      </div>
-      <div className="status-pill node-count" title={`${nodeCount.toLocaleString()} positioned public nodes`}>
-        <Shield size={15} />
-        <span>{nodeCount.toLocaleString()} nodes</span>
-      </div>
-      <div className="status-pill route route-count" title={`${routeCount.toLocaleString()} public routes`}>
-        <Route size={15} />
-        <span>{routeCount.toLocaleString()} routes</span>
-      </div>
+      <StatusMetric className="packets-total" title={`${(stats?.packets ?? 0).toLocaleString()} packets total`} icon={<Database size={14} />} value={formatPacketsTotal(stats?.packets)} label="total" />
+      <StatusMetric className="pulse-rate" title={`${coverage.receivedPerMinute} packets received per minute`} icon={<Zap size={14} />} value={formatStatusNumber(coverage.receivedPerMinute)} label="rx/min" />
+      <StatusMetric className="route routed-rate" title={`${coverage.routeAnimatedPerMinute} routed packet comets per minute`} icon={<Route size={14} />} value={formatStatusNumber(coverage.routeAnimatedPerMinute)} label="route/min" />
+      <StatusMetric className="observer" title={`${coverage.observerBurstPerMinute} observer bursts per minute`} icon={<Sparkles size={14} />} value={formatStatusNumber(coverage.observerBurstPerMinute)} label="bursts/min" />
+      <StatusMetric className="unmapped" title={`${coverage.unmappedPerMinute} unresolved packets per minute`} icon={<MapPin size={14} />} value={formatStatusNumber(coverage.unmappedPerMinute)} label="unmapped/min" />
+      <StatusMetric className="node-count" title={`${nodeCount.toLocaleString()} positioned public nodes`} icon={<Shield size={14} />} value={formatStatusNumber(nodeCount)} label="nodes" />
+      <StatusMetric className="route route-count" title={`${routeCount.toLocaleString()} public routes`} icon={<Route size={14} />} value={formatStatusNumber(routeCount)} label="routes" />
     </header>
   );
+}
+
+function StatusMetric({ className, title, icon, value, label }: { className: string; title: string; icon: ReactNode; value: string; label: string }) {
+  return (
+    <div className={`status-pill status-metric ${className}`} title={title} aria-label={`${value} ${label}`}>
+      {icon}
+      <span className="status-pill-text">
+        <span className="status-pill-value">{value}</span>
+        <span className="status-pill-label">{label}</span>
+      </span>
+    </div>
+  );
+}
+
+export function formatStatusNumber(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  const absolute = Math.abs(value);
+  if (absolute >= 1_000_000) return `${(value / 1_000_000).toFixed(absolute >= 10_000_000 ? 0 : 1)}M`;
+  if (absolute >= 10_000) return `${Math.round(value / 1_000)}k`;
+  return value.toLocaleString();
 }

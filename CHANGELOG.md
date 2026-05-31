@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.5.7 - 2026-05-31
+
+- Cleaned up the top status bar with compact two-line metric pills, shorter
+  logical labels, semantic theme-aware surfaces, and predictable number
+  compaction for crowded desktop widths.
+- Made the full Guide visually stronger with color-coded feature cards, larger
+  icon scenes, route/dot motifs, and palette-aware guide accents.
+- Added focused frontend tests for the compact status metrics.
+- Kept public API response shapes and privacy boundaries unchanged.
+
 ## 2.5.6 - 2026-05-31
 
 - Hardened the public Packets/history data path by extending the public

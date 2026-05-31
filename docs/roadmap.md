@@ -5,15 +5,15 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.6` is the active foundation patch toward the next production-ready
+Version `2.5.7` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: Packets/VCR data-path stability, cold-cache pressure
-  reduction, live-map polish, light-mode route contrast, and mobile/browser
-  regression coverage.
+- Current patch focus: top-bar readability, visual guide polish,
+  Packets/VCR data-path stability, light-mode route contrast, and
+  mobile/browser regression coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -88,6 +88,15 @@ Version `2.5.6` is the active foundation patch toward the next production-ready
 - Increase public history and Packets request timeouts slightly so cold starts
   can return useful bounded results under live traffic.
 - Keep public API shapes, Packets pagination, and privacy boundaries unchanged.
+
+## 2.5.7 Patch Focus
+
+- Make crowded top status pills more compact, logical, and theme-aware with
+  clear metric labels.
+- Make the in-app guide more visual with color-coded feature cards, larger
+  icon scenes, and route/pulse motifs.
+- Keep this release frontend-only with no public API or privacy-boundary
+  changes.
 
 ## Next Cleanup Candidates
 

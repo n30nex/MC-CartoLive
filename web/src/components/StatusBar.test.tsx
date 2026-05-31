@@ -1,0 +1,39 @@
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it } from 'vitest';
+import StatusBar, { formatStatusNumber } from './StatusBar';
+
+const coverage = {
+  receivedPerMinute: 240,
+  routeAnimatedPerMinute: 42,
+  observerBurstPerMinute: 189,
+  unmappedPerMinute: 9,
+  lastPacketAgeMs: 500
+};
+
+describe('StatusBar', () => {
+  it('renders compact metric labels for the crowded top bar', () => {
+    const html = renderToStaticMarkup(
+      <StatusBar
+        stats={{ packets: 683710, activeNodes: 0, activeRoutes: 0, mqttConnected: true, mqttMessages: 12, wsClients: 1, serverTime: Date.now() }}
+        socketStatus="live"
+        nodeCount={1984}
+        routeCount={728}
+        coverage={coverage}
+        latestPayloadTypeName="TEXT"
+        latestPacketID="packet-1"
+      />
+    );
+
+    expect(html).toContain('rx/min');
+    expect(html).toContain('route/min');
+    expect(html).toContain('bursts/min');
+    expect(html).toContain('unmapped/min');
+    expect(html).toContain('total');
+  });
+
+  it('compacts large numbers predictably', () => {
+    expect(formatStatusNumber(9999)).toBe('9,999');
+    expect(formatStatusNumber(12500)).toBe('13k');
+    expect(formatStatusNumber(1_250_000)).toBe('1.3M');
+  });
+});

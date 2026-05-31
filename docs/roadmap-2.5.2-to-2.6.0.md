@@ -1,8 +1,8 @@
-# MC-CartoLive 2.5.2 to 2.6.0 Roadmap
+﻿# MC-CartoLive 2.5.2 to 2.6.0 Roadmap
 
 Last audited: 2026-05-31
 
-Baseline audited: `v2.5.6` work in progress on `main`
+Baseline audited: `v2.5.7` work in progress on `main`
 
 ## Audit Coverage
 
@@ -281,7 +281,25 @@ traffic. The indexed projection work remains the larger follow-up.
 - VCR scrub-to-play waits for ready slices and never starts with an empty misleading replay.
 - Privacy regression covers the new projection table.
 
-## 2.5.7 - OpenFreeMap 3D Production Polish
+## 2.5.7 - Top Chrome And Guide Polish
+
+Goal: make the common top chrome easier to scan and the built-in guide more
+useful for first-time viewers and package operators.
+
+Status: shipped. The top status bar now uses compact two-line metrics, shorter
+semantic labels, theme-aware surfaces, and predictable number compaction. The
+Guide now uses color-coded feature cards with larger icon scenes and
+route/pulse motifs.
+
+### Acceptance
+
+- Status pills fit better at desktop widths without truncating the most useful
+  metric values.
+- Guide sections are visually distinct and easier to scan than plain text
+  bullets.
+- No backend API, public schema, or privacy-boundary behavior changes.
+
+## 2.5.8 - OpenFreeMap 3D Production Polish
 
 Goal: keep the impressive 3D mode while making it reliable and scalable.
 
@@ -315,7 +333,7 @@ Goal: keep the impressive 3D mode while making it reliable and scalable.
 - Toggling 3D on/off disposes resources cleanly.
 - Browser diagnostics show bounded object counts and animation work.
 
-## 2.5.8 - NetGraph Layout Rebuild
+## 2.5.9 - NetGraph Layout Rebuild
 
 Goal: make NetGraph useful and stable instead of jittery.
 
@@ -346,7 +364,7 @@ Goal: make NetGraph useful and stable instead of jittery.
 - Connected components are packed with less empty space.
 - Overlapping route edges are understandable enough for inspection.
 
-## 2.5.9 - Backend Scale And SQLite Operations
+## 2.5.10 - Backend Scale And SQLite Operations
 
 Goal: reduce pressure on SQLite and improve operator confidence for long-running public hosts.
 
@@ -370,7 +388,7 @@ Goal: reduce pressure on SQLite and improve operator confidence for long-running
 - A slow Packets or history request fails cleanly without poisoning live state.
 - Operator runbook contains tested backup/restore commands.
 
-## 2.5.10 - Worldwide Operator Experience
+## 2.5.11 - Worldwide Operator Experience
 
 Goal: make packaged installs feel first-class outside Canada.
 
@@ -408,7 +426,7 @@ Goal: make packaged installs feel first-class outside Canada.
 - Private broker users do not need 3-letter uppercase topic regions.
 - No global IATA list is required for correctness.
 
-## 2.5.11 - Security, Packaging, And Release Automation
+## 2.5.12 - Security, Packaging, And Release Automation
 
 Goal: make releases repeatable and trustworthy.
 
