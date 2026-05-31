@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.5.5 - 2026-05-31
+
+- Centralized map and legend device visuals so repeaters, companions, rooms,
+  observers, sensors, and other nodes use the same icon/color definitions.
+- Added Sensor and Other entries to the compact Legend so every public node
+  role rendered on the map is explainable.
+- Improved the VCR timeline presentation by separating the packet-frequency
+  spark bars from the live/replay baseline and adding a distinct playhead.
+- Kept this as a small 2.6.0 polish phase with no backend API or privacy
+  boundary changes.
+
 ## 2.5.4 - 2026-05-31
 
 - Added a subtle live activity heatmap layer with sparkle highlights, plus a

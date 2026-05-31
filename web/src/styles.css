@@ -2527,7 +2527,7 @@ button {
 .vcr-timeline-shell {
   position: relative;
   min-width: 0;
-  height: 36px;
+  height: 38px;
   display: grid;
   align-items: center;
   overflow: visible;
@@ -2535,15 +2535,15 @@ button {
 
 .vcr-timeline-track {
   position: absolute;
-  inset: auto 0 5px;
+  inset: auto 0 2px;
   z-index: 1;
-  height: 4px;
+  height: 3px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--mc-control-bg, rgba(15, 23, 42, 0.68)) 82%, transparent);
-  border: 1px solid var(--vcr-track);
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(15, 23, 42, 0.68)) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--vcr-track) 46%, transparent);
   border-radius: 999px;
-  opacity: 0.78;
-  box-shadow: 0 0 10px var(--vcr-track-glow), inset 0 0 8px rgba(0, 0, 0, 0.36);
+  opacity: 0.62;
+  box-shadow: 0 0 8px var(--vcr-track-glow), inset 0 0 5px rgba(0, 0, 0, 0.36);
   pointer-events: none;
 }
 
@@ -2551,50 +2551,67 @@ button {
   position: absolute;
   inset: 0 auto 0 0;
   width: var(--vcr-progress, 100%);
-  background: linear-gradient(90deg, var(--vcr-track-fill), var(--vcr-track));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--vcr-track-fill) 62%, transparent), var(--vcr-track));
   content: "";
+}
+
+.vcr-timeline-shell::after {
+  position: absolute;
+  left: var(--vcr-progress, 100%);
+  bottom: 0;
+  z-index: 3;
+  width: 1px;
+  height: 32px;
+  background: linear-gradient(180deg, transparent, var(--vcr-track-fill), transparent);
+  border-radius: 999px;
+  box-shadow: 0 0 12px var(--vcr-track-glow);
+  content: "";
+  opacity: 0.72;
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 
 .vcr-sparkline {
   position: absolute;
-  inset: 2px 0 11px;
+  inset: 1px 0 8px;
   z-index: 2;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
   gap: 2px;
   align-items: end;
-  opacity: 0.78;
+  opacity: 0.88;
   pointer-events: none;
 }
 
 .vcr-sparkline span {
   display: block;
   min-height: 3px;
-  background: linear-gradient(180deg, rgba(45, 212, 191, 0.82), rgba(56, 189, 248, 0.22));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--mc-green, #2dd4bf) 80%, #ffffff 20%), color-mix(in srgb, var(--mc-accent, #38bdf8) 42%, transparent));
   border-radius: 3px 3px 0 0;
+  box-shadow: 0 0 9px color-mix(in srgb, var(--mc-accent, #38bdf8) 22%, transparent);
 }
 
 .vcr-timeline {
   position: relative;
   z-index: 3;
   width: 100%;
-  height: 30px;
+  height: 36px;
   margin: 0;
   appearance: none;
   background: transparent;
-  accent-color: var(--vcr-track-fill);
+  accent-color: transparent;
   cursor: pointer;
 }
 
 .vcr-timeline::-webkit-slider-runnable-track {
-  height: 30px;
+  height: 36px;
   background: transparent;
   border: 0;
 }
 
 .vcr-timeline::-moz-range-track {
-  height: 30px;
+  height: 36px;
   background: transparent;
   border: 0;
 }
@@ -2602,21 +2619,21 @@ button {
 .vcr-timeline::-webkit-slider-thumb {
   width: 14px;
   height: 14px;
-  margin-top: 8px;
+  margin-top: 11px;
   appearance: none;
   background: var(--vcr-track-fill);
-  border: 2px solid rgba(5, 10, 17, 0.92);
+  border: 2px solid color-mix(in srgb, var(--mc-surface-strong, rgba(5, 10, 17, 0.96)) 92%, #000 8%);
   border-radius: 999px;
-  box-shadow: 0 0 16px var(--vcr-track-glow), 0 0 0 1px rgba(255, 255, 255, 0.32);
+  box-shadow: 0 0 18px var(--vcr-track-glow), 0 0 0 1px color-mix(in srgb, var(--vcr-track-fill) 42%, rgba(255, 255, 255, 0.22));
 }
 
 .vcr-timeline::-moz-range-thumb {
   width: 14px;
   height: 14px;
   background: var(--vcr-track-fill);
-  border: 2px solid rgba(5, 10, 17, 0.92);
+  border: 2px solid color-mix(in srgb, var(--mc-surface-strong, rgba(5, 10, 17, 0.96)) 92%, #000 8%);
   border-radius: 999px;
-  box-shadow: 0 0 16px var(--vcr-track-glow), 0 0 0 1px rgba(255, 255, 255, 0.32);
+  box-shadow: 0 0 18px var(--vcr-track-glow), 0 0 0 1px color-mix(in srgb, var(--vcr-track-fill) 42%, rgba(255, 255, 255, 0.22));
 }
 
 .vcr-hover-time {

@@ -2,7 +2,7 @@
 
 Last audited: 2026-05-31
 
-Baseline audited: `v2.5.4` work in progress on `main`
+Baseline audited: `v2.5.5` work in progress on `main`
 
 ## Audit Coverage
 
@@ -196,7 +196,36 @@ pill copy, and uses darker semantic route/path colors for light mode.
 - Activity heatmap can be toggled and does not rebuild node/route sources.
 - Light-mode selected/pathway routes remain visible across palettes.
 
-## 2.5.5 - Packets And VCR Data Plane
+## 2.5.5 - Icon Alignment And VCR Timeline Polish
+
+Goal: close two visible UI mismatches before deeper Packets/VCR data-plane work.
+
+Status: started. The first pass centralizes node role visuals for the map and
+Legend, adds missing Sensor and Other legend entries, and moves the VCR timeline
+rail into a subtle baseline so frequency bars remain readable.
+
+### Map And Legend Device Visuals
+
+- Keep repeaters, companions, rooms, observers, sensors, and other/unknown
+  nodes defined in one frontend visual registry.
+- Use that registry for MapLibre role icon IDs, icon asset paths, fallback
+  generated icons, role colors, and Legend rows.
+- Keep observer positions visually distinct without changing public data.
+
+### VCR Timeline Visuals
+
+- Keep the range input transparent and fully clickable/touchable.
+- Render packet-frequency bars above the timeline baseline.
+- Add a distinct playhead so scrub position is clear without a heavy red rail
+  crossing the frequency bars.
+
+### Acceptance
+
+- The Legend explains every public node role shown by the map.
+- VCR density bars remain readable in live, paused, and replay states.
+- No backend API, public schema, or privacy-boundary behavior changes.
+
+## 2.5.6 - Packets And VCR Data Plane
 
 Goal: make Packets and VCR truly production-grade over the full public-safe 24h window.
 
@@ -239,7 +268,7 @@ Goal: make Packets and VCR truly production-grade over the full public-safe 24h 
 - VCR scrub-to-play waits for ready slices and never starts with an empty misleading replay.
 - Privacy regression covers the new projection table.
 
-## 2.5.6 - OpenFreeMap 3D Production Polish
+## 2.5.7 - OpenFreeMap 3D Production Polish
 
 Goal: keep the impressive 3D mode while making it reliable and scalable.
 
@@ -273,7 +302,7 @@ Goal: keep the impressive 3D mode while making it reliable and scalable.
 - Toggling 3D on/off disposes resources cleanly.
 - Browser diagnostics show bounded object counts and animation work.
 
-## 2.5.7 - NetGraph Layout Rebuild
+## 2.5.8 - NetGraph Layout Rebuild
 
 Goal: make NetGraph useful and stable instead of jittery.
 
@@ -304,7 +333,7 @@ Goal: make NetGraph useful and stable instead of jittery.
 - Connected components are packed with less empty space.
 - Overlapping route edges are understandable enough for inspection.
 
-## 2.5.8 - Backend Scale And SQLite Operations
+## 2.5.9 - Backend Scale And SQLite Operations
 
 Goal: reduce pressure on SQLite and improve operator confidence for long-running public hosts.
 
@@ -328,7 +357,7 @@ Goal: reduce pressure on SQLite and improve operator confidence for long-running
 - A slow Packets or history request fails cleanly without poisoning live state.
 - Operator runbook contains tested backup/restore commands.
 
-## 2.5.9 - Worldwide Operator Experience
+## 2.5.10 - Worldwide Operator Experience
 
 Goal: make packaged installs feel first-class outside Canada.
 
@@ -366,7 +395,7 @@ Goal: make packaged installs feel first-class outside Canada.
 - Private broker users do not need 3-letter uppercase topic regions.
 - No global IATA list is required for correctness.
 
-## 2.5.10 - Security, Packaging, And Release Automation
+## 2.5.11 - Security, Packaging, And Release Automation
 
 Goal: make releases repeatable and trustworthy.
 

@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import { normalizePayloadType, payloadLegendVisuals } from '../payloadVisuals';
-import { routeAssetIcons, routePacketDots } from '../assets/routes/assets';
+import { OBSERVER_NODE_VISUAL, NODE_ROLE_VISUALS } from '../nodeVisuals';
+import { routePacketDots } from '../assets/routes/assets';
 
 export default function Legend() {
   const payloads = payloadLegendVisuals();
@@ -8,10 +9,12 @@ export default function Legend() {
     <section className="legend-panel" aria-label="Map legend">
       <div className="legend-group">
         <span className="legend-title">Devices</span>
-        <span><img className="legend-role-icon" src={routeAssetIcons.repeater} alt="" aria-hidden="true" />Repeater</span>
-        <span><img className="legend-role-icon" src={routeAssetIcons.companion} alt="" aria-hidden="true" />Companion</span>
-        <span><img className="legend-role-icon" src={routeAssetIcons.room} alt="" aria-hidden="true" />Room</span>
-        <span><img className="legend-role-icon observer" src={routeAssetIcons.observer} alt="" aria-hidden="true" />Observer</span>
+        {[...NODE_ROLE_VISUALS.slice(0, 3), OBSERVER_NODE_VISUAL, ...NODE_ROLE_VISUALS.slice(3)].map((visual) => (
+          <span key={visual.key}>
+            <img className={`legend-role-icon ${visual.legendClass ?? ''}`.trim()} src={visual.icon} alt="" aria-hidden="true" />
+            {visual.label}
+          </span>
+        ))}
       </div>
       <div className="legend-group">
         <span className="legend-title">Routes</span>

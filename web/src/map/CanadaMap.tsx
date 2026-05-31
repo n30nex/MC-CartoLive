@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import maplibregl from 'maplibre-gl';
 import type { PublicMapConfig, PublicMessageAnchor, PublicNode, PublicObserverBurst, PublicRoute, PublicRoutePulse } from '../types';
-import { routeAssetIcons } from '../assets/routes/assets';
 import { parseSharedView, type MapViewState, type SharedViewState } from '../shareView';
 import { normalizePayloadType, payloadVisual } from '../payloadVisuals';
+import { NODE_ROLE_VISUALS, OBSERVER_NODE_VISUAL, nodeMapImageID, nodeRoleColor } from '../nodeVisuals';
 import { isMappableNode } from './geo';
 import { activityHeatmapToGeoJSON } from './activityHeatmap';
 import { analysisRoutesToGeoJSON } from './analysisRoutes';
@@ -880,14 +880,14 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
           'match',
           ['get', 'role'],
           'repeater',
-          'node-repeater',
+          nodeMapImageID('repeater'),
           'companion',
-          'node-companion',
+          nodeMapImageID('companion'),
           'room_server',
-          'node-room_server',
+          nodeMapImageID('room_server'),
           'sensor',
-          'node-sensor',
-          'node-unknown'
+          nodeMapImageID('sensor'),
+          nodeMapImageID('unknown')
         ],
         'icon-size': ['interpolate', ['linear'], ['zoom'], 7, 0.34, 11, 0.5],
         'icon-allow-overlap': true,
@@ -904,7 +904,7 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       minzoom: DETAIL_MIN_ZOOM,
       filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'observer'], true]],
       layout: {
-        'icon-image': 'observer-node',
+        'icon-image': OBSERVER_NODE_VISUAL.mapImageID,
         'icon-size': ['interpolate', ['linear'], ['zoom'], 7, 0.42, 11, 0.58],
         'icon-allow-overlap': true,
         'icon-ignore-placement': true
@@ -2301,14 +2301,14 @@ function addPublicLayers(map: maplibregl.Map) {
         'match',
         ['get', 'role'],
         'repeater',
-        'node-repeater',
+        nodeMapImageID('repeater'),
         'companion',
-        'node-companion',
+        nodeMapImageID('companion'),
         'room_server',
-        'node-room_server',
+        nodeMapImageID('room_server'),
         'sensor',
-        'node-sensor',
-        'node-unknown'
+        nodeMapImageID('sensor'),
+        nodeMapImageID('unknown')
       ],
       'icon-size': ['interpolate', ['linear'], ['zoom'], 7, 0.34, 11, 0.5],
       'icon-allow-overlap': true,
@@ -2326,7 +2326,7 @@ function addPublicLayers(map: maplibregl.Map) {
     minzoom: DETAIL_MIN_ZOOM,
     filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'observer'], true]],
     layout: {
-      'icon-image': 'observer-node',
+      'icon-image': OBSERVER_NODE_VISUAL.mapImageID,
       'icon-size': ['interpolate', ['linear'], ['zoom'], 7, 0.42, 11, 0.58],
       'icon-allow-overlap': true,
       'icon-ignore-placement': true
@@ -3278,17 +3278,15 @@ function routePulsePoints(pulse: PublicRoutePulse): Array<[number, number]> {
 }
 
 function addGeneratedNodeIcons(map: maplibregl.Map) {
-  const specs = [
-    ['node-repeater', routeAssetIcons.repeater, '#22c55e', 'diamond'],
-    ['node-companion', routeAssetIcons.companion, '#3b82f6', 'triangle'],
-    ['node-room_server', routeAssetIcons.room, '#a855f7', 'square'],
-    ['node-sensor', routeAssetIcons.tower, '#65a30d', 'pentagon'],
-    ['node-unknown', routeAssetIcons.tower, '#64748b', 'circle']
-  ] as const;
-  for (const [name, url, color, shape] of specs) {
-    addMapImageFromURL(map, name, url, createIcon(color, shape));
+  for (const visual of NODE_ROLE_VISUALS) {
+    addMapImageFromURL(map, visual.mapImageID, visual.icon, createIcon(visual.color, visual.shape));
   }
-  addMapImageFromURL(map, 'observer-node', routeAssetIcons.observer, createIcon('#f59e0b', 'observer'));
+  addMapImageFromURL(
+    map,
+    OBSERVER_NODE_VISUAL.mapImageID,
+    OBSERVER_NODE_VISUAL.icon,
+    createIcon(OBSERVER_NODE_VISUAL.color, OBSERVER_NODE_VISUAL.shape)
+  );
 }
 
 function addMapImageFromURL(map: maplibregl.Map, name: string, url: string, fallback: ImageData) {
@@ -3372,14 +3370,6 @@ function createIcon(color: string, shape: 'diamond' | 'triangle' | 'square' | 'p
   ctx.fill();
   ctx.stroke();
   return ctx.getImageData(0, 0, size, size);
-}
-
-function nodeRoleColor(role: string) {
-  if (role === 'repeater') return '#22c55e';
-  if (role === 'companion') return '#3b82f6';
-  if (role === 'room_server') return '#a855f7';
-  if (role === 'sensor') return '#65a30d';
-  return '#64748b';
 }
 
 interface ChasePoint {

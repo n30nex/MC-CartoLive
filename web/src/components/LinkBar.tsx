@@ -14,11 +14,13 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.4';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.5';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  'Map device icons now share one role registry with the Legend, including Sensor and Other entries, so the map and guide stay aligned.',
+  'VCR timeline bars now sit above a subtle baseline with a separate playhead, making scrub density easier to read without the live rail obscuring activity.',
   'Live Follow now throttles camera moves and uses slower, calmer map motion so it can be left on during normal traffic.',
   'Added a subtle activity heatmap layer with sparkle highlights, exposed through Map Settings.',
   'Light-mode route and selected-path colors now use darker semantic variants for better contrast.',
