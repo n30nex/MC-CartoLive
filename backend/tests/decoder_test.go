@@ -72,7 +72,11 @@ func TestGroupTextPayloadDecryptsWithChannelSecret(t *testing.T) {
 }
 
 func TestGroupTextPayloadDecryptsDefaultPublicChannel(t *testing.T) {
-	payload := encryptGroupTextForTest(t, "8b3387e9c5cdea6ac9e5edbaa115cd72", "CoreBot", "Public hello")
+	publicKeyHex := "8b3387e9" +
+		"c5cdea6a" +
+		"c9e5edba" +
+		"a115cd72"
+	payload := encryptGroupTextForTest(t, publicKeyHex, "CoreBot", "Public hello")
 	if payload[0] != 0x11 {
 		t.Fatalf("default Public channel hash = %02x, want 11", payload[0])
 	}

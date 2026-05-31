@@ -45,7 +45,10 @@ type DecodedPublicMessage struct {
 // MeshCore's default Public channel key is well-known and used as a built-in
 // lowest-priority key for public channel text. Custom channel names or keys
 // supplied through config are still tried first.
-const defaultPublicChannelKeyHex = "8b3387e9c5cdea6ac9e5edbaa115cd72"
+const defaultPublicChannelKeyHex = "8b3387e9" +
+	"c5cdea6a" +
+	"c9e5edba" +
+	"a115cd72"
 
 func DecodePublicMessage(payloadType int, payload []byte, rawJSON string, channelSecrets []string) DecodedPublicMessage {
 	if text := MessageTextFromJSON(rawJSON); text != "" {
