@@ -14,11 +14,13 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.8';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.9';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  'Recent observer-only public text activity now hydrates into speech bubbles after reloads or polling fallback when a public observer location is available.',
+  'Speech bubbles now key off sanitized public message text with a public map anchor instead of fragile payload-label matching.',
   'Public group text now prefers verified packet-payload decrypts before broker decoded JSON, keeping new map speech bubbles cleaner.',
   'Packets now explains the select-to-focus and replay-to-pause-live flow, with visible server-history scan status and scanned event counts.',
   'Top status pills now use compact two-line metrics, shorter logical labels, and theme-aware surfaces for crowded desktop widths.',

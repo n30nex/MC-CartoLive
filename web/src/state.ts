@@ -18,6 +18,8 @@ export const SNAPSHOT_PULSE_REPLAY_LIMIT = 32;
 export const SNAPSHOT_PULSE_REPLAY_SPACING_MS = 140;
 export const SNAPSHOT_PULSE_STALE_MS = 60_000;
 export const SNAPSHOT_PULSE_FUTURE_SKEW_MS = 10_000;
+export const SNAPSHOT_OBSERVER_BURST_REPLAY_LIMIT = 32;
+export const SNAPSHOT_OBSERVER_BURST_REPLAY_SPACING_MS = 140;
 
 export interface RouteTraceHit {
   routeId: string;
@@ -67,13 +69,14 @@ export const emptyState: AppState = {
 
 export function initialAppState(state: PublicLiveState): AppState {
   const pulses = hydrateSnapshotPulses(state.recentPulses ?? [], state.serverTime);
+  const observerBursts = hydrateSnapshotObserverBursts(state.recentActivity ?? [], state.serverTime);
   const serverTime = state.serverTime;
   return {
     nodes: state.nodes ?? [],
     routes: normalizeRouteBuckets(state.routes ?? []),
     activity: state.recentActivity ?? [],
     pulses,
-    observerBursts: [],
+    observerBursts,
     routeTraces: pulses.reduce((traces, pulse) => addRouteTraceHits(traces, pulse, serverTime), [] as RouteTraceHit[]),
     stats: state.stats ?? null,
     serverTime
@@ -95,6 +98,31 @@ export function hydrateSnapshotPulses(pulses: PublicRoutePulse[], serverTime: nu
     ...pulse,
     receivedAt: pulse.receivedAt ?? serverTime,
     displayAt: pulse.displayAt ?? displayAtByID.get(pulse.id) ?? serverTime
+  }));
+}
+
+export function hydrateSnapshotObserverBursts(activity: PublicActivity[], serverTime: number): PublicObserverBurst[] {
+  const maxHeardAt = serverTime + SNAPSHOT_PULSE_FUTURE_SKEW_MS;
+  const minHeardAt = serverTime - SNAPSHOT_PULSE_STALE_MS;
+  const recent = activity
+    .filter((item) => item.animationState === 'observer' && item.observerLocation && item.heardAt >= minHeardAt && item.heardAt <= maxHeardAt)
+    .slice(0, SNAPSHOT_OBSERVER_BURST_REPLAY_LIMIT);
+  const oldestFirst = recent.slice().reverse();
+  const displayAtByID = new Map<string, number>();
+  oldestFirst.forEach((item, index) => {
+    displayAtByID.set(item.id, serverTime + index * SNAPSHOT_OBSERVER_BURST_REPLAY_SPACING_MS);
+  });
+  return recent.map((item) => ({
+    id: `observer-${item.id}`,
+    payloadTypeName: item.payloadTypeName,
+    heardAt: item.heardAt,
+    receivedAt: item.receivedAt ?? serverTime,
+    displayAt: item.displayAt ?? displayAtByID.get(item.id) ?? serverTime,
+    seq: item.seq,
+    location: item.observerLocation!,
+    messageSender: item.messageSender,
+    messageText: item.messageText,
+    messageAnchor: item.messageAnchor
   }));
 }
 

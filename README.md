@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.8
+# MeshCore MQTT Live Map v2.5.9
 
 Also known as **MC-CartoLive**.
 
@@ -23,9 +23,9 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.8 Feature Gallery
+### v2.5.9 Feature Gallery
 
-Version 2.5.8 keeps the Canada deployment intact while continuing the
+Version 2.5.9 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
 
@@ -35,9 +35,10 @@ Live Follow camera motion is calmer, the activity heatmap is subtle and
 toggleable, light-mode route contrast is stronger, the VCR scrub timeline
 keeps packet-frequency bars readable above a separate baseline/playhead, and
 the public Packets/VCR data path avoids cold-cache SQLite stampedes under live
-traffic. Version 2.5.8 also restores cleaner Public group-text decoding for
-map speech bubbles and gives the Packets page clearer select, search, and
-replay guidance.
+traffic. Version 2.5.9 also keeps recent observer-only public text bubbles
+alive across reloads/polling fallback, restores cleaner Public group-text
+decoding for map speech bubbles, and gives the Packets page clearer select,
+search, and replay guidance.
 
 OpenFreeMap 3D turns the public live map into a terrain-aware network view with
 procedural node models, elevated public route arcs, and 3D packet motion.
@@ -157,7 +158,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.8
+  ghcr.io/n30nex/mc-cartolive:2.5.9
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -168,7 +169,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.8
+  ghcr.io/n30nex/mc-cartolive:2.5.9
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -288,7 +289,7 @@ docker compose build
 
 ## Production Hosting
 
-The recommended v2.5.8 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.9 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

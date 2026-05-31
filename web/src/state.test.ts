@@ -11,6 +11,7 @@ import {
   currentPacketRatePerMinute,
   filterNodes,
   filterRoutes,
+  hydrateSnapshotObserverBursts,
   hydrateSnapshotPulses,
   initialAppState,
   liveCoverageStats,
@@ -120,6 +121,69 @@ describe('public app state', () => {
     expect(state.pulses[0].receivedAt).toBe(publicState.serverTime);
     expect(state.pulses[0].displayAt).toBe(publicState.serverTime);
     expect(state.routeTraces).toHaveLength(1);
+  });
+
+  it('hydrates recent observer-only message bursts from state snapshots', () => {
+    const state = initialAppState({
+      ...publicState,
+      recentActivity: [
+        {
+          id: 'activity-message',
+          kind: 'packet',
+          payloadTypeName: 'GROUP_TEXT',
+          routeTypeName: 'FLOOD',
+          iata: 'YKF',
+          heardAt: publicState.serverTime - 2_000,
+          hopCount: 0,
+          hasRoute: false,
+          animationState: 'observer',
+          resolutionBucket: 'observer_only',
+          observerLocation: { label: 'YKF observer', lat: 43.44, lng: -80.48 },
+          messageSender: 'Tree',
+          messageText: 'hello public'
+        }
+      ]
+    });
+
+    expect(state.observerBursts).toHaveLength(1);
+    expect(state.observerBursts[0]).toMatchObject({
+      id: 'observer-activity-message',
+      payloadTypeName: 'GROUP_TEXT',
+      messageSender: 'Tree',
+      messageText: 'hello public',
+      location: { label: 'YKF observer', lat: 43.44, lng: -80.48 }
+    });
+    expect(state.observerBursts[0].displayAt).toBe(publicState.serverTime);
+  });
+
+  it('ignores stale or unmapped activity when hydrating observer bursts', () => {
+    const bursts = hydrateSnapshotObserverBursts([
+      {
+        id: 'stale',
+        kind: 'packet',
+        payloadTypeName: 'GROUP_TEXT',
+        heardAt: publicState.serverTime - SNAPSHOT_PULSE_STALE_MS - 1,
+        hopCount: 0,
+        hasRoute: false,
+        animationState: 'observer',
+        resolutionBucket: 'observer_only',
+        observerLocation: { label: 'observer', lat: 43.44, lng: -80.48 },
+        messageText: 'old'
+      },
+      {
+        id: 'unmapped',
+        kind: 'packet',
+        payloadTypeName: 'GROUP_TEXT',
+        heardAt: publicState.serverTime,
+        hopCount: 0,
+        hasRoute: false,
+        animationState: 'unmapped',
+        resolutionBucket: 'unresolved_path',
+        messageText: 'no location'
+      }
+    ], publicState.serverTime);
+
+    expect(bursts).toHaveLength(0);
   });
 
   it('paces snapshot pulse replay and limits reconnect bursts', () => {

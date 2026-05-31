@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch
 import maplibregl from 'maplibre-gl';
 import type { PublicMapConfig, PublicMessageAnchor, PublicNode, PublicObserverBurst, PublicRoute, PublicRoutePulse } from '../types';
 import { parseSharedView, type MapViewState, type SharedViewState } from '../shareView';
-import { normalizePayloadType, payloadVisual } from '../payloadVisuals';
+import { payloadVisual } from '../payloadVisuals';
 import { NODE_ROLE_VISUALS, OBSERVER_NODE_VISUAL, nodeMapImageID, nodeRoleColor } from '../nodeVisuals';
 import { isMappableNode } from './geo';
 import { activityHeatmapToGeoJSON } from './activityHeatmap';
@@ -2589,8 +2589,7 @@ function publicSafeMessage(item: Pick<PublicRoutePulse, 'messageText' | 'payload
 
 function shouldShowMessageBubble(item: Pick<PublicRoutePulse, 'messageText' | 'payloadTypeName'>): boolean {
   const text = typeof item.messageText === 'string' ? item.messageText.trim() : '';
-  if (!text) return false;
-  return ['GROUP_TEXT', 'PLAIN_TEXT'].includes(normalizePayloadType(item.payloadTypeName));
+  return text.length > 0;
 }
 
 function publicSafeSender(item: Pick<PublicRoutePulse, 'messageSender'>, fallback: string): string {

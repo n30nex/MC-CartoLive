@@ -2,7 +2,7 @@
 
 Last audited: 2026-05-31
 
-Baseline audited: `v2.5.8` work in progress on `main`
+Baseline audited: `v2.5.9` work in progress on `main`
 
 ## Audit Coverage
 
@@ -304,7 +304,7 @@ route/pulse motifs.
 Goal: restore trust in live public text bubbles and make Packets easier to
 understand before the larger Packets data-plane/index work.
 
-Status: in progress. The backend group-text decoder now prefers a verified
+Status: shipped. The backend group-text decoder now prefers a verified
 packet-payload decrypt before using broker-provided decoded JSON, so bad
 upstream text decoding does not pollute new public speech bubbles when the
 packet itself can be decoded. The Packets panel now explains the select/replay
@@ -321,7 +321,30 @@ visible.
   pauses live, fits the route, then plays one watchable comet.
 - Public API response shapes remain unchanged.
 
-## 2.5.9 - OpenFreeMap 3D Production Polish
+## 2.5.9 - Message Bubble Snapshot Reliability
+
+Goal: make decoded public text bubbles survive reloads and polling fallback, not
+only fresh WebSocket frames.
+
+Status: in progress. Observer-only text activity from the initial public state
+snapshot is hydrated into the same observer-burst visual queue as live
+WebSocket activity, so a fresh reload can still show recent public text near
+the observer that first saw it. The frontend now treats any sanitized
+`messageText` with a public map anchor as eligible for a speech bubble instead
+of relying on fragile payload label matching.
+
+### Acceptance
+
+- Recent observer-only public text messages can produce speech bubbles after a
+  reload or polling fallback when the observer has a public-safe location.
+- Routed text messages continue to anchor to the sender/source endpoint when
+  available, falling back to the observer anchor only when needed.
+- Message bubbles still require sanitized public `messageText`; raw packet
+  hashes, raw payload hex, full keys, broker data, and resolver debug output
+  remain excluded.
+- Public API response shapes remain unchanged.
+
+## 2.5.10 - OpenFreeMap 3D Production Polish
 
 Goal: keep the impressive 3D mode while making it reliable and scalable.
 
@@ -355,7 +378,7 @@ Goal: keep the impressive 3D mode while making it reliable and scalable.
 - Toggling 3D on/off disposes resources cleanly.
 - Browser diagnostics show bounded object counts and animation work.
 
-## 2.5.10 - NetGraph Layout Rebuild
+## 2.5.11 - NetGraph Layout Rebuild
 
 Goal: make NetGraph useful and stable instead of jittery.
 
@@ -386,7 +409,7 @@ Goal: make NetGraph useful and stable instead of jittery.
 - Connected components are packed with less empty space.
 - Overlapping route edges are understandable enough for inspection.
 
-## 2.5.11 - Backend Scale And SQLite Operations
+## 2.5.12 - Backend Scale And SQLite Operations
 
 Goal: reduce pressure on SQLite and improve operator confidence for long-running public hosts.
 
@@ -410,7 +433,7 @@ Goal: reduce pressure on SQLite and improve operator confidence for long-running
 - A slow Packets or history request fails cleanly without poisoning live state.
 - Operator runbook contains tested backup/restore commands.
 
-## 2.5.12 - Worldwide Operator Experience
+## 2.5.13 - Worldwide Operator Experience
 
 Goal: make packaged installs feel first-class outside Canada.
 
@@ -448,7 +471,7 @@ Goal: make packaged installs feel first-class outside Canada.
 - Private broker users do not need 3-letter uppercase topic regions.
 - No global IATA list is required for correctness.
 
-## 2.5.13 - Security, Packaging, And Release Automation
+## 2.5.14 - Security, Packaging, And Release Automation
 
 Goal: make releases repeatable and trustworthy.
 

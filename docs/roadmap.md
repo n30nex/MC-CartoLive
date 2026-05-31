@@ -5,14 +5,14 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.8` is the active foundation patch toward the next production-ready
+Version `2.5.9` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: public message bubble reliability, Packets page
-  usability, Packets/VCR data-path stability, light-mode route contrast, and
+- Current patch focus: public message bubble snapshot reliability,
+  Packets/VCR data-path stability, light-mode route contrast, and
   mobile/browser regression coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
@@ -105,6 +105,18 @@ Version `2.5.8` is the active foundation patch toward the next production-ready
   sanitized text.
 - Make Packets page selection/replay behavior easier to understand with an
   explicit replay flow and visible server-history search status.
+- Keep public API shapes and privacy boundaries unchanged.
+
+## 2.5.9 Patch Focus
+
+- Hydrate recent observer-only public text activity from the initial public
+  state snapshot so speech bubbles can appear after a reload or polling
+  fallback.
+- Make frontend speech-bubble eligibility depend on sanitized public
+  `messageText` with a public map anchor, rather than fragile payload-name
+  matching.
+- Keep routed text messages anchored to public source endpoints and
+  observer-only text anchored to public observer locations when available.
 - Keep public API shapes and privacy boundaries unchanged.
 
 ## Next Cleanup Candidates

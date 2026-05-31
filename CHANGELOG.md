@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.5.9 - 2026-05-31
+
+- Hydrated recent observer-only public text activity from the initial public
+  state snapshot so speech bubbles can appear after page reloads and polling
+  fallback when the observer has a public-safe location.
+- Made frontend speech-bubble eligibility depend on sanitized public
+  `messageText` plus a public map anchor instead of payload-name matching.
+- Added frontend tests for snapshot observer-burst hydration and stale/unmapped
+  activity rejection.
+- Kept public API response shapes and privacy boundaries unchanged.
+
 ## 2.5.8 - 2026-05-31
 
 - Restored cleaner live Public group-text decoding by preferring verified
