@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.3
+# MeshCore MQTT Live Map v2.5.4
 
 Also known as **MC-CartoLive**.
 
@@ -23,14 +23,15 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.3 Feature Gallery
+### v2.5.4 Feature Gallery
 
-Version 2.5.3 keeps the Canada deployment intact while making the
+Version 2.5.4 keeps the Canada deployment intact while making the
 published package work for worldwide/private brokers with configurable map
 bounds and generic region labels.
 
-This patch starts the 2.6 production polish track: configurable deployment
-branding, cleaner top status pills, map icons that match the legend, safer
+This patch continues the 2.6 production polish track: calmer Live Follow camera
+motion, a subtle live activity heatmap layer, tighter top status pills,
+light-mode route contrast fixes, configurable deployment branding, safer
 Packets request handling, fresher top-bar guide/changelog copy, and a clearer
 VCR scrub timeline.
 
@@ -64,7 +65,7 @@ with live pulses, search, fit/reset, and compact node/pathway inspectors.
   disallowed-region traffic is counted for diagnostics but not guessed onto the
   map.
 - Serves a MapLibre public dashboard with clustered overview, detail zoom,
-  live packet comets, observer activity, message bubbles, Plot Routes, a
+  live packet comets, observer activity, activity heatmap, message bubbles, Plot Routes, a
   reachable-node phonebook, OpenFreeMap 3D mode, light/dark themes, and palette
   controls.
 - OpenFreeMap 3D mode uses terrain, neutral building extrusions, procedural
@@ -152,7 +153,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.3
+  ghcr.io/n30nex/mc-cartolive:2.5.4
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -163,7 +164,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.3
+  ghcr.io/n30nex/mc-cartolive:2.5.4
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -283,7 +284,7 @@ docker compose build
 
 ## Production Hosting
 
-The recommended v2.5.3 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.4 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

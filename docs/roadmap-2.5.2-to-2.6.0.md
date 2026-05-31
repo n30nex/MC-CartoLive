@@ -1,8 +1,8 @@
 # MC-CartoLive 2.5.2 to 2.6.0 Roadmap
 
-Last audited: 2026-05-28
+Last audited: 2026-05-31
 
-Baseline audited: `v2.5.1` at `d5f137e` (`Release 2.5.1 mobile and packet polish`)
+Baseline audited: `v2.5.4` work in progress on `main`
 
 ## Audit Coverage
 
@@ -53,7 +53,7 @@ That means:
 
 - `App.tsx`, `CanadaMap.tsx`, `styles.css`, `packetAnimator.ts`, and `NetGraphPanel.tsx` remain large ownership hotspots. They work, but they raise regression risk.
 - `PacketsPanel` can drop a new filter refresh while an older request is in flight because the in-flight guard returns early instead of aborting or queuing the latest request.
-- Packets search is described as 24h-capable, but the frontend only scans a bounded number of backend pages for rare filters. The UI should be honest in 2.5.2 and the backend should become indexed in 2.5.4.
+- Packets search is described as 24h-capable, but the frontend only scans a bounded number of backend pages for rare filters. The UI should be honest in 2.5.2 and the backend should become indexed in the packet data-plane phase.
 - NetGraph still tends to jitter or spread components with too much empty space. It needs a layout-focused pass instead of more visual polish on top of the current force behavior.
 - OpenFreeMap 3D is visually strong, but the default style still depends on external OpenFreeMap/terrain resources. Operators need fallback/cache guidance, and the renderer needs stronger LOD/object pooling before 2.6.
 - Mobile UI improved in 2.5.1, but the project needs automated browser smoke checks for 390px vertical layouts to stop regressions.
@@ -160,7 +160,43 @@ Status: started. The first pass adds shared CSS safe-area and z-index tokens and
 - Mobile screenshots show no cut-off controls in default map, Packets, VCR, palette, settings, and 3D mode.
 - CSS is split without changing visible desktop behavior.
 
-## 2.5.4 - Packets And VCR Data Plane
+## 2.5.4 - Live Map Usability And Activity Polish
+
+Goal: make the default live map feel calmer, clearer, and more visibly alive.
+
+Status: started. The first pass adds a toggleable activity heatmap source/layer,
+calms Live Follow camera moves with a shared decision helper, tightens status
+pill copy, and uses darker semantic route/path colors for light mode.
+
+### Live Follow
+
+- Throttle repeated live-follow targets so busy traffic does not whip the map.
+- Ignore duplicate targets and wait while the previous camera move is still
+  active.
+- Lower follow zoom and use longer eased transitions for both point and route
+  targets.
+
+### Activity Heatmap
+
+- Add a subtle heatmap/sparkle layer based on recent public-safe node activity.
+- Keep it independent from packet ingest, counters, Packets, VCR, and comets.
+- Expose it through Map Settings so viewers can hide it without disabling other
+  layers.
+
+### Light-Mode Route Contrast
+
+- Use semantic route colors for dark and light modes.
+- Keep selected, plotted, replayed, and connected route colors readable on light
+  basemaps.
+
+### Acceptance
+
+- Live Follow can stay enabled during normal traffic without constant camera
+  jumps.
+- Activity heatmap can be toggled and does not rebuild node/route sources.
+- Light-mode selected/pathway routes remain visible across palettes.
+
+## 2.5.5 - Packets And VCR Data Plane
 
 Goal: make Packets and VCR truly production-grade over the full public-safe 24h window.
 
@@ -203,7 +239,7 @@ Goal: make Packets and VCR truly production-grade over the full public-safe 24h 
 - VCR scrub-to-play waits for ready slices and never starts with an empty misleading replay.
 - Privacy regression covers the new projection table.
 
-## 2.5.5 - OpenFreeMap 3D Production Polish
+## 2.5.6 - OpenFreeMap 3D Production Polish
 
 Goal: keep the impressive 3D mode while making it reliable and scalable.
 
@@ -237,7 +273,7 @@ Goal: keep the impressive 3D mode while making it reliable and scalable.
 - Toggling 3D on/off disposes resources cleanly.
 - Browser diagnostics show bounded object counts and animation work.
 
-## 2.5.6 - NetGraph Layout Rebuild
+## 2.5.7 - NetGraph Layout Rebuild
 
 Goal: make NetGraph useful and stable instead of jittery.
 
@@ -268,7 +304,7 @@ Goal: make NetGraph useful and stable instead of jittery.
 - Connected components are packed with less empty space.
 - Overlapping route edges are understandable enough for inspection.
 
-## 2.5.7 - Backend Scale And SQLite Operations
+## 2.5.8 - Backend Scale And SQLite Operations
 
 Goal: reduce pressure on SQLite and improve operator confidence for long-running public hosts.
 
@@ -292,7 +328,7 @@ Goal: reduce pressure on SQLite and improve operator confidence for long-running
 - A slow Packets or history request fails cleanly without poisoning live state.
 - Operator runbook contains tested backup/restore commands.
 
-## 2.5.8 - Worldwide Operator Experience
+## 2.5.9 - Worldwide Operator Experience
 
 Goal: make packaged installs feel first-class outside Canada.
 
@@ -330,7 +366,7 @@ Goal: make packaged installs feel first-class outside Canada.
 - Private broker users do not need 3-letter uppercase topic regions.
 - No global IATA list is required for correctness.
 
-## 2.5.9 - Security, Packaging, And Release Automation
+## 2.5.10 - Security, Packaging, And Release Automation
 
 Goal: make releases repeatable and trustworthy.
 

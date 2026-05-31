@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 2.5.4 - 2026-05-31
+
+- Added a subtle live activity heatmap layer with sparkle highlights, plus a
+  Map Settings toggle so users can hide it without changing packet ingest or
+  route replay behavior.
+- Made Live Follow usable for normal viewing by throttling repeated camera
+  moves, avoiding duplicate targets, waiting for active camera motion to settle,
+  lowering follow zoom, and using longer eased camera transitions.
+- Added darker semantic route and selected-path colors for light mode so idle
+  pathways, analysis paths, and selected/replayed routes remain visible across
+  palettes.
+- Tightened top status pill labels and sizing so the live status bar scans more
+  cleanly on desktop.
+
 ## 2.5.3 - 2026-05-31
 
 - Started the 2.5.3 mobile/UI stability pass with shared safe-area and z-index

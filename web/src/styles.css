@@ -1632,7 +1632,7 @@ button {
   right: 388px;
   display: flex;
   flex-wrap: nowrap;
-  gap: 5px;
+  gap: 4px;
   align-items: center;
   overflow: hidden;
 }
@@ -1640,12 +1640,12 @@ button {
 .status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  min-width: 72px;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 58px;
   min-height: 28px;
-  max-width: 150px;
-  padding: 0 8px;
+  max-width: 124px;
+  padding: 0 7px;
   color: #dbeafe;
   background: linear-gradient(135deg, rgba(6, 11, 18, 0.9), rgba(10, 20, 35, 0.78));
   border: 1px solid rgba(125, 211, 252, 0.2);
@@ -1673,12 +1673,13 @@ button {
 
 .status-pill.server-status,
 .status-pill.payload-signal-pill {
-  min-width: 64px;
-  max-width: 88px;
+  min-width: 58px;
+  max-width: 78px;
 }
 
 .status-pill.packets-total {
-  min-width: 118px;
+  min-width: 104px;
+  max-width: 128px;
 }
 
 .status-pill.good {

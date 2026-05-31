@@ -18,6 +18,7 @@ describe('map settings', () => {
       packets: { speed: 99, brightness: 0.1, trail: 8, animationStyle: 'pulse', showLiveCometsAtAllZooms: true }
     });
     expect(settings.layers.clusters).toBe(false);
+    expect(settings.layers.activityHeatmap).toBe(true);
     expect(settings.layers.nodes).toBe(false);
     expect(settings.layers.routes).toBe(true);
     expect(settings.layers.liveComets).toBe(false);

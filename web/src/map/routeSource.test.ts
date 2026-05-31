@@ -4,6 +4,7 @@ import type { NodeFocus } from './nodeFocus';
 import {
   pruneRoutePayloadGlows,
   routeColorSignature,
+  routeHighlightColor,
   routeFreshnessLevel,
   routeFreshnessOpacity,
   routePayloadGlowsToGeoJSON,
@@ -76,6 +77,19 @@ describe('route source helpers', () => {
 
     expect(data.features[0].properties).toMatchObject({ id: 'a-b', connected: true, dimmed: false });
     expect(data.features[1].properties).toMatchObject({ id: 'c-d', connected: false, dimmed: true });
+  });
+
+  it('uses darker semantic route colors in light mode', () => {
+    const data = routesToGeoJSON(
+      [route('a-b', 'a', 'b'), route('c-d', 'c', 'd')],
+      null,
+      focus({ selectedNodeID: 'a', connectedRouteIDs: new Set(['a-b']), pathRouteIDs: new Set(['c-d']) }),
+      Date.now(),
+      'light'
+    );
+
+    expect(data.features[0].properties).toMatchObject({ id: 'a-b', color: routeHighlightColor('connected', 'light') });
+    expect(data.features[1].properties).toMatchObject({ id: 'c-d', color: routeHighlightColor('path', 'light') });
   });
 
   it('renders route geometry as densified arc coordinates', () => {

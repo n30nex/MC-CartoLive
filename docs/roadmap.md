@@ -5,16 +5,15 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.3` is the active foundation patch toward the next production-ready
+Version `2.5.4` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: release metadata hygiene, configurable instance branding,
-  top-bar cleanup, Packets request safety, icon/legend alignment, VCR timeline
-  readability, light-mode route contrast, Packets scan clarity, and worldwide
-  fixture smoke coverage.
+- Current patch focus: live-map polish, calmer Live Follow, subtle activity
+  heatmap, top-bar cleanup, light-mode route contrast, Packets/VCR readiness,
+  and mobile/browser regression coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -60,9 +59,20 @@ Version `2.5.3` is the active foundation patch toward the next production-ready
 - Decode the built-in MeshCore default Public channel for sanitized speech
   bubbles without requiring a private channel-secret env override.
 
+## 2.5.4 Patch Focus
+
+- Make Live Follow usable for viewers by throttling repeated camera movements
+  and using slower eased transitions.
+- Add a subtle activity heatmap layer that can be toggled independently from
+  nodes, routes, comets, and packet ingest.
+- Keep light-mode pathway and analysis route colors readable with semantic
+  darker route colors.
+- Continue tightening top status pills and guide/changelog copy for every
+  release.
+
 ## Next Cleanup Candidates
 
-- Continue the started 2.5.3 mobile stability pass with browser screenshots for
+- Continue the started mobile stability pass with browser screenshots for
   390px vertical layouts, palette selection, Packets, VCR, and Map Settings.
 - Continue splitting large frontend surfaces only when behavior is covered by
   tests and the visible UI stays unchanged.

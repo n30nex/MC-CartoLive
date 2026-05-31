@@ -4,6 +4,8 @@ import type { NodeFocus } from './nodeFocus';
 import { routeArcCoordinates } from './routeArcs';
 
 export const routeColors = ['#1d4ed8', '#0891b2', '#15803d', '#c2410c', '#be123c'];
+export const lightRouteColors = ['#1e40af', '#0e7490', '#166534', '#9a3412', '#9f1239'];
+export type RouteThemeMode = 'dark' | 'light';
 export const ROUTE_FRESH_MS = 15 * 60_000;
 export const ROUTE_RECENT_MS = 60 * 60_000;
 export const ROUTE_KNOWN_MS = 6 * 60 * 60_000;
@@ -23,7 +25,8 @@ export function routesToGeoJSON(
   routes: PublicRoute[],
   selectedRouteID: string | null,
   focus: NodeFocus,
-  now = Date.now()
+  now = Date.now(),
+  themeMode: RouteThemeMode = 'dark'
 ): FeatureCollection {
   const hasFocusedRoute = Boolean(selectedRouteID || focus.selectedNodeID || focus.pathRouteIDs.size > 0);
   return {
@@ -39,7 +42,7 @@ export function routesToGeoJSON(
           id: route.id,
           properties: {
             id: route.id,
-            color: routeColors[Math.max(0, Math.min(4, route.frequencyBucket))],
+            color: routeDisplayColor(route, selected, path, connected, themeMode),
             selected,
             path,
             connected,
@@ -68,6 +71,29 @@ export function routeSourceSignature(routes: PublicRoute[], selectedRouteID: str
 
 export function routeColorSignature(routes: PublicRoute[]): string {
   return routes.map((route) => `${route.id}:${Math.max(0, Math.min(4, route.frequencyBucket))}`).sort().join('|');
+}
+
+export function routeColorForBucket(bucket: number, themeMode: RouteThemeMode = 'dark'): string {
+  const colors = themeMode === 'light' ? lightRouteColors : routeColors;
+  return colors[Math.max(0, Math.min(colors.length - 1, bucket))];
+}
+
+export function routeHighlightColor(kind: 'selected' | 'path' | 'connected', themeMode: RouteThemeMode = 'dark'): string {
+  if (themeMode === 'light') {
+    if (kind === 'selected') return '#0f172a';
+    if (kind === 'path') return '#9a3412';
+    return '#0369a1';
+  }
+  if (kind === 'selected') return '#f8fafc';
+  if (kind === 'path') return '#facc15';
+  return '#67e8f9';
+}
+
+function routeDisplayColor(route: PublicRoute, selected: boolean, path: boolean, connected: boolean, themeMode: RouteThemeMode): string {
+  if (selected) return routeHighlightColor('selected', themeMode);
+  if (path) return routeHighlightColor('path', themeMode);
+  if (connected) return routeHighlightColor('connected', themeMode);
+  return routeColorForBucket(route.frequencyBucket, themeMode);
 }
 
 export function pruneRoutePayloadGlows(glows: Map<string, RoutePayloadGlow>, now: number, minIntensity = 0.01): number {

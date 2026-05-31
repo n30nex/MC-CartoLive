@@ -5,6 +5,7 @@ import { routeAssetIcons } from '../assets/routes/assets';
 import { parseSharedView, type MapViewState, type SharedViewState } from '../shareView';
 import { normalizePayloadType, payloadVisual } from '../payloadVisuals';
 import { isMappableNode } from './geo';
+import { activityHeatmapToGeoJSON } from './activityHeatmap';
 import { analysisRoutesToGeoJSON } from './analysisRoutes';
 import { shouldAnimateLiveEvent } from './animationSafety';
 import {
@@ -49,7 +50,7 @@ import {
 import {
   pruneRoutePayloadGlows,
   routeColorSignature,
-  routeColors,
+  routeColorForBucket,
   routePayloadGlowsToGeoJSON,
   routeSourceSignature,
   routesToGeoJSON,
@@ -58,6 +59,12 @@ import {
 import { easeOutCubic, fitToNodes, fitToRoute, fitToSegments, followTrafficPadding, isFollowPoint, mapViewFromMap, mapViewportSize } from './mapCamera';
 import { setSourceData, type FeatureCollection } from './sourceDataQueue';
 import { DETAIL_MIN_ZOOM, NODE_CLUSTER_MAX_ZOOM, type MapVisualMode, isClusterZoom, isDetailZoom, visualModeForZoom } from './zoomMode';
+import {
+  FOLLOW_TRAFFIC_POINT_ZOOM,
+  FOLLOW_TRAFFIC_ROUTE_MAX_ZOOM,
+  followTrafficDecision,
+  type FollowTrafficState
+} from './followTraffic';
 import type { OpenFreeMap3DController } from './openFreeMap3D';
 
 export type MapAction =
@@ -146,6 +153,9 @@ type MessageBubble = {
 
 const NODE_SOURCE = 'public-nodes';
 const ROUTE_SOURCE = 'public-routes';
+const ACTIVITY_HEATMAP_SOURCE = 'activity-heatmap';
+const ACTIVITY_HEATMAP_LAYER = 'activity-heatmap-glow';
+const ACTIVITY_SPARKLE_LAYER = 'activity-heatmap-sparkles';
 const CLUSTER_ACTIVITY_SOURCE = 'cluster-activity-glows';
 const CLUSTER_ACTIVITY_AURA_LAYER = 'cluster-activity-aura';
 const CLUSTER_ACTIVITY_RING_LAYER = 'cluster-activity-ring';
@@ -183,10 +193,6 @@ const ROUTE_VISUAL_CADENCE_MS = 125;
 const OBSERVER_VISUAL_CADENCE_MS = 95;
 const MAX_PENDING_ROUTE_VISUALS = 220;
 const MAX_PENDING_OBSERVER_VISUALS = 360;
-const FOLLOW_TRAFFIC_MIN_INTERVAL_MS = 3200;
-const FOLLOW_TRAFFIC_DURATION_MS = 1450;
-const FOLLOW_TRAFFIC_ROUTE_MAX_ZOOM = 8.9;
-const FOLLOW_TRAFFIC_POINT_ZOOM = 8.4;
 const DEFAULT_ORIGINAL_MAP_PITCH = 0;
 const DEFAULT_ORIGINAL_MAP_BEARING = 0;
 const DEFAULT_OPENFREEMAP_MAP_PITCH = 46;
@@ -269,6 +275,49 @@ function clusterRoleBadgeTextLayers(): maplibregl.LayerSpecification[] {
       'text-translate': badge.translate
     }
   }));
+}
+
+function activityHeatmapLayers(): maplibregl.LayerSpecification[] {
+  return [
+    {
+      id: ACTIVITY_HEATMAP_LAYER,
+      type: 'heatmap',
+      source: ACTIVITY_HEATMAP_SOURCE,
+      paint: {
+        'heatmap-weight': ['interpolate', ['linear'], ['coalesce', ['get', 'intensity'], 0], 0, 0, 1, 1],
+        'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 2, 0.42, 7, 0.72, 12, 0.38],
+        'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 2, 22, 7, 42, 12, 64],
+        'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 2, 0.42, 9, 0.34, 13, 0.12, 15, 0],
+        'heatmap-color': [
+          'interpolate',
+          ['linear'],
+          ['heatmap-density'],
+          0,
+          'rgba(0, 0, 0, 0)',
+          0.18,
+          'rgba(20, 184, 166, 0.16)',
+          0.42,
+          'rgba(56, 189, 248, 0.24)',
+          0.68,
+          'rgba(250, 204, 21, 0.3)',
+          1,
+          'rgba(244, 63, 94, 0.38)'
+        ]
+      }
+    },
+    {
+      id: ACTIVITY_SPARKLE_LAYER,
+      type: 'circle',
+      source: ACTIVITY_HEATMAP_SOURCE,
+      paint: {
+        'circle-color': ['coalesce', ['get', 'color'], '#67e8f9'],
+        'circle-radius': ['interpolate', ['linear'], ['coalesce', ['get', 'spark'], 0], 0, 0.6, 1, 4.8],
+        'circle-blur': 0.55,
+        'circle-opacity': ['*', ['coalesce', ['get', 'spark'], 0], 0.58],
+        'circle-stroke-width': 0
+      }
+    }
+  ];
 }
 
 const NODE_CIRCLE_COLOR: any = [
@@ -400,6 +449,10 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       clusterRadius: 58,
       clusterProperties: nodeClusterProperties()
     } as any,
+    [ACTIVITY_HEATMAP_SOURCE]: {
+      type: 'geojson',
+      data: emptyCollection() as any
+    },
     [ROUTE_SOURCE]: {
       type: 'geojson',
       data: emptyCollection() as any
@@ -619,6 +672,7 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
         'line-opacity': ['coalesce', ['get', 'opacity'], 0.86]
       }
     },
+    ...activityHeatmapLayers(),
     {
       id: ROUTE_GLOW_LAYER,
       type: 'line',
@@ -627,16 +681,7 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       filter: ROUTE_FOCUS_FILTER,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': [
-          'case',
-          ['==', ['get', 'selected'], true],
-          '#f8fafc',
-          ['==', ['get', 'path'], true],
-          '#facc15',
-          ['==', ['get', 'connected'], true],
-          '#67e8f9',
-          '#67e8f9'
-        ],
+        'line-color': ['get', 'color'],
         'line-width': [
           'case',
           ['==', ['get', 'selected'], true],
@@ -680,7 +725,7 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       minzoom: DETAIL_MIN_ZOOM,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': ['case', ['==', ['get', 'path'], true], '#facc15', ['get', 'color']],
+        'line-color': ['get', 'color'],
         'line-width': [
           'case',
           ['==', ['get', 'selected'], true],
@@ -1053,7 +1098,7 @@ export default function CanadaMap({
   const pendingPulsesRef = useRef<PublicRoutePulse[]>([]);
   const pendingObserverBurstsRef = useRef<PublicObserverBurst[]>([]);
   const followTrafficRef = useRef(followTraffic);
-  const followTrafficStateRef = useRef({ lastAt: 0, lastID: '' });
+  const followTrafficStateRef = useRef<FollowTrafficState>({ lastAt: 0, lastID: '' });
   const themeModeRef = useRef<MapThemeMode>(themeMode);
   const pulseSchedulerTimerRef = useRef<number | null>(null);
   const observerSchedulerTimerRef = useRef<number | null>(null);
@@ -1236,6 +1281,9 @@ export default function CanadaMap({
     if (shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(pulse)) {
       showMessageBubble(map, messageBubbleFromPulse(map, pulse));
     }
+    addPulseNodeActivity(map, nodeActivityRef.current, pulse);
+    addPulseNodeMeshActivity(nodeMeshActivityAtRef.current, pulse);
+    setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current);
     if (isClusterMode(map)) {
       if (renderComet && !addPulseTo3D(map, pulse)) animatorRef.current?.add(pulse);
       if (shouldAnimate && layerSettingsRef.current.observerBursts && addPulseClusterActivityGlow(map, clusterActivityGlowRef.current, pulse)) {
@@ -1245,8 +1293,6 @@ export default function CanadaMap({
       return;
     }
     if (renderComet && !addPulseTo3D(map, pulse)) animatorRef.current?.add(pulse);
-    addPulseNodeActivity(map, nodeActivityRef.current, pulse);
-    addPulseNodeMeshActivity(nodeMeshActivityAtRef.current, pulse);
     if (shouldAnimate && layerSettingsRef.current.analysisPaths) {
       addPulseRoutePayloadGlow(routePayloadGlowRef.current, pulse);
       setRoutePayloadGlowSource(map, routesRef.current, routePayloadGlowRef.current, selectedRouteIDRef.current, nodeFocusRef.current);
@@ -1255,7 +1301,7 @@ export default function CanadaMap({
     if (layerSettingsRef.current.nodeLabels) {
       setScreenNodeLabels(projectNodeLabels(map, nodesRef.current, nodeFocusRef.current, pulse.heardAt, nodeMeshActivityAtRef.current, nodeActivityRef.current));
     }
-    startNodeActivityTimer(map, nodeActivityRef, nodeActivityTimerRef);
+    startNodeActivityTimer(map, nodeActivityRef, nodeActivityTimerRef, nodesRef, nodeMeshActivityAtRef);
   };
 
   const renderScheduledObserverBurst = (burst: PublicObserverBurst) => {
@@ -1503,6 +1549,7 @@ export default function CanadaMap({
         });
       }
       updateNodeRendering(map, nodesRef.current, nodeFocusRef.current, Date.now(), nodeMeshActivityAtRef.current, nodeSourceSignatureRef, true);
+      setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current);
       updateRouteRendering(
         map,
         routesRef.current,
@@ -1511,6 +1558,7 @@ export default function CanadaMap({
         routeSourceSignatureRef,
         routeColorSignatureRef,
         animatorRef,
+        themeModeRef.current,
         true
       );
       updateAnalysisRouteRendering(
@@ -1520,6 +1568,7 @@ export default function CanadaMap({
         nodeFocusRef.current,
         analysisSegmentsRef.current,
         analysisRouteSignatureRef,
+        themeModeRef.current,
         true
       );
       updateOpenFreeMap3D();
@@ -1637,10 +1686,12 @@ export default function CanadaMap({
     const map = mapRef.current;
     if (!map) return;
     if (loadedRef.current) updateNodeRendering(map, nodes, nodeFocus, nodeLabelClock, nodeMeshActivityAtRef.current, nodeSourceSignatureRef);
+    if (loadedRef.current) setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
     if (isClusterMode(map)) {
       setScreenNodeLabels([]);
       stopNodeActivityTimer(nodeActivityTimerRef);
       clearNodeActivityStates(map, nodeActivityRef.current);
+      if (loadedRef.current) setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
       markPositionedNodesReady(map, nodes, fitInitialNodesRef, positionedNodesReadyRef, positionedNodesRenderedRef);
       return;
     }
@@ -1650,10 +1701,12 @@ export default function CanadaMap({
       setScreenNodeLabels([]);
     }
     if (addChangedNodeActivity(map, nodeActivityRef.current, nodeTelemetryRef.current, nodeMeshActivityAtRef.current, nodes)) {
-      startNodeActivityTimer(map, nodeActivityRef, nodeActivityTimerRef);
+      setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
+      startNodeActivityTimer(map, nodeActivityRef, nodeActivityTimerRef, nodesRef, nodeMeshActivityAtRef);
     }
     if (updateNodeActivityFeatureStates(map, nodeActivityRef.current) > 0) {
-      startNodeActivityTimer(map, nodeActivityRef, nodeActivityTimerRef);
+      setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
+      startNodeActivityTimer(map, nodeActivityRef, nodeActivityTimerRef, nodesRef, nodeMeshActivityAtRef);
     }
     markPositionedNodesReady(map, nodes, fitInitialNodesRef, positionedNodesReadyRef, positionedNodesRenderedRef);
     updateOpenFreeMap3D();
@@ -1663,8 +1716,8 @@ export default function CanadaMap({
     const map = mapRef.current;
     if (!map) return;
     if (loadedRef.current) {
-      updateRouteRendering(map, routes, selectedRouteID, nodeFocus, routeSourceSignatureRef, routeColorSignatureRef, animatorRef);
-      updateAnalysisRouteRendering(map, routes, selectedRouteID, nodeFocus, analysisSegments, analysisRouteSignatureRef);
+      updateRouteRendering(map, routes, selectedRouteID, nodeFocus, routeSourceSignatureRef, routeColorSignatureRef, animatorRef, themeModeRef.current);
+      updateAnalysisRouteRendering(map, routes, selectedRouteID, nodeFocus, analysisSegments, analysisRouteSignatureRef, themeModeRef.current);
       setRoutePayloadGlowSource(map, routes, routePayloadGlowRef.current, selectedRouteID, nodeFocus);
       updateOpenFreeMap3D();
     }
@@ -1681,6 +1734,7 @@ export default function CanadaMap({
     if (!map || !loadedRef.current) return;
     animatorRef.current?.setLayerSettings(layerSettings);
     applyLayerSettings(map, layerSettings);
+    if (layerSettings.activityHeatmap) setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current);
     if (!layerSettings.messageBubbles) setMessageBubbles([]);
     if (!layerSettings.nodeLabels) setScreenNodeLabels([]);
     updateOpenFreeMap3D();
@@ -1772,7 +1826,16 @@ export default function CanadaMap({
     if (mapAction.type === 'packet-replay') {
       map.stop();
       animatorRef.current?.clear();
-      updateAnalysisRouteRendering(map, routesRef.current, selectedRouteIDRef.current, nodeFocusRef.current, mapAction.segments, analysisRouteSignatureRef, true);
+      updateAnalysisRouteRendering(
+        map,
+        routesRef.current,
+        selectedRouteIDRef.current,
+        nodeFocusRef.current,
+        mapAction.segments,
+        analysisRouteSignatureRef,
+        themeModeRef.current,
+        true
+      );
       fitToSegments(map, mapAction.segments, 900, true);
       replayActionTimerRef.current = window.setTimeout(() => {
         replayActionTimerRef.current = null;
@@ -1962,6 +2025,12 @@ function addPublicLayers(map: maplibregl.Map) {
       clusterProperties: nodeClusterProperties()
     } as any);
   }
+  if (!map.getSource(ACTIVITY_HEATMAP_SOURCE)) {
+    map.addSource(ACTIVITY_HEATMAP_SOURCE, {
+      type: 'geojson',
+      data: emptyCollection() as any
+    });
+  }
   if (!map.getSource(ROUTE_SOURCE)) {
     map.addSource(ROUTE_SOURCE, {
       type: 'geojson',
@@ -2012,6 +2081,8 @@ function addPublicLayers(map: maplibregl.Map) {
     }
   });
 
+  for (const layer of activityHeatmapLayers()) addLayerIfMissing(map, layer);
+
   addLayerIfMissing(map, {
     id: ROUTE_GLOW_LAYER,
     type: 'line',
@@ -2020,16 +2091,7 @@ function addPublicLayers(map: maplibregl.Map) {
     filter: ROUTE_FOCUS_FILTER,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
-      'line-color': [
-        'case',
-        ['==', ['get', 'selected'], true],
-        '#f8fafc',
-        ['==', ['get', 'path'], true],
-        '#facc15',
-        ['==', ['get', 'connected'], true],
-        '#67e8f9',
-        '#67e8f9'
-      ],
+      'line-color': ['get', 'color'],
       'line-width': [
         'case',
         ['==', ['get', 'selected'], true],
@@ -2075,7 +2137,7 @@ function addPublicLayers(map: maplibregl.Map) {
     minzoom: DETAIL_MIN_ZOOM,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
-      'line-color': ['case', ['==', ['get', 'path'], true], '#facc15', ['get', 'color']],
+      'line-color': ['get', 'color'],
       'line-width': [
         'case',
         ['==', ['get', 'selected'], true],
@@ -2288,11 +2350,13 @@ function applyLayerSettings(map: maplibregl.Map, settings: MapLayerSettings) {
     CLUSTER_COUNT_LAYER,
     ...CLUSTER_ROLE_BADGES.flatMap((badge) => [`${CLUSTER_ROLE_BADGE_LAYER_PREFIX}-${badge.key}-dot`, `${CLUSTER_ROLE_BADGE_LAYER_PREFIX}-${badge.key}-count`])
   ];
+  const activityHeatmapLayers = [ACTIVITY_HEATMAP_LAYER, ACTIVITY_SPARKLE_LAYER];
   const nodeLayers = [NODE_HALO_LAYER, NODE_LAYER, NODE_ICON_LAYER, OBSERVER_LAYER];
   const routeLayers = [ROUTE_LAYER];
   const analysisLayers = [ROUTE_GLOW_LAYER, ROUTE_PAYLOAD_GLOW_LAYER, ANALYSIS_ROUTE_GLOW_LAYER, ANALYSIS_ROUTE_LAYER];
   const observerBurstLayers = [CLUSTER_ACTIVITY_AURA_LAYER, CLUSTER_ACTIVITY_RING_LAYER];
   for (const layerID of clusterLayers) setLayerVisibility(map, layerID, settings.clusters);
+  for (const layerID of activityHeatmapLayers) setLayerVisibility(map, layerID, settings.activityHeatmap);
   for (const layerID of nodeLayers) setLayerVisibility(map, layerID, settings.nodes);
   for (const layerID of routeLayers) setLayerVisibility(map, layerID, settings.routes);
   for (const layerID of analysisLayers) setLayerVisibility(map, layerID, settings.analysisPaths);
@@ -2838,11 +2902,16 @@ function updateNodeActivityFeatureStates(
 function startNodeActivityTimer(
   map: maplibregl.Map,
   activitiesRef: MutableRefObject<Map<string, NodeActivity>>,
-  timerRef: MutableRefObject<number | null>
+  timerRef: MutableRefObject<number | null>,
+  nodesRef?: MutableRefObject<PublicNode[]>,
+  meshActivityAtByNodeIDRef?: MutableRefObject<Map<string, number>>
 ) {
   if (timerRef.current !== null) return;
   timerRef.current = window.setInterval(() => {
     const activeGlowCount = updateNodeActivityFeatureStates(map, activitiesRef.current);
+    if (nodesRef && meshActivityAtByNodeIDRef) {
+      setActivityHeatmapSource(map, nodesRef.current, activitiesRef.current, meshActivityAtByNodeIDRef.current);
+    }
     if (activeGlowCount === 0) stopNodeActivityTimer(timerRef);
   }, NODE_ACTIVITY_UPDATE_MS);
 }
@@ -3077,6 +3146,16 @@ function updateNodeRendering(
   setSourceData(map, NODE_SOURCE, nodesToGeoJSON(nodes, focus, labelClock, meshActivityAtByNodeID));
 }
 
+function setActivityHeatmapSource(
+  map: maplibregl.Map,
+  nodes: PublicNode[],
+  activities: Map<string, NodeActivity>,
+  meshActivityAtByNodeID: Map<string, number>
+) {
+  if (!map.getSource(ACTIVITY_HEATMAP_SOURCE)) return;
+  setSourceData(map, ACTIVITY_HEATMAP_SOURCE, activityHeatmapToGeoJSON(nodes, activities, meshActivityAtByNodeID));
+}
+
 function updateRouteRendering(
   map: maplibregl.Map,
   routes: PublicRoute[],
@@ -3085,19 +3164,20 @@ function updateRouteRendering(
   routeSignatureRef: MutableRefObject<string>,
   colorSignatureRef: MutableRefObject<string>,
   animatorRef: MutableRefObject<PacketAnimator | null>,
+  themeMode: MapThemeMode,
   force = false
 ) {
   const now = Date.now();
   const nextRouteSignature = routeSourceSignature(routes, selectedRouteID, focus, now);
   if (force || nextRouteSignature !== routeSignatureRef.current) {
     routeSignatureRef.current = nextRouteSignature;
-    setSourceData(map, ROUTE_SOURCE, routesToGeoJSON(routes, selectedRouteID, focus, now));
+    setSourceData(map, ROUTE_SOURCE, routesToGeoJSON(routes, selectedRouteID, focus, now, themeMode));
   }
 
-  const nextColorSignature = routeColorSignature(routes);
+  const nextColorSignature = `${themeMode}:${routeColorSignature(routes)}`;
   if (force || nextColorSignature !== colorSignatureRef.current) {
     colorSignatureRef.current = nextColorSignature;
-    animatorRef.current?.setRouteColors(new Map(routes.map((route) => [route.id, routeColors[Math.max(0, Math.min(4, route.frequencyBucket))]])));
+    animatorRef.current?.setRouteColors(new Map(routes.map((route) => [route.id, routeColorForBucket(route.frequencyBucket, themeMode)])));
   }
 }
 
@@ -3108,12 +3188,13 @@ function updateAnalysisRouteRendering(
   focus: NodeFocus,
   analysisSegments: PublicRoutePulse['segments'],
   signatureRef: MutableRefObject<string>,
+  themeMode: MapThemeMode,
   force = false
 ) {
-  const signature = analysisRouteSignature(routes, selectedRouteID, focus, analysisSegments);
+  const signature = `${themeMode}:${analysisRouteSignature(routes, selectedRouteID, focus, analysisSegments)}`;
   if (!force && signature === signatureRef.current) return;
   signatureRef.current = signature;
-  setSourceData(map, ANALYSIS_ROUTE_SOURCE, analysisRoutesToGeoJSON(routes, selectedRouteID, focus, analysisSegments));
+  setSourceData(map, ANALYSIS_ROUTE_SOURCE, analysisRoutesToGeoJSON(routes, selectedRouteID, focus, analysisSegments, themeMode));
 }
 
 function analysisRouteSignature(routes: PublicRoute[], selectedRouteID: string | null, focus: NodeFocus, analysisSegments: PublicRoutePulse['segments']): string {
@@ -3133,7 +3214,7 @@ function followTrafficPulse(
   map: maplibregl.Map,
   pulse: PublicRoutePulse,
   enabled: boolean,
-  stateRef: MutableRefObject<{ lastAt: number; lastID: string }>,
+  stateRef: MutableRefObject<FollowTrafficState>,
   immediate = false
 ) {
   if (!enabled) return;
@@ -3145,7 +3226,7 @@ function followTrafficObserverBurst(
   map: maplibregl.Map,
   burst: PublicObserverBurst,
   enabled: boolean,
-  stateRef: MutableRefObject<{ lastAt: number; lastID: string }>,
+  stateRef: MutableRefObject<FollowTrafficState>,
   immediate = false
 ) {
   if (!enabled) return;
@@ -3156,15 +3237,15 @@ function followTrafficTarget(
   map: maplibregl.Map,
   id: string,
   points: Array<[number, number]>,
-  stateRef: MutableRefObject<{ lastAt: number; lastID: string }>,
+  stateRef: MutableRefObject<FollowTrafficState>,
   immediate: boolean
 ) {
   const usablePoints = points.filter(isFollowPoint);
   if (usablePoints.length === 0) return;
   const now = Date.now();
   const state = stateRef.current;
-  if (state.lastID === id) return;
-  if (!immediate && now - state.lastAt < FOLLOW_TRAFFIC_MIN_INTERVAL_MS) return;
+  const decision = followTrafficDecision(state, { id, now, immediate, mapMoving: map.isMoving() });
+  if (!decision.shouldMove) return;
   state.lastAt = now;
   state.lastID = id;
   map.stop();
@@ -3174,7 +3255,7 @@ function followTrafficTarget(
     map.easeTo({
       center: usablePoints[0],
       zoom,
-      duration: immediate ? 900 : FOLLOW_TRAFFIC_DURATION_MS,
+      duration: decision.durationMs,
       easing: easeOutCubic
     });
     return;
@@ -3183,7 +3264,7 @@ function followTrafficTarget(
   map.fitBounds(bounds, {
     padding: followTrafficPadding(map),
     maxZoom: FOLLOW_TRAFFIC_ROUTE_MAX_ZOOM,
-    duration: immediate ? 950 : FOLLOW_TRAFFIC_DURATION_MS,
+    duration: decision.durationMs,
     easing: easeOutCubic
   });
 }

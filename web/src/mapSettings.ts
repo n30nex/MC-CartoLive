@@ -2,6 +2,7 @@ export type PacketAnimationStyle = 'comet' | 'pulse' | 'minimal';
 
 export interface MapLayerSettings {
   clusters: boolean;
+  activityHeatmap: boolean;
   nodes: boolean;
   nodeLabels: boolean;
   routes: boolean;
@@ -33,6 +34,7 @@ export const MAP_SETTINGS_STORAGE_KEY = 'mc-cartolive-map-settings';
 
 export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   clusters: true,
+  activityHeatmap: true,
   nodes: true,
   nodeLabels: true,
   routes: true,
@@ -72,6 +74,7 @@ export function normalizeLayerSettings(input: unknown): MapLayerSettings {
   const raw = isRecord(input) ? input : {};
   return {
     clusters: boolOrDefault(raw.clusters, DEFAULT_MAP_LAYER_SETTINGS.clusters),
+    activityHeatmap: boolOrDefault(raw.activityHeatmap, DEFAULT_MAP_LAYER_SETTINGS.activityHeatmap),
     nodes: boolOrDefault(raw.nodes, DEFAULT_MAP_LAYER_SETTINGS.nodes),
     nodeLabels: boolOrDefault(raw.nodeLabels, DEFAULT_MAP_LAYER_SETTINGS.nodeLabels),
     routes: boolOrDefault(raw.routes, DEFAULT_MAP_LAYER_SETTINGS.routes),
@@ -121,6 +124,7 @@ export function isPacketAnimationStyle(value: unknown): value is PacketAnimation
 export function layerSettingsSignature(settings: MapLayerSettings): string {
   return [
     settings.clusters,
+    settings.activityHeatmap,
     settings.nodes,
     settings.nodeLabels,
     settings.routes,

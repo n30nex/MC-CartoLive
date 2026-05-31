@@ -14,16 +14,18 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.3';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.4';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  'Live Follow now throttles camera moves and uses slower, calmer map motion so it can be left on during normal traffic.',
+  'Added a subtle activity heatmap layer with sparkle highlights, exposed through Map Settings.',
+  'Light-mode route and selected-path colors now use darker semantic variants for better contrast.',
+  'Top status pills use shorter labels and tighter sizing so the live bar is easier to scan.',
   'Release metadata and CI smoke now derive from VERSION so packaged images, health checks, and docs do not drift.',
   'Packaged deployments can set their own top-bar brand name, link, and logo; hosted Canada can keep MeshCore Canada branding through env config.',
-  'Packets requests are now generation-safe and abort stale filter searches instead of letting older responses replace newer results.',
-  'The top status pills were tightened for scanability, and node map icons now match the legend role icons.',
-  'The VCR timeline track is thinner and moved behind the sparkline so scrubbing detail stays readable.'
+  'Packets requests are generation-safe and abort stale filter searches instead of letting older responses replace newer results.'
 ];
 
 const FEATURE_LIST = [
@@ -174,7 +176,7 @@ export default function LinkBar({ perfOpen = false, packetsOpen = false, netGrap
       </div>
       {activeInfoPanel === 'changelog' && (
         <InfoPopover title="Latest Changelog" icon={<History size={14} />} onClose={() => setActiveInfoPanel(null)}>
-          <p>MC-CartoLive v{appVersion} is the first 2.6 foundation patch: release hygiene, world-ready branding, request safety, and cleaner live-map chrome.</p>
+          <p>MC-CartoLive v{appVersion} continues the 2.6 production polish track with calmer live following, clearer map activity, route contrast fixes, and cleaner live-map chrome.</p>
           <ul>
             {LATEST_CHANGELOG.map((item) => <li key={item}>{item}</li>)}
           </ul>

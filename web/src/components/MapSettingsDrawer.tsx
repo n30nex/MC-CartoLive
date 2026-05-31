@@ -15,6 +15,7 @@ interface MapSettingsDrawerProps {
 
 const LAYER_CONTROLS: readonly { key: keyof MapLayerSettings; label: string; hint: string }[] = [
   { key: 'clusters', label: 'Clusters', hint: 'Grouped low-zoom node bubbles' },
+  { key: 'activityHeatmap', label: 'Activity heatmap', hint: 'Subtle live glow from recently active map areas' },
   { key: 'nodes', label: 'Nodes', hint: 'Individual public nodes and observers' },
   { key: 'nodeLabels', label: 'Node labels', hint: 'Projected map labels' },
   { key: 'routes', label: 'Known pathways', hint: 'Idle public route lines' },

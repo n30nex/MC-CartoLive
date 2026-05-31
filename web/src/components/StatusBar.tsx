@@ -42,7 +42,7 @@ export default function StatusBar({ stats, socketStatus, nodeCount, routeCount, 
       </div>
       <div className="status-pill route routed-rate" title={`${coverage.routeAnimatedPerMinute} routed packet comets per minute`}>
         <Route size={15} />
-        <span>{coverage.routeAnimatedPerMinute}/min routed</span>
+        <span>{coverage.routeAnimatedPerMinute}/min route</span>
       </div>
       <div className="status-pill observer" title={`${coverage.observerBurstPerMinute} observer bursts per minute`}>
         <Sparkles size={15} />
@@ -50,7 +50,7 @@ export default function StatusBar({ stats, socketStatus, nodeCount, routeCount, 
       </div>
       <div className="status-pill unmapped" title={`${coverage.unmappedPerMinute} unresolved packets per minute`}>
         <MapPin size={15} />
-        <span>{coverage.unmappedPerMinute}/min unresolved</span>
+        <span>{coverage.unmappedPerMinute}/min unmapped</span>
       </div>
       <div className="status-pill node-count" title={`${nodeCount.toLocaleString()} positioned public nodes`}>
         <Shield size={15} />

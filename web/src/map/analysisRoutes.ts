@@ -2,14 +2,15 @@ import type { PublicRoute, PublicRoutePulse } from '../types';
 import { isMappableEndpoint } from './geo';
 import type { NodeFocus } from './nodeFocus';
 import { routeArcCoordinates } from './routeArcs';
-import { routeColors } from './routeSource';
+import { routeColorForBucket, routeHighlightColor, type RouteThemeMode } from './routeSource';
 import type { FeatureCollection } from './sourceDataQueue';
 
 export function analysisRoutesToGeoJSON(
   routes: PublicRoute[],
   selectedRouteID: string | null,
   focus: NodeFocus,
-  analysisSegments: PublicRoutePulse['segments']
+  analysisSegments: PublicRoutePulse['segments'],
+  themeMode: RouteThemeMode = 'dark'
 ): FeatureCollection {
   const features: Array<Record<string, unknown>> = [];
   const routeIDs = new Set<string>([...focus.pathRouteIDs, ...focus.connectedRouteIDs]);
@@ -19,7 +20,13 @@ export function analysisRoutesToGeoJSON(
     const path = focus.pathRouteIDs.has(route.id);
     const selected = route.id === selectedRouteID;
     const connected = focus.connectedRouteIDs.has(route.id);
-    const color = selected ? '#f8fafc' : path ? '#facc15' : connected ? '#67e8f9' : routeColors[Math.max(0, Math.min(4, route.frequencyBucket))];
+    const color = selected
+      ? routeHighlightColor('selected', themeMode)
+      : path
+        ? routeHighlightColor('path', themeMode)
+        : connected
+          ? routeHighlightColor('connected', themeMode)
+          : routeColorForBucket(route.frequencyBucket, themeMode);
     features.push(lineFeature(route.id, routeArcCoordinates(route.from, route.to, { distanceKm: route.distanceKm }), {
       color,
       opacity: selected ? 0.96 : path ? 0.9 : 0.72,
@@ -29,7 +36,7 @@ export function analysisRoutesToGeoJSON(
   for (const [index, segment] of analysisSegments.entries()) {
     if (!isMappableEndpoint(segment.from) || !isMappableEndpoint(segment.to)) continue;
     features.push(lineFeature(`packet-${segment.routeId}-${index}`, routeArcCoordinates(segment.from, segment.to, { distanceKm: segment.distanceKm }), {
-      color: '#facc15',
+      color: routeHighlightColor('path', themeMode),
       opacity: 0.94,
       glowOpacity: 0.32
     }));
