@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- No unreleased changes.
+- Started the 2.5.3 mobile/UI stability pass with shared safe-area and z-index
+  CSS tokens for top actions, sheets, map controls, VCR, Packets, settings, and
+  palette popovers.
 
 ## 2.5.2 - 2026-05-30
 

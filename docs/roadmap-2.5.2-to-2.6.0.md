@@ -121,6 +121,8 @@ Status: in progress. The first 2.5.2 pass fixed CI version drift, added configur
 
 Goal: stop mobile and chrome regressions with structure and browser coverage.
 
+Status: started. The first pass adds shared CSS safe-area and z-index tokens and applies them to mobile top actions, bottom sheets, map controls, Packets, settings, VCR, palette/panel popovers, and mini live clock positioning. Remaining work should add browser-level mobile screenshots and finish extracting top-bar popups into focused components.
+
 ### Mobile Layout
 
 - Create a safe-area and z-index registry for top bar, top actions, map controls, mini live clock, bottom dock, VCR, Packets tray, palette picker, and settings sheets.

@@ -56,6 +56,8 @@ Version `2.5.2` is the active foundation patch toward the next production-ready
 
 ## Next Cleanup Candidates
 
+- Continue the started 2.5.3 mobile stability pass with browser screenshots for
+  390px vertical layouts, palette selection, Packets, VCR, and Map Settings.
 - Continue splitting large frontend surfaces only when behavior is covered by
   tests and the visible UI stays unchanged.
 - Add focused regression tests for any packet filtering, replay, map source, or

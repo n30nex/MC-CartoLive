@@ -62,6 +62,16 @@ button {
   --mc-link-hover: color-mix(in srgb, var(--mc-secondary, #a78bfa) 72%, var(--mc-text, #edf5ff));
   --mc-shadow: rgba(0, 0, 0, 0.38);
   --vcr-bar-height: 52px;
+  --ui-safe-top: env(safe-area-inset-top, 0px);
+  --ui-safe-right: env(safe-area-inset-right, 0px);
+  --ui-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --ui-safe-left: env(safe-area-inset-left, 0px);
+  --ui-edge-gap: 10px;
+  --z-map-overlay: 5;
+  --z-map-chrome: 8;
+  --z-panel: 12;
+  --z-popover: 16;
+  --z-modal: 24;
 }
 
 .app-shell[data-vcr-layout="open"] {
@@ -174,11 +184,11 @@ button {
 }
 
 .node-label-overlay {
-  z-index: 4;
+  z-index: calc(var(--z-map-overlay, 5) - 1);
 }
 
 .packet-message-overlay {
-  z-index: 5;
+  z-index: var(--z-map-overlay, 5);
 }
 
 .node-screen-label {
@@ -363,7 +373,7 @@ button {
 
 .maplibregl-ctrl-bottom-right {
   right: 10px;
-  bottom: calc(var(--vcr-bar-height, 0px) + 12px);
+  bottom: calc(var(--vcr-bar-height, 0px) + var(--ui-edge-gap, 10px) + var(--ui-safe-bottom, 0px));
 }
 
 .link-bar,
@@ -393,7 +403,7 @@ button {
 .node-loading-toast {
   right: 64px;
   bottom: calc(var(--vcr-bar-height, 0px) + 18px);
-  z-index: 8;
+  z-index: var(--z-map-chrome, 8);
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
   gap: 12px;
@@ -1766,7 +1776,7 @@ button {
 .bottom-action-dock {
   left: 10px;
   bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-  z-index: 8;
+  z-index: var(--z-map-chrome, 8);
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(72px, auto);
   gap: 6px;
@@ -1908,7 +1918,7 @@ button {
   position: absolute;
   top: calc(100% + 7px);
   right: 0;
-  z-index: 12;
+  z-index: var(--z-popover, 16);
   display: grid;
   gap: 5px;
   padding: 7px;
@@ -1986,7 +1996,7 @@ button {
 .map-settings-drawer {
   top: 92px;
   right: 10px;
-  z-index: 11;
+  z-index: var(--z-panel, 12);
   display: grid;
   gap: 12px;
   width: min(380px, calc(100vw - 20px));
@@ -4043,6 +4053,7 @@ button {
 @media (max-width: 760px) {
   .app-shell {
     --vcr-bar-height: 56px;
+    --ui-edge-gap: 8px;
   }
 
   .app-shell[data-vcr-layout="open"] {
@@ -4055,15 +4066,16 @@ button {
 
   .maplibregl-ctrl-bottom-right {
     position: fixed;
-    right: 10px;
-    bottom: calc(var(--vcr-bar-height, 0px) + 12px + env(safe-area-inset-bottom, 0px));
+    right: calc(8px + var(--ui-safe-right, 0px));
+    bottom: calc(var(--vcr-bar-height, 0px) + 12px + var(--ui-safe-bottom, 0px));
+    z-index: var(--z-map-chrome, 8);
   }
 
   .link-bar {
     position: fixed;
-    top: 8px;
-    left: 8px;
-    right: 8px;
+    top: calc(8px + var(--ui-safe-top, 0px));
+    left: calc(8px + var(--ui-safe-left, 0px));
+    right: calc(8px + var(--ui-safe-right, 0px));
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 6px;
     min-height: 34px;
@@ -4097,9 +4109,9 @@ button {
 
   .link-bar-info-popover,
   .welcome-guide-popover {
-    top: 52px;
-    right: 8px;
-    left: 8px;
+    top: calc(52px + var(--ui-safe-top, 0px));
+    right: calc(8px + var(--ui-safe-right, 0px));
+    left: calc(8px + var(--ui-safe-left, 0px));
     width: auto;
   }
 
@@ -4119,19 +4131,21 @@ button {
 
   .perf-panel,
   .packets-panel {
-    top: calc(62px + env(safe-area-inset-top, 0px));
-    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-    width: calc(100vw - 16px);
+    top: calc(62px + var(--ui-safe-top, 0px));
+    right: calc(8px + var(--ui-safe-right, 0px));
+    bottom: calc(8px + var(--ui-safe-bottom, 0px));
+    left: calc(8px + var(--ui-safe-left, 0px));
+    width: auto;
     max-height: none;
     padding: 10px;
     overflow: auto;
   }
 
   .map-settings-drawer {
-    top: calc(62px + env(safe-area-inset-top, 0px));
-    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-    left: 8px;
-    right: 8px;
+    top: calc(62px + var(--ui-safe-top, 0px));
+    right: calc(8px + var(--ui-safe-right, 0px));
+    bottom: calc(8px + var(--ui-safe-bottom, 0px));
+    left: calc(8px + var(--ui-safe-left, 0px));
     width: auto;
     max-height: none;
     overflow: auto;
@@ -4141,12 +4155,15 @@ button {
   .top-popover.panel-picker {
     position: fixed;
     top: auto;
-    left: 8px;
-    right: 8px;
-    bottom: calc(50px + env(safe-area-inset-bottom, 0px));
+    left: calc(8px + var(--ui-safe-left, 0px));
+    right: calc(8px + var(--ui-safe-right, 0px));
+    bottom: calc(50px + var(--ui-safe-bottom, 0px));
+    z-index: var(--z-popover, 16);
     width: auto;
-    max-height: min(62vh, 430px);
+    max-height: min(62dvh, 430px);
     overflow: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
   }
 
   .perf-panel-header h2,
@@ -4225,14 +4242,17 @@ button {
 
   .top-actions {
     position: fixed;
-    top: 48px;
+    top: calc(48px + var(--ui-safe-top, 0px));
     bottom: auto;
-    left: 8px;
-    right: 8px;
-    max-width: calc(100vw - 16px);
+    left: calc(8px + var(--ui-safe-left, 0px));
+    right: calc(8px + var(--ui-safe-right, 0px));
+    z-index: var(--z-map-chrome, 8);
+    max-width: calc(100vw - 16px - var(--ui-safe-left, 0px) - var(--ui-safe-right, 0px));
     justify-content: flex-end;
-    overflow: auto;
+    overflow-x: auto;
+    overflow-y: visible;
     scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
   }
 
   .top-actions::-webkit-scrollbar,
@@ -4342,20 +4362,20 @@ button {
   }
 
   .selection-drawer {
-    left: 10px;
-    right: 10px;
+    left: calc(10px + var(--ui-safe-left, 0px));
+    right: calc(10px + var(--ui-safe-right, 0px));
     top: auto;
-    bottom: calc(var(--vcr-bar-height, 0px) + 56px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(var(--vcr-bar-height, 0px) + 56px + var(--ui-safe-bottom, 0px));
     width: auto;
     max-height: 34vh;
     padding: 12px;
   }
 
   .selection-panels {
-    left: 10px;
-    right: 10px;
+    left: calc(10px + var(--ui-safe-left, 0px));
+    right: calc(10px + var(--ui-safe-right, 0px));
     top: auto;
-    bottom: calc(var(--vcr-bar-height, 0px) + 56px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(var(--vcr-bar-height, 0px) + 56px + var(--ui-safe-bottom, 0px));
     gap: 8px;
     align-items: stretch;
     width: auto;
@@ -4438,7 +4458,8 @@ button {
     position: fixed;
     left: 50%;
     right: auto;
-    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(8px + var(--ui-safe-bottom, 0px));
+    z-index: var(--z-map-chrome, 8);
     transform: translateX(-50%);
     max-width: calc(100vw - 16px);
     min-width: 136px;
@@ -4460,9 +4481,10 @@ button {
   }
 
   .vcr-bar {
-    left: 8px;
-    right: 8px;
-    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    left: calc(8px + var(--ui-safe-left, 0px));
+    right: calc(8px + var(--ui-safe-right, 0px));
+    bottom: calc(8px + var(--ui-safe-bottom, 0px));
+    z-index: var(--z-panel, 12);
     width: auto;
     min-height: 124px;
     max-height: 148px;
