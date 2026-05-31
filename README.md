@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.2
+# MeshCore MQTT Live Map v2.5.3
 
 Also known as **MC-CartoLive**.
 
@@ -23,9 +23,9 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.2 Feature Gallery
+### v2.5.3 Feature Gallery
 
-Version 2.5.2 keeps the Canada deployment intact while making the
+Version 2.5.3 keeps the Canada deployment intact while making the
 published package work for worldwide/private brokers with configurable map
 bounds and generic region labels.
 
@@ -152,7 +152,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.2
+  ghcr.io/n30nex/mc-cartolive:2.5.3
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -163,7 +163,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.2
+  ghcr.io/n30nex/mc-cartolive:2.5.3
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -184,7 +184,7 @@ Important settings:
 | `MQTT_ENABLED` | yes | The public example uses `false`; set `true` only with private credentials. |
 | `MQTT_BROKER_URL` | yes when MQTT is enabled | Defaults to the MeshCore Canada MQTT broker URL. |
 | `MQTT_USERNAME` / `MQTT_PASSWORD` | yes when `MESHCORE_AUTH_MODE=subscriber` and MQTT is enabled | Keep private. |
-| `MESHCORE_CHANNEL_SECRETS` | optional | Keep private. Used only to decode sanitized public message bubble text. |
+| `MESHCORE_CHANNEL_SECRETS` | optional | Keep private. The default MeshCore Public channel is decoded automatically for sanitized speech bubbles; add private raw keys or hashtag names like `#wardriving` only for channels you intentionally want to expose. |
 | `MAP_REGION_PRESET` | optional | `world` by default. Use `canada` for the hosted Canada map, or `custom` with `MAP_BOUNDS`. |
 | `MAP_BOUNDS` | optional | Custom bounds as `minLat,minLng,maxLat,maxLng`, for example `-45,110,-10,155` for Australia-style bounds. |
 | `PUBLIC_REGIONS` | optional | Preferred public region allowlist. Empty means allow all safe broker region labels. |
@@ -283,7 +283,7 @@ docker compose build
 
 ## Production Hosting
 
-The recommended v2.5.2 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.3 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

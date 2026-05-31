@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.2` is the active foundation patch toward the next production-ready
+Version `2.5.3` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -53,6 +53,12 @@ Version `2.5.2` is the active foundation patch toward the next production-ready
   worldwide generic-region fixture.
 - Restore decoded public text message bubbles above mappable sender nodes or
   observer fallback locations, including while the map is clustered.
+
+## 2.5.3 Patch Focus
+
+- Continue the mobile/UI stability work started after 2.5.2.
+- Decode the built-in MeshCore default Public channel for sanitized speech
+  bubbles without requiring a private channel-secret env override.
 
 ## Next Cleanup Candidates
 

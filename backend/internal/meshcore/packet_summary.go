@@ -42,6 +42,11 @@ type DecodedPublicMessage struct {
 	Text   string
 }
 
+// MeshCore's default Public channel key is well-known and used as a built-in
+// lowest-priority key for public channel text. Custom channel names or keys
+// supplied through config are still tried first.
+const defaultPublicChannelKeyHex = "8b3387e9c5cdea6ac9e5edbaa115cd72"
+
 func DecodePublicMessage(payloadType int, payload []byte, rawJSON string, channelSecrets []string) DecodedPublicMessage {
 	if text := MessageTextFromJSON(rawJSON); text != "" {
 		sender := MessageSenderFromJSON(rawJSON)
@@ -62,7 +67,7 @@ func DecodeGroupTextPayload(payload []byte, channelSecrets []string) string {
 }
 
 func DecodeGroupTextMessage(payload []byte, channelSecrets []string) DecodedPublicMessage {
-	if len(payload) < 3 || len(channelSecrets) == 0 {
+	if len(payload) < 3 {
 		return DecodedPublicMessage{}
 	}
 	channelHash := strings.ToLower(hex.EncodeToString(payload[:1]))
@@ -71,7 +76,7 @@ func DecodeGroupTextMessage(payload []byte, channelSecrets []string) DecodedPubl
 	if len(ciphertext) == 0 || len(ciphertext)%aes.BlockSize != 0 {
 		return DecodedPublicMessage{}
 	}
-	for _, secret := range channelSecrets {
+	for _, secret := range groupTextChannelSecrets(channelSecrets) {
 		key, ok := normalizeChannelSecret(secret, channelHash)
 		if !ok {
 			continue
@@ -82,6 +87,17 @@ func DecodeGroupTextMessage(payload []byte, channelSecrets []string) DecodedPubl
 		}
 	}
 	return DecodedPublicMessage{}
+}
+
+func groupTextChannelSecrets(channelSecrets []string) []string {
+	out := make([]string, 0, len(channelSecrets)+1)
+	for _, secret := range channelSecrets {
+		if strings.TrimSpace(secret) != "" {
+			out = append(out, secret)
+		}
+	}
+	out = append(out, defaultPublicChannelKeyHex)
+	return out
 }
 
 func SanitizeTextPayload(value string) string {
@@ -234,6 +250,9 @@ func normalizeChannelSecret(secret string, packetChannelHash string) ([]byte, bo
 	secret = strings.TrimSpace(secret)
 	if secret == "" {
 		return nil, false
+	}
+	if strings.EqualFold(secret, "public") {
+		secret = defaultPublicChannelKeyHex
 	}
 	clean := strings.ToLower(hexCleaner.ReplaceAllString(secret, ""))
 	var key []byte

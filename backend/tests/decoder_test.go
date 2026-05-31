@@ -2,6 +2,11 @@ package tests
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"testing"
 
 	"meshcore-canada-live-map/backend/internal/meshcore"
@@ -66,6 +71,29 @@ func TestGroupTextPayloadDecryptsWithChannelSecret(t *testing.T) {
 	}
 }
 
+func TestGroupTextPayloadDecryptsDefaultPublicChannel(t *testing.T) {
+	payload := encryptGroupTextForTest(t, "8b3387e9c5cdea6ac9e5edbaa115cd72", "CoreBot", "Public hello")
+	if payload[0] != 0x11 {
+		t.Fatalf("default Public channel hash = %02x, want 11", payload[0])
+	}
+	message := meshcore.DecodePublicMessage(meshcore.PayloadGroupText, payload, "", nil)
+	if message.Sender != "CoreBot" {
+		t.Fatalf("decoded group sender = %q, want CoreBot", message.Sender)
+	}
+	if message.Text != "Public hello" {
+		t.Fatalf("decoded group text = %q, want Public hello", message.Text)
+	}
+}
+
+func TestGroupTextPayloadDecryptsHashtagChannelName(t *testing.T) {
+	key := sha256.Sum256([]byte("#test"))
+	payload := encryptGroupTextForTest(t, hex.EncodeToString(key[:16]), "Alice", "Hashtag hello")
+	message := meshcore.DecodePublicMessage(meshcore.PayloadGroupText, payload, "", []string{"#test"})
+	if message.Sender != "Alice" || message.Text != "Hashtag hello" {
+		t.Fatalf("decoded hashtag message = %+v", message)
+	}
+}
+
 func TestPublicMessageTextPrefersDecodedJSONText(t *testing.T) {
 	text := meshcore.DecodePublicMessageText(meshcore.PayloadGroupText, []byte{0x01, 0x02, 0x03}, `{"decoded":{"message":"hello mesh"}}`, nil)
 	if text != "hello mesh" {
@@ -84,7 +112,7 @@ func TestPublicMessageTextReadsNestedDecoderOutput(t *testing.T) {
 	}
 }
 
-func TestPublicMessageTextReadsCoreScopeDecodedJSONString(t *testing.T) {
+func TestPublicMessageTextReadsDecodedJSONString(t *testing.T) {
 	raw := `{"decoded_json":"{\"type\":\"CHAN\",\"channel\":\"public\",\"sender\":\"otakup0pe\",\"text\":\"otakup0pe: woah my t-deck battery didn't die\",\"flags\":0}"}`
 	message := meshcore.DecodePublicMessage(meshcore.PayloadGroupText, []byte{0x01, 0x02, 0x03}, raw, nil)
 	if message.Sender != "otakup0pe" {
@@ -197,4 +225,38 @@ func addNode(t *testing.T, ctx context.Context, st *store.Store, publicKey strin
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func encryptGroupTextForTest(t *testing.T, keyHex string, sender string, text string) []byte {
+	t.Helper()
+	key, err := hex.DecodeString(keyHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(key) != aes.BlockSize {
+		t.Fatalf("key length = %d, want %d", len(key), aes.BlockSize)
+	}
+	plainText := sender + ": " + text + "\x00"
+	plain := make([]byte, 5+len(plainText))
+	binary.LittleEndian.PutUint32(plain[:4], 123)
+	copy(plain[5:], []byte(plainText))
+	if remainder := len(plain) % aes.BlockSize; remainder != 0 {
+		plain = append(plain, make([]byte, aes.BlockSize-remainder)...)
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext := make([]byte, len(plain))
+	for offset := 0; offset < len(plain); offset += aes.BlockSize {
+		block.Encrypt(ciphertext[offset:offset+aes.BlockSize], plain[offset:offset+aes.BlockSize])
+	}
+	channelSecret := make([]byte, 32)
+	copy(channelSecret, key)
+	mac := hmac.New(sha256.New, channelSecret)
+	_, _ = mac.Write(ciphertext)
+	sum := mac.Sum(nil)
+	hash := sha256.Sum256(key)
+	payload := []byte{hash[0], sum[0], sum[1]}
+	return append(payload, ciphertext...)
 }

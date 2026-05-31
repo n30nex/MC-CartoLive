@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+## 2.5.3 - 2026-05-31
+
 - Started the 2.5.3 mobile/UI stability pass with shared safe-area and z-index
   CSS tokens for top actions, sheets, map controls, VCR, Packets, settings, and
   palette popovers.
+- Added the built-in MeshCore default Public channel key as a safe decoder
+  fallback, so live Public group text can populate sanitized map speech bubbles
+  without requiring a private `MESHCORE_CHANNEL_SECRETS` entry.
 
 ## 2.5.2 - 2026-05-30
 
@@ -151,7 +156,7 @@
 
 ## 2.3.2 - 2026-05-24
 
-- Added a CoreScope-style top-bar `Perf` tab at `#/perf` with public-safe health, readiness, public state, public history, WebSocket, queue, source-update, and packet animation counters.
+- Added a top-bar `Perf` tab at `#/perf` with public-safe health, readiness, public state, public history, WebSocket, queue, source-update, and packet animation counters.
 - Enabled browser-local performance counters from the Perf tab without sending telemetry or exposing raw packet hashes, full public keys, broker credentials, or resolver debug data.
 
 ## 2.3.1 - 2026-05-24
@@ -214,7 +219,7 @@
 
 ## 1.7.0
 
-- Added a CoreScope-style VCR bar for the public map with Live, Pause, Replay missed, rewind, 1h/6h/24h timeline scopes, and 0.5x/1x/2x/4x replay speed controls.
+- Added a VCR bar for the public map with Live, Pause, Replay missed, rewind, 1h/6h/24h timeline scopes, and 0.5x/1x/2x/4x replay speed controls.
 - Added public-safe 24h replay history endpoints for sanitized routed `routePulse` events, plus timeline summary buckets.
 - Buffered routed public WebSocket events while paused or replaying so missed packet comets can be replayed through the existing animation pipeline.
 - Disabled Live Follow during paused/replay modes and shifted bottom map controls above the VCR surface on desktop and mobile.

@@ -69,7 +69,7 @@ That means:
 
 Goal: fix the highest-risk correctness and release issues found in the audit without adding new public features.
 
-Status: in progress. The first 2.5.2 pass fixed CI version drift, added configurable deployment branding, refreshed top-bar copy, tightened status pills, aligned node icons with the legend, made Packets refreshes abort stale requests, improved VCR timeline readability, and raised route/path contrast. The second pass added public-safe Packets scan summaries, clearer rare-filter states, CI smoke coverage for the worldwide `r1` fixture, and restored decoded text message bubbles in clustered map views. Remaining 2.5.2 follow-up work should focus on automated version-drift checks, deeper backend observer hot-path tests, and stale-request frontend tests beyond the current pure-state coverage.
+Status: completed for the current foundation scope. The first 2.5.2 pass fixed CI version drift, added configurable deployment branding, refreshed top-bar copy, tightened status pills, aligned node icons with the legend, made Packets refreshes abort stale requests, improved VCR timeline readability, and raised route/path contrast. The second pass added public-safe Packets scan summaries, clearer rare-filter states, CI smoke coverage for the worldwide `r1` fixture, and restored decoded text message bubbles in clustered map views.
 
 ### Release Hygiene
 
@@ -121,7 +121,7 @@ Status: in progress. The first 2.5.2 pass fixed CI version drift, added configur
 
 Goal: stop mobile and chrome regressions with structure and browser coverage.
 
-Status: started. The first pass adds shared CSS safe-area and z-index tokens and applies them to mobile top actions, bottom sheets, map controls, Packets, settings, VCR, palette/panel popovers, and mini live clock positioning. Remaining work should add browser-level mobile screenshots and finish extracting top-bar popups into focused components.
+Status: started. The first pass adds shared CSS safe-area and z-index tokens and applies them to mobile top actions, bottom sheets, map controls, Packets, settings, VCR, palette/panel popovers, and mini live clock positioning. The second pass decodes the built-in MeshCore default Public channel for sanitized speech bubbles without requiring a private `MESHCORE_CHANNEL_SECRETS` value. Remaining work should add browser-level mobile screenshots and finish extracting top-bar popups into focused components.
 
 ### Mobile Layout
 

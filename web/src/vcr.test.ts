@@ -102,7 +102,7 @@ describe('VCR state helpers', () => {
     expect(replaying.missedCount).toBe(1);
   });
 
-  it('cycles playback speeds through the CoreScope-style set', () => {
+  it('cycles playback speeds through the full configured set', () => {
     expect(nextVcrSpeed(0.5)).toBe(1);
     expect(nextVcrSpeed(1)).toBe(2);
     expect(nextVcrSpeed(2)).toBe(4);

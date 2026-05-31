@@ -40,9 +40,10 @@ app's Set Path flow. It is intentionally limited to the route-copy workflow and
 must not be expanded into full public keys.
 
 Decoded message text is exposed only as sanitized public bubble text when the
-backend can decode it from public packet data or from private channel secrets
-provided locally by the operator. The frontend can reuse that same sanitized
-message text as short node chatter history for selected nodes.
+backend can decode it from public packet data, the built-in MeshCore default
+Public channel key, or extra private channel secrets provided locally by the
+operator. The frontend can reuse that same sanitized message text as short node
+chatter history for selected nodes.
 
 ## Region Allowlist
 
