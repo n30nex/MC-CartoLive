@@ -13,11 +13,13 @@ import { packetTravelDuration, sequentialSegmentProgress, type PacketAnimationOp
 
 export const OPENFREEMAP_3D_LAYER_ID = 'meshcore-openfreemap-3d-live';
 
-const MAX_NODE_MODELS = 720;
-const MAX_ROUTE_ARCS = 1100;
+export const MAX_NODE_MODELS = 720;
+export const MAX_ROUTE_ARCS = 1100;
 const ROUTE_FRESH_MS = 5 * 60_000;
 const OBSERVER_GLOW_MS = 5200;
 const PACKET_AFTERGLOW_MS = 900;
+
+type Map3DViewport = Pick<maplibregl.Map, 'getBounds' | 'getZoom'>;
 
 export interface OpenFreeMap3DUpdate {
   nodes: PublicNode[];
@@ -267,14 +269,7 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
 
 function rebuildNodeModels(map: maplibregl.Map, root: THREE.Group, input: OpenFreeMap3DUpdate) {
   clearGroup(root);
-  if (!input.layerSettings.nodes || !input.layerSettings.nodeModels3D || map.getZoom() < DETAIL_MIN_ZOOM) return;
-  const bounds = paddedBounds(map, 0.2);
-  const ranked = input.nodes
-    .filter(isMappableNode)
-    .filter((node) => boundsContains(bounds, node.longitude, node.latitude))
-    .sort((a, b) => nodePriority(b, input.focus) - nodePriority(a, input.focus))
-    .slice(0, MAX_NODE_MODELS);
-  for (const node of ranked) {
+  for (const node of selectOpenFreeMap3DNodes(map, input)) {
     const model = createNodeModel(node, input.themeMode);
     positionAtLngLat(model, node.longitude, node.latitude, 8);
     root.add(model);
@@ -283,21 +278,8 @@ function rebuildNodeModels(map: maplibregl.Map, root: THREE.Group, input: OpenFr
 
 function rebuildRouteArcs(map: maplibregl.Map, root: THREE.Group, input: OpenFreeMap3DUpdate) {
   clearGroup(root);
-  if (!input.layerSettings.routes || !input.layerSettings.routeArcs3D) return;
-  const bounds = paddedBounds(map, 0.28);
-  const detail = map.getZoom() >= DETAIL_MIN_ZOOM;
   const now = Date.now();
-  const candidates = input.routes
-    .filter((route) => isMappableEndpoint(route.from) && isMappableEndpoint(route.to))
-    .filter((route) => {
-      const focused = route.id === input.selectedRouteID || input.focus.pathRouteIDs.has(route.id) || input.focus.connectedRouteIDs.has(route.id);
-      const fresh = now - route.lastHeard <= ROUTE_FRESH_MS;
-      const visible = boundsContains(bounds, route.from.lng, route.from.lat) || boundsContains(bounds, route.to.lng, route.to.lat);
-      return focused || fresh || (detail && visible);
-    })
-    .sort((a, b) => routePriority(b, input, now) - routePriority(a, input, now))
-    .slice(0, MAX_ROUTE_ARCS);
-  for (const route of candidates) {
+  for (const route of selectOpenFreeMap3DRoutes(map, input, now)) {
     root.add(createRouteArcMesh(route, input, now));
   }
   if (input.layerSettings.analysisPaths) {
@@ -306,6 +288,32 @@ function rebuildRouteArcs(map: maplibregl.Map, root: THREE.Group, input: OpenFre
       root.add(createSegmentArcMesh(`analysis-${segment.routeId}-${index}`, segment, '#facc15', 0.88, 1.6));
     }
   }
+}
+
+export function selectOpenFreeMap3DNodes(map: Map3DViewport, input: OpenFreeMap3DUpdate, maxNodes = MAX_NODE_MODELS): PublicNode[] {
+  if (!input.layerSettings.nodes || !input.layerSettings.nodeModels3D || map.getZoom() < DETAIL_MIN_ZOOM) return [];
+  const bounds = paddedBounds(map, 0.2);
+  return input.nodes
+    .filter(isMappableNode)
+    .filter((node) => boundsContains(bounds, node.longitude, node.latitude))
+    .sort((a, b) => nodePriority(b, input.focus) - nodePriority(a, input.focus))
+    .slice(0, maxNodes);
+}
+
+export function selectOpenFreeMap3DRoutes(map: Map3DViewport, input: OpenFreeMap3DUpdate, now = Date.now(), maxRoutes = MAX_ROUTE_ARCS): PublicRoute[] {
+  if (!input.layerSettings.routes || !input.layerSettings.routeArcs3D) return [];
+  const bounds = paddedBounds(map, 0.28);
+  const detail = map.getZoom() >= DETAIL_MIN_ZOOM;
+  return input.routes
+    .filter((route) => isMappableEndpoint(route.from) && isMappableEndpoint(route.to))
+    .filter((route) => {
+      const focused = route.id === input.selectedRouteID || input.focus.pathRouteIDs.has(route.id) || input.focus.connectedRouteIDs.has(route.id);
+      const fresh = now - route.lastHeard <= ROUTE_FRESH_MS;
+      const visible = boundsContains(bounds, route.from.lng, route.from.lat) || boundsContains(bounds, route.to.lng, route.to.lat);
+      return focused || fresh || (detail && visible);
+    })
+    .sort((a, b) => routePriority(b, input, now) - routePriority(a, input, now))
+    .slice(0, maxRoutes);
 }
 
 function createNodeModel(node: PublicNode, themeMode: 'dark' | 'light'): THREE.Group {
@@ -432,6 +440,7 @@ function updateObserverGlow(glow: ObserverGlow, elapsed: number) {
 }
 
 function nodeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): string {
+  const selectedNodes = selectOpenFreeMap3DNodes(map, input);
   return [
     input.layerSettings.nodes,
     input.layerSettings.nodeModels3D,
@@ -440,11 +449,12 @@ function nodeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): st
     input.focus.selectedNodeID ?? '',
     stableSetSignature(input.focus.pathNodeIDs),
     stableSetSignature(input.focus.neighbourNodeIDs),
-    input.nodes.map((node) => `${node.id}:${node.role}:${node.isObserver ? 1 : 0}:${node.latitude.toFixed(4)}:${node.longitude.toFixed(4)}:${node.activityCount}`).sort().join('|')
+    selectedNodes.map((node) => `${node.id}:${node.role}:${node.isObserver ? 1 : 0}:${node.latitude.toFixed(4)}:${node.longitude.toFixed(4)}:${node.activityCount}`).sort().join('|')
   ].join('~');
 }
 
 function routeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): string {
+  const selectedRoutes = selectOpenFreeMap3DRoutes(map, input);
   return [
     input.layerSettings.routes,
     input.layerSettings.routeArcs3D,
@@ -454,11 +464,11 @@ function routeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): s
     stableSetSignature(input.focus.connectedRouteIDs),
     stableSetSignature(input.focus.pathRouteIDs),
     input.analysisSegments.map((segment) => `${segment.routeId}:${segment.from.lat.toFixed(4)}:${segment.from.lng.toFixed(4)}:${segment.to.lat.toFixed(4)}:${segment.to.lng.toFixed(4)}`).join('|'),
-    input.routes.map((route) => `${route.id}:${route.frequencyBucket}:${Math.floor(route.lastHeard / ROUTE_FRESH_MS)}:${route.from.lat.toFixed(4)}:${route.from.lng.toFixed(4)}:${route.to.lat.toFixed(4)}:${route.to.lng.toFixed(4)}`).sort().join('|')
+    selectedRoutes.map((route) => `${route.id}:${route.frequencyBucket}:${Math.floor(route.lastHeard / ROUTE_FRESH_MS)}:${route.from.lat.toFixed(4)}:${route.from.lng.toFixed(4)}:${route.to.lat.toFixed(4)}:${route.to.lng.toFixed(4)}`).sort().join('|')
   ].join('~');
 }
 
-function viewSignature(map: maplibregl.Map): string {
+function viewSignature(map: Map3DViewport): string {
   const bounds = map.getBounds();
   return [
     Math.floor(map.getZoom() * 2) / 2,
@@ -488,7 +498,7 @@ function nodePriority(node: PublicNode, focus: NodeFocus): number {
   return score;
 }
 
-function paddedBounds(map: maplibregl.Map, factor: number) {
+function paddedBounds(map: Map3DViewport, factor: number) {
   const bounds = map.getBounds();
   const lngPad = Math.max(0.05, (bounds.getEast() - bounds.getWest()) * factor);
   const latPad = Math.max(0.05, (bounds.getNorth() - bounds.getSouth()) * factor);

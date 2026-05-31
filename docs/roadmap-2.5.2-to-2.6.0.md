@@ -2,7 +2,7 @@
 
 Last audited: 2026-05-31
 
-Baseline audited: `v2.5.9` work in progress on `main`
+Baseline audited: `v2.5.10` work in progress on `main`
 
 ## Audit Coverage
 
@@ -347,6 +347,11 @@ of relying on fragile payload label matching.
 ## 2.5.10 - OpenFreeMap 3D Production Polish
 
 Goal: keep the impressive 3D mode while making it reliable and scalable.
+
+Status: in progress. The first 2.5.10 pass reduces scene rebuild pressure by
+selecting visible, focused, or recently active 3D node/route candidates before
+rebuilding Three.js models and route arcs. Larger instancing, object pooling,
+and visual refinement items remain in this section.
 
 ### Renderer Performance
 

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.5.10 - 2026-05-31
+
+- Reduced OpenFreeMap 3D scene churn by selecting only visible, focused, or
+  recently active node/route candidates before rebuilding Three.js node models
+  and route arcs.
+- Added focused frontend tests for 3D node and route candidate selection,
+  including offscreen stale-route exclusion and focused-route retention.
+- Kept flat map behavior, public API response shapes, and privacy boundaries
+  unchanged.
+
 ## 2.5.9 - 2026-05-31
 
 - Hydrated recent observer-only public text activity from the initial public
