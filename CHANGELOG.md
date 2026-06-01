@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 2.5.25 - 2026-06-01
+
+- Hardened public Chat duplicate suppression again after live testing showed
+  identical decoded messages could still repeat through separate route/observer
+  contexts.
+- The backend and frontend now collapse same sender/text messages across the
+  full 24h Chat window, with stronger display normalization for hidden control
+  characters and punctuation-only differences.
+
 ## 2.5.24 - 2026-06-01
 
 - Tightened public Chat duplicate suppression so repeated decoded messages from

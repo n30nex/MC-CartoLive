@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"meshcore-canada-live-map/backend/internal/live"
 	imqtt "meshcore-canada-live-map/backend/internal/mqtt"
@@ -388,7 +389,7 @@ const (
 	publicChatMaxLimit           = 400
 	publicChatDefaultLimit       = 100
 	publicChatMaxRawScan         = 2500
-	publicChatDedupeWindowMs     = int64(15 * time.Minute / time.Millisecond)
+	publicChatDedupeWindowMs     = publicHistoryMaxWindowMs
 	publicPacketsMaxLimit        = 1000
 	publicPacketsDefaultLimit    = 250
 	publicPacketsMaxRawScan      = 2500
@@ -1126,8 +1127,10 @@ func publicChatDisplayDedupeToken(value string) string {
 			return -1
 		case r == 0xfeff:
 			return -1
-		default:
+		case unicode.IsLetter(r) || unicode.IsNumber(r):
 			return r
+		default:
+			return ' '
 		}
 	}, value)
 	return strings.ToLower(strings.Join(strings.Fields(value), " "))

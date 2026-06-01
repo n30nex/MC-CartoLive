@@ -51,7 +51,8 @@ describe('chat helpers', () => {
         id: 'chat-c',
         at: 10 * 60_000,
         region: 'YYJ',
-        text: 'hello\u200b mesh',
+        sender: 'Alice\u200d',
+        text: 'hello\u200b mesh!',
         channelLabel: 'Public route',
         payloadTypeName: 'GROUP_TEXT',
         endpointLabels: ['Different', 'Route']
@@ -59,7 +60,7 @@ describe('chat helpers', () => {
       message({ id: 'chat-d', at: 20 * 60_000, region: 'YYJ', endpointLabels: ['Salish', 'CyberiaOne'] })
     ]);
 
-    expect(deduped.map((item) => item.id)).toEqual(['chat-a', 'chat-d']);
+    expect(deduped.map((item) => item.id)).toEqual(['chat-a']);
   });
 
   it('redacts obvious hashes, keys, path hex, and debug pairs from display text', () => {

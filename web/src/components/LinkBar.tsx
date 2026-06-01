@@ -15,12 +15,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.24';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.25';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
-  '2.5.24 tightens Chat duplicate suppression for repeated decoded messages seen through different route context.',
+  '2.5.25 collapses repeated public Chat messages across the full 24h window with stronger sender/text normalization.',
   '2.5.23 makes NetGraph calmer with locked pause, gentler topology settling, and less component spread.',
   'OpenFreeMap 3D avoids forced full scene rebuilds after every map move or zoom end.',
   '2.5.22 adds Chat history indexes so 24h public Chat windows stay responsive on large live databases.',

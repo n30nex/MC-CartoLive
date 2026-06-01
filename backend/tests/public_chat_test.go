@@ -224,12 +224,12 @@ func TestPublicChatEndpointDedupesRepeatedDecodedMessages(t *testing.T) {
 	})
 	distinctObservation := insertChatObservation(t, ctx, st, "hash-chat-distinct-private", "YYJ", observerKey, base+70_500, resolve.StatusHigh, chatObservationOptions{
 		MessageSender: "SpooferMan",
-		MessageText:   "NotSoSmart watch.",
+		MessageText:   "NotSoSmart watch",
 	})
 	insertHistoryEdgeWithOptions(t, ctx, st, distinctObservation, "hash-chat-distinct-private", base+70_500, historyEdgeOptions{
 		PayloadTypeName: "PLAIN_TEXT",
-		MessageSender:   "SpooferMan",
-		MessageText:     "Not\u200bSoSmart watch.",
+		MessageSender:   "SpooferMan\u200d",
+		MessageText:     "Not\u200bSoSmart watch",
 		Labels:          []string{"Salish", "CyberiaOne"},
 	})
 	thirdObservation := insertChatObservation(t, ctx, st, "hash-chat-third-route-private", "YVR", observerKey, base+350_000, resolve.StatusHigh, chatObservationOptions{
@@ -264,11 +264,11 @@ func TestPublicChatEndpointDedupesRepeatedDecodedMessages(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &chat); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := len(chat.Messages), 2; got != want {
+	if got, want := len(chat.Messages), 1; got != want {
 		t.Fatalf("messages = %d, want %d after repeated-message dedupe: %#v", got, want, chat.Messages)
 	}
-	if strings.Count(strings.ReplaceAll(response.Body.String(), "\u200b", ""), "NotSoSmart watch.") != 2 {
-		t.Fatalf("chat response did not keep exactly two time-separated messages: %s", response.Body.String())
+	if strings.Count(strings.ReplaceAll(response.Body.String(), "\u200b", ""), "NotSoSmart watch.") != 1 {
+		t.Fatalf("chat response did not keep exactly one repeated public message: %s", response.Body.String())
 	}
 	if strings.Contains(response.Body.String(), "hash-chat-repeat-private") || strings.Contains(response.Body.String(), "hash-chat-distinct-private") || strings.Contains(response.Body.String(), "hash-chat-third-route-private") || strings.Contains(response.Body.String(), "hash-chat-later-private") {
 		t.Fatalf("chat response leaked internal packet hashes: %s", response.Body.String())

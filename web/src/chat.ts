@@ -6,7 +6,7 @@ export const CHAT_SCOPE_OPTIONS = [
   { label: '24h', value: 24 * 60 * 60_000 }
 ] as const;
 
-export const CHAT_DISPLAY_DEDUPE_WINDOW_MS = 15 * 60_000;
+export const CHAT_DISPLAY_DEDUPE_WINDOW_MS = 24 * 60 * 60_000;
 
 export interface ChatFilters {
   query: string;
@@ -24,7 +24,8 @@ const HEX_TOKEN_RE = /\b(?:0x)?[a-f0-9]{16,}\b/gi;
 const BASE64_TOKEN_RE = /\b[A-Za-z0-9+/]{40,}={0,2}\b/g;
 const PATH_HEX_RE = /\b(?:[a-f0-9]{2}[:\-\s]){5,}[a-f0-9]{2}\b/gi;
 const SECRET_PAIR_RE = /\b(?:broker|resolver|debug|secret|token|key|hash|payload|path)[\w.-]*\s*[:=]\s*\S+/gi;
-const CONTROL_TOKEN_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g;
+const CONTROL_TOKEN_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufe00-\ufe0f\ufeff]/g;
+const DISPLAY_DEDUPE_SEPARATOR_RE = /[^\p{L}\p{N}]+/gu;
 
 export function chatWindowForScope(now: number, scopeMs: number): { from: number; to: number } {
   const to = Math.max(0, Math.round(now));
@@ -126,6 +127,7 @@ function normalizeDisplayToken(value: string | undefined): string {
   return safeChatText(value, '')
     .normalize('NFKC')
     .replace(CONTROL_TOKEN_RE, '')
+    .replace(DISPLAY_DEDUPE_SEPARATOR_RE, ' ')
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
