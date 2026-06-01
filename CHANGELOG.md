@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.5.34 - 2026-06-01
+
+- Added a Playwright-based browser smoke script for desktop `1920x1080` and
+  mobile `390px` checks across the live map, Perf, Packets, Chat, and NetGraph.
+- Added optional release-check integration for the browser smoke gate on
+  Windows and Linux/macOS.
+- Fixed a mobile clipping regression where Perf and Packets panels kept their
+  desktop center transform and rendered partly offscreen at 390px width.
+- Documented browser smoke setup, screenshot output, and release-candidate usage
+  for the 2.6 acceptance path.
+
 ## 2.5.33 - 2026-06-01
 
 - Improved OpenFreeMap selected-packet replay with a trailing chase camera that

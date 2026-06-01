@@ -33,6 +33,19 @@ On Windows:
 .\scripts\release-check.ps1 -BaseUrl http://127.0.0.1:39476
 ```
 
+For browser layout smoke during release-candidate UI checks:
+
+```powershell
+npm --prefix web exec playwright install chromium
+node scripts/browser-smoke.mjs --base-url http://127.0.0.1:39476
+```
+
+To include it in the Windows release check:
+
+```powershell
+.\scripts\release-check.ps1 -BaseUrl http://127.0.0.1:39476 -RunBrowserSmoke
+```
+
 For the production droplet after deploy, run the single live smoke command from
 your workstation:
 

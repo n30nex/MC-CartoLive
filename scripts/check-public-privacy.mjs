@@ -31,6 +31,8 @@ const forbiddenKeyPatterns = [
 
 const allowedKeyPatterns = [
   /^gitSha$/i,
+  /^nextCursor$/i,
+  /^cursor$/i,
   /^pathHash3$/i,
   /^hashSize$/i,
   /^mqttConnected$/i,

@@ -1,6 +1,8 @@
 param(
   [string]$BaseUrl = "http://127.0.0.1:39476",
   [switch]$SkipDocker,
+  [switch]$RunBrowserSmoke,
+  [string]$BrowserSmokeBaseUrl = "",
   [switch]$RunLiveSmoke,
   [string]$LiveSmokeBaseUrl = "https://carto.canadaverse.org"
 )
@@ -42,6 +44,11 @@ try {
   $packets = Invoke-RestMethod "$BaseUrl/api/v1/public/packets?from=$from&to=$now&limit=25"
   $chat = Invoke-RestMethod "$BaseUrl/api/v1/public/chat?from=$from&to=$now&limit=25"
   node (Join-Path $root "scripts/check-public-privacy.mjs") $BaseUrl
+
+  if ($RunBrowserSmoke) {
+    $browserBaseUrl = if ($BrowserSmokeBaseUrl) { $BrowserSmokeBaseUrl } else { $BaseUrl }
+    node (Join-Path $root "scripts/browser-smoke.mjs") --base-url $browserBaseUrl
+  }
 
   [PSCustomObject]@{
     BaseUrl = $BaseUrl

@@ -2,6 +2,7 @@
 set -eu
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:39476}"
+BROWSER_SMOKE_BASE_URL="${BROWSER_SMOKE_BASE_URL:-$BASE_URL}"
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
 cd "$ROOT/backend"
@@ -28,6 +29,10 @@ curl -fsS "$BASE_URL/api/v1/public/history?from=$FROM&to=$NOW&limit=25" >/tmp/mc
 curl -fsS "$BASE_URL/api/v1/public/packets?from=$FROM&to=$NOW&limit=25" >/tmp/mc-cartolive-packets.json
 curl -fsS "$BASE_URL/api/v1/public/chat?from=$FROM&to=$NOW&limit=25" >/tmp/mc-cartolive-chat.json
 node "$ROOT/scripts/check-public-privacy.mjs" "$BASE_URL"
+
+if [ "${RUN_BROWSER_SMOKE:-0}" = "1" ]; then
+  node "$ROOT/scripts/browser-smoke.mjs" --base-url "$BROWSER_SMOKE_BASE_URL"
+fi
 
 echo "release check ok for $BASE_URL"
 echo "health:  /tmp/mc-cartolive-health.json"

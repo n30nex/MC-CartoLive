@@ -4550,6 +4550,7 @@ button {
     max-height: none;
     padding: 10px;
     overflow: auto;
+    transform: none;
   }
 
   .map-settings-drawer {

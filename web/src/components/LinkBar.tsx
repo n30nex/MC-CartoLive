@@ -15,11 +15,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.33';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.34';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.34 adds repeatable desktop/mobile browser smoke coverage and fixes mobile Perf/Packets panel clipping.',
   '2.5.33 improves selected OpenFreeMap packet replay with a trailing chase camera, smoother cadence, and distance-aware pitch.',
   '2.5.32 reduces OpenFreeMap 3D load at detail zoom with adaptive node/route budgets and lightweight marker LOD for ordinary nodes.',
   '2.5.31 fixes the remaining visible Chat repeat case by collapsing long rebroadcasted public text within a short repeat window, even when route/sender wrappers differ.',

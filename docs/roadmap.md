@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.33` is the active foundation patch toward the next production-ready
+Version `2.5.34` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -198,6 +198,16 @@ Version `2.5.33` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.34 Patch Focus
+
+- Add a repeatable browser smoke gate for desktop `1920x1080` and mobile
+  `390px` layouts covering the live map, Perf, Packets, Chat, and NetGraph.
+- Wire the browser smoke into release checks as an explicit opt-in so
+  release-candidate UI gates can produce local screenshots without slowing
+  normal quick checks.
+- Fix the mobile Perf/Packets clipping found by the new smoke gate by resetting
+  the shared centered panel transform on narrow viewports.
 
 ## 2.5.33 Patch Focus
 

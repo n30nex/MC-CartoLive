@@ -69,7 +69,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.33
+  ghcr.io/n30nex/mc-cartolive:2.5.34
 ```
 
 For production, keep private settings in an env file and mount persistent data:
@@ -79,7 +79,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.33
+  ghcr.io/n30nex/mc-cartolive:2.5.34
 ```
 
 The published image runs as non-root `appuser`, includes OCI source/version
@@ -132,13 +132,13 @@ docker compose up -d
 
 ## Runtime Notes
 
-- Version 2.5.33 exposes the app version/build in the top project bar. CI builds use
+- Version 2.5.34 exposes the app version/build in the top project bar. CI builds use
   the Git commit SHA when available; local Docker builds use a timestamp fallback
   plus a separate ISO build time for build-age display.
 - Runtime liveness and readiness are split: `/healthz` stays cheap for Docker
   liveness, while `/readyz` verifies DB ping, public cache readiness, static
   frontend availability, and public-safe runtime status.
-- Version 2.5.33 also exposes public-safe public-cache truncation counts,
+- Version 2.5.34 also exposes public-safe public-cache truncation counts,
   packet-search scan pressure, and packet-count refresh latency/failures so
   operators can spot scale pressure without exposing private packet material.
 - The Guide overlay links to the Setup page, which generates public-safe `.env` starter snippets for
@@ -223,10 +223,18 @@ hints, and whether the position came from a node or observer record.
   hex payloads, full public keys, resolver debug fields, private MQTT payloads,
   and private operator config.
 - Browser-test the live container at desktop and narrow mobile widths after UI
-  changes, especially hidden/open VCR offsets, bottom-left action dock, compact
-  Legend under Search, map toggles, palette contrast, and replay history.
+  changes. Use `scripts/browser-smoke.mjs` to check the live map, Perf,
+  Packets, Chat, and NetGraph at desktop `1920x1080` and mobile `390px`.
 - Run `scripts/release-check.ps1` on Windows or `scripts/release-check.sh` on
-  Linux/macOS before tagging or after deploying.
+  Linux/macOS before tagging or after deploying. Add `-RunBrowserSmoke` on
+  Windows or `RUN_BROWSER_SMOKE=1` on Linux/macOS when doing a release-candidate
+  UI gate.
+
+```powershell
+npm --prefix web exec playwright install chromium
+node scripts/browser-smoke.mjs --base-url https://carto.canadaverse.org
+```
+
 - Run `scripts/live-smoke.ps1` from your workstation after production deploys
   to verify the public URL, WebSocket hello, deployed build metadata, Docker
   container health, and bundled `mc-diagnose` on the droplet:

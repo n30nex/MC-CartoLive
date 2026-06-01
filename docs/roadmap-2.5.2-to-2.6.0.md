@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.33` OpenFreeMap selected-packet chase camera refinement, OpenFreeMap 3D adaptive LOD/budgets, long-text Chat rebroadcast dedupe, OpenFreeMap 3D render-cost reduction, palette-aware NetGraph visuals, live-status simplification, calmer Live Follow, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.34` browser smoke gate and mobile Perf/Packets clipping fix, OpenFreeMap selected-packet chase camera refinement, OpenFreeMap 3D adaptive LOD/budgets, long-text Chat rebroadcast dedupe, OpenFreeMap 3D render-cost reduction, palette-aware NetGraph visuals, live-status simplification, calmer Live Follow, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,24 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.34 - Browser Smoke Gate And Mobile Panel Fix
+
+Goal: turn the remaining 2.6 desktop/mobile browser verification requirement
+into a repeatable command and use it to catch real layout regressions.
+
+Scope:
+
+- Add `scripts/browser-smoke.mjs` using Playwright from the web dev dependency
+  set.
+- Check desktop `1920x1080` and mobile `390px` viewports across the live map,
+  Perf, Packets, Chat, and NetGraph.
+- Write screenshots to `artifacts/browser-smoke` by default for release
+  evidence, while keeping artifacts ignored by Git.
+- Add optional release-check integration: `-RunBrowserSmoke` on PowerShell and
+  `RUN_BROWSER_SMOKE=1` on Linux/macOS.
+- Fix the first smoke-found mobile regression: Perf and Packets panels no
+  longer keep the desktop `translateX(-50%)` transform at 390px width.
 
 ## 2.5.33 - OpenFreeMap Selected-Packet Chase Camera Polish
 

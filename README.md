@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.33
+# MeshCore MQTT Live Map v2.5.34
 
 Also known as **MC-CartoLive**.
 
@@ -23,11 +23,15 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.33 Feature Gallery
+### v2.5.34 Feature Gallery
 
-Version 2.5.33 keeps the Canada deployment intact while continuing the
+Version 2.5.34 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
+
+This patch adds a repeatable browser smoke gate for desktop `1920x1080` and
+mobile `390px` layouts. The first run found and fixed mobile Perf/Packets panel
+clipping, so this is now part of the 2.6 release confidence path.
 
 This patch makes selected OpenFreeMap packet replay more cinematic with a
 trailing chase camera, steadier follow cadence, and distance-aware pitch while
@@ -203,7 +207,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.33
+  ghcr.io/n30nex/mc-cartolive:2.5.34
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -214,7 +218,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.33
+  ghcr.io/n30nex/mc-cartolive:2.5.34
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -332,9 +336,20 @@ Docker:
 docker compose build
 ```
 
+Browser layout smoke for the 2.6 release gate:
+
+```powershell
+npm --prefix web exec playwright install chromium
+node scripts/browser-smoke.mjs --base-url http://127.0.0.1:39476
+```
+
+The smoke checks desktop `1920x1080` and mobile `390px` layouts for the live
+map, Perf, Packets, Chat, and NetGraph. Screenshots are written to
+`artifacts/browser-smoke` by default.
+
 ## Production Hosting
 
-The recommended v2.5.33 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.34 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:
