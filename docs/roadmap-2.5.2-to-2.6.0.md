@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.22` Chat duplicate suppression, Chat pressure guard, Chat query indexes, live-health/top-bar polish, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.23` Chat duplicate suppression, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, live-health/top-bar polish, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,22 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.23 - NetGraph And 3D Stability Guard
+
+Goal: improve the two most visible 2.6 surfaces without changing public data
+contracts.
+
+Scope:
+
+- Keep paused NetGraph layouts locked through live topology refreshes.
+- Use gentler incremental graph settling for small live topology changes.
+- Seed newly discovered graph nodes near known neighbors instead of letting them
+  kick the whole graph apart from component seeds.
+- Reduce disconnected component spread with lower global repulsion and stronger
+  component anchors.
+- Keep OpenFreeMap 3D move/zoom-end rebuilds signature-gated instead of forcing
+  full scene rebuilds after every camera movement.
 
 ## 2.5.22 - Chat Query Index Guard
 

@@ -15,11 +15,13 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.22';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.23';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.23 makes NetGraph calmer with locked pause, gentler topology settling, and less component spread.',
+  'OpenFreeMap 3D now avoids forced full scene rebuilds after every map move or zoom end.',
   '2.5.22 adds Chat history indexes so 24h public Chat windows stay responsive on large live databases.',
   '2.5.21 caps public Chat pages at 400 rows so large 24h requests keep paging instead of timing out.',
   '2.5.20 fixes visible Chat repeats by deduping same public messages across route and observer context without exposing packet hashes.',

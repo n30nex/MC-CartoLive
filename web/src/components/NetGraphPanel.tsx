@@ -88,6 +88,22 @@ const MAX_GRAPH_COMETS = 360;
 const MAX_GRAPH_GLOWS = 220;
 const MIN_ZOOM = 0.22;
 const MAX_ZOOM = 4.5;
+const NETGRAPH_INITIAL_SETTLE_TICKS = 90;
+const NETGRAPH_MAJOR_SETTLE_TICKS = 48;
+const NETGRAPH_INCREMENTAL_SETTLE_TICKS = 16;
+
+interface PreviousNodePosition {
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
+}
+
+export interface NetGraphSettlePlan {
+  ticks: number;
+  alpha: number;
+  restart: boolean;
+}
 
 export default function NetGraphPanel({ nodes, routes, pulses, activity, socketStatus, onClose }: NetGraphPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -156,6 +172,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
 
   useEffect(() => {
     layoutPausedRef.current = layoutPaused;
+    if (layoutPaused) simulationRef.current?.stop();
   }, [layoutPaused]);
 
   const fitGraph = useCallback(() => {
@@ -212,19 +229,30 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const previousPositions = new Map(
+    const previousPositions = new Map<string, PreviousNodePosition>(
       simNodesRef.current.map((node) => [node.id, { x: node.x, y: node.y, vx: node.vx, vy: node.vy }])
     );
     const seedLayout = packedSeedLayout(visibleGraph, rect.width, rect.height);
     const simNodes = visibleGraph.nodes.map((node) => simNodeFromGraphNode(node, seedLayout.get(node.id)));
+    let addedNodes = 0;
     for (const node of simNodes) {
       const previous = previousPositions.get(node.id);
-      if (!previous) continue;
-      node.x = previous.x ?? node.seedX;
-      node.y = previous.y ?? node.seedY;
-      node.vx = previous.vx ?? 0;
-      node.vy = previous.vy ?? 0;
+      if (previous) {
+        node.x = previous.x ?? node.seedX;
+        node.y = previous.y ?? node.seedY;
+        node.vx = previous.vx ?? 0;
+        node.vy = previous.vy ?? 0;
+        continue;
+      }
+      addedNodes += 1;
+      const neighborSeed = seedNodeNearKnownNeighbors(node, visibleGraph, previousPositions);
+      if (neighborSeed) {
+        node.x = neighborSeed.x;
+        node.y = neighborSeed.y;
+      }
     }
+    const removedNodes = [...previousPositions.keys()].filter((id) => !visibleGraph.nodeByID.has(id)).length;
+    const settlePlan = netGraphSettlePlan(previousPositions.size, simNodes.length, addedNodes + removedNodes, layoutPausedRef.current);
     const nodeIDs = new Set(simNodes.map((node) => node.id));
     const edgeRenderPlans = buildEdgeRenderPlans(visibleGraph.edges);
     const simLinks = visibleGraph.edges
@@ -236,18 +264,19 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     simulationRef.current?.stop();
     const simulation = forceSimulation<SimNode, SimLink>(simNodes)
       .force('link', forceLink<SimNode, SimLink>(simLinks).id((node) => node.id).distance((link) => linkDistance(link)).strength(0.42))
-      .force('charge', forceManyBody<SimNode>().strength((node) => -135 - node.degree * 12))
+      .force('charge', forceManyBody<SimNode>().strength((node) => -72 - Math.min(node.degree, 18) * 7))
       .force('collide', forceCollide<SimNode>().radius((node) => node.radius + 14).strength(0.92))
-      .force('x', forceX<SimNode>((node) => node.componentX).strength(0.055))
-      .force('y', forceY<SimNode>((node) => node.componentY).strength(0.055))
-      .force('center', forceCenter(rect.width / 2, rect.height / 2).strength(0.028))
+      .force('x', forceX<SimNode>((node) => node.componentX).strength(0.11))
+      .force('y', forceY<SimNode>((node) => node.componentY).strength(0.11))
+      .force('center', forceCenter(rect.width / 2, rect.height / 2).strength(0.018))
       .alphaDecay(0.033)
       .velocityDecay(0.46)
       .stop();
-    simulation.tick(150);
+    if (settlePlan.ticks > 0) simulation.tick(settlePlan.ticks);
     simulation.on('tick', scheduleDraw);
     simulationRef.current = simulation;
-    if (!layoutPausedRef.current) simulation.alpha(0.18).restart();
+    if (settlePlan.restart) simulation.alpha(settlePlan.alpha).restart();
+    scheduleDraw();
     if (!hasFittedRef.current) {
       hasFittedRef.current = true;
       window.setTimeout(fitGraph, 40);
@@ -339,7 +368,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       dragRef.current = { mode: 'node', node, moved: false };
       node.fx = node.x;
       node.fy = node.y;
-      simulationRef.current?.alphaTarget(0.18).restart();
+      if (!layoutPausedRef.current) simulationRef.current?.alphaTarget(0.18).restart();
     } else {
       dragRef.current = { mode: 'pan', startX: pointer.x, startY: pointer.y, origin: { ...transformRef.current }, moved: false };
     }
@@ -739,6 +768,44 @@ function simNodeFromGraphNode(node: NetGraphNode, seed = { x: 0, y: 0, component
   };
 }
 
+export function netGraphSettlePlan(previousNodeCount: number, currentNodeCount: number, changedNodeCount: number, layoutPaused: boolean): NetGraphSettlePlan {
+  if (layoutPaused) {
+    return { ticks: 0, alpha: 0, restart: false };
+  }
+  if (previousNodeCount <= 0) {
+    return { ticks: NETGRAPH_INITIAL_SETTLE_TICKS, alpha: 0.18, restart: true };
+  }
+  const denominator = Math.max(previousNodeCount, currentNodeCount, 1);
+  const changeRatio = changedNodeCount / denominator;
+  if (changeRatio >= 0.18) {
+    return { ticks: NETGRAPH_MAJOR_SETTLE_TICKS, alpha: 0.12, restart: true };
+  }
+  return { ticks: NETGRAPH_INCREMENTAL_SETTLE_TICKS, alpha: 0.06, restart: true };
+}
+
+function seedNodeNearKnownNeighbors(node: NetGraphNode, graph: NetGraphData, previousPositions: Map<string, PreviousNodePosition>): { x: number; y: number } | null {
+  const neighbors: PreviousNodePosition[] = [];
+  for (const edge of graph.edges) {
+    const neighborID = edge.sourceID === node.id ? edge.targetID : edge.targetID === node.id ? edge.sourceID : '';
+    if (!neighborID) continue;
+    const previous = previousPositions.get(neighborID);
+    if (typeof previous?.x === 'number' && typeof previous.y === 'number') {
+      neighbors.push(previous);
+    }
+  }
+  if (neighbors.length === 0) return null;
+  const center = neighbors.reduce<{ x: number; y: number }>(
+    (acc, item) => ({ x: acc.x + (item.x ?? 0), y: acc.y + (item.y ?? 0) }),
+    { x: 0, y: 0 }
+  );
+  const angle = stableNodeAngle(node.id);
+  const radius = 32 + (stableNodeHash(node.id) % 24);
+  return {
+    x: center.x / neighbors.length + Math.cos(angle) * radius,
+    y: center.y / neighbors.length + Math.sin(angle) * radius
+  };
+}
+
 function resizeCanvas(canvas: HTMLCanvasElement): void {
   const rect = canvas.getBoundingClientRect();
   const dpr = Math.min(1.6, window.devicePixelRatio || 1);
@@ -874,6 +941,19 @@ function edgeColor(edge: NetGraphEdge): string {
 
 function linkDistance(edge: SimLink): number {
   return Math.max(48, Math.min(132, 52 + Math.sqrt(Math.max(1, edge.distanceKm)) * 3.5));
+}
+
+function stableNodeAngle(value: string): number {
+  return ((stableNodeHash(value) % 3600) / 3600) * Math.PI * 2;
+}
+
+function stableNodeHash(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
 }
 
 function clamp(value: number, min: number, max: number): number {

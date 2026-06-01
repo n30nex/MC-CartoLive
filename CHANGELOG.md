@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.5.23 - 2026-06-01
+
+- Made NetGraph layout updates calmer: paused layout is now a true lock, small
+  topology changes use a short gentle settle instead of a full pre-tick reset,
+  and newly discovered nodes seed near known neighbors.
+- Reduced disconnected-component spread by lowering global graph repulsion and
+  strengthening component anchors.
+- Reduced OpenFreeMap 3D churn by avoiding forced full 3D scene rebuilds on
+  every map `moveend`/`zoomend`; the layer now repaints when signatures changed
+  or active 3D animations are running.
+
 ## 2.5.22 - 2026-06-01
 
 - Added SQLite partial indexes for public Chat message history and switched the

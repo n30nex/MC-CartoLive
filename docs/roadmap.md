@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.22` is the active foundation patch toward the next production-ready
+Version `2.5.23` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -196,6 +196,19 @@ Version `2.5.22` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.23 Patch Focus
+
+- Make NetGraph layout pause a true lock that is not disturbed by live topology
+  refreshes.
+- Reduce NetGraph jitter and empty-space spread by using gentler incremental
+  settling, neighbor seeding for newly discovered nodes, lower global repulsion,
+  and stronger component anchors.
+- Reduce OpenFreeMap 3D scene churn by keeping move/zoom-end rebuilds
+  signature-gated and repainting only when scene signatures changed or 3D
+  animations are active.
+- Keep public APIs, packet schemas, privacy boundaries, and hosted Canada
+  behavior unchanged.
 
 ## 2.5.22 Patch Focus
 

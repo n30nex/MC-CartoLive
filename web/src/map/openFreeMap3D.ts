@@ -101,7 +101,11 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
   private observerGlows: ObserverGlow[] = [];
   private paused = false;
   private disposed = false;
-  private readonly handleMoveEnd = () => this.rebuildIfNeeded(true);
+  private readonly handleMoveEnd = () => {
+    if (this.rebuildIfNeeded(false)) {
+      this.map?.triggerRepaint();
+    }
+  };
 
   constructor() {
     this.layer = {
@@ -117,8 +121,9 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
     this.latest = input;
     this.layerSettings = normalizeLayerSettings(input.layerSettings);
     this.packetVisualSettings = normalizePacketVisualSettings(input.packetVisualSettings);
-    this.rebuildIfNeeded(false);
-    this.map?.triggerRepaint();
+    if (this.rebuildIfNeeded(false) || this.hasActiveAnimations()) {
+      this.map?.triggerRepaint();
+    }
   }
 
   addPulse(pulse: PublicRoutePulse, options: PacketAnimationOptions = {}): boolean {
@@ -213,7 +218,9 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     map.on('moveend', this.handleMoveEnd);
     map.on('zoomend', this.handleMoveEnd);
-    this.rebuildIfNeeded(true);
+    if (this.rebuildIfNeeded(true)) {
+      map.triggerRepaint();
+    }
   }
 
   private render(args: { defaultProjectionData?: { mainMatrix?: number[] | Float32Array } }) {
@@ -252,18 +259,26 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
     return hasActive;
   }
 
-  private rebuildIfNeeded(force: boolean) {
-    if (!this.map || !this.scene || !this.latest || this.disposed) return;
+  private rebuildIfNeeded(force: boolean): boolean {
+    if (!this.map || !this.scene || !this.latest || this.disposed) return false;
+    let changed = false;
     const nextNodeSignature = nodeSceneSignature(this.map, this.latest);
     if (force || nextNodeSignature !== this.nodeSignature) {
       this.nodeSignature = nextNodeSignature;
       rebuildNodeModels(this.map, this.nodeRoot, this.latest);
+      changed = true;
     }
     const nextRouteSignature = routeSceneSignature(this.map, this.latest);
     if (force || nextRouteSignature !== this.routeSignature) {
       this.routeSignature = nextRouteSignature;
       rebuildRouteArcs(this.map, this.routeRoot, this.latest);
+      changed = true;
     }
+    return changed;
+  }
+
+  private hasActiveAnimations(): boolean {
+    return this.activeComets.length > 0 || this.observerGlows.length > 0;
   }
 }
 
