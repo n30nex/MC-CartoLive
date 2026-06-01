@@ -14,11 +14,13 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.16';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.17';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.17 dedupes Chat by internal packet identity so repeated routed observations do not repeat the same decoded message, while keeping distinct packet retransmits visible.',
+  'Docker Compose runtime metadata now prefers GIT_SHA and BUILD_TIME so health/readiness reports match the deployed commit.',
   '2.5.16 collapses duplicate Chat rows from multi-segment routed packets and moves first-run Setup into the Guide instead of the permanent top bar.',
   '2.5.15 adds a public-safe Chat page for decoded public text history with region, channel, time-window, search, and paging controls.',
   'NetGraph is steadier: stable visible graph membership, deterministic edge lanes, selected-neighborhood helpers, mobile pinch zoom, role-matched node glyphs, and faster pulse matching.',

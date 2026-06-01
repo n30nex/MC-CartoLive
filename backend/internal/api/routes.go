@@ -388,6 +388,7 @@ const (
 	publicChatMaxLimit           = 500
 	publicChatDefaultLimit       = 100
 	publicChatMaxRawScan         = 2500
+	publicChatDedupeWindowMs     = int64(2 * time.Minute / time.Millisecond)
 	publicPacketsMaxLimit        = 1000
 	publicPacketsDefaultLimit    = 250
 	publicPacketsMaxRawScan      = 2500
@@ -732,10 +733,11 @@ func (s *Server) publicChat(w http.ResponseWriter, r *http.Request) {
 			if !publicChatMatchesFilters(message, filters) {
 				continue
 			}
-			if _, seen := seenMessages[message.ID]; seen {
+			messageKey := publicChatDedupeKey(rawEvent, message)
+			if _, seen := seenMessages[messageKey]; seen {
 				continue
 			}
-			seenMessages[message.ID] = struct{}{}
+			seenMessages[messageKey] = struct{}{}
 			messages = append(messages, message)
 			if len(messages) >= limit {
 				break
@@ -1082,6 +1084,24 @@ func publicChatSearchFields(message live.PublicChatMessage) []string {
 		}
 	}
 	return out
+}
+
+func publicChatDedupeKey(raw store.HistoryEvent, message live.PublicChatMessage) string {
+	if raw.Edge != nil && strings.TrimSpace(raw.Edge.PacketHash) != "" {
+		return "packet:" + strings.TrimSpace(raw.Edge.PacketHash)
+	}
+	if raw.Packet != nil && strings.TrimSpace(raw.Packet.PacketHash) != "" {
+		return "packet:" + strings.TrimSpace(raw.Packet.PacketHash)
+	}
+	bucket := (message.At + publicChatDedupeWindowMs/2) / publicChatDedupeWindowMs
+	sender := strings.ToLower(strings.Join(strings.Fields(message.Sender), " "))
+	text := strings.ToLower(strings.Join(strings.Fields(message.Text), " "))
+	channel := strings.ToLower(strings.TrimSpace(message.ChannelLabel))
+	payload := strings.ToLower(strings.TrimSpace(message.PayloadTypeName))
+	if sender == "" && text == "" {
+		return message.ID
+	}
+	return strconv.FormatInt(bucket, 10) + "|" + sender + "|" + text + "|" + channel + "|" + payload
 }
 
 func (s *Server) publicLocationIndexes(ctx context.Context) (live.PublicObserverLocationIndex, map[string]string, error) {

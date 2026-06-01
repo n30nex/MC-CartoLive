@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.16` is the active foundation patch toward the next production-ready
+Version `2.5.17` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -196,6 +196,15 @@ Version `2.5.16` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.17 Patch Focus
+
+- Deduplicate Chat by internal packet identity, never by exposed packet data, so
+  multi-observer/routed repeats do not duplicate a decoded message.
+- Preserve distinct retransmitted messages when the underlying packet identity
+  differs.
+- Fix Docker Compose metadata fallback so both the frontend build and backend
+  health/readiness can use `GIT_SHA` and `BUILD_TIME` from `.env`.
 
 ## Next Cleanup Candidates
 

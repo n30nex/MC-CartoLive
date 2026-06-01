@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.16` public Chat dedupe, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.17` packet-identity Chat dedupe, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,20 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.17 - Packet-Identity Chat Dedupe
+
+Goal: fix the remaining live Chat duplicate cases from repeated routed
+observations without hiding legitimate repeated messages.
+
+Status: active patch.
+
+- Deduplicate Chat rows using internal packet identity when available.
+- Keep packet hashes private and absent from public Chat responses.
+- Fall back to a normalized public display tuple only when packet identity is
+  unavailable.
+- Fix Compose metadata fallback so `GIT_SHA` and `BUILD_TIME` update both
+  frontend build metadata and backend health/readiness metadata on deploy.
 
 ## 2.6.0 - World-Ready Live Network Operations Release
 

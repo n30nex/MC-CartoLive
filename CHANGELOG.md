@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 2.5.17 - 2026-06-01
+
+- Fixed remaining public Chat duplicate rows by deduping internally on packet
+  identity without exposing packet hashes in public responses.
+- Preserved distinct repeated messages from different packets, so real
+  retransmits still appear when the underlying packet identity differs.
+- Fixed Docker Compose runtime metadata wiring so `GIT_SHA` and `BUILD_TIME`
+  from `.env` are used by `/healthz` and `/readyz`.
+
 ## 2.5.16 - 2026-06-01
 
 - Fixed public Chat duplicate rows by collapsing routed decoded messages to one

@@ -188,6 +188,73 @@ func TestPublicChatEndpointFiltersPublicMessageFields(t *testing.T) {
 	}
 }
 
+func TestPublicChatEndpointDedupesByInternalPacketIdentity(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := st.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+	})
+
+	observerKey := "EE00000000000000000000000000000000000000000000000000000000000000"
+	base := time.Now().Add(-time.Hour).UnixMilli()
+	firstObservation := insertChatObservation(t, ctx, st, "hash-chat-repeat-private", "YVR", observerKey, base+1_000, resolve.StatusHigh, chatObservationOptions{
+		MessageSender: "SpooferMan",
+		MessageText:   "NotSoSmart watch.",
+	})
+	insertHistoryEdgeWithOptions(t, ctx, st, firstObservation, "hash-chat-repeat-private", base+1_000, historyEdgeOptions{
+		PayloadTypeName: "GROUP_TEXT",
+		MessageSender:   "SpooferMan",
+		MessageText:     "NotSoSmart watch.",
+		Labels:          []string{"ka.RF.cli", "NWR"},
+	})
+	secondObservation := insertChatObservation(t, ctx, st, "hash-chat-repeat-private", "YYJ", observerKey, base+1_100, resolve.StatusHigh, chatObservationOptions{
+		MessageSender: "SpooferMan",
+		MessageText:   "NotSoSmart watch.",
+	})
+	insertHistoryEdgeWithOptions(t, ctx, st, secondObservation, "hash-chat-repeat-private", base+1_100, historyEdgeOptions{
+		PayloadTypeName: "GROUP_TEXT",
+		MessageSender:   "SpooferMan",
+		MessageText:     "NotSoSmart watch.",
+		Labels:          []string{"Salish", "CyberiaOne"},
+	})
+	distinctObservation := insertChatObservation(t, ctx, st, "hash-chat-distinct-private", "YYJ", observerKey, base+1_200, resolve.StatusHigh, chatObservationOptions{
+		MessageSender: "SpooferMan",
+		MessageText:   "NotSoSmart watch.",
+	})
+	insertHistoryEdgeWithOptions(t, ctx, st, distinctObservation, "hash-chat-distinct-private", base+1_200, historyEdgeOptions{
+		PayloadTypeName: "GROUP_TEXT",
+		MessageSender:   "SpooferMan",
+		MessageText:     "NotSoSmart watch.",
+		Labels:          []string{"Salish", "CyberiaOne"},
+	})
+
+	server := publicHistoryTestServer(st, func(string) bool { return true })
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/public/chat?from="+ms(base)+"&to="+ms(base+2_000)+"&limit=10", nil)
+	server.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("chat status = %d body=%s", response.Code, response.Body.String())
+	}
+	var chat live.PublicChatResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &chat); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(chat.Messages), 2; got != want {
+		t.Fatalf("messages = %d, want %d after packet-identity dedupe: %#v", got, want, chat.Messages)
+	}
+	if strings.Count(response.Body.String(), "NotSoSmart watch.") != 2 {
+		t.Fatalf("chat response did not keep exactly two distinct packet messages: %s", response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "hash-chat-repeat-private") || strings.Contains(response.Body.String(), "hash-chat-distinct-private") {
+		t.Fatalf("chat response leaked internal packet hashes: %s", response.Body.String())
+	}
+}
+
 func TestPublicChatEndpointRedactsSensitiveMessageSubstrings(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.OpenMemory(ctx)
