@@ -385,7 +385,7 @@ const (
 	publicHistoryMaxWindowMs     = int64(24 * time.Hour / time.Millisecond)
 	publicHistoryMaxLimit        = 2000
 	publicHistoryDefaultLimit    = 1000
-	publicChatMaxLimit           = 500
+	publicChatMaxLimit           = 400
 	publicChatDefaultLimit       = 100
 	publicChatMaxRawScan         = 2500
 	publicChatDedupeWindowMs     = int64(15 * time.Minute / time.Millisecond)

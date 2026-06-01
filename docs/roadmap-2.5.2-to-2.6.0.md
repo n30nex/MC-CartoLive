@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.20` Chat duplicate suppression, live-health/top-bar polish, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.21` Chat duplicate suppression, Chat pressure guard, live-health/top-bar polish, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,17 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.21 - Chat Pressure Guard
+
+Goal: keep public Chat responsive when clients request large 24h pages after
+display de-dupe.
+
+Scope:
+
+- Cap public Chat pages at 400 rows per request.
+- Preserve cursor paging so clients can continue loading older public messages.
+- Keep the public Chat response shape and privacy boundaries unchanged.
 
 ## 2.5.20 - Chat And Live Health Polish
 

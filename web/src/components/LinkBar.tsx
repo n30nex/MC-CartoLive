@@ -15,11 +15,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.20';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.21';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.21 caps public Chat pages at 400 rows so large 24h requests keep paging instead of timing out.',
   '2.5.20 fixes visible Chat repeats by deduping same public messages across route and observer context without exposing packet hashes.',
   'Top-bar live rates now include compact VU meters, count pills are tighter, and compact build timestamps show the correct build age.',
   'Perf now reports live deployment health: backend/readiness, public API reachability, MQTT freshness, cache freshness, and routed traffic state.',

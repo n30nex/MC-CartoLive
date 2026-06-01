@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.20` is the active foundation patch toward the next production-ready
+Version `2.5.21` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -196,6 +196,13 @@ Version `2.5.20` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.21 Patch Focus
+
+- Cap public Chat pages at 400 rows so larger 24h requests continue through
+  cursor paging instead of spending the full request timeout.
+- Keep public response shape and privacy boundaries unchanged.
+- Carry forward the 2.5.20 Chat duplicate suppression and live-health polish.
 
 ## 2.5.20 Patch Focus
 

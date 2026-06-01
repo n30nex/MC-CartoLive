@@ -389,8 +389,8 @@ func TestPublicChatEndpointReturnsNewestFirstWithStableCursorAndWindow(t *testin
 	if capped.Window.To-capped.Window.From > 24*60*60_000 {
 		t.Fatalf("window = %#v, want capped to 24h", capped.Window)
 	}
-	if capped.Window.Count > 500 {
-		t.Fatalf("window count = %d, want <= 500", capped.Window.Count)
+	if capped.Window.Count > 400 {
+		t.Fatalf("window count = %d, want <= 400", capped.Window.Count)
 	}
 }
 

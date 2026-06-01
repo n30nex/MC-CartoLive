@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 2.5.21 - 2026-06-01
+
+- Added a Chat endpoint pressure guard by capping public Chat pages at 400 rows
+  per request. Larger callers continue through cursor paging instead of making
+  the server scan long enough to hit the request timeout.
+- Kept the 2.5.20 Chat duplicate suppression, live-health Perf page, top-bar VU
+  meters, build-age parsing fix, calmer Live Follow, and recent route glow
+  polish intact.
+
 ## 2.5.20 - 2026-06-01
 
 - Fixed the live Chat duplicate case where the same decoded public message

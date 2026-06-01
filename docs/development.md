@@ -180,7 +180,7 @@ Use overrides when testing a branch, alternate host, expected build, or another
 diagnostic region:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.5.20 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.5.21 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
 Scan public JSON surfaces for privacy-boundary regressions while the app is
