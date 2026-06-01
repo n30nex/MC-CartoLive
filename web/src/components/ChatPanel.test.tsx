@@ -41,6 +41,51 @@ describe('ChatPanel', () => {
     expect(renderToStaticMarkup(<ChatPanel autoRefresh={false} onClose={() => undefined} />)).toContain('No public chat messages in this window');
   });
 
+  it('collapses repeated decoded message sightings before rendering rows', () => {
+    const html = renderToStaticMarkup(
+      <ChatPanel
+        autoRefresh={false}
+        onClose={() => undefined}
+        initialMessages={[
+          {
+            id: 'chat-a',
+            at: Date.now() - 5 * 60_000,
+            region: 'YVR',
+            sender: 'SpooderMan',
+            text: 'NotSoSmart watch.',
+            channelLabel: 'Public',
+            payloadTypeName: 'GROUP_TEXT',
+            endpointLabels: ['ka.RF.cli', 'NWR']
+          },
+          {
+            id: 'chat-b',
+            at: Date.now() - 5 * 60_000 + 1_000,
+            region: 'YYJ',
+            sender: 'SpooderMan',
+            text: 'Not\u200bSoSmart watch!',
+            channelLabel: 'Public',
+            payloadTypeName: 'GROUP_TEXT',
+            endpointLabels: ['Salish', 'CyberiaOne']
+          },
+          {
+            id: 'chat-c',
+            at: Date.now() - 5 * 60_000 + 2_000,
+            region: 'YYJ',
+            sender: 'SpooderMan',
+            text: 'NotSoSmart watch.',
+            channelLabel: 'Public',
+            payloadTypeName: 'GROUP_TEXT',
+            endpointLabels: ['Salish', 'CyberiaOne']
+          }
+        ]}
+      />
+    );
+
+    expect(html.match(/NotSoSmart watch/g)).toHaveLength(1);
+    expect(html).toContain('Loaded');
+    expect(html).toContain('1');
+  });
+
   it('describes footer states', () => {
     expect(chatFooterStatus(2, 'cursor', false)).toBe('2 loaded; older public messages are available.');
     expect(chatFooterStatus(1, '', false)).toBe('1 public message loaded.');

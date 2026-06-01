@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.28` live-status simplification, calmer Live Follow, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.29` palette-aware NetGraph visuals, live-status simplification, calmer Live Follow, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,26 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.29 - NetGraph Theme Alignment And Chat Render Guard
+
+Goal: make NetGraph visually match the rest of the app across dark/light modes
+and palette selections, and close the remaining visible Chat duplicate render
+case without adding public data or backend work.
+
+Scope:
+
+- Read active app palette tokens for the NetGraph canvas background, selected
+  pathway color, fallback pathway color, labels, observer accents, and comet
+  head contrast.
+- Move NetGraph panel chrome to shared app surface, border, shadow, text, and
+  light-mode tokens.
+- Keep the existing shared role color/shape registry for NetGraph nodes,
+  Legend entries, and map icons.
+- Render Chat from a final de-duped view model so repeated decoded sender/text
+  sightings cannot show as duplicate rows even if stale refreshes, older pages,
+  or repeated observer/route copies enter component state.
+- Keep NetGraph frontend-only and preserve public API and privacy boundaries.
 
 ## 2.5.28 - Live Status And Camera Calm
 

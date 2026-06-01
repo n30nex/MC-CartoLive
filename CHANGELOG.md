@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 2.5.29 - 2026-06-01
+
+- Made NetGraph canvas rendering palette-aware so backgrounds, selected
+  pathways, fallback pathway colors, labels, and observer accents follow the
+  active theme instead of fixed dark-blue defaults.
+- Updated NetGraph panel chrome to use shared app surface, border, shadow, text,
+  accent, and light-mode tokens.
+- Added regression coverage for NetGraph dark/light theme token selection while
+  keeping the existing shared role icon/color registry.
+- Hardened the Chat page against repeated decoded message sightings so the same
+  public sender/text is collapsed before rows render, even if repeated route or
+  observer copies arrive in a refresh.
+
 ## 2.5.28 - 2026-06-01
 
 - Reworked the Perf page into a compact public-safe live status view covering

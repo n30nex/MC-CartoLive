@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import NetGraphPanel, { netGraphSettlePlan, packedComponentCells } from './NetGraphPanel';
+import NetGraphPanel, { netGraphSettlePlan, netGraphThemeFromStyle, packedComponentCells } from './NetGraphPanel';
 
 describe('NetGraphPanel', () => {
   it('renders the closeable live graph shell without private packet language', () => {
@@ -38,5 +38,32 @@ describe('NetGraphPanel', () => {
     expect(major.ticks).toBeGreaterThan(incremental.ticks);
     expect(incremental.alpha).toBeLessThan(major.alpha);
     expect(incremental.restart).toBe(true);
+  });
+
+  it('uses active palette tokens for canvas colors in dark and light modes', () => {
+    const style = {
+      getPropertyValue: (name: string) => ({
+        '--palette-bg-base': '#05070b',
+        '--palette-bg-surface': '#101827',
+        '--palette-bg-raised': '#172033',
+        '--palette-primary': '#14b8a6',
+        '--palette-secondary': '#f97316',
+        '--palette-readable-text': '#e2f0f0',
+        '--palette-warn': '#f59e0b'
+      })[name] ?? ''
+    } as Pick<CSSStyleDeclaration, 'getPropertyValue'>;
+
+    expect(netGraphThemeFromStyle(style, 'dark')).toMatchObject({
+      selectedEdge: '#14b8a6',
+      edgeFallback: '#f97316',
+      labelText: '#e2f0f0',
+      observerStroke: '#f59e0b'
+    });
+    expect(netGraphThemeFromStyle(style, 'light')).toMatchObject({
+      selectedEdge: '#14b8a6',
+      edgeFallback: '#f97316',
+      labelText: '#0f172a',
+      observerStroke: '#f59e0b'
+    });
   });
 });

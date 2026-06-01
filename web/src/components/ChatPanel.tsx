@@ -40,6 +40,7 @@ export default function ChatPanel({ initialMessages = [], initialError = null, a
   const requestAbortRef = useRef<AbortController | null>(null);
   const requestGenerationRef = useRef(0);
   const debouncedFilters = useDebouncedValue(filters, CHAT_FILTER_DEBOUNCE_MS);
+  const visibleMessages = useMemo(() => capChatMessages(messages), [messages]);
 
   useEffect(() => {
     return () => {
@@ -131,7 +132,7 @@ export default function ChatPanel({ initialMessages = [], initialError = null, a
     };
   }, [autoRefresh, refresh]);
 
-  const channelOptions = useMemo(() => chatChannelOptions(messages), [messages]);
+  const channelOptions = useMemo(() => chatChannelOptions(visibleMessages), [visibleMessages]);
 
   return (
     <section className="chat-panel" aria-label="Public chat">
@@ -152,7 +153,7 @@ export default function ChatPanel({ initialMessages = [], initialError = null, a
       </header>
 
       <div className="chat-summary-strip">
-        <ChatSummary icon={<MessageSquareText size={15} />} label="Loaded" value={messages.length.toLocaleString()} />
+        <ChatSummary icon={<MessageSquareText size={15} />} label="Loaded" value={visibleMessages.length.toLocaleString()} />
         <ChatSummary icon={<Clock3 size={15} />} label="Window" value={formatWindow(windowInfo, scopeMs)} />
         <ChatSummary icon={<RefreshCw size={15} />} label="Updated" value={lastCheckedAt ? new Date(lastCheckedAt).toLocaleTimeString() : 'pending'} />
         <ChatSummary icon={<Clock3 size={15} />} label="Server" value={serverTime ? formatRelative(serverTime) : 'pending'} />
@@ -199,8 +200,8 @@ export default function ChatPanel({ initialMessages = [], initialError = null, a
       {loading && messages.length === 0 && <div className="chat-loading">Loading public chat...</div>}
 
       <div className="chat-list" role="list" aria-label="Public chat messages">
-        {messages.map((message) => <ChatRow key={message.id} message={message} />)}
-        {!loading && messages.length === 0 && (
+        {visibleMessages.map((message) => <ChatRow key={message.id} message={message} />)}
+        {!loading && visibleMessages.length === 0 && (
           <div className="chat-empty">
             {hasActiveChatFilters(debouncedFilters) ? 'No public chat messages match the current filters.' : 'No public chat messages in this window.'}
           </div>
@@ -208,7 +209,7 @@ export default function ChatPanel({ initialMessages = [], initialError = null, a
       </div>
 
       <footer className="chat-footer">
-        <span>{chatFooterStatus(messages.length, nextCursor, loadingMore)}</span>
+        <span>{chatFooterStatus(visibleMessages.length, nextCursor, loadingMore)}</span>
         <button type="button" disabled={!nextCursor || loadingMore} onClick={loadOlder}>
           {loadingMore ? 'Loading...' : nextCursor ? 'Load older' : 'End of window'}
         </button>

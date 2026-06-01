@@ -5,15 +5,16 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.28` is the active foundation patch toward the next production-ready
+Version `2.5.29` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: public-safe live status, calmer Live Follow camera
-  movement, strict build-age parsing, NetGraph stability, OpenFreeMap 3D
-  production polish, backend scale, Packets/VCR data-path stability,
+- Current patch focus: palette-aware NetGraph visuals, duplicate-safe public
+  Chat rendering, public-safe live status, calmer Live Follow camera movement,
+  strict build-age parsing, OpenFreeMap 3D production polish, backend scale,
+  Packets/VCR data-path stability,
   light-mode route contrast, and mobile/browser regression coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
@@ -197,6 +198,18 @@ Version `2.5.28` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.29 Patch Focus
+
+- Make NetGraph canvas rendering follow the active app palette and light/dark
+  mode for its background, selected pathway color, fallback link color, labels,
+  observer accents, and comet head contrast.
+- Move NetGraph panel chrome onto the shared app surface, border, shadow, text,
+  accent, and light-mode tokens so it visually matches the map, Legend,
+  Packets, Chat, and top bar.
+- Render Chat from a final de-duped view model so repeated decoded sender/text
+  sightings cannot appear as duplicate rows after refreshes or older-page loads.
+- Keep NetGraph frontend-only and preserve public API and privacy boundaries.
 
 ## 2.5.28 Patch Focus
 

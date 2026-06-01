@@ -53,6 +53,19 @@ interface NetGraphPanelProps {
 
 type SelectedGraphItem = { type: 'node'; id: string } | { type: 'edge'; id: string } | null;
 
+export interface NetGraphThemeTokens {
+  backgroundInner: string;
+  backgroundMid: string;
+  backgroundOuter: string;
+  selectedEdge: string;
+  edgeFallback: string;
+  nodeStroke: string;
+  observerStroke: string;
+  labelText: string;
+  labelHalo: string;
+  cometHead: string;
+}
+
 interface SimNode extends NetGraphNode, SimulationNodeDatum {
   seedX: number;
   seedY: number;
@@ -91,6 +104,18 @@ const MAX_ZOOM = 4.5;
 const NETGRAPH_INITIAL_SETTLE_TICKS = 90;
 const NETGRAPH_MAJOR_SETTLE_TICKS = 48;
 const NETGRAPH_INCREMENTAL_SETTLE_TICKS = 16;
+const DEFAULT_NETGRAPH_THEME: NetGraphThemeTokens = {
+  backgroundInner: 'rgba(20, 32, 51, 0.96)',
+  backgroundMid: 'rgba(12, 18, 28, 0.98)',
+  backgroundOuter: 'rgba(5, 9, 15, 1)',
+  selectedEdge: '#67e8f9',
+  edgeFallback: '#1d4ed8',
+  nodeStroke: 'rgba(255,255,255,0.72)',
+  observerStroke: '#fbbf24',
+  labelText: '#e5f7ff',
+  labelHalo: 'rgba(7, 10, 18, 0.92)',
+  cometHead: '#ffffff'
+};
 
 interface PreviousNodePosition {
   x?: number;
@@ -465,21 +490,22 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     const rect = canvas.getBoundingClientRect();
     const transform = transformRef.current;
     const now = performance.now();
+    const theme = netGraphThemeFromElement(canvas);
     cometsRef.current = cometsRef.current.filter((comet) => now - comet.startedAt < comet.durationMs + 700);
     glowsRef.current = glowsRef.current.filter((glow) => now - glow.startedAt < glow.durationMs);
     ctx.save();
     ctx.clearRect(0, 0, rect.width, rect.height);
-    drawBackground(ctx, rect.width, rect.height);
+    drawBackground(ctx, rect.width, rect.height, theme);
     ctx.translate(transform.x, transform.y);
     ctx.scale(transform.k, transform.k);
     const hover = hoveredRef.current;
     const hoverSelection = hover?.type === 'node' ? selectionForNode(graphRef.current, hover.id) : hover?.type === 'edge' ? selectionForEdge(graphRef.current, hover.id) : null;
     const selection = selectedHighlightsRef.current;
-    drawEdges(ctx, selection, hoverSelection);
-    drawComets(ctx, now);
+    drawEdges(ctx, selection, hoverSelection, theme);
+    drawComets(ctx, now, theme);
     drawGlows(ctx, now);
-    drawNodes(ctx, selection, hoverSelection);
-    drawLabels(ctx, selection, hoverSelection);
+    drawNodes(ctx, selection, hoverSelection, theme);
+    drawLabels(ctx, selection, hoverSelection, theme);
     ctx.restore();
   }
 
@@ -488,7 +514,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     return cometsRef.current.some((comet) => now - comet.startedAt < comet.durationMs + 700) || glowsRef.current.some((glow) => now - glow.startedAt < glow.durationMs);
   }
 
-  function drawEdges(ctx: CanvasRenderingContext2D, selection: ReturnType<typeof selectionForNode>, hoverSelection: ReturnType<typeof selectionForNode> | null) {
+  function drawEdges(ctx: CanvasRenderingContext2D, selection: ReturnType<typeof selectionForNode>, hoverSelection: ReturnType<typeof selectionForNode> | null, theme: NetGraphThemeTokens) {
     for (const edge of simLinksRef.current) {
       const source = linkNode(edge.source);
       const target = linkNode(edge.target);
@@ -498,7 +524,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       const hoveredEdge = hoverSelection?.edgeIDs.has(edge.id) || hover?.type === 'edge' && hover.id === edge.id;
       const dimmed = selection.edgeIDs.size > 0 && !selectedEdge;
       ctx.globalAlpha = dimmed ? 0.1 : selectedEdge || hoveredEdge ? 0.88 : 0.24;
-      ctx.strokeStyle = selectedEdge || hoveredEdge ? '#67e8f9' : edgeColor(edge);
+      ctx.strokeStyle = selectedEdge || hoveredEdge ? theme.selectedEdge : edgeColor(edge, theme);
       ctx.lineWidth = selectedEdge || hoveredEdge ? 2.8 : Math.max(0.55, Math.min(1.8, Math.log1p(edge.packetCount) * 0.24));
       const control = edgeControlPoint(source, target, edge, edge.renderPlan);
       ctx.beginPath();
@@ -509,7 +535,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     ctx.globalAlpha = 1;
   }
 
-  function drawComets(ctx: CanvasRenderingContext2D, now: number) {
+  function drawComets(ctx: CanvasRenderingContext2D, now: number, theme: NetGraphThemeTokens) {
     for (const comet of cometsRef.current) {
       const edge = simLinksByIDRef.current.get(comet.edgeID);
       if (!edge) continue;
@@ -531,7 +557,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       ctx.lineTo(head.x, head.y);
       ctx.stroke();
       ctx.globalAlpha = 0.95;
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = theme.cometHead;
       ctx.beginPath();
       ctx.arc(head.x, head.y, 3.5, 0, Math.PI * 2);
       ctx.fill();
@@ -565,7 +591,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     }
   }
 
-  function drawNodes(ctx: CanvasRenderingContext2D, selection: ReturnType<typeof selectionForNode>, hoverSelection: ReturnType<typeof selectionForNode> | null) {
+  function drawNodes(ctx: CanvasRenderingContext2D, selection: ReturnType<typeof selectionForNode>, hoverSelection: ReturnType<typeof selectionForNode> | null, theme: NetGraphThemeTokens) {
     for (const node of simNodesRef.current) {
       const selectedNode = selection.nodeIDs.has(node.id);
       const hover = hoveredRef.current;
@@ -580,13 +606,13 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       drawNodeGlyph(ctx, node, node.radius + (selectedNode ? 4 : hoveredNode ? 2 : 0), color);
       ctx.shadowBlur = 0;
       ctx.lineWidth = selectedNode || hoveredNode ? 2.3 : 1;
-      ctx.strokeStyle = selectedNode ? '#ffffff' : node.isObserver ? '#fbbf24' : 'rgba(255,255,255,0.7)';
+      ctx.strokeStyle = selectedNode ? theme.cometHead : node.isObserver ? theme.observerStroke : theme.nodeStroke;
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
   }
 
-  function drawLabels(ctx: CanvasRenderingContext2D, selection: ReturnType<typeof selectionForNode>, hoverSelection: ReturnType<typeof selectionForNode> | null) {
+  function drawLabels(ctx: CanvasRenderingContext2D, selection: ReturnType<typeof selectionForNode>, hoverSelection: ReturnType<typeof selectionForNode> | null, theme: NetGraphThemeTokens) {
     const scale = transformRef.current.k;
     const hasSearch = searchMatchesRef.current.size > 0;
     const hasFocus = Boolean(selectedRef.current || hoveredRef.current || selection.nodeIDs.size > 0 || hoverSelection);
@@ -601,9 +627,9 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       const x = (node.x ?? 0) + node.radius + 6;
       const y = node.y ?? 0;
       ctx.lineWidth = 3.5;
-      ctx.strokeStyle = 'rgba(7, 10, 18, 0.92)';
+      ctx.strokeStyle = theme.labelHalo;
       ctx.strokeText(node.label, x, y);
-      ctx.fillStyle = '#e5f7ff';
+      ctx.fillStyle = theme.labelText;
       ctx.fillText(node.label, x, y);
     }
     ctx.restore();
@@ -815,11 +841,74 @@ function resizeCanvas(canvas: HTMLCanvasElement): void {
   ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-function drawBackground(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+export function netGraphThemeFromElement(element: Element | null | undefined): NetGraphThemeTokens {
+  if (typeof window === 'undefined' || !element) return DEFAULT_NETGRAPH_THEME;
+  const style = window.getComputedStyle(element);
+  const shell = element.closest<HTMLElement>('.app-shell');
+  const mode = shell?.dataset.themeMode ?? document.documentElement.dataset.themeMode ?? 'dark';
+  return netGraphThemeFromStyle(style, mode === 'light' ? 'light' : 'dark');
+}
+
+export function netGraphThemeFromStyle(style: Pick<CSSStyleDeclaration, 'getPropertyValue'> | null | undefined, mode: 'light' | 'dark' = 'dark'): NetGraphThemeTokens {
+  const bgBase = cssToken(style, '--palette-bg-base', DEFAULT_NETGRAPH_THEME.backgroundOuter);
+  const bgSurface = cssToken(style, '--palette-bg-surface', DEFAULT_NETGRAPH_THEME.backgroundMid);
+  const bgRaised = cssToken(style, '--palette-bg-raised', DEFAULT_NETGRAPH_THEME.backgroundInner);
+  const primary = cssToken(style, '--palette-primary', DEFAULT_NETGRAPH_THEME.selectedEdge);
+  const secondary = cssToken(style, '--palette-secondary', '#a78bfa');
+  const textBright = cssToken(style, '--palette-readable-text', cssToken(style, '--palette-text-bright', DEFAULT_NETGRAPH_THEME.labelText));
+  const warn = cssToken(style, '--palette-warn', DEFAULT_NETGRAPH_THEME.observerStroke);
+  if (mode === 'light') {
+    return {
+      backgroundInner: 'rgba(248, 251, 255, 0.98)',
+      backgroundMid: 'rgba(236, 244, 252, 0.98)',
+      backgroundOuter: 'rgba(218, 230, 242, 1)',
+      selectedEdge: primary,
+      edgeFallback: secondary,
+      nodeStroke: 'rgba(15, 23, 42, 0.68)',
+      observerStroke: warn,
+      labelText: '#0f172a',
+      labelHalo: 'rgba(255, 255, 255, 0.9)',
+      cometHead: '#ffffff'
+    };
+  }
+  return {
+    backgroundInner: tintColor(bgRaised, 0.96),
+    backgroundMid: tintColor(bgSurface, 0.98),
+    backgroundOuter: tintColor(bgBase, 1),
+    selectedEdge: primary,
+    edgeFallback: secondary,
+    nodeStroke: 'rgba(255,255,255,0.72)',
+    observerStroke: warn,
+    labelText: textBright,
+    labelHalo: 'rgba(7, 10, 18, 0.92)',
+    cometHead: '#ffffff'
+  };
+}
+
+function cssToken(style: Pick<CSSStyleDeclaration, 'getPropertyValue'> | null | undefined, name: string, fallback: string): string {
+  const value = style?.getPropertyValue(name).trim();
+  return value || fallback;
+}
+
+function tintColor(color: string, alpha: number): string {
+  const trimmed = color.trim();
+  if (/^#[0-9a-f]{6}$/i.test(trimmed)) return hexToRgba(trimmed, alpha);
+  return trimmed;
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const normalized = hex.slice(1);
+  const red = Number.parseInt(normalized.slice(0, 2), 16);
+  const green = Number.parseInt(normalized.slice(2, 4), 16);
+  const blue = Number.parseInt(normalized.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
+function drawBackground(ctx: CanvasRenderingContext2D, width: number, height: number, theme: NetGraphThemeTokens): void {
   const gradient = ctx.createRadialGradient(width * 0.52, height * 0.46, 0, width * 0.52, height * 0.46, Math.max(width, height));
-  gradient.addColorStop(0, 'rgba(20, 32, 51, 0.96)');
-  gradient.addColorStop(0.56, 'rgba(12, 18, 28, 0.98)');
-  gradient.addColorStop(1, 'rgba(5, 9, 15, 1)');
+  gradient.addColorStop(0, theme.backgroundInner);
+  gradient.addColorStop(0.56, theme.backgroundMid);
+  gradient.addColorStop(1, theme.backgroundOuter);
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
 }
@@ -934,9 +1023,9 @@ function drawNodeGlyph(ctx: CanvasRenderingContext2D, node: SimNode, radius: num
   }
 }
 
-function edgeColor(edge: NetGraphEdge): string {
+function edgeColor(edge: NetGraphEdge, theme: NetGraphThemeTokens): string {
   const latestPayload = edge.payloadTypeNames[0] ?? '';
-  return latestPayload ? payloadVisual(latestPayload).color : '#1d4ed8';
+  return latestPayload ? payloadVisual(latestPayload).color : theme.edgeFallback;
 }
 
 function linkDistance(edge: SimLink): number {

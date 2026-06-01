@@ -15,26 +15,19 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.28';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.29';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.29 makes NetGraph palette-aware, including canvas background, selected pathways, labels, observer accents, and panel chrome.',
   '2.5.28 makes Perf a direct public-safe live status page for backend, API, MQTT, map motion, Packets, and Chat.',
-  'Live Follow now uses slower, lower-zoom camera moves and stricter movement spacing so it is watchable during busy traffic.',
-  'Top-bar build age parsing is stricter for release timestamps and no longer trusts invalid normalized dates.',
+  'Live Follow uses slower, lower-zoom camera moves and stricter movement spacing so it is watchable during busy traffic.',
   '2.5.27 makes active flat-map pathways thicker, clearer, and hue-shifted by recent packet frequency.',
   'Packet comet residue leaves short-lived sparkles so recent true packet movement is easier to spot.',
   '2.5.26 collapses repeated public Chat messages across the full 24h window, including symbol-only decoded texts.',
   '2.5.23 makes NetGraph calmer with locked pause, gentler topology settling, and less component spread.',
-  'OpenFreeMap 3D avoids forced full scene rebuilds after every map move or zoom end.',
-  '2.5.22 adds Chat history indexes so 24h public Chat windows stay responsive on large live databases.',
-  '2.5.21 caps public Chat pages at 400 rows so large 24h requests keep paging instead of timing out.',
-  '2.5.20 fixes visible Chat repeats by deduping same public messages across route and observer context without exposing packet hashes.',
-  'Top-bar live rates now include compact VU meters, count pills are tighter, and compact build timestamps show the correct build age.',
-  'Perf now reports live deployment health: backend/readiness, public API reachability, MQTT freshness, cache freshness, and routed traffic state.',
-  'Flat-map recent packet pathways are easier to see while idle routes stay hidden until detail zoom.',
-  'Live Follow camera moves are slower and less jumpy.'
+  'OpenFreeMap 3D avoids forced full scene rebuilds after every map move or zoom end.'
 ];
 
 const FEATURE_LIST = [
