@@ -192,7 +192,7 @@ func TestPublicChatEndpointRedactsSensitiveMessageSubstrings(t *testing.T) {
 	})
 
 	observerKey := "DD00000000000000000000000000000000000000000000000000000000000000"
-	fullKey := "AA12D58CC74C63E729DDA02F371B26E65B3F49CB4A8378D909FD1AF47ECABEAD"
+	fullKey := strings.Repeat("AA12", 16)
 	rawPath := "0a:1b:2c:3d:4e:5f:6a"
 	base := time.Now().Add(-time.Hour).UnixMilli()
 	insertChatObservation(t, ctx, st, "hash-chat-sensitive-private", "YYZ", observerKey, base+1_000, resolve.StatusNoPath, chatObservationOptions{
