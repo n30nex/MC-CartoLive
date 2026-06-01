@@ -202,41 +202,41 @@ func TestPublicChatEndpointDedupesRepeatedDecodedMessages(t *testing.T) {
 
 	observerKey := "EE00000000000000000000000000000000000000000000000000000000000000"
 	base := time.Now().Add(-time.Hour).Truncate(10 * time.Minute).UnixMilli()
-	firstObservation := insertChatObservation(t, ctx, st, "hash-chat-repeat-private", "YVR", observerKey, base+1_000, resolve.StatusHigh, chatObservationOptions{
+	firstObservation := insertChatObservation(t, ctx, st, "hash-chat-repeat-private", "YVR", observerKey, base+50_000, resolve.StatusHigh, chatObservationOptions{
 		MessageSender: "SpooferMan",
 		MessageText:   "NotSoSmart watch.",
 	})
-	insertHistoryEdgeWithOptions(t, ctx, st, firstObservation, "hash-chat-repeat-private", base+1_000, historyEdgeOptions{
+	insertHistoryEdgeWithOptions(t, ctx, st, firstObservation, "hash-chat-repeat-private", base+50_000, historyEdgeOptions{
 		PayloadTypeName: "GROUP_TEXT",
 		MessageSender:   "SpooferMan",
 		MessageText:     "NotSoSmart watch.",
 		Labels:          []string{"ka.RF.cli", "NWR"},
 	})
-	secondObservation := insertChatObservation(t, ctx, st, "hash-chat-repeat-private", "YYJ", observerKey, base+1_100, resolve.StatusHigh, chatObservationOptions{
+	secondObservation := insertChatObservation(t, ctx, st, "hash-chat-repeat-private", "YYJ", observerKey, base+70_000, resolve.StatusHigh, chatObservationOptions{
 		MessageSender: "SpooferMan",
 		MessageText:   "NotSoSmart watch.",
 	})
-	insertHistoryEdgeWithOptions(t, ctx, st, secondObservation, "hash-chat-repeat-private", base+1_100, historyEdgeOptions{
+	insertHistoryEdgeWithOptions(t, ctx, st, secondObservation, "hash-chat-repeat-private", base+70_000, historyEdgeOptions{
 		PayloadTypeName: "GROUP_TEXT",
 		MessageSender:   "SpooferMan",
 		MessageText:     "NotSoSmart watch.",
 		Labels:          []string{"Salish", "CyberiaOne"},
 	})
-	distinctObservation := insertChatObservation(t, ctx, st, "hash-chat-distinct-private", "YYJ", observerKey, base+1_200, resolve.StatusHigh, chatObservationOptions{
+	distinctObservation := insertChatObservation(t, ctx, st, "hash-chat-distinct-private", "YYJ", observerKey, base+70_500, resolve.StatusHigh, chatObservationOptions{
 		MessageSender: "SpooferMan",
 		MessageText:   "NotSoSmart watch.",
 	})
-	insertHistoryEdgeWithOptions(t, ctx, st, distinctObservation, "hash-chat-distinct-private", base+1_200, historyEdgeOptions{
+	insertHistoryEdgeWithOptions(t, ctx, st, distinctObservation, "hash-chat-distinct-private", base+70_500, historyEdgeOptions{
 		PayloadTypeName: "GROUP_TEXT",
 		MessageSender:   "SpooferMan",
 		MessageText:     "NotSoSmart watch.",
 		Labels:          []string{"Salish", "CyberiaOne"},
 	})
-	laterObservation := insertChatObservation(t, ctx, st, "hash-chat-later-private", "YYJ", observerKey, base+181_000, resolve.StatusHigh, chatObservationOptions{
+	laterObservation := insertChatObservation(t, ctx, st, "hash-chat-later-private", "YYJ", observerKey, base+240_000, resolve.StatusHigh, chatObservationOptions{
 		MessageSender: "SpooferMan",
 		MessageText:   "NotSoSmart watch.",
 	})
-	insertHistoryEdgeWithOptions(t, ctx, st, laterObservation, "hash-chat-later-private", base+181_000, historyEdgeOptions{
+	insertHistoryEdgeWithOptions(t, ctx, st, laterObservation, "hash-chat-later-private", base+240_000, historyEdgeOptions{
 		PayloadTypeName: "GROUP_TEXT",
 		MessageSender:   "SpooferMan",
 		MessageText:     "NotSoSmart watch.",
@@ -245,7 +245,7 @@ func TestPublicChatEndpointDedupesRepeatedDecodedMessages(t *testing.T) {
 
 	server := publicHistoryTestServer(st, func(string) bool { return true })
 	response := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/public/chat?from="+ms(base)+"&to="+ms(base+240_000)+"&limit=10", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/public/chat?from="+ms(base)+"&to="+ms(base+300_000)+"&limit=10", nil)
 	server.Routes().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("chat status = %d body=%s", response.Code, response.Body.String())

@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.18` display-window Chat dedupe, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.19` sliding-window Chat dedupe, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,18 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.19 - Sliding-Window Chat Dedupe
+
+Goal: close the remaining Chat duplicate edge case at display bucket
+boundaries.
+
+Scope:
+
+- Replace fixed time-bucket display dedupe with a sliding sender/text/channel
+  window.
+- Verify against live six-hour Chat data after deploy.
+- Keep public response shape and privacy boundaries unchanged.
 
 ## 2.5.18 - Display-Window Chat Dedupe
 

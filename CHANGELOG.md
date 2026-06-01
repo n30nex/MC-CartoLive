@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 2.5.19 - 2026-06-01
+
+- Fixed the residual Chat duplicate case at two-minute bucket boundaries by
+  replacing bucketed display dedupe with a sliding sender/text/channel window.
+- Verified against live six-hour Chat data that repeated observer reports no
+  longer produce visible duplicate rows in the same display window.
+
 ## 2.5.18 - 2026-06-01
 
 - Fixed remaining visible Chat duplicates by collapsing repeated

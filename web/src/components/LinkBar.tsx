@@ -14,11 +14,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.18';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.19';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.19 fixes the remaining Chat duplicate edge case at time-bucket boundaries with a sliding sender/text/channel dedupe window.',
   '2.5.18 collapses repeated decoded Chat rows by sender, text, and channel in a short display window so multi-observer reports do not flood the Chat page.',
   '2.5.17 dedupes Chat by internal packet identity so repeated routed observations do not repeat the same decoded message, while keeping distinct packet retransmits visible.',
   'Docker Compose runtime metadata now prefers GIT_SHA and BUILD_TIME so health/readiness reports match the deployed commit.',

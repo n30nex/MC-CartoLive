@@ -687,6 +687,7 @@ func (s *Server) publicChat(w http.ResponseWriter, r *http.Request) {
 
 	messages := make([]live.PublicChatMessage, 0, limit)
 	seenMessages := map[string]struct{}{}
+	seenDisplayMessages := map[string]int64{}
 	nextCursor := cursor
 	scannedRaw := 0
 	exhausted := false
@@ -733,11 +734,18 @@ func (s *Server) publicChat(w http.ResponseWriter, r *http.Request) {
 			if !publicChatMatchesFilters(message, filters) {
 				continue
 			}
-			messageKey := publicChatDedupeKey(rawEvent, message)
-			if _, seen := seenMessages[messageKey]; seen {
-				continue
+			if displayKey := publicChatDisplayDedupeKey(message); displayKey != "" {
+				if previousAt, seen := seenDisplayMessages[displayKey]; seen && publicChatWithinDedupeWindow(previousAt, message.At) {
+					continue
+				}
+				seenDisplayMessages[displayKey] = message.At
+			} else {
+				messageKey := publicChatDedupeKey(rawEvent, message)
+				if _, seen := seenMessages[messageKey]; seen {
+					continue
+				}
+				seenMessages[messageKey] = struct{}{}
 			}
-			seenMessages[messageKey] = struct{}{}
 			messages = append(messages, message)
 			if len(messages) >= limit {
 				break
@@ -1087,9 +1095,6 @@ func publicChatSearchFields(message live.PublicChatMessage) []string {
 }
 
 func publicChatDedupeKey(raw store.HistoryEvent, message live.PublicChatMessage) string {
-	if displayKey := publicChatDisplayDedupeKey(message); displayKey != "" {
-		return "display:" + displayKey
-	}
 	if raw.Edge != nil && strings.TrimSpace(raw.Edge.PacketHash) != "" {
 		return "packet:" + strings.TrimSpace(raw.Edge.PacketHash)
 	}
@@ -1100,7 +1105,6 @@ func publicChatDedupeKey(raw store.HistoryEvent, message live.PublicChatMessage)
 }
 
 func publicChatDisplayDedupeKey(message live.PublicChatMessage) string {
-	bucket := (message.At + publicChatDedupeWindowMs/2) / publicChatDedupeWindowMs
 	sender := strings.ToLower(strings.Join(strings.Fields(message.Sender), " "))
 	text := strings.ToLower(strings.Join(strings.Fields(message.Text), " "))
 	channel := strings.ToLower(strings.TrimSpace(message.ChannelLabel))
@@ -1108,7 +1112,15 @@ func publicChatDisplayDedupeKey(message live.PublicChatMessage) string {
 	if sender == "" || text == "" {
 		return ""
 	}
-	return strconv.FormatInt(bucket, 10) + "|" + sender + "|" + text + "|" + channel + "|" + payload
+	return sender + "|" + text + "|" + channel + "|" + payload
+}
+
+func publicChatWithinDedupeWindow(a, b int64) bool {
+	delta := a - b
+	if delta < 0 {
+		delta = -delta
+	}
+	return delta <= publicChatDedupeWindowMs
 }
 
 func (s *Server) publicLocationIndexes(ctx context.Context) (live.PublicObserverLocationIndex, map[string]string, error) {
