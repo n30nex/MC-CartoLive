@@ -5,15 +5,15 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.23` is the active foundation patch toward the next production-ready
+Version `2.5.24` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
 - Current patch focus: NetGraph stability, OpenFreeMap 3D production polish,
-  backend scale, Packets/VCR data-path stability, light-mode route contrast, and
-  mobile/browser regression coverage.
+  backend scale, Packets/VCR data-path stability, light-mode route contrast,
+  mobile/browser regression coverage, and visible Chat duplicate suppression.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -196,6 +196,14 @@ Version `2.5.23` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.24 Patch Focus
+
+- Close the live Public Chat duplicate loophole where the same sender/text can
+  be repeated through different route context, payload labels, or hidden
+  formatting characters.
+- Keep the 2.5.23 NetGraph and OpenFreeMap 3D stability work intact while the
+  2.6.0 roadmap continues.
 
 ## 2.5.23 Patch Focus
 

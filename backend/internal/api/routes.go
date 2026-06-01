@@ -1105,14 +1105,32 @@ func publicChatDedupeKey(raw store.HistoryEvent, message live.PublicChatMessage)
 }
 
 func publicChatDisplayDedupeKey(message live.PublicChatMessage) string {
-	sender := strings.ToLower(strings.Join(strings.Fields(message.Sender), " "))
-	text := strings.ToLower(strings.Join(strings.Fields(message.Text), " "))
-	channel := strings.ToLower(strings.TrimSpace(message.ChannelLabel))
-	payload := strings.ToLower(strings.TrimSpace(message.PayloadTypeName))
+	sender := publicChatDisplayDedupeToken(message.Sender)
+	text := publicChatDisplayDedupeToken(message.Text)
 	if sender == "" || text == "" {
 		return ""
 	}
-	return sender + "|" + text + "|" + channel + "|" + payload
+	return sender + "|" + text
+}
+
+func publicChatDisplayDedupeToken(value string) string {
+	value = strings.Map(func(r rune) rune {
+		switch {
+		case r < 0x20 || (r >= 0x7f && r <= 0x9f):
+			return -1
+		case r >= 0x200b && r <= 0x200f:
+			return -1
+		case r >= 0x202a && r <= 0x202e:
+			return -1
+		case r >= 0x2060 && r <= 0x206f:
+			return -1
+		case r == 0xfeff:
+			return -1
+		default:
+			return r
+		}
+	}, value)
+	return strings.ToLower(strings.Join(strings.Fields(value), " "))
 }
 
 func publicChatWithinDedupeWindow(a, b int64) bool {

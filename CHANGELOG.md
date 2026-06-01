@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 2.5.24 - 2026-06-01
+
+- Tightened public Chat duplicate suppression so repeated decoded messages from
+  the same sender/text collapse even when route context, region, payload label,
+  or hidden formatting characters differ.
+- Added backend and frontend regression coverage for route-context Chat repeats
+  matching the live duplicate rows reported after 2.5.23.
+
 ## 2.5.23 - 2026-06-01
 
 - Made NetGraph layout updates calmer: paused layout is now a true lock, small

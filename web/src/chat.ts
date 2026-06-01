@@ -24,6 +24,7 @@ const HEX_TOKEN_RE = /\b(?:0x)?[a-f0-9]{16,}\b/gi;
 const BASE64_TOKEN_RE = /\b[A-Za-z0-9+/]{40,}={0,2}\b/g;
 const PATH_HEX_RE = /\b(?:[a-f0-9]{2}[:\-\s]){5,}[a-f0-9]{2}\b/gi;
 const SECRET_PAIR_RE = /\b(?:broker|resolver|debug|secret|token|key|hash|payload|path)[\w.-]*\s*[:=]\s*\S+/gi;
+const CONTROL_TOKEN_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g;
 
 export function chatWindowForScope(now: number, scopeMs: number): { from: number; to: number } {
   const to = Math.max(0, Math.round(now));
@@ -113,10 +114,8 @@ export function chatChannelOptions(messages: PublicChatMessage[]): string[] {
 export function chatDisplayDedupeKey(message: PublicChatMessage): string {
   const sender = normalizeDisplayToken(message.sender);
   const text = normalizeDisplayToken(message.text);
-  const channel = normalizeDisplayToken(message.channelLabel);
-  const payload = normalizeDisplayToken(message.payloadTypeName);
   if (!sender || !text) return '';
-  return `${sender}|${text}|${channel}|${payload}`;
+  return `${sender}|${text}`;
 }
 
 function chatWithinDedupeWindow(a: number, b: number): boolean {
@@ -124,5 +123,10 @@ function chatWithinDedupeWindow(a: number, b: number): boolean {
 }
 
 function normalizeDisplayToken(value: string | undefined): string {
-  return safeChatText(value, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return safeChatText(value, '')
+    .normalize('NFKC')
+    .replace(CONTROL_TOKEN_RE, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
 }
