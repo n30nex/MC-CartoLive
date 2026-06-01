@@ -1,8 +1,8 @@
 # MC-CartoLive 2.5.2 to 2.6.0 Roadmap
 
-Last audited: 2026-05-31
+Last audited: 2026-06-01
 
-Baseline audited: `v2.5.11` work in progress on `main`
+Baseline audited: `v2.5.12` backend scale work in progress on `main`
 
 ## Audit Coverage
 
@@ -31,6 +31,54 @@ That means:
 - Worldwide/private broker support by configuration, not Canada-only assumptions.
 - Smooth map, Packets, VCR, NetGraph, and OpenFreeMap 3D behavior on modest clients and the 1 GB VPS production shape.
 - Operator diagnostics that explain missing data without exposing private packet material.
+
+## What Is Still Left For 2.6.0
+
+The remaining work is less about adding new surfaces and more about making the
+current surfaces dependable enough for public operators:
+
+- **Backend scale:** remove hot-path full-table work, expose cache truncation and
+  packet-search pressure, document SQLite operations, and keep slow reads
+  bounded.
+- **Packets/VCR data plane:** move from bounded conversion scans toward a
+  public-safe indexed packet-path projection so 24h search and scrub replay stay
+  fast as databases grow.
+- **Mobile/browser regression gate:** add repeatable desktop and 390px smoke
+  coverage for map controls, Packets, VCR, palette, settings, and OpenFreeMap
+  3D.
+- **NetGraph as a core feature:** finish edge overlap reduction,
+  selected-neighborhood focus, mobile interaction, and optional layout locking
+  so the graph feels inspectable instead of animated for its own sake.
+- **OpenFreeMap 3D efficiency:** add more object pooling/instancing, route arc
+  bundling, basemap fallback docs, and a cinematic selected-packet chase camera.
+  3D packet chase quality is a 2.6 release blocker.
+- **Chat history:** add a public-safe Chat page beside NetGraph with
+  region/IATA and channel filters for sanitized decoded public text.
+- **Worldwide operator flow:** make browser first-run setup, config validation,
+  and region-first diagnostics the normal path for non-Canada/private broker
+  installs.
+- **Release gate:** run packaged GHCR smoke, hosted Canada live smoke, worldwide
+  fixture smoke, privacy regression, and major-release desktop/mobile screenshot
+  artifacts before tagging 2.6.0. A long soak is not required for 2.6.0.
+
+## 2.6 Scope Decisions
+
+These decisions were confirmed on 2026-06-01 and should guide the rest of the
+2.6 work:
+
+- Hosted Canada and packaged worldwide/private-broker users are equal
+  priorities. Tradeoffs should preserve both whenever practical.
+- Indexed packet-path projection is preferred, but not a 2.6 blocker if bounded
+  Packets search remains honest about partial scans and end-of-window states.
+- NetGraph is a core 2.6 feature, not a side experiment.
+- Cinematic OpenFreeMap 3D selected-packet chase/replay is a release blocker.
+- First-run browser setup should be added for easy package installs.
+- Add a Chat page beside NetGraph with region/IATA and channel-filterable
+  sanitized public chat history.
+- No soak test is required for 2.6.0.
+- Saved screenshot artifacts are required for major releases like 2.6.0, not
+  every patch release.
+- The final 2.6 feature slot is NetGraph improvements plus the Chat page.
 
 ## Confirmed Findings
 
@@ -424,6 +472,11 @@ corner, and draws node glyphs with the shared map/Legend role visual registry.
 
 Goal: reduce pressure on SQLite and improve operator confidence for long-running public hosts.
 
+Status: started. The current pass removes full `Store.Stats()` calls from the
+public cache refresh hot path, records packet count refresh latency/failures,
+tracks public packet search scan pressure, and exposes public cache truncation
+counts in health/readiness.
+
 ### Runtime Counters
 
 - Replace repeated full count queries with cached or incremental counters where safe.
@@ -450,6 +503,7 @@ Goal: make packaged installs feel first-class outside Canada.
 
 ### Configuration
 
+- Add a browser first-run setup page for easy package installs.
 - Add a first-run config validator or `mc-diagnose doctor`.
 - Validate:
   - region preset
@@ -478,7 +532,8 @@ Goal: make packaged installs feel first-class outside Canada.
 
 ### Acceptance
 
-- New operators can diagnose why a map is empty without reading code.
+- New operators can configure and diagnose why a map is empty without reading
+  code.
 - Private broker users do not need 3-letter uppercase topic regions.
 - No global IATA list is required for correctness.
 
@@ -511,6 +566,34 @@ Goal: make releases repeatable and trustworthy.
 - A release can be built, smoked, tagged, published, and live-smoked from documented commands.
 - Public responses continue to reject raw packet hashes, raw path hex, full keys, resolver fields, broker secrets, private payloads, and local operator config.
 
+## 2.5.15 - Chat And NetGraph Final Feature Slot
+
+Goal: finish the last user-facing 2.6 feature work without expanding public
+privacy boundaries.
+
+### Public-Safe Chat Page
+
+- Add a top-bar `Chat` page beside NetGraph.
+- Show sanitized decoded public text history only.
+- Filter by region/IATA, channel label, sender/observer label, and time window.
+- Link chat messages back to public map anchors when available.
+- Do not expose raw payloads, raw packet hashes, full public keys, channel
+  secrets, broker metadata, or resolver debug data.
+
+### NetGraph Core Polish
+
+- Reduce overlapping route edges with bundling or deterministic curved
+  separation.
+- Add selected-neighborhood focus and a clear way back to the full graph.
+- Add layout lock/recenter behavior so live updates do not reset user context.
+- Keep mobile pan, pinch zoom, node select, and route select reliable.
+
+### Acceptance
+
+- Chat can browse/filter recent public decoded text without private data.
+- NetGraph is stable and useful enough to be listed as a core 2.6 feature.
+- Desktop and 390px mobile browser checks cover Chat and NetGraph.
+
 ## 2.6.0 - World-Ready Live Network Operations Release
 
 Goal: ship a larger stable release that feels complete for public hosts and packaged worldwide installs.
@@ -518,9 +601,10 @@ Goal: ship a larger stable release that feels complete for public hosts and pack
 ### Major Deliverables
 
 - Production-grade Packets Explorer with true 24h indexed search, stable pagination, replay tray, and public-safe route details.
-- NetGraph 2 with stable layout, packed components, understandable edges, and live graph pulses.
-- OpenFreeMap 3D production polish with bounded renderer cost, strong selected packet replay, and documented basemap fallbacks.
-- World-ready operator experience with config validation, branded instances, region-first diagnostics, and examples for non-Canada brokers.
+- NetGraph 2 with stable layout, packed components, understandable edges, live graph pulses, and reliable mobile interaction.
+- OpenFreeMap 3D production polish with bounded renderer cost, cinematic selected-packet chase/replay, and documented basemap fallbacks.
+- Public-safe Chat page with region/IATA and channel-filterable decoded public message history.
+- World-ready operator experience with browser first-run setup, config validation, branded instances, region-first diagnostics, and examples for non-Canada brokers.
 - Mobile and desktop browser regression gates.
 - Stronger SQLite operations: backup, restore, checkpoint, retention, DB stats, and query budget docs.
 - Release automation that keeps version metadata, Docker smoke, docs, and top-bar copy in sync.
@@ -536,7 +620,7 @@ Goal: ship a larger stable release that feels complete for public hosts and pack
 - Worldwide fixture smoke with non-Canada coordinates and non-IATA region labels.
 - Desktop browser smoke at 1920x1080.
 - Mobile browser smoke at 390px vertical.
-- 24h hosted Canada soak with packet ingest normally under 5 seconds stale and no unexplained stuck public state.
+- Major-release screenshot artifacts for desktop and 390px mobile.
 - Privacy regression across all public JSON and WebSocket payloads.
 - README, changelog, production docs, operator runbook, package docs, screenshots, and roadmap updated.
 

@@ -96,12 +96,24 @@ type PublicStateCache struct {
 	ready     bool
 	updatedAt time.Time
 	anomalies map[string]int64
+	truncated PublicCacheTruncation
 }
 
 type PublicCacheStatus struct {
-	Ready      bool  `json:"ready"`
-	UpdatedAt  int64 `json:"updatedAt"`
-	CacheAgeMs int64 `json:"cacheAgeMs"`
+	Ready                   bool  `json:"ready"`
+	UpdatedAt               int64 `json:"updatedAt"`
+	CacheAgeMs              int64 `json:"cacheAgeMs"`
+	TruncatedNodes          int64 `json:"truncatedNodes"`
+	TruncatedRoutes         int64 `json:"truncatedRoutes"`
+	TruncatedRecentPulses   int64 `json:"truncatedRecentPulses"`
+	TruncatedRecentActivity int64 `json:"truncatedRecentActivity"`
+}
+
+type PublicCacheTruncation struct {
+	Nodes          int64
+	Routes         int64
+	RecentPulses   int64
+	RecentActivity int64
 }
 
 func NewPublicStateCache(filter PublicIATAFilter) *PublicStateCache {
@@ -153,6 +165,12 @@ func (c *PublicStateCache) Replace(state PublicLiveState, excluded map[string]in
 	if c == nil {
 		return
 	}
+	truncated := PublicCacheTruncation{
+		Nodes:          truncatedCount(len(state.Nodes), publicCacheMaxNodes),
+		Routes:         truncatedCount(len(state.Routes), publicCacheMaxRoutes),
+		RecentPulses:   truncatedCount(len(state.RecentPulses), publicCacheMaxPulses),
+		RecentActivity: truncatedCount(len(state.RecentActivity), publicCacheMaxActivity),
+	}
 	state.Nodes = limitPublicNodes(state.Nodes)
 	state.Routes = limitPublicRoutes(state.Routes)
 	state.RecentPulses = limitPublicPulses(state.RecentPulses)
@@ -163,6 +181,7 @@ func (c *PublicStateCache) Replace(state PublicLiveState, excluded map[string]in
 	c.state = copyPublicState(state)
 	c.ready = true
 	c.updatedAt = time.Now()
+	c.truncated = truncated
 	c.mu.Unlock()
 }
 
@@ -195,9 +214,13 @@ func (c *PublicStateCache) Status(now time.Time) PublicCacheStatus {
 		age = 0
 	}
 	return PublicCacheStatus{
-		Ready:      true,
-		UpdatedAt:  c.updatedAt.UnixMilli(),
-		CacheAgeMs: age,
+		Ready:                   true,
+		UpdatedAt:               c.updatedAt.UnixMilli(),
+		CacheAgeMs:              age,
+		TruncatedNodes:          c.truncated.Nodes,
+		TruncatedRoutes:         c.truncated.Routes,
+		TruncatedRecentPulses:   c.truncated.RecentPulses,
+		TruncatedRecentActivity: c.truncated.RecentActivity,
 	}
 }
 
@@ -360,4 +383,11 @@ func limitPublicActivity(items []PublicActivity) []PublicActivity {
 		items = items[:publicCacheMaxActivity]
 	}
 	return append([]PublicActivity{}, items...)
+}
+
+func truncatedCount(length int, limit int) int64 {
+	if length <= limit {
+		return 0
+	}
+	return int64(length - limit)
 }

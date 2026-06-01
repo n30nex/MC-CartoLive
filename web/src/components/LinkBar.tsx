@@ -14,31 +14,18 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.11';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.12';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
-  'NetGraph now packs connected components closer together, supports mobile pinch zoom, and keeps the live pulse chip pinned to a real corner.',
-  'NetGraph node colors and glyph shapes now come from the same role visual registry as the map and Legend.',
-  'NetGraph live pulse animation now indexes rendered edges instead of scanning every route each frame.',
-  'OpenFreeMap 3D now selects visible/focused/fresh node and route candidates before rebuilding the Three.js scene, reducing churn in dense live views.',
-  'Recent observer-only public text activity now hydrates into speech bubbles after reloads or polling fallback when a public observer location is available.',
-  'Speech bubbles now key off sanitized public message text with a public map anchor instead of fragile payload-label matching.',
-  'Public group text now prefers verified packet-payload decrypts before broker decoded JSON, keeping new map speech bubbles cleaner.',
-  'Packets now explains the select-to-focus and replay-to-pause-live flow, with visible server-history scan status and scanned event counts.',
-  'Top status pills now use compact two-line metrics, shorter logical labels, and theme-aware surfaces for crowded desktop widths.',
-  'The full guide now uses color-coded visual cards with larger icons and route/pulse motifs instead of plain text-only sections.',
-  'Packets and VCR history requests now reuse a longer public location/hash cache and serialize cold-cache rebuilds to reduce transient 500s under live traffic.',
-  'Map device icons now share one role registry with the Legend, including Sensor and Other entries, so the map and guide stay aligned.',
-  'VCR timeline bars now sit above a subtle baseline with a separate playhead, making scrub density easier to read without the live rail obscuring activity.',
-  'Live Follow now throttles camera moves and uses slower, calmer map motion so it can be left on during normal traffic.',
-  'Added a subtle activity heatmap layer with sparkle highlights, exposed through Map Settings.',
-  'Light-mode route and selected-path colors now use darker semantic variants for better contrast.',
-  'Top status pills use shorter labels and tighter sizing so the live bar is easier to scan.',
-  'Release metadata and CI smoke now derive from VERSION so packaged images, health checks, and docs do not drift.',
-  'Packaged deployments can set their own top-bar brand name, link, and logo; hosted Canada can keep MeshCore Canada branding through env config.',
-  'Packets requests are generation-safe and abort stale filter searches instead of letting older responses replace newer results.'
+  '2.5.12 reduces backend pressure by removing full SQLite stats counts from public cache refresh and exposing cache/packet-search health in readiness.',
+  'NetGraph is steadier: closer packed components, mobile pinch zoom, role-matched node glyphs, pinned live pulse status, and faster pulse matching.',
+  'OpenFreeMap 3D is lighter in dense views by prioritizing visible, focused, fresh, and selected nodes/routes before rebuilding the Three.js scene.',
+  'Public text bubbles are back for sanitized decoded group messages, including reload/polling fallback when a sender or observer anchor is public-safe.',
+  'Packets is clearer and safer: select focuses a path, Replay pauses live, scan status explains rare filters, and stale requests cannot replace newer searches.',
+  'Live map polish: calmer Live Follow, compact status pills, aligned map/Legend role icons, readable VCR timeline bars, activity heatmap, and stronger light-mode route contrast.',
+  'Operator polish: version-safe CI/package smoke, configurable instance branding, and world/private broker configuration without changing public privacy boundaries.'
 ];
 
 const FEATURE_LIST = [

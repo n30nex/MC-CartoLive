@@ -6,39 +6,49 @@ import (
 )
 
 type RuntimeStats struct {
-	publicStateRequests        atomic.Int64
-	publicStateErrors          atomic.Int64
-	publicStateLastLatencyMs   atomic.Int64
-	publicHistoryRequests      atomic.Int64
-	publicHistoryErrors        atomic.Int64
-	publicHistoryLastLatencyMs atomic.Int64
-	publicSummaryRequests      atomic.Int64
-	publicSummaryErrors        atomic.Int64
-	publicSummaryLastLatencyMs atomic.Int64
-	publicPacketsRequests      atomic.Int64
-	publicPacketsErrors        atomic.Int64
-	publicPacketsLastLatencyMs atomic.Int64
-	cacheRefreshFailures       atomic.Int64
-	cacheRefreshLastLatencyMs  atomic.Int64
-	cacheRefreshLastAtMs       atomic.Int64
+	publicStateRequests             atomic.Int64
+	publicStateErrors               atomic.Int64
+	publicStateLastLatencyMs        atomic.Int64
+	publicHistoryRequests           atomic.Int64
+	publicHistoryErrors             atomic.Int64
+	publicHistoryLastLatencyMs      atomic.Int64
+	publicSummaryRequests           atomic.Int64
+	publicSummaryErrors             atomic.Int64
+	publicSummaryLastLatencyMs      atomic.Int64
+	publicPacketsRequests           atomic.Int64
+	publicPacketsErrors             atomic.Int64
+	publicPacketsLastLatencyMs      atomic.Int64
+	publicPacketsLastScan           atomic.Int64
+	publicPacketsScanCapped         atomic.Int64
+	cacheRefreshFailures            atomic.Int64
+	cacheRefreshLastLatencyMs       atomic.Int64
+	cacheRefreshLastAtMs            atomic.Int64
+	packetCountRefreshFailures      atomic.Int64
+	packetCountRefreshLastLatencyMs atomic.Int64
+	packetCountRefreshLastAtMs      atomic.Int64
 }
 
 type RuntimeStatsSnapshot struct {
-	PublicStateRequests        int64 `json:"publicStateRequests"`
-	PublicStateErrors          int64 `json:"publicStateErrors"`
-	PublicStateLastLatencyMs   int64 `json:"publicStateLastLatencyMs"`
-	PublicHistoryRequests      int64 `json:"publicHistoryRequests"`
-	PublicHistoryErrors        int64 `json:"publicHistoryErrors"`
-	PublicHistoryLastLatencyMs int64 `json:"publicHistoryLastLatencyMs"`
-	PublicSummaryRequests      int64 `json:"publicSummaryRequests"`
-	PublicSummaryErrors        int64 `json:"publicSummaryErrors"`
-	PublicSummaryLastLatencyMs int64 `json:"publicSummaryLastLatencyMs"`
-	PublicPacketsRequests      int64 `json:"publicPacketsRequests"`
-	PublicPacketsErrors        int64 `json:"publicPacketsErrors"`
-	PublicPacketsLastLatencyMs int64 `json:"publicPacketsLastLatencyMs"`
-	CacheRefreshFailures       int64 `json:"cacheRefreshFailures"`
-	CacheRefreshLastLatencyMs  int64 `json:"cacheRefreshLastLatencyMs"`
-	CacheRefreshLastAtMs       int64 `json:"cacheRefreshLastAtMs"`
+	PublicStateRequests             int64 `json:"publicStateRequests"`
+	PublicStateErrors               int64 `json:"publicStateErrors"`
+	PublicStateLastLatencyMs        int64 `json:"publicStateLastLatencyMs"`
+	PublicHistoryRequests           int64 `json:"publicHistoryRequests"`
+	PublicHistoryErrors             int64 `json:"publicHistoryErrors"`
+	PublicHistoryLastLatencyMs      int64 `json:"publicHistoryLastLatencyMs"`
+	PublicSummaryRequests           int64 `json:"publicSummaryRequests"`
+	PublicSummaryErrors             int64 `json:"publicSummaryErrors"`
+	PublicSummaryLastLatencyMs      int64 `json:"publicSummaryLastLatencyMs"`
+	PublicPacketsRequests           int64 `json:"publicPacketsRequests"`
+	PublicPacketsErrors             int64 `json:"publicPacketsErrors"`
+	PublicPacketsLastLatencyMs      int64 `json:"publicPacketsLastLatencyMs"`
+	PublicPacketsLastScan           int64 `json:"publicPacketsLastScan"`
+	PublicPacketsScanCapped         int64 `json:"publicPacketsScanCapped"`
+	CacheRefreshFailures            int64 `json:"cacheRefreshFailures"`
+	CacheRefreshLastLatencyMs       int64 `json:"cacheRefreshLastLatencyMs"`
+	CacheRefreshLastAtMs            int64 `json:"cacheRefreshLastAtMs"`
+	PacketCountRefreshFailures      int64 `json:"packetCountRefreshFailures"`
+	PacketCountRefreshLastLatencyMs int64 `json:"packetCountRefreshLastLatencyMs"`
+	PacketCountRefreshLastAtMs      int64 `json:"packetCountRefreshLastAtMs"`
 }
 
 func NewRuntimeStats() *RuntimeStats {
@@ -89,6 +99,19 @@ func (s *RuntimeStats) RecordPublicPackets(duration time.Duration, failed bool) 
 	s.publicPacketsLastLatencyMs.Store(duration.Milliseconds())
 }
 
+func (s *RuntimeStats) RecordPublicPacketsScan(eventsScanned int, capped bool) {
+	if s == nil {
+		return
+	}
+	if eventsScanned < 0 {
+		eventsScanned = 0
+	}
+	s.publicPacketsLastScan.Store(int64(eventsScanned))
+	if capped {
+		s.publicPacketsScanCapped.Add(1)
+	}
+}
+
 func (s *RuntimeStats) RecordCacheRefresh(duration time.Duration, failed bool) {
 	if s == nil {
 		return
@@ -100,25 +123,41 @@ func (s *RuntimeStats) RecordCacheRefresh(duration time.Duration, failed bool) {
 	s.cacheRefreshLastAtMs.Store(time.Now().UnixMilli())
 }
 
+func (s *RuntimeStats) RecordPacketCountRefresh(duration time.Duration, failed bool) {
+	if s == nil {
+		return
+	}
+	if failed {
+		s.packetCountRefreshFailures.Add(1)
+	}
+	s.packetCountRefreshLastLatencyMs.Store(duration.Milliseconds())
+	s.packetCountRefreshLastAtMs.Store(time.Now().UnixMilli())
+}
+
 func (s *RuntimeStats) Snapshot() RuntimeStatsSnapshot {
 	if s == nil {
 		return RuntimeStatsSnapshot{}
 	}
 	return RuntimeStatsSnapshot{
-		PublicStateRequests:        s.publicStateRequests.Load(),
-		PublicStateErrors:          s.publicStateErrors.Load(),
-		PublicStateLastLatencyMs:   s.publicStateLastLatencyMs.Load(),
-		PublicHistoryRequests:      s.publicHistoryRequests.Load(),
-		PublicHistoryErrors:        s.publicHistoryErrors.Load(),
-		PublicHistoryLastLatencyMs: s.publicHistoryLastLatencyMs.Load(),
-		PublicSummaryRequests:      s.publicSummaryRequests.Load(),
-		PublicSummaryErrors:        s.publicSummaryErrors.Load(),
-		PublicSummaryLastLatencyMs: s.publicSummaryLastLatencyMs.Load(),
-		PublicPacketsRequests:      s.publicPacketsRequests.Load(),
-		PublicPacketsErrors:        s.publicPacketsErrors.Load(),
-		PublicPacketsLastLatencyMs: s.publicPacketsLastLatencyMs.Load(),
-		CacheRefreshFailures:       s.cacheRefreshFailures.Load(),
-		CacheRefreshLastLatencyMs:  s.cacheRefreshLastLatencyMs.Load(),
-		CacheRefreshLastAtMs:       s.cacheRefreshLastAtMs.Load(),
+		PublicStateRequests:             s.publicStateRequests.Load(),
+		PublicStateErrors:               s.publicStateErrors.Load(),
+		PublicStateLastLatencyMs:        s.publicStateLastLatencyMs.Load(),
+		PublicHistoryRequests:           s.publicHistoryRequests.Load(),
+		PublicHistoryErrors:             s.publicHistoryErrors.Load(),
+		PublicHistoryLastLatencyMs:      s.publicHistoryLastLatencyMs.Load(),
+		PublicSummaryRequests:           s.publicSummaryRequests.Load(),
+		PublicSummaryErrors:             s.publicSummaryErrors.Load(),
+		PublicSummaryLastLatencyMs:      s.publicSummaryLastLatencyMs.Load(),
+		PublicPacketsRequests:           s.publicPacketsRequests.Load(),
+		PublicPacketsErrors:             s.publicPacketsErrors.Load(),
+		PublicPacketsLastLatencyMs:      s.publicPacketsLastLatencyMs.Load(),
+		PublicPacketsLastScan:           s.publicPacketsLastScan.Load(),
+		PublicPacketsScanCapped:         s.publicPacketsScanCapped.Load(),
+		CacheRefreshFailures:            s.cacheRefreshFailures.Load(),
+		CacheRefreshLastLatencyMs:       s.cacheRefreshLastLatencyMs.Load(),
+		CacheRefreshLastAtMs:            s.cacheRefreshLastAtMs.Load(),
+		PacketCountRefreshFailures:      s.packetCountRefreshFailures.Load(),
+		PacketCountRefreshLastLatencyMs: s.packetCountRefreshLastLatencyMs.Load(),
+		PacketCountRefreshLastAtMs:      s.packetCountRefreshLastAtMs.Load(),
 	}
 }

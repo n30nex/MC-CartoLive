@@ -5,15 +5,15 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.11` is the active foundation patch toward the next production-ready
+Version `2.5.12` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
 - Current patch focus: NetGraph stability, OpenFreeMap 3D production polish,
-  Packets/VCR data-path stability, light-mode route contrast, and mobile/browser
-  regression coverage.
+  backend scale, Packets/VCR data-path stability, light-mode route contrast, and
+  mobile/browser regression coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -26,14 +26,17 @@ Version `2.5.11` is the active foundation patch toward the next production-ready
   packet paths observable through public-safe health/readiness counters.
 - Keep the Packets page server-backed, cursor-stable, and bounded under rare
   filters or large 24h windows.
-- Keep NetGraph frontend-only, smooth, and privacy-safe while it renders live
-  connected public routes from existing state and WebSocket events.
+- Keep NetGraph frontend-only, smooth, privacy-safe, and core to the 2.6 user
+  experience while it renders live connected public routes from existing state
+  and WebSocket events.
+- Add a public-safe Chat page for sanitized decoded text history with
+  region/IATA and channel filters.
 - Keep OpenFreeMap 3D frontend-only, smooth, and optional: the true 3D layer is
   a visual overlay over the existing 2D map sources, not a new public data API.
 - Keep map rendering smooth on modest clients by avoiding unnecessary source
   rebuilds, duplicate replay schedulers, and hidden-tab animation work.
-- Keep production deployment repeatable through release, smoke, soak, and
-  operator diagnostic scripts.
+- Keep production deployment repeatable through release, smoke, major-release
+  screenshot artifacts, and operator diagnostic scripts.
 - Keep docs concise enough that new operators can deploy, smoke test, diagnose,
   back up, restore, and upgrade without reading historical planning notes.
 
@@ -138,6 +141,16 @@ Version `2.5.11` is the active foundation patch toward the next production-ready
 - Index rendered graph edges so live pulse/comet drawing does not scan every
   route every animation frame.
 - Keep NetGraph frontend-only with no public API or privacy-boundary changes.
+
+## 2.5.12 Patch Focus
+
+- Remove full SQLite stats counts from the public cache refresh hot path.
+- Expose public-safe cache truncation, packet search scan pressure, and packet
+  count refresh health in `/healthz` and `/readyz`.
+- Document and test SQLite backup, checkpoint, query-budget, and slow-read
+  behavior for long-running public hosts.
+- Keep public API shapes, public privacy boundaries, and hosted Canada behavior
+  unchanged.
 
 ## Next Cleanup Candidates
 

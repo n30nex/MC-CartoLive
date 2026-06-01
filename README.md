@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.11
+# MeshCore MQTT Live Map v2.5.12
 
 Also known as **MC-CartoLive**.
 
@@ -23,25 +23,24 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.11 Feature Gallery
+### v2.5.12 Feature Gallery
 
-Version 2.5.11 keeps the Canada deployment intact while continuing the
+Version 2.5.12 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
 
-This patch continues the 2.6 production polish track: map and Legend device
-icons now share one role registry, the Legend explains Sensor and Other nodes,
-Live Follow camera motion is calmer, the activity heatmap is subtle and
-toggleable, light-mode route contrast is stronger, the VCR scrub timeline
-keeps packet-frequency bars readable above a separate baseline/playhead, and
-the public Packets/VCR data path avoids cold-cache SQLite stampedes under live
-traffic. Version 2.5.11 also keeps recent observer-only public text bubbles
-alive across reloads/polling fallback, restores cleaner Public group-text
-decoding for map speech bubbles, gives the Packets page clearer select, search,
-and replay guidance, reduces OpenFreeMap 3D scene churn by selecting only
-visible, focused, or fresh route/model candidates for the 3D overlay, and makes
-NetGraph steadier with tighter component packing, mobile pinch zoom, faster
-live pulse drawing, and role colors/shapes that match the map Legend.
+This patch continues the 2.6 production polish track: public cache refresh no
+longer runs full SQLite stats counts on the hot path, readiness exposes
+public-safe cache truncation and packet-search pressure, map and Legend device
+icons share one role registry, Live Follow is calmer, activity heatmap is
+subtle and toggleable, light-mode route contrast is stronger, and the VCR scrub
+timeline keeps packet-frequency bars readable. Version 2.5.12 also keeps recent
+observer-only public text bubbles alive across reloads/polling fallback,
+restores cleaner Public group-text decoding for map speech bubbles, gives the
+Packets page clearer select, search, and replay guidance, reduces OpenFreeMap
+3D scene churn by selecting only visible/focused/fresh route/model candidates,
+and makes NetGraph steadier with tighter component packing, mobile pinch zoom,
+faster live pulse drawing, and role colors/shapes that match the map Legend.
 
 OpenFreeMap 3D turns the public live map into a terrain-aware network view with
 procedural node models, elevated public route arcs, and 3D packet motion.
@@ -162,7 +161,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.11
+  ghcr.io/n30nex/mc-cartolive:2.5.12
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -173,7 +172,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.11
+  ghcr.io/n30nex/mc-cartolive:2.5.12
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -293,7 +292,7 @@ docker compose build
 
 ## Production Hosting
 
-The recommended v2.5.11 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.12 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

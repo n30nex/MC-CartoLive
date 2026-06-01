@@ -42,6 +42,8 @@ func TestHealthzIncludesPublicSafeOperationalFields(t *testing.T) {
 	runtime := live.NewRuntimeStats()
 	runtime.RecordPublicHistory(12*time.Millisecond, false)
 	runtime.RecordPublicPackets(17*time.Millisecond, true)
+	runtime.RecordPublicPacketsScan(2500, true)
+	runtime.RecordPacketCountRefresh(19*time.Millisecond, false)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	server := api.Server{
 		Config:            api.Config{PublicMode: true, AppVersion: "2.1.10", GitSHA: "abcdef1", BuildTime: "2026-05-23T00:00:00Z"},
@@ -64,7 +66,7 @@ func TestHealthzIncludesPublicSafeOperationalFields(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"cacheAgeMs", "mqttConnected", "wsDroppedMessages", "publicStateReady", "dbReady", "version", "gitSha", "buildTime", "publicHistoryRequests", "publicPacketsRequests", "publicPacketsErrors", "publicPacketsLatencyMs", "recentRoutePulseAgeMs", "recentObserverBurstAgeMs", "packetIngestState", "publicCacheState", "routeMotionState", "observerMotionState", "mapMotionState", "liveConfidenceState", "packetIngestFresh", "mapMotionFresh", "publicLiveFresh"} {
+	for _, key := range []string{"cacheAgeMs", "cacheTruncatedNodes", "cacheTruncatedRoutes", "cacheTruncatedRecentPulses", "cacheTruncatedRecentActivity", "mqttConnected", "wsDroppedMessages", "publicStateReady", "dbReady", "version", "gitSha", "buildTime", "publicHistoryRequests", "publicPacketsRequests", "publicPacketsErrors", "publicPacketsLatencyMs", "publicPacketsLastScan", "publicPacketsScanCapped", "packetCountRefreshFailures", "packetCountRefreshLatencyMs", "packetCountRefreshLastAt", "recentRoutePulseAgeMs", "recentObserverBurstAgeMs", "packetIngestState", "publicCacheState", "routeMotionState", "observerMotionState", "mapMotionState", "liveConfidenceState", "packetIngestFresh", "mapMotionFresh", "publicLiveFresh"} {
 		if _, ok := payload[key]; !ok {
 			t.Fatalf("healthz missing %q in %#v", key, payload)
 		}

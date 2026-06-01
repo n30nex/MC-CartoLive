@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 2.5.12 - 2026-06-01
+
+- Removed full SQLite `Store.Stats()` work from the public cache refresh hot
+  path. Packet totals now rely on the dedicated bounded packet-count refresh.
+- Added public-safe health/readiness fields for public cache truncation, public
+  Packets scan pressure, and packet-count refresh latency/failure status.
+- Compact the in-app changelog popup into a current-release summary instead of
+  an ever-growing release-history list.
+- Updated the 2.6 roadmap with confirmed scope decisions for equal hosted/package
+  priority, core NetGraph, cinematic 3D chase, browser first-run setup, and a
+  public-safe Chat page.
+- Kept public API response shapes, hosted Canada behavior, and privacy
+  boundaries unchanged.
+
 ## 2.5.11 - 2026-05-31
 
 - Started the NetGraph stabilization pass with tighter component packing so

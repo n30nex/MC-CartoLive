@@ -1,0 +1,49 @@
+package live
+
+import (
+	"testing"
+	"time"
+)
+
+func TestPublicCacheStatusReportsTruncation(t *testing.T) {
+	cache := NewPublicStateCache(NewPublicIATAFilter(nil))
+	state := PublicLiveState{
+		Nodes:          make([]PublicNode, publicCacheMaxNodes+3),
+		Routes:         make([]PublicRoute, publicCacheMaxRoutes+2),
+		RecentPulses:   make([]PublicRoutePulse, publicCacheMaxPulses+5),
+		RecentActivity: make([]PublicActivity, publicCacheMaxActivity+7),
+	}
+	for i := range state.Nodes {
+		state.Nodes[i].ID = string(rune('a' + (i % 26)))
+	}
+
+	cache.Replace(state, nil)
+	snapshot, ok := cache.Snapshot()
+	if !ok {
+		t.Fatal("cache should be ready after replace")
+	}
+	if len(snapshot.Nodes) != publicCacheMaxNodes || len(snapshot.Routes) != publicCacheMaxRoutes {
+		t.Fatalf("snapshot limits = nodes %d routes %d", len(snapshot.Nodes), len(snapshot.Routes))
+	}
+	status := cache.Status(time.Now())
+	if status.TruncatedNodes != 3 ||
+		status.TruncatedRoutes != 2 ||
+		status.TruncatedRecentPulses != 5 ||
+		status.TruncatedRecentActivity != 7 {
+		t.Fatalf("truncation status = %#v", status)
+	}
+}
+
+func TestRuntimeStatsRecordsPacketPressure(t *testing.T) {
+	stats := NewRuntimeStats()
+	stats.RecordPublicPacketsScan(2500, true)
+	stats.RecordPacketCountRefresh(12*time.Millisecond, true)
+
+	snapshot := stats.Snapshot()
+	if snapshot.PublicPacketsLastScan != 2500 || snapshot.PublicPacketsScanCapped != 1 {
+		t.Fatalf("packet scan stats = %#v", snapshot)
+	}
+	if snapshot.PacketCountRefreshFailures != 1 || snapshot.PacketCountRefreshLastLatencyMs != 12 || snapshot.PacketCountRefreshLastAtMs <= 0 {
+		t.Fatalf("packet count refresh stats = %#v", snapshot)
+	}
+}

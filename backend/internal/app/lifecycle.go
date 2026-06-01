@@ -495,12 +495,6 @@ func (a *Application) RefreshPublicStateCache(ctx context.Context) error {
 	if count := a.packetCount.Load(); count > 0 {
 		publicStats.Packets = count
 	}
-	if stats, err := a.Store.Stats(ctx); err == nil {
-		publicStats.Packets = stats.Packets
-		a.packetCount.Store(stats.Packets)
-	} else {
-		a.Log.Warn("public state stats refresh failed; publishing live cache with derived stats", "error", err)
-	}
 	publicState := live.BuildPublicLiveState(filtered, publicStats)
 	a.PublicCache.Replace(publicState, excluded)
 	failed = false
@@ -558,6 +552,11 @@ func (a *Application) refreshPacketCountLoop(ctx context.Context) {
 }
 
 func (a *Application) refreshPacketCountOnce(ctx context.Context) {
+	start := time.Now()
+	failed := true
+	defer func() {
+		a.Runtime.RecordPacketCountRefresh(time.Since(start), failed)
+	}()
 	countCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	done := make(chan struct{})
@@ -576,6 +575,7 @@ func (a *Application) refreshPacketCountOnce(ctx context.Context) {
 	}
 	a.packetCount.Store(count)
 	a.PublicCache.SetPacketCount(count)
+	failed = false
 }
 
 func loadYAMLConfig(path string, log *slog.Logger) yamlConfig {
