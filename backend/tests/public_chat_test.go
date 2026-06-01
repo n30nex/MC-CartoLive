@@ -232,11 +232,21 @@ func TestPublicChatEndpointDedupesRepeatedDecodedMessages(t *testing.T) {
 		MessageText:     "NotSoSmart watch.",
 		Labels:          []string{"Salish", "CyberiaOne"},
 	})
-	laterObservation := insertChatObservation(t, ctx, st, "hash-chat-later-private", "YYJ", observerKey, base+240_000, resolve.StatusHigh, chatObservationOptions{
+	thirdObservation := insertChatObservation(t, ctx, st, "hash-chat-third-route-private", "YVR", observerKey, base+350_000, resolve.StatusHigh, chatObservationOptions{
 		MessageSender: "SpooferMan",
 		MessageText:   "NotSoSmart watch.",
 	})
-	insertHistoryEdgeWithOptions(t, ctx, st, laterObservation, "hash-chat-later-private", base+240_000, historyEdgeOptions{
+	insertHistoryEdgeWithOptions(t, ctx, st, thirdObservation, "hash-chat-third-route-private", base+350_000, historyEdgeOptions{
+		PayloadTypeName: "GROUP_TEXT",
+		MessageSender:   "SpooferMan",
+		MessageText:     "NotSoSmart watch.",
+		Labels:          []string{"ka.RF.cli", "NWR"},
+	})
+	laterObservation := insertChatObservation(t, ctx, st, "hash-chat-later-private", "YYJ", observerKey, base+1_200_000, resolve.StatusHigh, chatObservationOptions{
+		MessageSender: "SpooferMan",
+		MessageText:   "NotSoSmart watch.",
+	})
+	insertHistoryEdgeWithOptions(t, ctx, st, laterObservation, "hash-chat-later-private", base+1_200_000, historyEdgeOptions{
 		PayloadTypeName: "GROUP_TEXT",
 		MessageSender:   "SpooferMan",
 		MessageText:     "NotSoSmart watch.",
@@ -245,7 +255,7 @@ func TestPublicChatEndpointDedupesRepeatedDecodedMessages(t *testing.T) {
 
 	server := publicHistoryTestServer(st, func(string) bool { return true })
 	response := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/public/chat?from="+ms(base)+"&to="+ms(base+300_000)+"&limit=10", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/public/chat?from="+ms(base)+"&to="+ms(base+1_500_000)+"&limit=10", nil)
 	server.Routes().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("chat status = %d body=%s", response.Code, response.Body.String())
@@ -260,7 +270,7 @@ func TestPublicChatEndpointDedupesRepeatedDecodedMessages(t *testing.T) {
 	if strings.Count(response.Body.String(), "NotSoSmart watch.") != 2 {
 		t.Fatalf("chat response did not keep exactly two time-separated messages: %s", response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), "hash-chat-repeat-private") || strings.Contains(response.Body.String(), "hash-chat-distinct-private") || strings.Contains(response.Body.String(), "hash-chat-later-private") {
+	if strings.Contains(response.Body.String(), "hash-chat-repeat-private") || strings.Contains(response.Body.String(), "hash-chat-distinct-private") || strings.Contains(response.Body.String(), "hash-chat-third-route-private") || strings.Contains(response.Body.String(), "hash-chat-later-private") {
 		t.Fatalf("chat response leaked internal packet hashes: %s", response.Body.String())
 	}
 }

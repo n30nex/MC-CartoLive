@@ -3,6 +3,8 @@ import type { PublicRoute, PublicRouteEndpoint } from '../types';
 import type { NodeFocus } from './nodeFocus';
 import {
   pruneRoutePayloadGlows,
+  routeActivityOpacity,
+  routeActivityWidth,
   routeColorSignature,
   routeHighlightColor,
   routeFreshnessLevel,
@@ -148,5 +150,20 @@ describe('route source helpers', () => {
     expect(routeSourceSignature([fresh], null, focus(), now)).not.toBe(
       routeSourceSignature([{ ...fresh, lastHeard: now - 2 * 60 * 60_000 }], null, focus(), now)
     );
+  });
+
+  it('thickens and brightens recently active high-frequency routes while cooling stale routes', () => {
+    const now = 5_000_000;
+    const freshBusy = route('busy', 'a', 'b', 4, 900, now - 30_000);
+    const staleQuiet = route('quiet', 'c', 'd', 0, 10, now - 8 * 60 * 60_000);
+    const data = routesToGeoJSON([freshBusy, staleQuiet], null, focus(), now);
+
+    expect(routeActivityWidth(freshBusy, now)).toBeGreaterThan(routeActivityWidth(staleQuiet, now));
+    expect(routeActivityOpacity(freshBusy, now)).toBeGreaterThan(routeActivityOpacity(staleQuiet, now));
+    expect(data.features[0].properties).toMatchObject({
+      id: 'busy',
+      routeWidth: routeActivityWidth(freshBusy, now),
+      routeOpacity: routeActivityOpacity(freshBusy, now)
+    });
   });
 });

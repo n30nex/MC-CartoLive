@@ -6,6 +6,8 @@ export const CHAT_SCOPE_OPTIONS = [
   { label: '24h', value: 24 * 60 * 60_000 }
 ] as const;
 
+export const CHAT_DISPLAY_DEDUPE_WINDOW_MS = 15 * 60_000;
+
 export interface ChatFilters {
   query: string;
   region: string;
@@ -86,16 +88,41 @@ export function filterChatMessages(messages: PublicChatMessage[], filters: ChatF
 }
 
 export function dedupeChatMessages(messages: PublicChatMessage[]): PublicChatMessage[] {
-  const seen = new Set<string>();
+  const seenIds = new Set<string>();
+  const seenPublicMessages = new Map<string, number>();
   const out: PublicChatMessage[] = [];
   for (const message of messages) {
-    if (seen.has(message.id)) continue;
-    seen.add(message.id);
-    out.push(safeChatMessage(message));
+    if (seenIds.has(message.id)) continue;
+    const safe = safeChatMessage(message);
+    const displayKey = chatDisplayDedupeKey(safe);
+    if (displayKey) {
+      const previousAt = seenPublicMessages.get(displayKey);
+      if (previousAt !== undefined && chatWithinDedupeWindow(previousAt, safe.at)) continue;
+      seenPublicMessages.set(displayKey, safe.at);
+    }
+    seenIds.add(message.id);
+    out.push(safe);
   }
   return out;
 }
 
 export function chatChannelOptions(messages: PublicChatMessage[]): string[] {
   return [...new Set(messages.map((message) => safeChatText(message.channelLabel, '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+export function chatDisplayDedupeKey(message: PublicChatMessage): string {
+  const sender = normalizeDisplayToken(message.sender);
+  const text = normalizeDisplayToken(message.text);
+  const channel = normalizeDisplayToken(message.channelLabel);
+  const payload = normalizeDisplayToken(message.payloadTypeName);
+  if (!sender || !text) return '';
+  return `${sender}|${text}|${channel}|${payload}`;
+}
+
+function chatWithinDedupeWindow(a: number, b: number): boolean {
+  return Math.abs(a - b) <= CHAT_DISPLAY_DEDUPE_WINDOW_MS;
+}
+
+function normalizeDisplayToken(value: string | undefined): string {
+  return safeChatText(value, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }

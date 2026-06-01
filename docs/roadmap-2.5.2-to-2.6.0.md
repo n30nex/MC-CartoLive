@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.19` sliding-window Chat dedupe, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.20` Chat duplicate suppression, live-health/top-bar polish, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,27 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.20 - Chat And Live Health Polish
+
+Goal: close the remaining visible Chat repeat case and make the live map easier
+to trust at a glance while staying on the 2.6 production-readiness path.
+
+Scope:
+
+- Dedupe Chat rows by private server-side packet identity when available, then
+  by public-visible sender/text/channel repeat window as a fallback. Do not
+  expose packet hashes or route debug data.
+- Add frontend Chat display dedupe so mixed/stale pages still render cleanly.
+- Add compact top-bar VU meters for per-minute rates and tighter count pills
+  for packet, node, and route totals.
+- Replace the Perf page with public-safe deployment health: backend/readiness,
+  public API reachability, MQTT freshness, cache freshness, and routed traffic
+  state.
+- Fix compact UTC build-age parsing and make Live Follow camera movement slower
+  and less jumpy.
+- Make recent packet pathways easier to see below detail zoom while keeping idle
+  route clutter gated.
 
 ## 2.5.19 - Sliding-Window Chat Dedupe
 

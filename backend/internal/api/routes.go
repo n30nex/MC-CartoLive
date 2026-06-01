@@ -388,7 +388,7 @@ const (
 	publicChatMaxLimit           = 500
 	publicChatDefaultLimit       = 100
 	publicChatMaxRawScan         = 2500
-	publicChatDedupeWindowMs     = int64(2 * time.Minute / time.Millisecond)
+	publicChatDedupeWindowMs     = int64(15 * time.Minute / time.Millisecond)
 	publicPacketsMaxLimit        = 1000
 	publicPacketsDefaultLimit    = 250
 	publicPacketsMaxRawScan      = 2500
@@ -734,17 +734,17 @@ func (s *Server) publicChat(w http.ResponseWriter, r *http.Request) {
 			if !publicChatMatchesFilters(message, filters) {
 				continue
 			}
+			if messageKey := publicChatDedupeKey(rawEvent, message); messageKey != "" {
+				if _, seen := seenMessages[messageKey]; seen {
+					continue
+				}
+				seenMessages[messageKey] = struct{}{}
+			}
 			if displayKey := publicChatDisplayDedupeKey(message); displayKey != "" {
 				if previousAt, seen := seenDisplayMessages[displayKey]; seen && publicChatWithinDedupeWindow(previousAt, message.At) {
 					continue
 				}
 				seenDisplayMessages[displayKey] = message.At
-			} else {
-				messageKey := publicChatDedupeKey(rawEvent, message)
-				if _, seen := seenMessages[messageKey]; seen {
-					continue
-				}
-				seenMessages[messageKey] = struct{}{}
 			}
 			messages = append(messages, message)
 			if len(messages) >= limit {
@@ -1096,10 +1096,10 @@ func publicChatSearchFields(message live.PublicChatMessage) []string {
 
 func publicChatDedupeKey(raw store.HistoryEvent, message live.PublicChatMessage) string {
 	if raw.Edge != nil && strings.TrimSpace(raw.Edge.PacketHash) != "" {
-		return "packet:" + strings.TrimSpace(raw.Edge.PacketHash)
+		return "packet:" + strings.ToLower(strings.TrimSpace(raw.Edge.PacketHash))
 	}
 	if raw.Packet != nil && strings.TrimSpace(raw.Packet.PacketHash) != "" {
-		return "packet:" + strings.TrimSpace(raw.Packet.PacketHash)
+		return "packet:" + strings.ToLower(strings.TrimSpace(raw.Packet.PacketHash))
 	}
 	return message.ID
 }

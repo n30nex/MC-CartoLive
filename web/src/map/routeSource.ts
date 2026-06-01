@@ -3,8 +3,8 @@ import { isMappableEndpoint } from './geo';
 import type { NodeFocus } from './nodeFocus';
 import { routeArcCoordinates } from './routeArcs';
 
-export const routeColors = ['#1d4ed8', '#0891b2', '#15803d', '#c2410c', '#be123c'];
-export const lightRouteColors = ['#1e40af', '#0e7490', '#166534', '#9a3412', '#9f1239'];
+export const routeColors = ['#2563eb', '#06b6d4', '#22c55e', '#f59e0b', '#fb7185'];
+export const lightRouteColors = ['#1e40af', '#0f766e', '#166534', '#b45309', '#be123c'];
 export type RouteThemeMode = 'dark' | 'light';
 export const ROUTE_FRESH_MS = 15 * 60_000;
 export const ROUTE_RECENT_MS = 60 * 60_000;
@@ -48,7 +48,9 @@ export function routesToGeoJSON(
             connected,
             dimmed: hasFocusedRoute && !selected && !path && !connected,
             freshnessLevel: routeFreshnessLevel(route.lastHeard, now),
-            freshnessOpacity: routeFreshnessOpacity(route.lastHeard, now)
+            freshnessOpacity: routeFreshnessOpacity(route.lastHeard, now),
+            routeWidth: routeActivityWidth(route, now),
+            routeOpacity: routeActivityOpacity(route, now)
           },
           geometry: {
             type: 'LineString',
@@ -135,7 +137,8 @@ export function routePayloadGlowsToGeoJSON(
       properties: {
         id: routeID,
         color: glow.color,
-        opacity: intensity * (dimmed ? 0.18 : 0.42)
+        opacity: intensity * (dimmed ? 0.2 : 0.58),
+        glowWidth: routePayloadGlowWidth(route, now)
       },
       geometry: {
         type: 'LineString',
@@ -175,6 +178,27 @@ export function routeFreshnessOpacity(lastHeard: number, now: number): number {
   }
 }
 
+export function routeActivityWidth(route: Pick<PublicRoute, 'frequencyBucket' | 'lastHeard'>, now: number): number {
+  const bucket = Math.max(0, Math.min(4, route.frequencyBucket));
+  const freshness = routeFreshnessLevel(route.lastHeard, now);
+  const bucketWidth = 1.3 + bucket * 0.38;
+  const freshnessScale = [1.35, 1.12, 0.9, 0.68][freshness] ?? 0.68;
+  return roundVisual(bucketWidth * freshnessScale);
+}
+
+export function routeActivityOpacity(route: Pick<PublicRoute, 'frequencyBucket' | 'lastHeard'>, now: number): number {
+  const bucket = Math.max(0, Math.min(4, route.frequencyBucket));
+  const freshness = routeFreshnessOpacity(route.lastHeard, now);
+  return roundVisual(Math.min(0.64, (0.24 + bucket * 0.08) * freshness));
+}
+
+export function routePayloadGlowWidth(route: Pick<PublicRoute, 'frequencyBucket' | 'lastHeard'>, now: number): number {
+  const bucket = Math.max(0, Math.min(4, route.frequencyBucket));
+  const freshness = routeFreshnessLevel(route.lastHeard, now);
+  const freshnessBoost = freshness <= 1 ? 1 : 0.78;
+  return roundVisual((6.2 + bucket * 1.2) * freshnessBoost);
+}
+
 function routeRenderIdentity(route: PublicRoute, now: number): string {
   return [
     route.id,
@@ -191,4 +215,8 @@ function routeRenderIdentity(route: PublicRoute, now: number): string {
 
 function stableSetSignature(values: Set<string>): string {
   return [...values].sort().join(',');
+}
+
+function roundVisual(value: number): number {
+  return Math.round(value * 100) / 100;
 }

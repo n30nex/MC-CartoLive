@@ -43,6 +43,17 @@ describe('chat helpers', () => {
     expect(deduped[0].routeIds).toBeUndefined();
   });
 
+  it('dedupes repeated public chat copies across route context within the repeat window', () => {
+    const deduped = dedupeChatMessages([
+      message({ id: 'chat-a', at: 1_000, region: 'YVR', endpointLabels: ['ka.RF.cli', 'NWR'] }),
+      message({ id: 'chat-b', at: 60_000, region: 'YYJ', endpointLabels: ['Salish', 'CyberiaOne'] }),
+      message({ id: 'chat-c', at: 10 * 60_000, region: 'YYJ', endpointLabels: ['Different', 'Route'] }),
+      message({ id: 'chat-d', at: 20 * 60_000, region: 'YYJ', endpointLabels: ['Salish', 'CyberiaOne'] })
+    ]);
+
+    expect(deduped.map((item) => item.id)).toEqual(['chat-a', 'chat-d']);
+  });
+
   it('redacts obvious hashes, keys, path hex, and debug pairs from display text', () => {
     expect(safeChatText('hash=abcdefabcdefabcdef raw 01:02:03:04:05:06 token=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN')).toBe(
       '[redacted] raw [redacted path] [redacted]'

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import StatusBar, { formatStatusNumber } from './StatusBar';
+import StatusBar, { formatStatusNumber, metricMeterLevel } from './StatusBar';
 
 const coverage = {
   receivedPerMinute: 240,
@@ -29,11 +29,19 @@ describe('StatusBar', () => {
     expect(html).toContain('bursts/min');
     expect(html).toContain('unmapped/min');
     expect(html).toContain('total');
+    expect(html.match(/status-vu/g)).toHaveLength(4);
+    expect(html.match(/count-pill/g)).toHaveLength(3);
   });
 
   it('compacts large numbers predictably', () => {
     expect(formatStatusNumber(9999)).toBe('9,999');
     expect(formatStatusNumber(12500)).toBe('13k');
     expect(formatStatusNumber(1_250_000)).toBe('1.3M');
+  });
+
+  it('normalizes compact VU levels against the busiest per-minute metric', () => {
+    expect(metricMeterLevel(0, 240)).toBe(0);
+    expect(metricMeterLevel(12, 240)).toBe(0.08);
+    expect(metricMeterLevel(240, 240)).toBe(1);
   });
 });

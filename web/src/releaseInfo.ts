@@ -16,6 +16,7 @@ export const GITHUB_STATS_CACHE_KEY = 'mc-cartolive-github-stats';
 export const GITHUB_STATS_CACHE_TTL_MS = 30 * 60_000;
 
 const SHORT_SHA_LENGTH = 7;
+const COMPACT_UTC_BUILD_TIME_RE = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/;
 
 export function releaseURLForVersion(version: string, baseURL = GITHUB_REPO_URL): string {
   return `${baseURL}/releases/tag/v${version}`;
@@ -38,7 +39,7 @@ export function normalizeGitSha(value: string | null | undefined): string {
 }
 
 export function formatBuildAge(buildTimeISO: string, now = Date.now()): string {
-  const builtAt = Date.parse(buildTimeISO);
+  const builtAt = parseBuildTime(buildTimeISO);
   if (!Number.isFinite(builtAt)) return 'build age unavailable';
   const deltaMs = Math.max(0, now - builtAt);
   const minutes = Math.floor(deltaMs / 60_000);
@@ -50,6 +51,28 @@ export function formatBuildAge(buildTimeISO: string, now = Date.now()): string {
   if (days < 60) return `built ${days}d ago`;
   const months = Math.floor(days / 30);
   return `built ${months}mo ago`;
+}
+
+export function parseBuildTime(value: string | null | undefined): number {
+  const trimmed = value?.trim() ?? '';
+  const compact = COMPACT_UTC_BUILD_TIME_RE.exec(trimmed);
+  if (compact) {
+    const [, year, month, day, hour, minute, second] = compact;
+    const parsed = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+    const date = new Date(parsed);
+    if (
+      date.getUTCFullYear() !== Number(year) ||
+      date.getUTCMonth() !== Number(month) - 1 ||
+      date.getUTCDate() !== Number(day) ||
+      date.getUTCHours() !== Number(hour) ||
+      date.getUTCMinutes() !== Number(minute) ||
+      date.getUTCSeconds() !== Number(second)
+    ) {
+      return Number.NaN;
+    }
+    return Number.isFinite(parsed) ? parsed : Number.NaN;
+  }
+  return Date.parse(trimmed);
 }
 
 export function normalizeRepoStats(payload: unknown): RepoStats | null {

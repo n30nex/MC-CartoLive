@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.19` is the active foundation patch toward the next production-ready
+Version `2.5.20` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -197,11 +197,25 @@ Version `2.5.19` is the active foundation patch toward the next production-ready
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
 
+## 2.5.20 Patch Focus
+
+- Collapse visible Chat repeats across route and observer context by using
+  private server-side packet identity first and a public display repeat window
+  as a fallback.
+- Add compact top-bar VU meters and stylized count pills so live traffic rates
+  are readable at a glance.
+- Replace Perf Lab copy with a public-safe live deployment health view for
+  backend, public API, MQTT, cache, and routed traffic status.
+- Fix compact build-age parsing, slow Live Follow camera moves, and make recent
+  packet pathways more visible below detail zoom without exposing all idle
+  routes.
+- Keep Chat public-safe and continue the 2.6 production-readiness track.
+
 ## 2.5.19 Patch Focus
 
 - Use a sliding decoded-message dedupe window for Chat so repeated
   multi-observer reports do not leak through display bucket boundaries.
-- Keep Chat public-safe and continue the 2.6 production-readiness track.
+- Keep public response shape and privacy boundaries unchanged.
 
 ## 2.5.18 Patch Focus
 

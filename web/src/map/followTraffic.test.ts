@@ -7,6 +7,12 @@ import {
 } from './followTraffic';
 
 describe('follow traffic decisions', () => {
+  it('uses slower camera timings for watchable live following', () => {
+    expect(FOLLOW_TRAFFIC_DURATION_MS).toBeGreaterThanOrEqual(7_000);
+    expect(FOLLOW_TRAFFIC_IMMEDIATE_DURATION_MS).toBeGreaterThanOrEqual(2_500);
+    expect(FOLLOW_TRAFFIC_MIN_INTERVAL_MS).toBeGreaterThan(FOLLOW_TRAFFIC_DURATION_MS);
+  });
+
   it('accepts immediate movement with a shorter startup duration', () => {
     const decision = followTrafficDecision({ lastAt: 1000, lastID: 'old' }, { id: 'next', now: 1200, immediate: true, mapMoving: true });
     expect(decision).toEqual({ shouldMove: true, durationMs: FOLLOW_TRAFFIC_IMMEDIATE_DURATION_MS, reason: 'immediate' });

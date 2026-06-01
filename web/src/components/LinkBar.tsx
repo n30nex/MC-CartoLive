@@ -8,32 +8,23 @@ import {
   commitURLForSha,
   formatBuildAge,
   normalizeRepoStats,
+  parseBuildTime,
   readCachedRepoStats,
   shortBuildID,
   writeCachedRepoStats,
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.19';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.20';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
-  '2.5.19 fixes the remaining Chat duplicate edge case at time-bucket boundaries with a sliding sender/text/channel dedupe window.',
-  '2.5.18 collapses repeated decoded Chat rows by sender, text, and channel in a short display window so multi-observer reports do not flood the Chat page.',
-  '2.5.17 dedupes Chat by internal packet identity so repeated routed observations do not repeat the same decoded message, while keeping distinct packet retransmits visible.',
-  'Docker Compose runtime metadata now prefers GIT_SHA and BUILD_TIME so health/readiness reports match the deployed commit.',
-  '2.5.16 collapses duplicate Chat rows from multi-segment routed packets and moves first-run Setup into the Guide instead of the permanent top bar.',
-  '2.5.15 adds a public-safe Chat page for decoded public text history with region, channel, time-window, search, and paging controls.',
-  'NetGraph is steadier: stable visible graph membership, deterministic edge lanes, selected-neighborhood helpers, mobile pinch zoom, role-matched node glyphs, and faster pulse matching.',
-  'OpenFreeMap replay chase math now uses shared 3D route-arc samples so selected-packet cinematic replay can stay synchronized with 3D comets.',
-  'Release checks now scan public JSON and the public websocket hello for raw hashes, raw hex, full keys, secrets, tokens, and debug fields.',
-  '2.5.14 added a release metadata drift guard so version defaults, Docker tags, frontend package metadata, docs, and changelog stay in sync.',
-  'OpenFreeMap 3D is lighter in dense views by prioritizing visible, focused, fresh, and selected nodes/routes before rebuilding the Three.js scene.',
-  'Public text bubbles are back for sanitized decoded group messages, including reload/polling fallback when a sender or observer anchor is public-safe.',
-  'Packets is clearer and safer: select focuses a path, Replay pauses live, scan status explains rare filters, and stale requests cannot replace newer searches.',
-  'Live map polish: calmer Live Follow, compact status pills, aligned map/Legend role icons, readable VCR timeline bars, activity heatmap, and stronger light-mode route contrast.',
-  'Operator polish: version-safe CI/package smoke, configurable instance branding, and world/private broker configuration without changing public privacy boundaries.'
+  '2.5.20 fixes visible Chat repeats by deduping same public messages across route and observer context without exposing packet hashes.',
+  'Top-bar live rates now include compact VU meters, count pills are tighter, and compact build timestamps show the correct build age.',
+  'Perf now reports live deployment health: backend/readiness, public API reachability, MQTT freshness, cache freshness, and routed traffic state.',
+  'Flat-map recent packet pathways are easier to see while idle routes stay hidden until detail zoom.',
+  'Live Follow camera moves are slower and less jumpy.'
 ];
 
 const FEATURE_LIST = [
@@ -43,7 +34,7 @@ const FEATURE_LIST = [
   'NetGraph view for connected public RF topology with live pulses and compact node/pathway inspectors.',
   'Public Chat page for sanitized decoded text history with region, channel, and search filters.',
   'Hidden-by-default VCR for pause, scrub, replay, and 24h public-safe route history.',
-  'Plot Routes, reachable-node phonebook, layer controls, themes, palettes, Perf Lab, and operator diagnostics.'
+  'Plot Routes, reachable-node phonebook, layer controls, themes, palettes, live health, and operator diagnostics.'
 ];
 
 const GUIDE_STEPS = [
@@ -71,10 +62,11 @@ export default function LinkBar({ perfOpen = false, packetsOpen = false, netGrap
   const brandName = appBrandName.trim() || 'MC-CartoLive';
   const brandURL = appBrandURL.trim() || GITHUB_REPO_URL;
   const brandLogo = appBrandLogo.trim() || routeAssetIcons.app;
-  const buildAge = useMemo(() => formatBuildAge(buildTime, now), [now]);
+  const buildAge = useMemo(() => formatBuildAge(buildTime, now), [buildTime, now]);
   const buildID = shortBuildID(buildNumber, gitSha);
   const commitURL = commitURLForSha(gitSha || buildNumber);
-  const buildDate = Number.isFinite(Date.parse(buildTime)) ? new Date(buildTime).toLocaleString() : 'Build time unavailable';
+  const parsedBuildTime = parseBuildTime(buildTime);
+  const buildDate = Number.isFinite(parsedBuildTime) ? new Date(parsedBuildTime).toLocaleString() : 'Build time unavailable';
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 60_000);

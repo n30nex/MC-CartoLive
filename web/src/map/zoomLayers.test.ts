@@ -3,10 +3,14 @@ import { mapOverlayStyle } from './CanadaMap';
 import { DETAIL_MIN_ZOOM } from './zoomMode';
 
 describe('map zoom layer consistency', () => {
-  it('keeps routes, route glow, nodes, and observers behind the same detail zoom gate', () => {
-    for (const id of ['route-focus-glow', 'route-payload-glow', 'route-lines', 'selected-node-halo', 'node-symbols', 'observer-symbols']) {
+  it('keeps idle routes, route focus glow, nodes, and observers behind the same detail zoom gate', () => {
+    for (const id of ['route-focus-glow', 'route-lines', 'selected-node-halo', 'node-symbols', 'observer-symbols']) {
       expect(layer(id)?.minzoom).toBe(DETAIL_MIN_ZOOM);
     }
+  });
+
+  it('allows bounded recent packet glows below detail zoom without exposing all idle routes', () => {
+    expect(layer('route-payload-glow')?.minzoom).toBeLessThan(DETAIL_MIN_ZOOM);
   });
 
   it('keeps only highlighted analysis paths visible at low zoom', () => {

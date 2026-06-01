@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 2.5.20 - 2026-06-01
+
+- Fixed the live Chat duplicate case where the same decoded public message
+  appeared through different route/observer context in the same display window.
+  Chat now dedupes by private server-side packet identity first, then by a
+  public-visible sender/text/channel repeat window, without exposing hashes.
+- Added a frontend Chat safety net so stale or mixed pages still collapse
+  repeated public message copies before rendering.
+- Added compact top-bar VU meters for per-minute live rates and tighter
+  stylized count pills for packet, node, and route totals.
+- Reworked the Perf page into a public-safe live deployment health view for
+  backend/readiness, public API reachability, MQTT freshness, cache freshness,
+  and routed traffic state.
+- Fixed build-age parsing for compact UTC build stamps such as
+  `20260601T085222Z`.
+- Made Live Follow calmer with longer throttling and slower camera easing.
+- Made recent packet pathways easier to see on the flat map by letting bounded
+  active payload glows appear below detail zoom while idle routes remain gated.
+
 ## 2.5.19 - 2026-06-01
 
 - Fixed the residual Chat duplicate case at two-minute bucket boundaries by

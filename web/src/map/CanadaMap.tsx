@@ -710,11 +710,11 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       id: ROUTE_PAYLOAD_GLOW_LAYER,
       type: 'line',
       source: ROUTE_PAYLOAD_GLOW_SOURCE,
-      minzoom: DETAIL_MIN_ZOOM,
+      minzoom: 2.5,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': ['interpolate', ['linear'], ['zoom'], 7, 5.8, 10, 7.8, 13, 11],
+        'line-width': ['interpolate', ['linear'], ['zoom'], 2.5, ['*', ['coalesce', ['get', 'glowWidth'], 6], 0.55], 7, ['coalesce', ['get', 'glowWidth'], 6], 13, ['*', ['coalesce', ['get', 'glowWidth'], 6], 1.45]],
         'line-blur': 4,
         'line-opacity': ['coalesce', ['get', 'opacity'], 0]
       }
@@ -735,7 +735,7 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
           ROUTE_PATH_WIDTH,
           ['==', ['get', 'connected'], true],
           ROUTE_CONNECTED_WIDTH,
-          ROUTE_BASE_WIDTH
+          ['coalesce', ['get', 'routeWidth'], ROUTE_BASE_WIDTH]
         ],
         'line-opacity': [
           'case',
@@ -746,8 +746,8 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
           ['==', ['get', 'connected'], true],
           ROUTE_CONNECTED_OPACITY,
           ['==', ['get', 'dimmed'], true],
-          ['*', ROUTE_DIMMED_OPACITY, ['coalesce', ['get', 'freshnessOpacity'], 1]],
-          ['*', ROUTE_BASE_OPACITY, ['coalesce', ['get', 'freshnessOpacity'], 1]]
+          ['*', ROUTE_DIMMED_OPACITY, ['coalesce', ['get', 'routeOpacity'], ROUTE_BASE_OPACITY]],
+          ['coalesce', ['get', 'routeOpacity'], ROUTE_BASE_OPACITY]
         ]
       }
     },
@@ -2121,11 +2121,11 @@ function addPublicLayers(map: maplibregl.Map) {
     id: ROUTE_PAYLOAD_GLOW_LAYER,
     type: 'line',
     source: ROUTE_PAYLOAD_GLOW_SOURCE,
-    minzoom: DETAIL_MIN_ZOOM,
+    minzoom: 2.5,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
       'line-color': ['get', 'color'],
-      'line-width': ['interpolate', ['linear'], ['zoom'], 7, 5.8, 10, 7.8, 13, 11],
+      'line-width': ['interpolate', ['linear'], ['zoom'], 2.5, ['*', ['coalesce', ['get', 'glowWidth'], 6], 0.55], 7, ['coalesce', ['get', 'glowWidth'], 6], 13, ['*', ['coalesce', ['get', 'glowWidth'], 6], 1.45]],
       'line-blur': 4,
       'line-opacity': ['coalesce', ['get', 'opacity'], 0]
     }
@@ -2145,10 +2145,10 @@ function addPublicLayers(map: maplibregl.Map) {
         ROUTE_ACTIVE_WIDTH,
         ['==', ['get', 'path'], true],
         ROUTE_PATH_WIDTH,
-        ['==', ['get', 'connected'], true],
-        ROUTE_CONNECTED_WIDTH,
-        ROUTE_BASE_WIDTH
-      ],
+      ['==', ['get', 'connected'], true],
+      ROUTE_CONNECTED_WIDTH,
+      ['coalesce', ['get', 'routeWidth'], ROUTE_BASE_WIDTH]
+    ],
       'line-opacity': [
         'case',
         ['==', ['get', 'selected'], true],
@@ -2158,8 +2158,8 @@ function addPublicLayers(map: maplibregl.Map) {
       ['==', ['get', 'connected'], true],
       ROUTE_CONNECTED_OPACITY,
       ['==', ['get', 'dimmed'], true],
-      ['*', ROUTE_DIMMED_OPACITY, ['coalesce', ['get', 'freshnessOpacity'], 1]],
-      ['*', ROUTE_BASE_OPACITY, ['coalesce', ['get', 'freshnessOpacity'], 1]]
+      ['*', ROUTE_DIMMED_OPACITY, ['coalesce', ['get', 'routeOpacity'], ROUTE_BASE_OPACITY]],
+      ['coalesce', ['get', 'routeOpacity'], ROUTE_BASE_OPACITY]
     ]
   }
   });

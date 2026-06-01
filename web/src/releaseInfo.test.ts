@@ -5,6 +5,7 @@ import {
   formatBuildAge,
   normalizeGitSha,
   normalizeRepoStats,
+  parseBuildTime,
   readCachedRepoStats,
   releaseURLForVersion,
   shortBuildID,
@@ -43,6 +44,12 @@ describe('release metadata helpers', () => {
     expect(formatBuildAge('2026-05-22T10:00:00Z', now)).toBe('built 26h ago');
     expect(formatBuildAge('2026-05-20T12:00:00Z', now)).toBe('built 3d ago');
     expect(formatBuildAge('invalid', now)).toBe('build age unavailable');
+  });
+
+  it('formats compact UTC build stamps from Docker metadata', () => {
+    const now = Date.parse('2026-06-01T09:00:00Z');
+    expect(parseBuildTime('20260601T085222Z')).toBe(Date.parse('2026-06-01T08:52:22Z'));
+    expect(formatBuildAge('20260601T085222Z', now)).toBe('built 7m ago');
   });
 
   it('normalizes and caches GitHub stats without trusting invalid payloads', () => {

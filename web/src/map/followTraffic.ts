@@ -16,10 +16,10 @@ export interface FollowTrafficDecision {
   reason: 'immediate' | 'accepted' | 'duplicate' | 'throttled' | 'camera_busy';
 }
 
-export const FOLLOW_TRAFFIC_MIN_INTERVAL_MS = 8500;
-export const FOLLOW_TRAFFIC_DURATION_MS = 4200;
-export const FOLLOW_TRAFFIC_IMMEDIATE_DURATION_MS = 1400;
-export const FOLLOW_TRAFFIC_MOVING_GRACE_MS = 900;
+export const FOLLOW_TRAFFIC_MIN_INTERVAL_MS = 12_000;
+export const FOLLOW_TRAFFIC_DURATION_MS = 7_200;
+export const FOLLOW_TRAFFIC_IMMEDIATE_DURATION_MS = 2_600;
+export const FOLLOW_TRAFFIC_MOVING_GRACE_MS = 1_400;
 export const FOLLOW_TRAFFIC_ROUTE_MAX_ZOOM = 7.7;
 export const FOLLOW_TRAFFIC_POINT_ZOOM = 7.1;
 
