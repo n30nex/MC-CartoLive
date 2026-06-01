@@ -5,6 +5,8 @@ BASE_URL="${BASE_URL:-http://127.0.0.1:39476}"
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
 cd "$ROOT/backend"
+node "$ROOT/scripts/check-version-sync.mjs"
+
 go test ./...
 
 cd "$ROOT/web"

@@ -10,6 +10,8 @@ $root = Split-Path -Parent $PSScriptRoot
 
 Push-Location $root
 try {
+  node (Join-Path $root "scripts/check-version-sync.mjs")
+
   Push-Location "backend"
   try {
     go test ./...

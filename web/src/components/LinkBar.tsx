@@ -14,12 +14,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.13';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.14';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
-  '2.5.13 adds a browser first-run setup page with public-safe world, Canada, and custom deployment `.env` starters.',
+  '2.5.14 adds a release metadata drift guard so version defaults, Docker tags, frontend package metadata, docs, and changelog stay in sync.',
   'NetGraph is steadier: closer packed components, mobile pinch zoom, role-matched node glyphs, pinned live pulse status, and faster pulse matching.',
   'OpenFreeMap 3D is lighter in dense views by prioritizing visible, focused, fresh, and selected nodes/routes before rebuilding the Three.js scene.',
   'Public text bubbles are back for sanitized decoded group messages, including reload/polling fallback when a sender or observer anchor is public-safe.',

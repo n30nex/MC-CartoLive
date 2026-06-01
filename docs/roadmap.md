@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.13` is the active foundation patch toward the next production-ready
+Version `2.5.14` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -164,6 +164,14 @@ Version `2.5.13` is the active foundation patch toward the next production-ready
   raw packet material, and resolver debug data.
 - Document that browser setup is a convenience layer; true route validation,
   region scoping, and public privacy boundaries remain unchanged.
+
+## 2.5.14 Patch Focus
+
+- Add a release metadata drift guard that derives expectations from `VERSION`.
+- Run that guard from release-check scripts and CI so backend defaults, Docker
+  defaults, web package metadata, docs, top-bar keys, and changelog entries
+  cannot silently drift.
+- Keep this patch operational only: no public map feature or API schema change.
 
 ## Next Cleanup Candidates
 

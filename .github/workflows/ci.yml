@@ -45,6 +45,9 @@ jobs:
         working-directory: web
         run: npm ci
 
+      - name: Version sync
+        run: node scripts/check-version-sync.mjs
+
       - name: Test
         working-directory: web
         run: npm test -- --run

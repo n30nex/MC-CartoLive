@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.13
+# MeshCore MQTT Live Map v2.5.14
 
 Also known as **MC-CartoLive**.
 
@@ -23,16 +23,19 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.13 Feature Gallery
+### v2.5.14 Feature Gallery
 
-Version 2.5.13 keeps the Canada deployment intact while continuing the
+Version 2.5.14 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
 
-This patch adds a browser first-run setup page beside Perf, Packets, and
-NetGraph. New operators can generate public-safe `.env` starter settings for
-worldwide, hosted-Canada, or custom private-broker installs without exposing
-MQTT credentials, channel secrets, raw packets, or resolver debug data.
+This patch adds a release metadata drift guard to keep `VERSION`, backend
+defaults, Docker defaults, web package metadata, README/docs references,
+top-bar localStorage keys, and changelog entries aligned before CI or a release
+check can pass. The browser Setup page from 2.5.13 remains beside Perf,
+Packets, and NetGraph so new operators can generate public-safe `.env` starter
+settings for worldwide, hosted-Canada, or custom private-broker installs without
+exposing MQTT credentials, channel secrets, raw packets, or resolver debug data.
 
 The current 2.6 production polish track also keeps public cache refresh off full
 SQLite stats counts, exposes public-safe cache truncation and packet-search
@@ -166,7 +169,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.13
+  ghcr.io/n30nex/mc-cartolive:2.5.14
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -177,7 +180,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.13
+  ghcr.io/n30nex/mc-cartolive:2.5.14
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -297,7 +300,7 @@ docker compose build
 
 ## Production Hosting
 
-The recommended v2.5.13 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.14 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

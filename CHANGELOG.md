@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.5.14 - 2026-06-01
+
+- Added `scripts/check-version-sync.mjs` to catch release metadata drift across
+  backend defaults, Docker defaults, web package metadata, docs, top-bar keys,
+  and changelog entries.
+- Wired the version-sync guard into CI and both local release-check scripts.
+- Updated docs to make the 2.5.14 release path and image tags explicit.
+- Kept public API response shapes, hosted Canada behavior, and privacy
+  boundaries unchanged.
+
 ## 2.5.13 - 2026-06-01
 
 - Added a closeable browser Setup page beside Perf, Packets, and NetGraph for

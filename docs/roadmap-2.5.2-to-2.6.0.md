@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.13` first-run setup foundation on `main`
+Baseline audited: `v2.5.14` release metadata drift guard on `main`
 
 ## Audit Coverage
 
@@ -545,6 +545,11 @@ keeps secrets and private packet material out of the browser guidance.
 ## 2.5.14 - Security, Packaging, And Release Automation
 
 Goal: make releases repeatable and trustworthy.
+
+Status: started with a cross-file release metadata guard. The current pass adds
+`scripts/check-version-sync.mjs`, runs it from CI and local release checks, and
+fails fast when `VERSION`, backend defaults, Docker defaults, frontend package
+metadata, docs, top-bar localStorage keys, or changelog entries drift.
 
 ### Release Automation
 
