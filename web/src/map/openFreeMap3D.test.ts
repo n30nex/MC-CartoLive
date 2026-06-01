@@ -4,8 +4,11 @@ import type { PublicNode, PublicRoute } from '../types';
 import { emptyNodeFocus } from './nodeFocus';
 import {
   OPENFREEMAP_3D_LAYER_ID,
+  buildCometSegmentPaths,
   createOpenFreeMap3DController,
   nodeModelKind,
+  routeArcRadialSegments,
+  routeArcTubularSegments,
   selectOpenFreeMap3DNodes,
   selectOpenFreeMap3DRoutes,
   type OpenFreeMap3DUpdate
@@ -59,6 +62,39 @@ describe('OpenFreeMap 3D layer helpers', () => {
     const selected = selectOpenFreeMap3DRoutes(mapViewport(9, -80, 43, -78, 44), input, now, 10);
 
     expect(selected.map((item) => item.id)).toEqual(['focused-route', 'fresh-offscreen', 'visible-old']);
+  });
+
+  it('uses cheaper route arc geometry for ordinary arcs while preserving selected emphasis', () => {
+    expect(routeArcRadialSegments(1)).toBe(3);
+    expect(routeArcRadialSegments(1.35)).toBe(4);
+    expect(routeArcRadialSegments(1.85)).toBe(5);
+    expect(routeArcTubularSegments(34, 1)).toBeLessThan(routeArcTubularSegments(34, 1.85));
+    expect(routeArcTubularSegments(8, 1)).toBeGreaterThanOrEqual(5);
+  });
+
+  it('precomputes 3D comet arc vectors once per route segment', () => {
+    const paths = buildCometSegmentPaths([
+      {
+        routeId: 'route-a',
+        from: { nodeId: 'a', label: 'A', lat: 43.6, lng: -79.4 },
+        to: { nodeId: 'b', label: 'B', lat: 43.8, lng: -79.7 },
+        distanceKm: 28
+      },
+      {
+        routeId: 'route-b',
+        from: { nodeId: 'b', label: 'B', lat: 43.8, lng: -79.7 },
+        to: { nodeId: 'c', label: 'C', lat: 44.1, lng: -80 },
+        distanceKm: 45
+      }
+    ], 1.2);
+
+    expect(paths).toHaveLength(2);
+    for (const path of paths) {
+      expect(path.samples.length).toBeGreaterThanOrEqual(8);
+      expect(path.vectors).toHaveLength(path.samples.length);
+      expect(path.vectors[0].x).toBeTypeOf('number');
+      expect(path.vectors[0].z).toBeTypeOf('number');
+    }
   });
 });
 

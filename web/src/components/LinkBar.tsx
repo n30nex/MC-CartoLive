@@ -15,11 +15,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.29';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.30';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.30 reduces OpenFreeMap 3D route/comet render cost with cheaper ordinary arcs, cached comet paths, and fewer node-scene rebuilds.',
   '2.5.29 makes NetGraph palette-aware, including canvas background, selected pathways, labels, observer accents, and panel chrome.',
   '2.5.28 makes Perf a direct public-safe live status page for backend, API, MQTT, map motion, Packets, and Chat.',
   'Live Follow uses slower, lower-zoom camera moves and stricter movement spacing so it is watchable during busy traffic.',

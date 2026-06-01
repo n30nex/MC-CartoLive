@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.29
+# MeshCore MQTT Live Map v2.5.30
 
 Also known as **MC-CartoLive**.
 
@@ -23,11 +23,16 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.29 Feature Gallery
+### v2.5.30 Feature Gallery
 
-Version 2.5.29 keeps the Canada deployment intact while continuing the
+Version 2.5.30 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
+
+This patch reduces OpenFreeMap 3D render cost: ordinary route arcs use cheaper
+geometry, selected/focused routes keep higher detail, 3D packet comets reuse
+cached arc samples and fixed trail buffers, and volatile activity counters no
+longer force node-scene rebuilds when the visible 3D model set has not changed.
 
 This patch makes NetGraph match the rest of the app more closely: the canvas
 background, selected pathways, fallback link colors, labels, observer accents,
@@ -185,7 +190,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.29
+  ghcr.io/n30nex/mc-cartolive:2.5.30
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -196,7 +201,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.29
+  ghcr.io/n30nex/mc-cartolive:2.5.30
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -316,7 +321,7 @@ docker compose build
 
 ## Production Hosting
 
-The recommended v2.5.29 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.30 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

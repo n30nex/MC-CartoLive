@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.29` palette-aware NetGraph visuals, live-status simplification, calmer Live Follow, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.30` OpenFreeMap 3D render-cost reduction, palette-aware NetGraph visuals, live-status simplification, calmer Live Follow, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,23 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.30 - OpenFreeMap 3D Render Cost Reduction
+
+Goal: improve OpenFreeMap 3D smoothness without changing public data contracts,
+flat-map behavior, or the visible feature set.
+
+Scope:
+
+- Reduce ordinary 3D route arc tube detail while preserving higher detail for
+  selected, focused, plotted, and analysis paths.
+- Cache 3D packet comet route-arc samples and Mercator vectors at comet
+  creation so animation frames update positions and fixed trail buffers instead
+  of rebuilding samples and geometry.
+- Keep 3D node-scene signatures stable when only volatile activity counters
+  change and the visible model set/static properties are unchanged.
+- Preserve OpenFreeMap 3D as a frontend-only overlay and keep existing
+  MapLibre layers for hit testing, labels, selection, and fallback.
 
 ## 2.5.29 - NetGraph Theme Alignment And Chat Render Guard
 

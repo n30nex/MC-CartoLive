@@ -5,16 +5,16 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.29` is the active foundation patch toward the next production-ready
+Version `2.5.30` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: palette-aware NetGraph visuals, duplicate-safe public
-  Chat rendering, public-safe live status, calmer Live Follow camera movement,
-  strict build-age parsing, OpenFreeMap 3D production polish, backend scale,
-  Packets/VCR data-path stability,
+- Current patch focus: OpenFreeMap 3D render-cost reduction, palette-aware
+  NetGraph visuals, duplicate-safe public Chat rendering, public-safe live
+  status, calmer Live Follow camera movement, strict build-age parsing,
+  backend scale, Packets/VCR data-path stability,
   light-mode route contrast, and mobile/browser regression coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
@@ -198,6 +198,17 @@ Version `2.5.29` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.30 Patch Focus
+
+- Reduce OpenFreeMap 3D route arc geometry cost by using cheaper tube detail
+  for ordinary arcs while preserving detail for selected and focused paths.
+- Cache 3D packet comet route-arc samples and projected vectors at comet
+  creation so per-frame animation updates move existing buffers instead of
+  resampling arcs and replacing trail geometry.
+- Keep 3D node scenes stable when only volatile activity counters change and
+  the visible model set/static node properties remain the same.
+- Keep flat mode unchanged and keep public APIs/privacy boundaries unchanged.
 
 ## 2.5.29 Patch Focus
 

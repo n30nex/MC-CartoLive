@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.5.30 - 2026-06-01
+
+- Reduced OpenFreeMap 3D route arc geometry cost by lowering ordinary-route
+  tube detail while preserving higher detail for selected and focused paths.
+- Cached 3D packet comet arc samples and Mercator vectors at comet creation so
+  live/replay comets no longer resample arcs or replace trail geometry every
+  frame.
+- Stopped volatile node activity counters from forcing 3D node-scene rebuilds
+  when the visible model set and static node properties have not changed.
+
 ## 2.5.29 - 2026-06-01
 
 - Made NetGraph canvas rendering palette-aware so backgrounds, selected

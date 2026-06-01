@@ -6,7 +6,7 @@ import { payloadVisual } from '../payloadVisuals';
 import type { PublicNode, PublicObserverBurst, PublicRoute, PublicRoutePulse } from '../types';
 import { isMappableEndpoint, isMappableNode } from './geo';
 import type { NodeFocus } from './nodeFocus';
-import { arcPointAt, arcTrailSamples, sampleRouteArc, type ArcSample } from './routeArcs';
+import { arcTrailSamples, sampleRouteArc, type ArcSample } from './routeArcs';
 import { routeColors } from './routeSource';
 import { DETAIL_MIN_ZOOM } from './zoomMode';
 import { packetTravelDuration, sequentialSegmentProgress, type PacketAnimationOptions } from './packetAnimator';
@@ -14,7 +14,7 @@ import { packetTravelDuration, sequentialSegmentProgress, type PacketAnimationOp
 export const OPENFREEMAP_3D_LAYER_ID = 'meshcore-openfreemap-3d-live';
 
 export const MAX_NODE_MODELS = 720;
-export const MAX_ROUTE_ARCS = 1100;
+export const MAX_ROUTE_ARCS = 900;
 const ROUTE_FRESH_MS = 5 * 60_000;
 const OBSERVER_GLOW_MS = 5200;
 const PACKET_AFTERGLOW_MS = 900;
@@ -52,11 +52,21 @@ type ActiveComet = {
   trailScale: number;
   animationStyle: PacketAnimationStyle;
   force: boolean;
+  paths: CometSegmentPath[];
   root: THREE.Group;
   head: THREE.Mesh;
   halo: THREE.Mesh;
   cone: THREE.Mesh;
   trail: THREE.Line;
+  trailGeometry: THREE.BufferGeometry;
+  trailPositions: Float32Array;
+  maxTrailPoints: number;
+  tailTarget: THREE.Vector3;
+};
+
+export type CometSegmentPath = {
+  samples: ArcSample[];
+  vectors: THREE.Vector3[];
 };
 
 type ObserverGlow = {
@@ -390,42 +400,62 @@ function createSegmentArcMesh(
   const midpoint = samples[Math.floor(samples.length / 2)] ?? samples[0];
   const scale = meterScale(midpoint.lng, midpoint.lat);
   const radius = scale * clamp(90 + Math.sqrt(Math.max(1, segment.distanceKm)) * 18 * emphasis, 80, 2200);
-  const geometry = new THREE.TubeGeometry(curve, Math.max(8, samples.length - 1), radius, 5, false);
+  const geometry = new THREE.TubeGeometry(curve, routeArcTubularSegments(samples.length, emphasis), radius, routeArcRadialSegments(emphasis), false);
   const mesh = new THREE.Mesh(geometry, material(hexNumber(color), opacity, true));
   mesh.name = `route-arc:${name}`;
   return mesh;
 }
 
-function createComet(input: Omit<ActiveComet, 'root' | 'head' | 'halo' | 'cone' | 'trail'>): ActiveComet {
+export function routeArcTubularSegments(sampleCount: number, emphasis: number): number {
+  const base = Math.max(6, sampleCount - 1);
+  if (emphasis >= 1.6) return base;
+  if (emphasis >= 1.25) return Math.max(6, Math.round(base * 0.85));
+  return Math.max(5, Math.round(base * 0.68));
+}
+
+export function routeArcRadialSegments(emphasis: number): number {
+  if (emphasis >= 1.6) return 5;
+  if (emphasis >= 1.25) return 4;
+  return 3;
+}
+
+function createComet(input: Omit<ActiveComet, 'root' | 'head' | 'halo' | 'cone' | 'trail' | 'trailGeometry' | 'trailPositions' | 'maxTrailPoints' | 'paths' | 'tailTarget'>): ActiveComet {
   const root = new THREE.Group();
   const color = hexNumber(input.color || '#67e8f9');
   const head = new THREE.Mesh(new THREE.SphereGeometry(700, 16, 10), material(0xffffff, 0.96, true));
   const halo = new THREE.Mesh(new THREE.SphereGeometry(1320, 16, 10), material(color, 0.28, true));
   const cone = new THREE.Mesh(new THREE.ConeGeometry(420, 1100, 16), material(color, 0.82, true));
   cone.geometry.rotateX(Math.PI / 2);
-  const trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.74, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const paths = buildCometSegmentPaths(input.segments, input.force ? 1.5 : 1.15);
+  const maxTrailPoints = Math.max(2, Math.max(...paths.map((path) => path.samples.length + 2), 2));
+  const trailPositions = new Float32Array(maxTrailPoints * 3);
+  const trailGeometry = new THREE.BufferGeometry();
+  trailGeometry.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+  trailGeometry.setDrawRange(0, 0);
+  const trail = new THREE.Line(trailGeometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.74, blending: THREE.AdditiveBlending, depthWrite: false }));
   root.add(trail, halo, head, cone);
-  return { ...input, root, head, halo, cone, trail };
+  return { ...input, paths, root, head, halo, cone, trail, trailGeometry, trailPositions, maxTrailPoints, tailTarget: new THREE.Vector3() };
 }
 
 function updateComet(comet: ActiveComet, elapsed: number) {
   const travelProgress = Math.min(1, elapsed / comet.travelDuration);
   const afterglow = elapsed > comet.travelDuration ? 1 - clamp((elapsed - comet.travelDuration) / comet.afterglowDuration, 0, 1) : 1;
   const state = sequentialSegmentProgress(travelProgress, comet.segments.length);
-  const segment = comet.segments[state.segmentIndex] ?? comet.segments[0];
-  const samples = sampleRouteArc(segment.from, segment.to, { distanceKm: segment.distanceKm, heightScale: comet.force ? 1.5 : 1.15 });
-  const headPoint = arcPointAt(samples, state.localProgress) ?? samples[0];
-  const head = mercatorVector(headPoint);
+  const path = comet.paths[state.segmentIndex] ?? comet.paths[0];
+  if (!path) return;
+  writeArcVectorAt(path, state.localProgress, comet.head.position);
   const trailProgress = (comet.animationStyle === 'minimal' ? 0.05 : comet.animationStyle === 'pulse' ? 0.1 : 0.16) * Math.max(0.2, comet.trailScale);
-  const trail = arcTrailSamples(samples, state.localProgress, trailProgress).map((sample) => mercatorVector(sample));
-  comet.head.position.copy(head);
-  comet.halo.position.copy(head);
-  comet.cone.position.copy(head);
-  if (trail.length >= 2) {
-    const tail = trail[Math.max(0, trail.length - 2)];
-    comet.cone.lookAt(tail);
-    comet.trail.geometry.dispose();
-    comet.trail.geometry = new THREE.BufferGeometry().setFromPoints(trail);
+  comet.halo.position.copy(comet.head.position);
+  comet.cone.position.copy(comet.head.position);
+  const trailPointCount = updateCometTrailGeometry(comet, path, state.localProgress, trailProgress);
+  if (trailPointCount >= 2) {
+    const tailIndex = Math.max(0, trailPointCount - 2);
+    comet.tailTarget.set(
+      comet.trailPositions[tailIndex * 3],
+      comet.trailPositions[tailIndex * 3 + 1],
+      comet.trailPositions[tailIndex * 3 + 2]
+    );
+    comet.cone.lookAt(comet.tailTarget);
   }
   const pulse = 0.76 + Math.sin(performance.now() / 90) * 0.18;
   comet.root.visible = afterglow > 0.01;
@@ -434,6 +464,38 @@ function updateComet(comet: ActiveComet, elapsed: number) {
     const mat = mesh.material as THREE.Material & { opacity?: number };
     if (mat && 'opacity' in mat) mat.opacity = Math.min(1, (object === comet.halo ? 0.24 : 0.9) * afterglow * comet.brightness * pulse);
   });
+}
+
+export function buildCometSegmentPaths(segments: PublicRoutePulse['segments'], heightScale: number): CometSegmentPath[] {
+  return segments.map((segment) => {
+    const samples = sampleRouteArc(segment.from, segment.to, { distanceKm: segment.distanceKm, heightScale });
+    return { samples, vectors: samples.map((sample) => mercatorVector(sample)) };
+  });
+}
+
+function writeArcVectorAt(path: CometSegmentPath, progress: number, target: THREE.Vector3): THREE.Vector3 {
+  if (path.vectors.length === 0) return target.set(0, 0, 0);
+  if (path.vectors.length === 1) return target.copy(path.vectors[0]);
+  const clamped = clamp(progress, 0, 1);
+  const scaled = clamped * (path.vectors.length - 1);
+  const index = Math.min(path.vectors.length - 2, Math.floor(scaled));
+  const local = scaled - index;
+  return target.copy(path.vectors[index]).lerp(path.vectors[index + 1], local);
+}
+
+function updateCometTrailGeometry(comet: ActiveComet, path: CometSegmentPath, headProgress: number, trailProgress: number): number {
+  const samples = arcTrailSamples(path.samples, headProgress, trailProgress);
+  const count = Math.min(comet.maxTrailPoints, samples.length);
+  for (let index = 0; index < count; index++) {
+    const vector = writeArcVectorAt(path, samples[index].progress, comet.tailTarget);
+    comet.trailPositions[index * 3] = vector.x;
+    comet.trailPositions[index * 3 + 1] = vector.y;
+    comet.trailPositions[index * 3 + 2] = vector.z;
+  }
+  comet.trailGeometry.setDrawRange(0, count);
+  const position = comet.trailGeometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+  if (position) position.needsUpdate = true;
+  return count;
 }
 
 function createObserverGlow(burst: PublicObserverBurst): ObserverGlow {
@@ -464,7 +526,7 @@ function nodeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): st
     input.focus.selectedNodeID ?? '',
     stableSetSignature(input.focus.pathNodeIDs),
     stableSetSignature(input.focus.neighbourNodeIDs),
-    selectedNodes.map((node) => `${node.id}:${node.role}:${node.isObserver ? 1 : 0}:${node.latitude.toFixed(4)}:${node.longitude.toFixed(4)}:${node.activityCount}`).sort().join('|')
+    selectedNodes.map((node) => `${node.id}:${node.role}:${node.isObserver ? 1 : 0}:${node.latitude.toFixed(4)}:${node.longitude.toFixed(4)}`).sort().join('|')
   ].join('~');
 }
 
