@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.31` long-text Chat rebroadcast dedupe, OpenFreeMap 3D render-cost reduction, palette-aware NetGraph visuals, live-status simplification, calmer Live Follow, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.32` OpenFreeMap 3D adaptive LOD/budgets, long-text Chat rebroadcast dedupe, OpenFreeMap 3D render-cost reduction, palette-aware NetGraph visuals, live-status simplification, calmer Live Follow, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,21 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.32 - OpenFreeMap 3D Adaptive LOD
+
+Goal: reduce 3D object pressure in dense OpenFreeMap views without removing
+selected or route-analysis context.
+
+Scope:
+
+- Add adaptive 3D node and route-arc budgets that scale up as the viewer zooms
+  closer.
+- Render ordinary nodes as lightweight markers near the detail threshold while
+  keeping selected, route-path, and neighbour nodes on full procedural models.
+- Keep existing 2D MapLibre layers responsible for labels, hit testing,
+  selection, and fallback rendering.
+- Preserve public API compatibility and privacy boundaries.
 
 ## 2.5.31 - Chat Long-Text Rebroadcast Guard
 

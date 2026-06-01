@@ -80,6 +80,8 @@ type ObserverGlow = {
   ring: THREE.Mesh;
 };
 
+type NodeModelLOD = 'marker' | 'full';
+
 export function createOpenFreeMap3DController(): OpenFreeMap3DController {
   return new OpenFreeMap3DLayer();
 }
@@ -294,8 +296,9 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
 
 function rebuildNodeModels(map: maplibregl.Map, root: THREE.Group, input: OpenFreeMap3DUpdate) {
   clearGroup(root);
+  const zoom = map.getZoom();
   for (const node of selectOpenFreeMap3DNodes(map, input)) {
-    const model = createNodeModel(node, input.themeMode);
+    const model = createNodeModel(node, input.themeMode, nodeModelLOD(node, input.focus, zoom));
     positionAtLngLat(model, node.longitude, node.latitude, 8);
     root.add(model);
   }
@@ -318,17 +321,20 @@ function rebuildRouteArcs(map: maplibregl.Map, root: THREE.Group, input: OpenFre
 export function selectOpenFreeMap3DNodes(map: Map3DViewport, input: OpenFreeMap3DUpdate, maxNodes = MAX_NODE_MODELS): PublicNode[] {
   if (!input.layerSettings.nodes || !input.layerSettings.nodeModels3D || map.getZoom() < DETAIL_MIN_ZOOM) return [];
   const bounds = paddedBounds(map, 0.2);
+  const budget = Math.min(maxNodes, openFreeMap3DNodeBudget(map.getZoom()));
   return input.nodes
     .filter(isMappableNode)
     .filter((node) => boundsContains(bounds, node.longitude, node.latitude))
     .sort((a, b) => nodePriority(b, input.focus) - nodePriority(a, input.focus))
-    .slice(0, maxNodes);
+    .slice(0, budget);
 }
 
 export function selectOpenFreeMap3DRoutes(map: Map3DViewport, input: OpenFreeMap3DUpdate, now = Date.now(), maxRoutes = MAX_ROUTE_ARCS): PublicRoute[] {
   if (!input.layerSettings.routes || !input.layerSettings.routeArcs3D) return [];
   const bounds = paddedBounds(map, 0.28);
-  const detail = map.getZoom() >= DETAIL_MIN_ZOOM;
+  const zoom = map.getZoom();
+  const detail = zoom >= DETAIL_MIN_ZOOM;
+  const budget = Math.min(maxRoutes, openFreeMap3DRouteBudget(zoom));
   return input.routes
     .filter((route) => isMappableEndpoint(route.from) && isMappableEndpoint(route.to))
     .filter((route) => {
@@ -338,15 +344,41 @@ export function selectOpenFreeMap3DRoutes(map: Map3DViewport, input: OpenFreeMap
       return focused || fresh || (detail && visible);
     })
     .sort((a, b) => routePriority(b, input, now) - routePriority(a, input, now))
-    .slice(0, maxRoutes);
+    .slice(0, budget);
 }
 
-function createNodeModel(node: PublicNode, themeMode: 'dark' | 'light'): THREE.Group {
+export function openFreeMap3DNodeBudget(zoom: number): number {
+  if (zoom < DETAIL_MIN_ZOOM) return 0;
+  if (zoom < 8.4) return 140;
+  if (zoom < 10) return 300;
+  if (zoom < 12) return 520;
+  return MAX_NODE_MODELS;
+}
+
+export function openFreeMap3DRouteBudget(zoom: number): number {
+  if (zoom < 5.8) return 80;
+  if (zoom < 8.2) return 180;
+  if (zoom < 10) return 420;
+  if (zoom < 12) return 680;
+  return MAX_ROUTE_ARCS;
+}
+
+export function nodeModelLOD(node: PublicNode, focus: NodeFocus, zoom: number): NodeModelLOD {
+  if (node.id === focus.selectedNodeID || focus.pathNodeIDs.has(node.id) || focus.neighbourNodeIDs.has(node.id)) return 'full';
+  return zoom >= 9.6 ? 'full' : 'marker';
+}
+
+function createNodeModel(node: PublicNode, themeMode: 'dark' | 'light', lod: NodeModelLOD): THREE.Group {
   const group = new THREE.Group();
   const kind = nodeModelKind(node);
   const color = nodeColor(node);
   const colorNumber = hexNumber(color);
   const dark = themeMode === 'dark';
+  if (lod === 'marker') {
+    addCylinder(group, 170, 170, kind === 'observer' ? 260 : 420, colorNumber, 0.88, kind === 'observer' ? 140 : 230);
+    addSphere(group, kind === 'observer' ? 300 : 250, colorNumber, kind === 'observer' ? 0.28 : 0.22, kind === 'observer' ? 240 : 430);
+    return group;
+  }
   if (kind === 'repeater') {
     addCylinder(group, 130, 130, 980, colorNumber, 0.94, 490);
     addBox(group, 620, 420, 180, dark ? 0x0f172a : 0xe2e8f0, 0.92, 90);
@@ -518,6 +550,7 @@ function updateObserverGlow(glow: ObserverGlow, elapsed: number) {
 
 function nodeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): string {
   const selectedNodes = selectOpenFreeMap3DNodes(map, input);
+  const zoom = map.getZoom();
   return [
     input.layerSettings.nodes,
     input.layerSettings.nodeModels3D,
@@ -526,7 +559,7 @@ function nodeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): st
     input.focus.selectedNodeID ?? '',
     stableSetSignature(input.focus.pathNodeIDs),
     stableSetSignature(input.focus.neighbourNodeIDs),
-    selectedNodes.map((node) => `${node.id}:${node.role}:${node.isObserver ? 1 : 0}:${node.latitude.toFixed(4)}:${node.longitude.toFixed(4)}`).sort().join('|')
+    selectedNodes.map((node) => `${node.id}:${nodeModelLOD(node, input.focus, zoom)}:${node.role}:${node.isObserver ? 1 : 0}:${node.latitude.toFixed(4)}:${node.longitude.toFixed(4)}`).sort().join('|')
   ].join('~');
 }
 

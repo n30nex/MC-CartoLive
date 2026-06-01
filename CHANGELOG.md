@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 2.5.32 - 2026-06-01
+
+- Reduced OpenFreeMap 3D object load near detail zoom with adaptive node and
+  route-arc budgets that scale up as the viewer zooms closer.
+- Added lightweight marker LOD for ordinary 3D nodes at lower detail zoom while
+  keeping selected, route-path, and neighbour nodes on full procedural models.
+- Added regression coverage for 3D node/route budgets and LOD selection.
+
 ## 2.5.31 - 2026-06-01
 
 - Fixed the remaining visible public Chat duplicate case by adding a short

@@ -3,7 +3,7 @@ services:
     build:
       context: .
       args:
-        APP_VERSION: ${APP_VERSION:-2.5.31}
+        APP_VERSION: ${APP_VERSION:-2.5.32}
         VITE_OPENFREEMAP_STYLE_URL: ${VITE_OPENFREEMAP_STYLE_URL:-}
         VITE_OPENFREEMAP_TILEJSON_URL: ${VITE_OPENFREEMAP_TILEJSON_URL:-https://tiles.openfreemap.org/planet}
         VITE_TERRAIN_TILEJSON_URL: ${VITE_TERRAIN_TILEJSON_URL:-https://demotiles.maplibre.org/terrain-tiles/tiles.json}
@@ -20,7 +20,7 @@ services:
     env_file:
       - .env
     environment:
-      APP_VERSION: ${APP_VERSION:-2.5.31}
+      APP_VERSION: ${APP_VERSION:-2.5.32}
       GIT_SHA: ${GIT_SHA:-${VITE_GIT_SHA:-}}
       BUILD_TIME: ${BUILD_TIME:-${VITE_BUILD_TIME:-}}
     volumes:

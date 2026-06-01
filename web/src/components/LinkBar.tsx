@@ -15,11 +15,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.31';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.32';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.32 reduces OpenFreeMap 3D load at detail zoom with adaptive node/route budgets and lightweight marker LOD for ordinary nodes.',
   '2.5.31 fixes the remaining visible Chat repeat case by collapsing long rebroadcasted public text within a short repeat window, even when route/sender wrappers differ.',
   '2.5.30 reduces OpenFreeMap 3D route/comet render cost with cheaper ordinary arcs, cached comet paths, and fewer node-scene rebuilds.',
   '2.5.29 makes NetGraph palette-aware, including canvas background, selected pathways, labels, observer accents, and panel chrome.',

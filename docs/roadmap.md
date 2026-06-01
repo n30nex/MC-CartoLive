@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.31` is the active foundation patch toward the next production-ready
+Version `2.5.32` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -198,6 +198,15 @@ Version `2.5.31` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.32 Patch Focus
+
+- Reduce OpenFreeMap 3D object pressure at detail zoom with adaptive node and
+  route-arc budgets that scale by zoom.
+- Render ordinary nodes as lightweight 3D markers near the detail threshold
+  while selected, route-path, and neighbour nodes keep full procedural models.
+- Keep OpenFreeMap 3D frontend-only, optional, and compatible with existing
+  map hit-testing and public data/privacy boundaries.
 
 ## 2.5.31 Patch Focus
 

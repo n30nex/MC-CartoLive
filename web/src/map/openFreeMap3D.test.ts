@@ -6,7 +6,10 @@ import {
   OPENFREEMAP_3D_LAYER_ID,
   buildCometSegmentPaths,
   createOpenFreeMap3DController,
+  nodeModelLOD,
   nodeModelKind,
+  openFreeMap3DNodeBudget,
+  openFreeMap3DRouteBudget,
   routeArcRadialSegments,
   routeArcTubularSegments,
   selectOpenFreeMap3DNodes,
@@ -45,6 +48,25 @@ describe('OpenFreeMap 3D layer helpers', () => {
     const selected = selectOpenFreeMap3DNodes(mapViewport(9, -80, 43, -78, 44), input, 2);
 
     expect(selected.map((item) => item.id)).toEqual(['focused', 'visible']);
+  });
+
+  it('uses adaptive 3D node budgets and keeps focus nodes on full model LOD', () => {
+    expect(openFreeMap3DNodeBudget(6.9)).toBe(0);
+    expect(openFreeMap3DNodeBudget(7.2)).toBeLessThan(openFreeMap3DNodeBudget(10.5));
+    expect(openFreeMap3DNodeBudget(13)).toBeGreaterThanOrEqual(700);
+
+    const focus = { ...emptyNodeFocus(), selectedNodeID: 'selected', pathNodeIDs: new Set(['path']) };
+
+    expect(nodeModelLOD(node('ordinary', 43.6, -79.4, 5), focus, 7.4)).toBe('marker');
+    expect(nodeModelLOD(node('selected', 43.6, -79.4, 5), focus, 7.4)).toBe('full');
+    expect(nodeModelLOD(node('path', 43.6, -79.4, 5), focus, 7.4)).toBe('full');
+    expect(nodeModelLOD(node('ordinary-high', 43.6, -79.4, 5), focus, 10)).toBe('full');
+  });
+
+  it('uses adaptive 3D route budgets so low zoom route arcs stay bounded', () => {
+    expect(openFreeMap3DRouteBudget(5)).toBeLessThan(openFreeMap3DRouteBudget(9));
+    expect(openFreeMap3DRouteBudget(9)).toBeLessThan(openFreeMap3DRouteBudget(12));
+    expect(openFreeMap3DRouteBudget(13)).toBeGreaterThanOrEqual(850);
   });
 
   it('keeps fresh or focused 3D routes without including every offscreen route', () => {
