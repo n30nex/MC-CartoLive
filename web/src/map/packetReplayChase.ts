@@ -14,6 +14,15 @@ export interface ReplayChasePath {
   totalDistanceKm: number;
 }
 
+export interface ReplayChaseCameraFrame {
+  center: ReplayChasePoint;
+  subject: ReplayChasePoint;
+  lookahead: ReplayChasePoint;
+  bearing: number;
+  pitch: number;
+  zoom: number;
+}
+
 const MIN_SEGMENT_DISTANCE_KM = 0.001;
 const DEFAULT_LOOKAHEAD_PROGRESS = 0.01;
 
@@ -114,6 +123,51 @@ export function replayChaseZoomForDistance(distanceKm: number, currentZoom: numb
   if (safeDistanceKm > 600) return clamp(safeCurrentZoom + 0.7, 5.9, 8.2);
   if (safeDistanceKm > 160) return clamp(safeCurrentZoom + 1, 7.2, 9.4);
   return clamp(safeCurrentZoom + 1.4, 9.2, 12.3);
+}
+
+export function replayChaseCameraFrame(path: ReplayChasePath, progress: number, currentZoom: number): ReplayChaseCameraFrame {
+  if (path.points.length <= 1 || path.totalDistanceKm <= 0) {
+    const point = emptyReplayChasePoint();
+    return { center: point, subject: point, lookahead: point, bearing: 0, pitch: 62, zoom: replayChaseZoomForDistance(0, currentZoom) };
+  }
+
+  const subjectProgress = clamp(progress, 0, 1);
+  const followDistanceKm = replayChaseFollowDistanceKm(path.totalDistanceKm);
+  const lookaheadDistanceKm = replayChaseLookaheadDistanceKm(path.totalDistanceKm);
+  const followProgress = followDistanceKm / path.totalDistanceKm;
+  const lookaheadProgress = lookaheadDistanceKm / path.totalDistanceKm;
+  const subject = pointAlongReplayChasePath(path, subjectProgress);
+  const center = pointAlongReplayChasePath(path, Math.max(0, subjectProgress - followProgress));
+  const lookahead = pointAlongReplayChasePath(path, Math.min(1, subjectProgress + lookaheadProgress));
+  return {
+    center,
+    subject,
+    lookahead,
+    bearing: replayChaseBearing(center, lookahead),
+    pitch: replayChasePitchForDistance(path.totalDistanceKm),
+    zoom: replayChaseZoomForDistance(path.totalDistanceKm, currentZoom)
+  };
+}
+
+export function replayChaseFollowDistanceKm(totalDistanceKm: number): number {
+  const safeDistanceKm = Math.max(0, Number.isFinite(totalDistanceKm) ? totalDistanceKm : 0);
+  if (safeDistanceKm <= 0) return 0;
+  const baseDistanceKm = safeDistanceKm > 600 ? 24 : safeDistanceKm > 160 ? 9 : 2.4;
+  return clamp(baseDistanceKm, Math.min(0.15, safeDistanceKm * 0.012), Math.max(0.2, safeDistanceKm * 0.08));
+}
+
+export function replayChaseLookaheadDistanceKm(totalDistanceKm: number): number {
+  const safeDistanceKm = Math.max(0, Number.isFinite(totalDistanceKm) ? totalDistanceKm : 0);
+  if (safeDistanceKm <= 0) return 0;
+  const baseDistanceKm = safeDistanceKm > 600 ? 52 : safeDistanceKm > 160 ? 22 : 6;
+  return clamp(baseDistanceKm, Math.min(0.4, safeDistanceKm * 0.02), Math.max(0.8, safeDistanceKm * 0.14));
+}
+
+export function replayChasePitchForDistance(distanceKm: number): number {
+  const safeDistanceKm = Math.max(0, Number.isFinite(distanceKm) ? distanceKm : 0);
+  if (safeDistanceKm > 600) return 60;
+  if (safeDistanceKm > 160) return 64;
+  return 68;
 }
 
 function safeSegmentDistanceKm(distanceKm: number, fallbackDistanceKm: number): number {

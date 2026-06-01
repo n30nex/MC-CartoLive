@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 2.5.33 - 2026-06-01
+
+- Improved OpenFreeMap selected-packet replay with a trailing chase camera that
+  keeps the packet forward in view instead of centering every step directly on
+  the packet.
+- Added distance-aware chase pitch, follow distance, and lookahead distance so
+  local and long-haul routes get different cinematic framing.
+- Increased chase camera cadence and switched replay follow steps to linear
+  easing for smoother motion between camera frames.
+- Added regression coverage for chase-camera frame selection, follow distance,
+  lookahead distance, and pitch bands.
+
 ## 2.5.32 - 2026-06-01
 
 - Reduced OpenFreeMap 3D object load near detail zoom with adaptive node and

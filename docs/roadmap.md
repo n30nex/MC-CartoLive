@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.32` is the active foundation patch toward the next production-ready
+Version `2.5.33` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -198,6 +198,16 @@ Version `2.5.32` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.33 Patch Focus
+
+- Make OpenFreeMap selected-packet replay feel more cinematic with a trailing
+  chase camera that frames the packet forward along the route instead of
+  centering directly on each packet position.
+- Add tested distance-aware follow distance, lookahead distance, pitch, and
+  smoother replay camera cadence.
+- Keep the change frontend-only and preserve flat-map replay behavior, public
+  API compatibility, and privacy boundaries.
 
 ## 2.5.32 Patch Focus
 

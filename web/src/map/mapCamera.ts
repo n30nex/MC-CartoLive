@@ -80,3 +80,7 @@ export function followTrafficPadding(map: maplibregl.Map): maplibregl.PaddingOpt
 export function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3);
 }
+
+export function easeLinear(t: number): number {
+  return t;
+}

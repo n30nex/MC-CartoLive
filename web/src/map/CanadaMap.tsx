@@ -56,8 +56,8 @@ import {
   routesToGeoJSON,
   type RoutePayloadGlow
 } from './routeSource';
-import { easeOutCubic, fitToNodes, fitToRoute, fitToSegments, followTrafficPadding, isFollowPoint, mapViewFromMap, mapViewportSize } from './mapCamera';
-import { buildPacketReplayChasePath, pointAlongReplayChasePath, replayChaseBearing, replayChaseZoomForDistance } from './packetReplayChase';
+import { easeLinear, easeOutCubic, fitToNodes, fitToRoute, fitToSegments, followTrafficPadding, isFollowPoint, mapViewFromMap, mapViewportSize } from './mapCamera';
+import { buildPacketReplayChasePath, replayChaseCameraFrame } from './packetReplayChase';
 import { setSourceData, type FeatureCollection } from './sourceDataQueue';
 import { DETAIL_MIN_ZOOM, NODE_CLUSTER_MAX_ZOOM, type MapVisualMode, isClusterZoom, isDetailZoom, visualModeForZoom } from './zoomMode';
 import {
@@ -1227,24 +1227,22 @@ export default function CanadaMap({
       canvas.removeEventListener('wheel', cancel);
     };
 
-    const steps = Math.max(6, Math.min(16, Math.round(travelDurationMs / 520)));
-    const stepMs = Math.max(360, Math.round(travelDurationMs / steps));
-    const zoom = replayChaseZoomForDistance(path.totalDistanceKm, map.getZoom());
+    const steps = Math.max(12, Math.min(34, Math.round(travelDurationMs / 260)));
+    const stepMs = Math.max(170, Math.round(travelDurationMs / steps));
+    const zoomAtStart = map.getZoom();
     let index = 0;
     const step = () => {
       if (cancelled || !mapRef.current) return;
-      const progress = Math.min(0.98, index / Math.max(1, steps));
-      const nextProgress = Math.min(1, progress + 1 / Math.max(1, steps));
-      const current = pointAlongReplayChasePath(path, progress);
-      const next = pointAlongReplayChasePath(path, nextProgress);
+      const progress = Math.min(0.985, index / Math.max(1, steps));
+      const frame = replayChaseCameraFrame(path, progress, zoomAtStart);
       map.easeTo({
-        center: [current.lng, current.lat],
-        bearing: replayChaseBearing(current, next),
-        pitch: 66,
-        zoom,
-        duration: stepMs + 120,
+        center: [frame.center.lng, frame.center.lat],
+        bearing: frame.bearing,
+        pitch: frame.pitch,
+        zoom: frame.zoom,
+        duration: stepMs + 60,
         essential: true,
-        easing: easeOutCubic
+        easing: easeLinear
       });
       index += 1;
       if (index <= steps) {

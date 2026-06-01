@@ -5,6 +5,10 @@ import {
   pointAlongReplayChasePath,
   replayChaseBearing,
   replayChaseBearingAt,
+  replayChaseCameraFrame,
+  replayChaseFollowDistanceKm,
+  replayChaseLookaheadDistanceKm,
+  replayChasePitchForDistance,
   replayChaseZoomForDistance
 } from './packetReplayChase';
 import { sampleRouteArc } from './routeArcs';
@@ -103,6 +107,30 @@ describe('packet replay chase helpers', () => {
     expect(replayChaseZoomForDistance(200, 8)).toBe(9);
     expect(replayChaseZoomForDistance(40, 11)).toBe(12.3);
     expect(replayChaseZoomForDistance(Number.NaN, Number.NaN)).toBe(9.2);
+  });
+
+  it('builds cinematic chase camera frames behind the packet with lookahead bearing', () => {
+    const path = buildPacketReplayChasePath([
+      makeSegment({ lat: 0, lng: 0 }, { lat: 0, lng: 10 }, 100)
+    ]);
+
+    const frame = replayChaseCameraFrame(path, 0.5, 8);
+
+    expect(frame.subject.lng).toBeCloseTo(5, 1);
+    expect(frame.center.lng).toBeLessThan(frame.subject.lng);
+    expect(frame.lookahead.lng).toBeGreaterThan(frame.subject.lng);
+    expect(frame.bearing).toBeCloseTo(90, 1);
+    expect(frame.pitch).toBe(68);
+    expect(frame.zoom).toBeGreaterThan(9);
+  });
+
+  it('scales chase follow distance, lookahead, and pitch by route distance', () => {
+    expect(replayChaseFollowDistanceKm(60)).toBeGreaterThan(0.5);
+    expect(replayChaseFollowDistanceKm(800)).toBeGreaterThan(replayChaseFollowDistanceKm(60));
+    expect(replayChaseLookaheadDistanceKm(800)).toBeGreaterThan(replayChaseFollowDistanceKm(800));
+    expect(replayChasePitchForDistance(40)).toBe(68);
+    expect(replayChasePitchForDistance(300)).toBe(64);
+    expect(replayChasePitchForDistance(900)).toBe(60);
   });
 });
 
