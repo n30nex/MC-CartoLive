@@ -193,13 +193,13 @@ func (s *Store) PublicChatEvents(ctx context.Context, query HistoryQuery) ([]His
 	edgeWhere := []string{
 		"e.heard_at_ms >= ?",
 		"e.heard_at_ms <= ?",
-		"TRIM(e.message_text) != ''",
+		"e.message_text != ''",
 	}
 	edgeArgs := []any{query.From, to}
 	packetWhere := []string{
 		"po.heard_at_ms >= ?",
 		"po.heard_at_ms <= ?",
-		"TRIM(po.message_text) != ''",
+		"po.message_text != ''",
 		"NOT EXISTS (SELECT 1 FROM live_edge_events e WHERE e.observation_id=po.id)",
 	}
 	packetArgs := []any{query.From, to}

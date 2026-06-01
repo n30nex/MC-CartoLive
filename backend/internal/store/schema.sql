@@ -57,6 +57,8 @@ CREATE INDEX IF NOT EXISTS idx_observations_recent_id ON packet_observations(hea
 CREATE INDEX IF NOT EXISTS idx_observations_resolution ON packet_observations(resolution_status, heard_at_ms DESC);
 CREATE INDEX IF NOT EXISTS idx_observations_iata ON packet_observations(iata, heard_at_ms DESC);
 CREATE INDEX IF NOT EXISTS idx_observations_observer_recent ON packet_observations(observer_public_key, heard_at_ms DESC);
+CREATE INDEX IF NOT EXISTS idx_observations_message_recent ON packet_observations(heard_at_ms DESC, id DESC) WHERE message_text != '';
+CREATE INDEX IF NOT EXISTS idx_observations_iata_message_recent ON packet_observations(iata, heard_at_ms DESC, id DESC) WHERE message_text != '';
 
 CREATE TABLE IF NOT EXISTS nodes (
   node_id TEXT PRIMARY KEY,
@@ -151,3 +153,5 @@ CREATE TABLE IF NOT EXISTS live_edge_events (
 CREATE INDEX IF NOT EXISTS idx_live_edge_events_recent ON live_edge_events(heard_at_ms DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_live_edge_events_observation ON live_edge_events(observation_id);
 CREATE INDEX IF NOT EXISTS idx_live_edge_events_payload_recent ON live_edge_events(payload_type_name, heard_at_ms DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_live_edge_events_message_recent ON live_edge_events(heard_at_ms DESC, id DESC) WHERE message_text != '';
+CREATE INDEX IF NOT EXISTS idx_live_edge_events_payload_message_recent ON live_edge_events(payload_type_name, heard_at_ms DESC, id DESC) WHERE message_text != '';

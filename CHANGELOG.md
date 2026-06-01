@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 2.5.22 - 2026-06-01
+
+- Added SQLite partial indexes for public Chat message history and switched the
+  Chat history query to use index-friendly message predicates.
+- This fixes live 24h Chat requests that could still hit the 12s backend
+  timeout after the 2.5.21 page cap when the database had millions of rows.
+- Kept the public Chat response shape, cursor behavior, duplicate suppression,
+  and privacy boundaries unchanged.
+
 ## 2.5.21 - 2026-06-01
 
 - Added a Chat endpoint pressure guard by capping public Chat pages at 400 rows

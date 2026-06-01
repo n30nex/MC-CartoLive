@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.21` is the active foundation patch toward the next production-ready
+Version `2.5.22` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -196,6 +196,14 @@ Version `2.5.21` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.22 Patch Focus
+
+- Add SQLite partial indexes for public Chat message reads so 24h Chat windows
+  stay responsive on the live multi-million-row database.
+- Use index-friendly message predicates in the Chat history query.
+- Keep public response shape, cursor behavior, duplicate suppression, and
+  privacy boundaries unchanged.
 
 ## 2.5.21 Patch Focus
 

@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.21` Chat duplicate suppression, Chat pressure guard, live-health/top-bar polish, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.22` Chat duplicate suppression, Chat pressure guard, Chat query indexes, live-health/top-bar polish, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,18 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.22 - Chat Query Index Guard
+
+Goal: keep public Chat 24h windows responsive on large live SQLite databases.
+
+Scope:
+
+- Add partial indexes for public Chat message history reads.
+- Use index-friendly message predicates for routed and observer-only public
+  Chat events.
+- Keep the 2.5.21 page cap, cursor paging, public response shape, and privacy
+  boundaries unchanged.
 
 ## 2.5.21 - Chat Pressure Guard
 
