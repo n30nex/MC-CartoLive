@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 2.5.11 - 2026-05-31
+
+- Started the NetGraph stabilization pass with tighter component packing so
+  connected mesh groups waste less screen space.
+- Added touch-friendly NetGraph pinch zoom while preserving pan, node drag, and
+  route/node selection behavior.
+- Aligned NetGraph node colors and glyph shapes with the shared map/Legend role
+  visual registry.
+- Indexed rendered NetGraph edges so live pulse/comet animation no longer scans
+  every rendered route each frame.
+- Kept NetGraph frontend-only with no public API, backend schema, or privacy
+  boundary changes.
+
 ## 2.5.10 - 2026-05-31
 
 - Reduced OpenFreeMap 3D scene churn by selecting only visible, focused, or

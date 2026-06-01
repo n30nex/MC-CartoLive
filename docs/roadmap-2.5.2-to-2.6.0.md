@@ -2,7 +2,7 @@
 
 Last audited: 2026-05-31
 
-Baseline audited: `v2.5.10` work in progress on `main`
+Baseline audited: `v2.5.11` work in progress on `main`
 
 ## Audit Coverage
 
@@ -387,6 +387,11 @@ and visual refinement items remain in this section.
 
 Goal: make NetGraph useful and stable instead of jittery.
 
+Status: started. The first 2.5.11 pass tightens component packing, preserves
+positions through topology updates, indexes rendered edges for faster live
+comet drawing, adds mobile pinch zoom, keeps the live pulse chip in a real
+corner, and draws node glyphs with the shared map/Legend role visual registry.
+
 ### Layout Engine
 
 - Persist node positions by stable node ID across live topology changes.
@@ -413,6 +418,7 @@ Goal: make NetGraph useful and stable instead of jittery.
 - NetGraph no longer jumps or fully resets during normal live updates.
 - Connected components are packed with less empty space.
 - Overlapping route edges are understandable enough for inspection.
+- Mobile users can pan, pinch zoom, and select nodes/routes in NetGraph.
 
 ## 2.5.12 - Backend Scale And SQLite Operations
 

@@ -25,6 +25,7 @@ import {
   type NetGraphGlow,
   type NetGraphNode
 } from '../netgraph';
+import { OBSERVER_NODE_VISUAL, nodeRoleVisual, type NodeIconShape } from '../nodeVisuals';
 import { payloadVisual } from '../payloadVisuals';
 import type { PublicActivity, PublicNode, PublicRoute, PublicRoutePulse } from '../types';
 
@@ -60,6 +61,12 @@ type DragState =
   | { mode: 'pan'; startX: number; startY: number; origin: GraphTransform; moved: boolean }
   | { mode: 'node'; node: SimNode; moved: boolean };
 
+interface PinchState {
+  startDistance: number;
+  origin: GraphTransform;
+  worldAtStart: { x: number; y: number };
+}
+
 const MAX_RENDERED_NODES = 2600;
 const MAX_RENDERED_EDGES = 4200;
 const MAX_GRAPH_COMETS = 360;
@@ -72,10 +79,13 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
   const simulationRef = useRef<Simulation<SimNode, SimLink> | null>(null);
   const simNodesRef = useRef<SimNode[]>([]);
   const simLinksRef = useRef<SimLink[]>([]);
+  const simLinksByIDRef = useRef(new Map<string, SimLink>());
   const graphRef = useRef<NetGraphData>(buildNetGraphData([], []));
   const transformRef = useRef<GraphTransform>({ x: 0, y: 0, k: 1 });
   const rafRef = useRef(0);
   const dragRef = useRef<DragState | null>(null);
+  const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<PinchState | null>(null);
   const hoveredRef = useRef<SelectedGraphItem>(null);
   const selectedRef = useRef<SelectedGraphItem>(null);
   const selectedHighlightsRef = useRef<ReturnType<typeof selectionForNode>>({ nodeIDs: new Set<string>(), edgeIDs: new Set<string>() });
@@ -210,6 +220,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       .map((edge) => ({ ...edge, source: edge.sourceID, target: edge.targetID } satisfies SimLink));
     simNodesRef.current = simNodes;
     simLinksRef.current = simLinks;
+    simLinksByIDRef.current = new Map(simLinks.map((edge) => [edge.id, edge]));
     simulationRef.current?.stop();
     const simulation = forceSimulation<SimNode, SimLink>(simNodes)
       .force('link', forceLink<SimNode, SimLink>(simLinks).id((node) => node.id).distance((link) => linkDistance(link)).strength(0.42))
@@ -302,6 +313,12 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     if (!canvas) return;
     canvas.setPointerCapture(event.pointerId);
     const pointer = canvasPointer(event, canvas);
+    activePointersRef.current.set(event.pointerId, pointer);
+    if (activePointersRef.current.size >= 2) {
+      pinchRef.current = pinchStateFromPointers(activePointersRef.current, transformRef.current);
+      dragRef.current = null;
+      return;
+    }
     const world = screenToWorld(pointer, transformRef.current);
     const node = hitNode(world);
     if (node) {
@@ -318,6 +335,21 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     const canvas = canvasRef.current;
     if (!canvas) return;
     const pointer = canvasPointer(event, canvas);
+    activePointersRef.current.set(event.pointerId, pointer);
+    const pinch = pinchRef.current;
+    if (pinch && activePointersRef.current.size >= 2) {
+      const gesture = twoPointerGesture(activePointersRef.current);
+      if (gesture && pinch.startDistance > 0) {
+        const nextK = clamp(pinch.origin.k * (gesture.distance / pinch.startDistance), MIN_ZOOM, MAX_ZOOM);
+        transformRef.current = {
+          k: nextK,
+          x: gesture.midpoint.x - pinch.worldAtStart.x * nextK,
+          y: gesture.midpoint.y - pinch.worldAtStart.y * nextK
+        };
+        scheduleDraw();
+      }
+      return;
+    }
     const world = screenToWorld(pointer, transformRef.current);
     const drag = dragRef.current;
     if (drag?.mode === 'node') {
@@ -344,6 +376,13 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     const canvas = canvasRef.current;
     if (!canvas) return;
     const pointer = canvasPointer(event, canvas);
+    activePointersRef.current.delete(event.pointerId);
+    if (pinchRef.current) {
+      if (activePointersRef.current.size < 2) pinchRef.current = null;
+      dragRef.current = null;
+      scheduleDraw();
+      return;
+    }
     const world = screenToWorld(pointer, transformRef.current);
     const drag = dragRef.current;
     if (drag?.mode === 'node') {
@@ -429,7 +468,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
 
   function drawComets(ctx: CanvasRenderingContext2D, now: number) {
     for (const comet of cometsRef.current) {
-      const edge = simLinksRef.current.find((item) => item.id === comet.edgeID);
+      const edge = simLinksByIDRef.current.get(comet.edgeID);
       if (!edge) continue;
       const source = linkNode(edge.source);
       const target = linkNode(edge.target);
@@ -493,12 +532,9 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       const dimmed = (selection.nodeIDs.size > 0 && !selectedNode) || (matches.size > 0 && !searchMatch);
       const color = nodeColor(node);
       ctx.globalAlpha = dimmed ? 0.22 : 1;
-      ctx.fillStyle = color;
       ctx.shadowBlur = selectedNode || hoveredNode || searchMatch ? 18 : 7;
       ctx.shadowColor = color;
-      ctx.beginPath();
-      ctx.arc(node.x ?? 0, node.y ?? 0, node.radius + (selectedNode ? 4 : hoveredNode ? 2 : 0), 0, Math.PI * 2);
-      ctx.fill();
+      drawNodeGlyph(ctx, node, node.radius + (selectedNode ? 4 : hoveredNode ? 2 : 0), color);
       ctx.shadowBlur = 0;
       ctx.lineWidth = selectedNode || hoveredNode ? 2.3 : 1;
       ctx.strokeStyle = selectedNode ? '#ffffff' : node.isObserver ? '#fbbf24' : 'rgba(255,255,255,0.7)';
@@ -712,6 +748,26 @@ function canvasPointer(event: React.PointerEvent<HTMLCanvasElement> | React.Whee
   return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 }
 
+function twoPointerGesture(pointers: Map<number, { x: number; y: number }>): { midpoint: { x: number; y: number }; distance: number } | null {
+  const points = [...pointers.values()];
+  if (points.length < 2) return null;
+  const [a, b] = points;
+  return {
+    midpoint: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+    distance: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y))
+  };
+}
+
+function pinchStateFromPointers(pointers: Map<number, { x: number; y: number }>, transform: GraphTransform): PinchState | null {
+  const gesture = twoPointerGesture(pointers);
+  if (!gesture) return null;
+  return {
+    startDistance: gesture.distance,
+    origin: { ...transform },
+    worldAtStart: screenToWorld(gesture.midpoint, transform)
+  };
+}
+
 function screenToWorld(point: { x: number; y: number }, transform: GraphTransform): { x: number; y: number } {
   return { x: (point.x - transform.x) / transform.k, y: (point.y - transform.y) / transform.k };
 }
@@ -735,11 +791,66 @@ function nodeRadius(node: NetGraphNode): number {
 }
 
 function nodeColor(node: NetGraphNode): string {
-  if (node.isObserver) return '#f59e0b';
-  if (node.role === 'repeater') return '#22c55e';
-  if (node.role === 'room_server') return '#a855f7';
-  if (node.role === 'companion') return '#60a5fa';
-  return '#38bdf8';
+  return node.isObserver ? OBSERVER_NODE_VISUAL.color : nodeRoleVisual(node.role).color;
+}
+
+function nodeShape(node: NetGraphNode): NodeIconShape {
+  return node.isObserver ? OBSERVER_NODE_VISUAL.shape : nodeRoleVisual(node.role).shape;
+}
+
+function drawNodeGlyph(ctx: CanvasRenderingContext2D, node: SimNode, radius: number, color: string): void {
+  const x = node.x ?? 0;
+  const y = node.y ?? 0;
+  const shape = nodeShape(node);
+  ctx.beginPath();
+  switch (shape) {
+    case 'diamond':
+      ctx.moveTo(x, y - radius);
+      ctx.lineTo(x + radius, y);
+      ctx.lineTo(x, y + radius);
+      ctx.lineTo(x - radius, y);
+      ctx.closePath();
+      break;
+    case 'triangle':
+      ctx.moveTo(x, y - radius * 1.05);
+      ctx.lineTo(x + radius * 0.96, y + radius * 0.72);
+      ctx.lineTo(x - radius * 0.96, y + radius * 0.72);
+      ctx.closePath();
+      break;
+    case 'square':
+      ctx.rect(x - radius * 0.82, y - radius * 0.82, radius * 1.64, radius * 1.64);
+      break;
+    case 'pentagon':
+      for (let index = 0; index < 5; index++) {
+        const angle = -Math.PI / 2 + index * (Math.PI * 2 / 5);
+        const px = x + Math.cos(angle) * radius;
+        const py = y + Math.sin(angle) * radius;
+        if (index === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      break;
+    case 'observer':
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      break;
+    default:
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      break;
+  }
+  ctx.fillStyle = color;
+  ctx.fill();
+  if (shape === 'observer') {
+    ctx.save();
+    ctx.globalAlpha *= 0.38;
+    ctx.lineWidth = Math.max(1, radius * 0.24);
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+  }
 }
 
 function edgeColor(edge: NetGraphEdge): string {
@@ -818,19 +929,34 @@ function connectedComponents(graph: NetGraphData): Array<{ nodes: NetGraphNode[]
   return components.sort((a, b) => b.nodes.length - a.nodes.length);
 }
 
-function packedComponentCells(count: number, width: number, height: number): Array<{ x: number; y: number; width: number; height: number }> {
+export function packedComponentCells(count: number, width: number, height: number): Array<{ x: number; y: number; width: number; height: number }> {
   const centerX = width / 2;
   const centerY = height / 2;
-  const cellSize = Math.max(118, Math.min(width, height) / Math.max(2.9, Math.sqrt(count) + 0.9));
-  const radiusX = Math.max(110, width * 0.23);
-  const radiusY = Math.max(90, height * 0.23);
-  const cells: Array<{ x: number; y: number; width: number; height: number }> = [{ x: centerX, y: centerY, width: cellSize, height: cellSize }];
-  for (let index = 1; index < count; index++) {
-    const ring = Math.sqrt(index / Math.max(1, count - 1));
-    const angle = index * 2.399963229728653;
+  if (count <= 0) return [];
+  const columns = Math.max(1, Math.ceil(Math.sqrt(count * Math.max(0.72, width / Math.max(height, 1)))));
+  const rows = Math.max(1, Math.ceil(count / columns));
+  const usedWidth = width * Math.min(0.72, count <= 2 ? 0.36 : 0.68);
+  const usedHeight = height * Math.min(0.7, count <= 2 ? 0.36 : 0.66);
+  const cellWidth = usedWidth / columns;
+  const cellHeight = usedHeight / rows;
+  const cellSize = Math.max(96, Math.min(cellWidth, cellHeight, Math.min(width, height) * 0.24));
+  const orderedSlots: Array<{ column: number; row: number; distance: number }> = [];
+  for (let row = 0; row < rows; row++) {
+    for (let column = 0; column < columns; column++) {
+      orderedSlots.push({
+        column,
+        row,
+        distance: Math.hypot(column - (columns - 1) / 2, row - (rows - 1) / 2)
+      });
+    }
+  }
+  orderedSlots.sort((a, b) => a.distance - b.distance || a.row - b.row || a.column - b.column);
+  const cells: Array<{ x: number; y: number; width: number; height: number }> = [];
+  for (let index = 0; index < count; index++) {
+    const slot = orderedSlots[index] ?? { column: index % columns, row: Math.floor(index / columns), distance: 0 };
     cells.push({
-      x: centerX + Math.cos(angle) * radiusX * ring,
-      y: centerY + Math.sin(angle) * radiusY * ring,
+      x: centerX - usedWidth / 2 + (slot.column + 0.5) * cellWidth,
+      y: centerY - usedHeight / 2 + (slot.row + 0.5) * cellHeight,
       width: cellSize,
       height: cellSize
     });

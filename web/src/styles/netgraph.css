@@ -119,8 +119,8 @@
 
 .netgraph-live-chip {
   position: absolute;
-  left: 14px;
-  bottom: 14px;
+  left: calc(14px + var(--ui-safe-left, 0px));
+  bottom: calc(14px + var(--ui-safe-bottom, 0px));
   gap: 8px;
   padding: 8px 10px;
   border: 1px solid color-mix(in srgb, var(--mc-accent, #38bdf8) 48%, transparent);
@@ -256,7 +256,8 @@
   }
 
   .netgraph-live-chip {
-    left: 10px;
-    bottom: calc(38% + 20px);
+    top: 10px;
+    bottom: auto;
+    left: calc(10px + var(--ui-safe-left, 0px));
   }
 }

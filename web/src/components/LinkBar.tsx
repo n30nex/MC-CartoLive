@@ -14,11 +14,14 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.10';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.11';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  'NetGraph now packs connected components closer together, supports mobile pinch zoom, and keeps the live pulse chip pinned to a real corner.',
+  'NetGraph node colors and glyph shapes now come from the same role visual registry as the map and Legend.',
+  'NetGraph live pulse animation now indexes rendered edges instead of scanning every route each frame.',
   'OpenFreeMap 3D now selects visible/focused/fresh node and route candidates before rebuilding the Three.js scene, reducing churn in dense live views.',
   'Recent observer-only public text activity now hydrates into speech bubbles after reloads or polling fallback when a public observer location is available.',
   'Speech bubbles now key off sanitized public message text with a public map anchor instead of fragile payload-label matching.',

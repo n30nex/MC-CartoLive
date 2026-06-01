@@ -5,14 +5,15 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.10` is the active foundation patch toward the next production-ready
+Version `2.5.11` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: OpenFreeMap 3D production polish, Packets/VCR data-path
-  stability, light-mode route contrast, and mobile/browser regression coverage.
+- Current patch focus: NetGraph stability, OpenFreeMap 3D production polish,
+  Packets/VCR data-path stability, light-mode route contrast, and mobile/browser
+  regression coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -126,6 +127,17 @@ Version `2.5.10` is the active foundation patch toward the next production-ready
 - Add focused frontend tests for 3D candidate selection so dense live route
   changes do not force full-scene work unnecessarily.
 - Keep flat map behavior, public API shapes, and privacy boundaries unchanged.
+
+## 2.5.11 Patch Focus
+
+- Make NetGraph steadier by preserving stable node positions across live
+  topology refreshes and packing components closer to the viewport center.
+- Align NetGraph node colors and shapes with the same role visual registry used
+  by the map and Legend.
+- Add touch-friendly NetGraph pinch zoom and pan/select handling on mobile.
+- Index rendered graph edges so live pulse/comet drawing does not scan every
+  route every animation frame.
+- Keep NetGraph frontend-only with no public API or privacy-boundary changes.
 
 ## Next Cleanup Candidates
 
