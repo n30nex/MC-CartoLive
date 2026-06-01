@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.17` packet-identity Chat dedupe, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.18` display-window Chat dedupe, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,26 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.18 - Display-Window Chat Dedupe
+
+Goal: fix the remaining visible Chat duplicate cases where the same decoded
+message is observed by multiple observers or appears under multiple packet IDs.
+
+Scope:
+
+- Dedupe Chat rows by normalized sender, decoded text, channel, and payload type
+  inside a short display window.
+- Keep later repeated messages visible so real follow-up chat is not hidden.
+- Preserve packet-identity dedupe as a fallback and never expose packet hashes
+  publicly.
+- Keep Setup under Guide and keep deployed metadata pinned to the running commit.
+
+Verification:
+
+- Backend public Chat tests cover repeated message dedupe and internal hash
+  privacy.
+- Live smoke must pass against the Canada droplet after deploy.
 
 ## 2.5.17 - Packet-Identity Chat Dedupe
 

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 2.5.18 - 2026-06-01
+
+- Fixed remaining visible Chat duplicates by collapsing repeated
+  sender/text/channel observations in a short display window, even when
+  multiple observers or distinct packet IDs reported the same decoded message.
+- Kept later repeated messages visible so real follow-up chat is not hidden.
+- Preserved public privacy boundaries: internal packet identity is still never
+  exposed in Chat responses.
+
 ## 2.5.17 - 2026-06-01
 
 - Fixed remaining public Chat duplicate rows by deduping internally on packet

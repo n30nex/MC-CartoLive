@@ -1087,19 +1087,26 @@ func publicChatSearchFields(message live.PublicChatMessage) []string {
 }
 
 func publicChatDedupeKey(raw store.HistoryEvent, message live.PublicChatMessage) string {
+	if displayKey := publicChatDisplayDedupeKey(message); displayKey != "" {
+		return "display:" + displayKey
+	}
 	if raw.Edge != nil && strings.TrimSpace(raw.Edge.PacketHash) != "" {
 		return "packet:" + strings.TrimSpace(raw.Edge.PacketHash)
 	}
 	if raw.Packet != nil && strings.TrimSpace(raw.Packet.PacketHash) != "" {
 		return "packet:" + strings.TrimSpace(raw.Packet.PacketHash)
 	}
+	return message.ID
+}
+
+func publicChatDisplayDedupeKey(message live.PublicChatMessage) string {
 	bucket := (message.At + publicChatDedupeWindowMs/2) / publicChatDedupeWindowMs
 	sender := strings.ToLower(strings.Join(strings.Fields(message.Sender), " "))
 	text := strings.ToLower(strings.Join(strings.Fields(message.Text), " "))
 	channel := strings.ToLower(strings.TrimSpace(message.ChannelLabel))
 	payload := strings.ToLower(strings.TrimSpace(message.PayloadTypeName))
-	if sender == "" && text == "" {
-		return message.ID
+	if sender == "" || text == "" {
+		return ""
 	}
 	return strconv.FormatInt(bucket, 10) + "|" + sender + "|" + text + "|" + channel + "|" + payload
 }

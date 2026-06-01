@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.17` is the active foundation patch toward the next production-ready
+Version `2.5.18` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -196,6 +196,13 @@ Version `2.5.17` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.18 Patch Focus
+
+- Collapse repeated decoded Chat messages reported by multiple observers or
+  repeated packet IDs while keeping later follow-up messages visible.
+- Keep Setup under Guide instead of the permanent top bar and keep release
+  metadata pinned to the deployed commit.
 
 ## 2.5.17 Patch Focus
 
