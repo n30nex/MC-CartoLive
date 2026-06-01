@@ -392,6 +392,7 @@ button {
 .node-loading-toast,
 .share-toast,
 .perf-panel,
+.setup-panel,
 .packets-panel,
 .packets-compact-tray,
 .map-settings-drawer,
@@ -1011,6 +1012,7 @@ button {
 }
 
 .perf-panel,
+.setup-panel,
 .packets-panel {
   top: 92px;
   left: 50%;
@@ -1038,6 +1040,8 @@ button {
 
 .perf-panel-header,
 .perf-panel-actions,
+.setup-panel-header,
+.setup-actions,
 .packets-panel-header,
 .packets-panel-actions,
 .perf-card h3,
@@ -1056,18 +1060,21 @@ button {
 }
 
 .perf-panel-header,
+.setup-panel-header,
 .packets-panel-header {
   justify-content: space-between;
   gap: 12px;
 }
 
 .perf-panel-header h2,
+.setup-panel-header h2,
 .packets-panel-header h2 {
   margin: 2px 0 0;
   font-size: 22px;
   line-height: 1.1;
 }
 
+.setup-panel-header p,
 .packets-panel-header p {
   margin: 4px 0 0;
   color: var(--mc-text-muted, #9fb1c9);
@@ -1142,8 +1149,120 @@ button {
 }
 
 .perf-panel-actions,
+.setup-actions,
 .packets-panel-actions {
   gap: 7px;
+}
+
+.setup-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(240px, 0.7fr) minmax(320px, 1.1fr);
+  gap: 12px;
+}
+
+.setup-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(7, 16, 29, 0.84)) 84%, transparent);
+  border: 1px solid var(--mc-border, rgba(125, 211, 252, 0.26));
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.setup-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--mc-text, #f8fafc);
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.setup-card label {
+  display: grid;
+  gap: 5px;
+  color: var(--mc-text-muted, #9fb1c9);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.setup-card input {
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  color: var(--mc-text, #f8fafc);
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(7, 16, 29, 0.84)) 76%, #020617);
+  border: 1px solid var(--mc-border, rgba(125, 211, 252, 0.26));
+  border-radius: 7px;
+  font: inherit;
+}
+
+.setup-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.setup-presets button,
+.setup-actions button,
+.setup-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 10px;
+  color: var(--mc-text, #f8fafc);
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(7, 16, 29, 0.84)) 78%, transparent);
+  border: 1px solid var(--mc-border, rgba(125, 211, 252, 0.26));
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.setup-presets button.active {
+  color: color-mix(in srgb, var(--mc-accent, #38bdf8) 20%, #ffffff);
+  border-color: color-mix(in srgb, var(--mc-accent, #38bdf8) 62%, var(--mc-border, rgba(125, 211, 252, 0.26)));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--mc-accent, #38bdf8) 22%, transparent);
+}
+
+.setup-note {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  color: var(--mc-text-muted, #9fb1c9);
+  background: color-mix(in srgb, var(--mc-secondary, #a78bfa) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-secondary, #a78bfa) 24%, var(--mc-border, rgba(125, 211, 252, 0.26)));
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.setup-note strong {
+  color: var(--mc-text, #f8fafc);
+}
+
+.setup-output pre {
+  min-height: 250px;
+  max-height: 46vh;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  color: color-mix(in srgb, var(--mc-accent, #38bdf8) 22%, var(--mc-text, #f8fafc));
+  background: color-mix(in srgb, #020617 76%, var(--mc-surface, #060b12));
+  border: 1px solid color-mix(in srgb, var(--mc-border-strong, rgba(125, 211, 252, 0.5)) 58%, transparent);
+  border-radius: 7px;
+  font: 800 12px/1.55 "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .perf-status-strip {
@@ -4327,6 +4446,7 @@ button {
   }
 
   .perf-panel,
+  .setup-panel,
   .packets-panel {
     top: calc(62px + var(--ui-safe-top, 0px));
     right: calc(8px + var(--ui-safe-right, 0px));
@@ -4364,8 +4484,18 @@ button {
   }
 
   .perf-panel-header h2,
+  .setup-panel-header h2,
   .packets-panel-header h2 {
     font-size: 18px;
+  }
+
+  .setup-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .setup-output pre {
+    min-height: 180px;
+    max-height: 34vh;
   }
 
   .perf-status-strip,

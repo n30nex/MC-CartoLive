@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 2.5.13 - 2026-06-01
+
+- Added a closeable browser Setup page beside Perf, Packets, and NetGraph for
+  first-run deployment help.
+- The Setup page generates public-safe `.env` starter snippets for world,
+  Canada, and custom private-broker deployments.
+- Kept MQTT credentials, channel secrets, raw packet data, and resolver debug
+  details out of generated setup snippets.
+- Updated docs and roadmap notes for first-run package installs and the
+  confirmed 2.6 scope decisions.
+- Kept public API response shapes, hosted Canada behavior, and privacy
+  boundaries unchanged.
+
 ## 2.5.12 - 2026-06-01
 
 - Removed full SQLite `Store.Stats()` work from the public cache refresh hot

@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.12
+# MeshCore MQTT Live Map v2.5.13
 
 Also known as **MC-CartoLive**.
 
@@ -23,24 +23,27 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.12 Feature Gallery
+### v2.5.13 Feature Gallery
 
-Version 2.5.12 keeps the Canada deployment intact while continuing the
+Version 2.5.13 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
 
-This patch continues the 2.6 production polish track: public cache refresh no
-longer runs full SQLite stats counts on the hot path, readiness exposes
-public-safe cache truncation and packet-search pressure, map and Legend device
-icons share one role registry, Live Follow is calmer, activity heatmap is
-subtle and toggleable, light-mode route contrast is stronger, and the VCR scrub
-timeline keeps packet-frequency bars readable. Version 2.5.12 also keeps recent
-observer-only public text bubbles alive across reloads/polling fallback,
-restores cleaner Public group-text decoding for map speech bubbles, gives the
-Packets page clearer select, search, and replay guidance, reduces OpenFreeMap
-3D scene churn by selecting only visible/focused/fresh route/model candidates,
-and makes NetGraph steadier with tighter component packing, mobile pinch zoom,
-faster live pulse drawing, and role colors/shapes that match the map Legend.
+This patch adds a browser first-run setup page beside Perf, Packets, and
+NetGraph. New operators can generate public-safe `.env` starter settings for
+worldwide, hosted-Canada, or custom private-broker installs without exposing
+MQTT credentials, channel secrets, raw packets, or resolver debug data.
+
+The current 2.6 production polish track also keeps public cache refresh off full
+SQLite stats counts, exposes public-safe cache truncation and packet-search
+pressure, shares map and Legend device icons through one role registry, keeps
+Live Follow calmer, keeps the activity heatmap subtle and toggleable, strengthens
+light-mode route contrast, and keeps the VCR scrub timeline readable. Recent
+observer-only public text bubbles survive reloads/polling fallback, Public
+group-text decoding is cleaner for map speech bubbles, Packets has clearer
+select/search/replay guidance, OpenFreeMap 3D rebuilds fewer scene objects in
+dense views, and NetGraph is steadier with tighter component packing, mobile
+pinch zoom, faster live pulse drawing, and Legend-matched role visuals.
 
 OpenFreeMap 3D turns the public live map into a terrain-aware network view with
 procedural node models, elevated public route arcs, and 3D packet motion.
@@ -82,6 +85,8 @@ packing, Legend-aligned node visuals, and compact node/pathway inspectors.
 - Provides hidden-by-default 24h VCR replay, a Packets tab for true-path packet
   records, a Perf tab for public-safe runtime counters, and a NetGraph tab for a
   live connected-node graph using the same sanitized public routes and events.
+- Adds a browser first-run Setup tab that generates public-safe world, Canada,
+  and custom deployment `.env` starters for packaged installs.
 - Adds top-bar quick help, latest changelog, and feature list popups. First-time
   visitors see a dismissible welcome guide stored only in browser localStorage.
 - Includes operator tools for release checks, live droplet smoke checks, soak
@@ -161,7 +166,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.12
+  ghcr.io/n30nex/mc-cartolive:2.5.13
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -172,7 +177,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.12
+  ghcr.io/n30nex/mc-cartolive:2.5.13
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -292,7 +297,7 @@ docker compose build
 
 ## Production Hosting
 
-The recommended v2.5.12 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.13 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

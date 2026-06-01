@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.12` backend scale work in progress on `main`
+Baseline audited: `v2.5.13` first-run setup foundation on `main`
 
 ## Audit Coverage
 
@@ -500,6 +500,11 @@ counts in health/readiness.
 ## 2.5.13 - Worldwide Operator Experience
 
 Goal: make packaged installs feel first-class outside Canada.
+
+Status: started with the browser first-run setup foundation. The current pass
+adds a closeable Setup page beside Perf, Packets, and NetGraph, generates
+public-safe `.env` starter snippets for world/Canada/custom deployments, and
+keeps secrets and private packet material out of the browser guidance.
 
 ### Configuration
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, ExternalLink, Gauge, Github, HelpCircle, History, List, Map, Network, RadioTower, Settings2, Sparkles, X } from 'lucide-react';
+import { Activity, ExternalLink, Gauge, Github, HelpCircle, History, List, Map, Network, RadioTower, Settings2, Sparkles, Wrench, X } from 'lucide-react';
 import { appBrandLogo, appBrandName, appBrandURL, appVersion, buildNumber, buildTime, gitSha, releaseURL } from '../buildInfo';
 import { routeAssetIcons } from '../assets/routes/assets';
 import {
@@ -14,12 +14,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.12';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.13';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
-  '2.5.12 reduces backend pressure by removing full SQLite stats counts from public cache refresh and exposing cache/packet-search health in readiness.',
+  '2.5.13 adds a browser first-run setup page with public-safe world, Canada, and custom deployment `.env` starters.',
   'NetGraph is steadier: closer packed components, mobile pinch zoom, role-matched node glyphs, pinned live pulse status, and faster pulse matching.',
   'OpenFreeMap 3D is lighter in dense views by prioritizing visible, focused, fresh, and selected nodes/routes before rebuilding the Three.js scene.',
   'Public text bubbles are back for sanitized decoded group messages, including reload/polling fallback when a sender or observer anchor is public-safe.',
@@ -49,9 +49,10 @@ interface LinkBarProps {
   perfOpen?: boolean;
   packetsOpen?: boolean;
   netGraphOpen?: boolean;
+  setupOpen?: boolean;
 }
 
-export default function LinkBar({ perfOpen = false, packetsOpen = false, netGraphOpen = false }: LinkBarProps) {
+export default function LinkBar({ perfOpen = false, packetsOpen = false, netGraphOpen = false, setupOpen = false }: LinkBarProps) {
   const [now, setNow] = useState(() => Date.now());
   const [repoStats, setRepoStats] = useState<RepoStats | null>(() => readCachedRepoStats(browserStorage()));
   const [activeInfoPanel, setActiveInfoPanel] = useState<InfoPanel>(null);
@@ -133,6 +134,10 @@ export default function LinkBar({ perfOpen = false, packetsOpen = false, netGrap
         <a className={`link-bar-perf ${netGraphOpen ? 'active' : ''}`} href="#/netgraph" title="Open live network graph">
           <Network size={13} />
           <span>NetGraph</span>
+        </a>
+        <a className={`link-bar-perf ${setupOpen ? 'active' : ''}`} href="#/setup" title="Open first-run setup">
+          <Wrench size={13} />
+          <span>Setup</span>
         </a>
       </div>
       <div className="link-bar-right">

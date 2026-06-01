@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.12` is the active foundation patch toward the next production-ready
+Version `2.5.13` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -31,6 +31,9 @@ Version `2.5.12` is the active foundation patch toward the next production-ready
   and WebSocket events.
 - Add a public-safe Chat page for sanitized decoded text history with
   region/IATA and channel filters.
+- Keep browser first-run setup available for world, Canada, and custom packaged
+  installs so new operators can generate safe starter env settings without
+  reading code.
 - Keep OpenFreeMap 3D frontend-only, smooth, and optional: the true 3D layer is
   a visual overlay over the existing 2D map sources, not a new public data API.
 - Keep map rendering smooth on modest clients by avoiding unnecessary source
@@ -151,6 +154,16 @@ Version `2.5.12` is the active foundation patch toward the next production-ready
   behavior for long-running public hosts.
 - Keep public API shapes, public privacy boundaries, and hosted Canada behavior
   unchanged.
+
+## 2.5.13 Patch Focus
+
+- Add a closeable browser Setup page beside Perf, Packets, and NetGraph.
+- Generate public-safe starter `.env` snippets for world, hosted Canada, and
+  custom private-broker deployments.
+- Keep the generated setup guidance free of MQTT credentials, channel secrets,
+  raw packet material, and resolver debug data.
+- Document that browser setup is a convenience layer; true route validation,
+  region scoping, and public privacy boundaries remain unchanged.
 
 ## Next Cleanup Candidates
 

@@ -24,6 +24,7 @@ import ChromePanel from './components/ChromePanel';
 import PerfPanel from './components/PerfPanel';
 import PacketsPanel from './components/PacketsPanel';
 import NetGraphPanel from './components/NetGraphPanel';
+import SetupPanel from './components/SetupPanel';
 import MapSettingsDrawer from './components/MapSettingsDrawer';
 import {
   DEFAULT_CHROME_PANEL_ANCHORS,
@@ -136,6 +137,7 @@ export default function App() {
   const [perfOpen, setPerfOpen] = useState(() => window.location.hash === '#/perf');
   const [packetsOpen, setPacketsOpen] = useState(() => window.location.hash === '#/packets');
   const [netGraphOpen, setNetGraphOpen] = useState(() => window.location.hash === '#/netgraph');
+  const [setupOpen, setSetupOpen] = useState(() => window.location.hash === '#/setup');
   const [packetsPanelMode, setPacketsPanelMode] = useState<'expanded' | 'compactTray'>('expanded');
   const [initialLoadGateOpen, setInitialLoadGateOpen] = useState(true);
   const [shareToast, setShareToast] = useState<string | null>(null);
@@ -177,10 +179,12 @@ export default function App() {
       const nextPerfOpen = hash === '#/perf';
       const nextPacketsOpen = hash === '#/packets';
       const nextNetGraphOpen = hash === '#/netgraph';
+      const nextSetupOpen = hash === '#/setup';
       setPerfOpen(nextPerfOpen);
       setPacketsOpen(nextPacketsOpen);
       setNetGraphOpen(nextNetGraphOpen);
-      if (nextPerfOpen || nextPacketsOpen || nextNetGraphOpen) {
+      setSetupOpen(nextSetupOpen);
+      if (nextPerfOpen || nextPacketsOpen || nextNetGraphOpen || nextSetupOpen) {
         setPaletteMenuOpen(false);
         setPanelsMenuOpen(false);
         setMapSettingsOpen(false);
@@ -213,6 +217,13 @@ export default function App() {
       window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
     }
     setNetGraphOpen(false);
+  }, []);
+
+  const closeSetup = useCallback(() => {
+    if (window.location.hash === '#/setup') {
+      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
+    }
+    setSetupOpen(false);
   }, []);
 
   useEffect(() => {
@@ -1009,7 +1020,7 @@ export default function App() {
         onClearSelection={clearSelection}
       />
       {loadingPositionedNodes && <NodeLoadingToast failed={nodeLoadFailed} drawing={initialNodesReceived} />}
-      <LinkBar perfOpen={perfOpen} packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} />
+      <LinkBar perfOpen={perfOpen} packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} setupOpen={setupOpen} />
       {!chromeHidden && (
         <StatusBar
           stats={state.stats}
@@ -1161,6 +1172,7 @@ export default function App() {
       </div>
       {shareToast && <div className="share-toast" role="status">{shareToast}</div>}
       {perfOpen && <PerfPanel onClose={closePerf} />}
+      {setupOpen && <SetupPanel mapConfig={publicMapConfig} onClose={closeSetup} />}
       {mapSettingsOpen && (
         <MapSettingsDrawer
           settings={mapSettings}
@@ -1191,7 +1203,7 @@ export default function App() {
         />
       )}
 
-      {!vcrOpen && packetsPanelMode !== 'compactTray' && !netGraphOpen && (
+      {!vcrOpen && packetsPanelMode !== 'compactTray' && !netGraphOpen && !setupOpen && (
         <>
           {!chromeHidden && (
             <div className="bottom-action-dock" aria-label="Map playback and route controls">
