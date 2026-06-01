@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.15` is the active foundation patch toward the next production-ready
+Version `2.5.16` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -187,6 +187,15 @@ Version `2.5.15` is the active foundation patch toward the next production-ready
   shared 3D route-arc samples.
 - Keep public privacy checks in release scripts, including public JSON and the
   `/ws/public` hello frame.
+
+## 2.5.16 Patch Focus
+
+- Collapse duplicate Chat rows from multi-edge routed packets so one decoded
+  message appears once in the public Chat page.
+- Keep first-run Setup under the Guide overlay instead of the permanent top
+  navigation.
+- Keep live Canada deploy metadata aligned with the deployed git SHA while
+  preserving `MAP_REGION_PRESET=canada`.
 
 ## Next Cleanup Candidates
 

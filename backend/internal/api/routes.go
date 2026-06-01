@@ -685,6 +685,7 @@ func (s *Server) publicChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	messages := make([]live.PublicChatMessage, 0, limit)
+	seenMessages := map[string]struct{}{}
 	nextCursor := cursor
 	scannedRaw := 0
 	exhausted := false
@@ -731,6 +732,10 @@ func (s *Server) publicChat(w http.ResponseWriter, r *http.Request) {
 			if !publicChatMatchesFilters(message, filters) {
 				continue
 			}
+			if _, seen := seenMessages[message.ID]; seen {
+				continue
+			}
+			seenMessages[message.ID] = struct{}{}
 			messages = append(messages, message)
 			if len(messages) >= limit {
 				break
@@ -980,8 +985,12 @@ func publicChatMessage(
 		if !ok || strings.TrimSpace(packet.MessageText) == "" {
 			return live.PublicChatMessage{}, false
 		}
+		messageID := raw.Edge.ObservationID
+		if messageID <= 0 {
+			messageID = raw.Edge.ID
+		}
 		return live.PublicChatMessage{
-			ID:              "chat-routed-" + strconv.FormatInt(raw.Edge.ID, 10),
+			ID:              "chat-routed-" + strconv.FormatInt(messageID, 10),
 			At:              packet.At,
 			IATA:            packet.IATA,
 			Region:          packet.Region,

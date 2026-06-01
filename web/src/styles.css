@@ -1012,6 +1012,31 @@ button {
   top: 22px;
 }
 
+.guide-setup-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.guide-setup-actions a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 12px;
+  color: color-mix(in srgb, var(--mc-accent, #38bdf8) 78%, var(--mc-text, #f8fafc) 22%);
+  text-decoration: none;
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(8, 16, 28, 0.74)) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-accent, #38bdf8) 42%, var(--mc-border, #38bdf8) 18%);
+  border-radius: 8px;
+}
+
+.guide-setup-actions a:hover {
+  color: var(--mc-text, #f8fafc);
+  border-color: color-mix(in srgb, var(--mc-accent, #38bdf8) 72%, #ffffff 20%);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent);
+}
+
 .perf-panel,
 .setup-panel,
 .packets-panel {

@@ -14,11 +14,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.15';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.16';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.16 collapses duplicate Chat rows from multi-segment routed packets and moves first-run Setup into the Guide instead of the permanent top bar.',
   '2.5.15 adds a public-safe Chat page for decoded public text history with region, channel, time-window, search, and paging controls.',
   'NetGraph is steadier: stable visible graph membership, deterministic edge lanes, selected-neighborhood helpers, mobile pinch zoom, role-matched node glyphs, and faster pulse matching.',
   'OpenFreeMap replay chase math now uses shared 3D route-arc samples so selected-packet cinematic replay can stay synchronized with 3D comets.',
@@ -57,7 +58,7 @@ interface LinkBarProps {
   setupOpen?: boolean;
 }
 
-export default function LinkBar({ perfOpen = false, packetsOpen = false, netGraphOpen = false, chatOpen = false, setupOpen = false }: LinkBarProps) {
+export default function LinkBar({ perfOpen = false, packetsOpen = false, netGraphOpen = false, chatOpen = false }: LinkBarProps) {
   const [now, setNow] = useState(() => Date.now());
   const [repoStats, setRepoStats] = useState<RepoStats | null>(() => readCachedRepoStats(browserStorage()));
   const [activeInfoPanel, setActiveInfoPanel] = useState<InfoPanel>(null);
@@ -143,10 +144,6 @@ export default function LinkBar({ perfOpen = false, packetsOpen = false, netGrap
         <a className={`link-bar-perf ${chatOpen ? 'active' : ''}`} href="#/chat" title="Open public chat history">
           <MessageSquareText size={13} />
           <span>Chat</span>
-        </a>
-        <a className={`link-bar-perf ${setupOpen ? 'active' : ''}`} href="#/setup" title="Open first-run setup">
-          <Wrench size={13} />
-          <span>Setup</span>
         </a>
       </div>
       <div className="link-bar-right">
@@ -291,6 +288,12 @@ function GuideOverlay({ title, onClose }: { title: string; onClose: () => void }
             'Layer controls can hide routes, nodes, packet comets, observer bursts, and 3D effects.',
             'VCR and Packets replay pause live traffic intentionally so one path can be inspected.'
           ]} />
+        </div>
+        <div className="guide-setup-actions">
+          <a href="#/setup" onClick={onClose}>
+            <Wrench size={15} />
+            <span>Open first-run setup</span>
+          </a>
         </div>
       </div>
     </section>

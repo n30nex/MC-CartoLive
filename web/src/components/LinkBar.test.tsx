@@ -9,10 +9,10 @@ describe('LinkBar', () => {
     expect(html).toContain('#/packets');
     expect(html).toContain('#/netgraph');
     expect(html).toContain('#/chat');
-    expect(html).toContain('#/setup');
     expect(html).toContain('NetGraph');
     expect(html).toContain('Chat');
-    expect(html).toContain('Setup');
+    expect(html).not.toContain('Open first-run setup');
+    expect(html).not.toContain('#/setup');
     expect(html).toContain('link-bar-perf active');
     expect(html).toContain('Open MC-CartoLive');
     expect(html).toContain('Changelog');

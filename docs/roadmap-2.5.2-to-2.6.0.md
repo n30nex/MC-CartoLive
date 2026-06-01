@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.15` public Chat, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.16` public Chat dedupe, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -613,6 +613,19 @@ replay chase helper based on shared 3D route-arc samples.
 - Chat can browse/filter recent public decoded text without private data.
 - NetGraph is stable and useful enough to be listed as a core 2.6 feature.
 - Desktop and 390px mobile browser checks cover Chat and NetGraph.
+
+## 2.5.16 - Chat Deduplication And Topbar Cleanup
+
+Goal: close the first production feedback from the Chat feature without
+expanding scope.
+
+Status: active patch.
+
+- Collapse routed Chat rows by packet observation so repeated route-edge rows do
+  not duplicate the same decoded public message.
+- Keep first-run Setup available from Guide, but remove it from the permanent
+  top navigation beside Perf, Packets, NetGraph, and Chat.
+- Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
 
 ## 2.6.0 - World-Ready Live Network Operations Release
 

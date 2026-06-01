@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 2.5.16 - 2026-06-01
+
+- Fixed public Chat duplicate rows by collapsing routed decoded messages to one
+  observation-scoped message instead of one row per rendered route edge.
+- Kept first-run Setup available from the Guide overlay while removing it from
+  the permanent top navigation.
+- Tightened the Canada droplet deploy flow so release metadata pinned in `.env`
+  must be updated with the deployed git SHA and build time.
+
 ## 2.5.15 - 2026-06-01
 
 - Added `GET /api/v1/public/chat` for sanitized decoded public text history,

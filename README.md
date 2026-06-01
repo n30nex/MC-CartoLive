@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.15
+# MeshCore MQTT Live Map v2.5.16
 
 Also known as **MC-CartoLive**.
 
@@ -23,22 +23,20 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.15 Feature Gallery
+### v2.5.16 Feature Gallery
 
-Version 2.5.15 keeps the Canada deployment intact while continuing the
+Version 2.5.16 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
 
-This patch adds a public-safe Chat page beside NetGraph for decoded public text
-history, with region, channel, time-window, search, refresh, and older-page
-controls. It also tightens NetGraph stability with stable visible graph
-membership and deterministic edge lanes, moves OpenFreeMap packet replay chase
-math onto shared 3D route-arc samples, and adds a public JSON/WebSocket privacy
-scanner to the local release checks. The browser Setup page remains beside
-Perf, Packets, NetGraph, and Chat so new operators can generate public-safe
-`.env` starter settings for worldwide, hosted-Canada, or custom private-broker
-installs without exposing MQTT credentials, channel secrets, raw packets, or
-resolver debug data.
+This patch keeps the public-safe Chat page beside NetGraph for decoded public
+text history, with region, channel, time-window, search, refresh, and older-page
+controls, while collapsing duplicate routed messages that come from multi-edge
+packet paths. Setup is still available from the Guide overlay for new operators
+who need public-safe `.env` starter settings, but it is no longer a permanent
+top-bar page. The release also keeps NetGraph stability helpers, OpenFreeMap
+packet replay chase math on shared 3D route-arc samples, and public JSON/WebSocket
+privacy scanning in local release checks.
 
 The current 2.6 production polish track also keeps public cache refresh off full
 SQLite stats counts, exposes public-safe cache truncation and packet-search
@@ -174,7 +172,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.15
+  ghcr.io/n30nex/mc-cartolive:2.5.16
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -185,7 +183,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.15
+  ghcr.io/n30nex/mc-cartolive:2.5.16
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -305,7 +303,7 @@ docker compose build
 
 ## Production Hosting
 
-The recommended v2.5.15 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.16 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

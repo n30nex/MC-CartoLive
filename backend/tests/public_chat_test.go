@@ -47,6 +47,12 @@ func TestPublicChatEndpointReturnsSanitizedRoutedAndObserverMessages(t *testing.
 		MessageText:     "routed hello",
 		Labels:          []string{"YYZ Sender", "Krabs Repeater"},
 	})
+	insertHistoryEdgeWithOptions(t, ctx, st, routedID, "hash-chat-routed-private", base+2_000, historyEdgeOptions{
+		PayloadTypeName: "PLAIN_TEXT",
+		MessageSender:   "Corebot",
+		MessageText:     "routed hello",
+		Labels:          []string{"YYZ Sender", "Alternate Relay"},
+	})
 	disallowedID := insertChatObservation(t, ctx, st, "hash-chat-prg-private", "PRG", observerKey, base+2_500, resolve.StatusHigh, chatObservationOptions{
 		MessageSender: "Prague",
 		MessageText:   "not allowed",
@@ -74,6 +80,9 @@ func TestPublicChatEndpointReturnsSanitizedRoutedAndObserverMessages(t *testing.
 	routed := chat.Messages[0]
 	if routed.At != base+2_000 || routed.Source != "routed" || routed.ChannelLabel != "Public" || routed.Text != "routed hello" {
 		t.Fatalf("routed message = %#v, want newest public routed chat", routed)
+	}
+	if routed.ID != "chat-routed-"+ms(routedID) {
+		t.Fatalf("routed message id = %q, want observation-scoped id", routed.ID)
 	}
 	if len(routed.RouteIDs) == 0 || len(routed.EndpointLabels) != 2 || routed.Anchor == nil {
 		t.Fatalf("routed message route metadata = %#v, want public route ids, labels, and anchor", routed)
