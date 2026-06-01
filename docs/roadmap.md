@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.26` is the active foundation patch toward the next production-ready
+Version `2.5.27` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -197,13 +197,24 @@ Version `2.5.26` is the active foundation patch toward the next production-ready
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
 
+## 2.5.27 Patch Focus
+
+- Make flat-map live motion more obvious without exposing idle route clutter:
+  recently heard busy routes get thicker, higher-contrast hue-shifted lines and
+  stronger payload glow while cooled routes shrink and fade back.
+- Add deterministic sparkle residue to recent packet comet trails with tight
+  per-route caps so live packets read better on the map without adding random
+  particles or public data fields.
+- Keep the 2.5.23 NetGraph and OpenFreeMap 3D stability work intact while the
+  2.6.0 roadmap continues.
+
 ## 2.5.26 Patch Focus
 
 - Close the live Public Chat duplicate loophole where the same sender/text can
-  be repeated through different route context, payload labels, or hidden
-  formatting characters.
-- Keep the 2.5.23 NetGraph and OpenFreeMap 3D stability work intact while the
-  2.6.0 roadmap continues.
+  be repeated through different route context, payload labels, hidden formatting
+  characters, or symbol-only decoded text.
+- Keep public response shape, cursor behavior, and privacy boundaries
+  unchanged.
 
 ## 2.5.23 Patch Focus
 

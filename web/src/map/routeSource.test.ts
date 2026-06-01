@@ -156,10 +156,14 @@ describe('route source helpers', () => {
     const now = 5_000_000;
     const freshBusy = route('busy', 'a', 'b', 4, 900, now - 30_000);
     const staleQuiet = route('quiet', 'c', 'd', 0, 10, now - 8 * 60 * 60_000);
+    const cooledBusy = route('cooled', 'e', 'f', 4, 900, now - 8 * 60 * 60_000);
     const data = routesToGeoJSON([freshBusy, staleQuiet], null, focus(), now);
 
     expect(routeActivityWidth(freshBusy, now)).toBeGreaterThan(routeActivityWidth(staleQuiet, now));
+    expect(routeActivityWidth(freshBusy, now)).toBeGreaterThan(6);
+    expect(routeActivityWidth(cooledBusy, now)).toBeLessThan(routeActivityWidth(freshBusy, now) * 0.5);
     expect(routeActivityOpacity(freshBusy, now)).toBeGreaterThan(routeActivityOpacity(staleQuiet, now));
+    expect(routeActivityOpacity(freshBusy, now)).toBeGreaterThan(0.75);
     expect(data.features[0].properties).toMatchObject({
       id: 'busy',
       routeWidth: routeActivityWidth(freshBusy, now),

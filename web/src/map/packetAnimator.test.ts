@@ -12,8 +12,10 @@ import {
   MAX_OBSERVER_BURSTS_PER_LOCATION,
   OBSERVER_AURA_WINDOW_MS,
   OBSERVER_BURST_LOCATION_INTERVAL_MS,
+  MAX_ROUTE_SPARKLES_PER_TRACE,
   MAX_TRACE_AURA_ROUTES,
   RESIDUE_IDLE_FRAME_INTERVAL_MS,
+  ROUTE_SPARKLE_WINDOW_MS,
   PacketAnimator,
   clusterMaskRadius,
   mapFeatureMaskRadius,
@@ -23,6 +25,8 @@ import {
   observerBurstKey,
   packetTravelDuration,
   routeResidueAlpha,
+  routeResidueSparkleAlpha,
+  routeResidueSparkleCount,
   sequentialSegmentProgress
 } from './packetAnimator';
 
@@ -82,6 +86,15 @@ describe('packet animation timing', () => {
     expect(MAX_ACTIVE_OBSERVER_BURSTS).toBe(24);
     expect(MAX_OBSERVER_BURSTS_PER_LOCATION).toBe(1);
     expect(OBSERVER_AURA_WINDOW_MS).toBe(150_000);
+  });
+
+  it('bounds recent route sparkle residue for visible but cheap packet trails', () => {
+    expect(routeResidueSparkleCount(0, 100)).toBe(0);
+    expect(routeResidueSparkleCount(1, 100)).toBe(1);
+    expect(routeResidueSparkleCount(999, 100)).toBe(MAX_ROUTE_SPARKLES_PER_TRACE);
+    expect(routeResidueSparkleCount(999, ROUTE_SPARKLE_WINDOW_MS + 1)).toBe(0);
+    expect(routeResidueSparkleAlpha(100, 1, 0.2)).toBeGreaterThan(0);
+    expect(routeResidueSparkleAlpha(ROUTE_SPARKLE_WINDOW_MS + 1, 1, 0.2)).toBe(0);
   });
 
   it('caps observer burst pressure by total, location, and interval', () => {

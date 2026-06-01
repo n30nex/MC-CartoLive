@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.26` Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, live-health/top-bar polish, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.27` Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, live-health/top-bar polish, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,22 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.27 - Flat Map Live Pathway Polish
+
+Goal: make the default flat map look more alive and easier to scan during real
+traffic without exposing all idle routes at low zoom.
+
+Scope:
+
+- Increase the bounded route width and opacity ramp for fresh high-frequency
+  public routes while cooled routes shrink back.
+- Use a clearer activity hue ramp for visible pathways in both dark and light
+  modes.
+- Add deterministic short-lived sparkle residue to recent packet comet trails,
+  capped per route and derived only from already-public live route pulses.
+- Keep route source signatures stable, public API response shapes unchanged,
+  and privacy boundaries unchanged.
 
 ## 2.5.26 - Chat Duplicate Hardening
 

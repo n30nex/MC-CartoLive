@@ -30,6 +30,8 @@ export const MAX_OBSERVER_AURA_LOCATIONS = 120;
 export const MAX_ACTIVE_OBSERVER_BURSTS = 24;
 export const MAX_OBSERVER_BURSTS_PER_LOCATION = 1;
 export const OBSERVER_BURST_LOCATION_INTERVAL_MS = 4200;
+export const ROUTE_SPARKLE_WINDOW_MS = 6500;
+export const MAX_ROUTE_SPARKLES_PER_TRACE = 5;
 
 const RESIDUE_PRUNE_INTERVAL_MS = 1000;
 
@@ -500,6 +502,7 @@ export class PacketAnimator {
         const progress = Math.min(1, age / 4200);
         this.endpointPulse(to.x, to.y, progress, trace.color, 0.11 + intensity * 0.16);
       }
+      this.drawRouteResidueSparkles(from.x, from.y, to.x, to.y, trace.color, trace.count, age, intensity, alpha);
     }
     this.ctx.restore();
   }
@@ -841,6 +844,46 @@ export class PacketAnimator {
     this.ctx.restore();
   }
 
+  private drawRouteResidueSparkles(x0: number, y0: number, x1: number, y1: number, color: string, count: number, ageMs: number, intensity: number, alpha: number) {
+    const sparkleCount = routeResidueSparkleCount(count, ageMs);
+    const sparkleAlpha = routeResidueSparkleAlpha(ageMs, intensity, alpha);
+    if (sparkleCount <= 0 || sparkleAlpha <= 0.01) return;
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const nx = -dy / length;
+    const ny = dx / length;
+    const drift = (ageMs % 1800) / 1800;
+    this.ctx.save();
+    this.ctx.lineWidth = 1.15;
+    this.ctx.strokeStyle = '#ffffff';
+    this.ctx.shadowBlur = 12 + intensity * 16;
+    this.ctx.shadowColor = color;
+    for (let index = 0; index < sparkleCount; index++) {
+      const phase = (index + 1) / (sparkleCount + 1);
+      const along = (phase + drift * 0.18) % 1;
+      const side = index % 2 === 0 ? 1 : -1;
+      const wobble = Math.sin(ageMs / 240 + index * 1.7) * (3.5 + intensity * 5) * side;
+      const x = x0 + dx * along + nx * wobble;
+      const y = y0 + dy * along + ny * wobble;
+      const radius = 2.3 + intensity * 2.1 + (index % 2) * 0.7;
+      const localAlpha = sparkleAlpha * (0.72 + 0.28 * Math.sin(ageMs / 180 + index));
+      this.ctx.globalAlpha = Math.max(0, localAlpha);
+      this.ctx.beginPath();
+      this.ctx.moveTo(x - radius, y);
+      this.ctx.lineTo(x + radius, y);
+      this.ctx.moveTo(x, y - radius);
+      this.ctx.lineTo(x, y + radius);
+      this.ctx.stroke();
+      this.ctx.globalAlpha = localAlpha * 0.58;
+      this.ctx.fillStyle = color;
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, 1.2 + intensity * 0.8, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
+    this.ctx.restore();
+  }
+
   private traceAggregatesForFrame(): TraceAggregate[] {
     if (this.traceAggregatesDirty) {
       this.traceAggregates = rankTraceAggregates(aggregateTraceHits(this.traceHits)).slice(0, MAX_TRACE_AURA_ROUTES);
@@ -936,6 +979,17 @@ export function routeResidueAlpha(count: number, fade = 1): number {
   if (count <= 0) return 0;
   const intensity = Math.min(1, Math.log1p(Math.max(0, count)) / Math.log1p(18));
   return Math.min(ROUTE_RESIDUE_ALPHA_CAP, (0.022 + intensity * 0.118) * clamp01(fade));
+}
+
+export function routeResidueSparkleCount(count: number, ageMs: number): number {
+  if (count <= 0 || ageMs < 0 || ageMs > ROUTE_SPARKLE_WINDOW_MS) return 0;
+  return Math.max(1, Math.min(MAX_ROUTE_SPARKLES_PER_TRACE, Math.ceil(Math.log1p(count))));
+}
+
+export function routeResidueSparkleAlpha(ageMs: number, intensity: number, alpha: number): number {
+  if (ageMs < 0 || ageMs > ROUTE_SPARKLE_WINDOW_MS || alpha <= 0) return 0;
+  const fade = 1 - ageMs / ROUTE_SPARKLE_WINDOW_MS;
+  return Math.round(Math.min(0.72, alpha * (0.58 + clamp01(intensity) * 0.46) * fade) * 1000) / 1000;
 }
 
 export function observerAuraAlpha(count: number, fade = 1): number {

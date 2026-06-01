@@ -3,8 +3,8 @@ import { isMappableEndpoint } from './geo';
 import type { NodeFocus } from './nodeFocus';
 import { routeArcCoordinates } from './routeArcs';
 
-export const routeColors = ['#2563eb', '#06b6d4', '#22c55e', '#f59e0b', '#fb7185'];
-export const lightRouteColors = ['#1e40af', '#0f766e', '#166534', '#b45309', '#be123c'];
+export const routeColors = ['#2563eb', '#06b6d4', '#2dd4bf', '#facc15', '#fb7185'];
+export const lightRouteColors = ['#1d4ed8', '#0f766e', '#047857', '#b45309', '#be123c'];
 export type RouteThemeMode = 'dark' | 'light';
 export const ROUTE_FRESH_MS = 15 * 60_000;
 export const ROUTE_RECENT_MS = 60 * 60_000;
@@ -181,22 +181,22 @@ export function routeFreshnessOpacity(lastHeard: number, now: number): number {
 export function routeActivityWidth(route: Pick<PublicRoute, 'frequencyBucket' | 'lastHeard'>, now: number): number {
   const bucket = Math.max(0, Math.min(4, route.frequencyBucket));
   const freshness = routeFreshnessLevel(route.lastHeard, now);
-  const bucketWidth = 1.3 + bucket * 0.38;
-  const freshnessScale = [1.35, 1.12, 0.9, 0.68][freshness] ?? 0.68;
+  const bucketWidth = 1.55 + bucket * 0.62;
+  const freshnessScale = [1.72, 1.26, 0.82, 0.5][freshness] ?? 0.5;
   return roundVisual(bucketWidth * freshnessScale);
 }
 
 export function routeActivityOpacity(route: Pick<PublicRoute, 'frequencyBucket' | 'lastHeard'>, now: number): number {
   const bucket = Math.max(0, Math.min(4, route.frequencyBucket));
   const freshness = routeFreshnessOpacity(route.lastHeard, now);
-  return roundVisual(Math.min(0.64, (0.24 + bucket * 0.08) * freshness));
+  return roundVisual(Math.min(0.82, (0.28 + bucket * 0.12) * freshness));
 }
 
 export function routePayloadGlowWidth(route: Pick<PublicRoute, 'frequencyBucket' | 'lastHeard'>, now: number): number {
   const bucket = Math.max(0, Math.min(4, route.frequencyBucket));
   const freshness = routeFreshnessLevel(route.lastHeard, now);
-  const freshnessBoost = freshness <= 1 ? 1 : 0.78;
-  return roundVisual((6.2 + bucket * 1.2) * freshnessBoost);
+  const freshnessBoost = freshness === 0 ? 1.24 : freshness === 1 ? 1 : 0.72;
+  return roundVisual((8 + bucket * 2) * freshnessBoost);
 }
 
 function routeRenderIdentity(route: PublicRoute, now: number): string {

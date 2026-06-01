@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 2.5.27 - 2026-06-01
+
+- Made active flat-map pathways easier to read by increasing the bounded
+  frequency/freshness width and opacity ramp for recently heard busy routes.
+- Updated the route hue ramp so high-activity routes shift more visibly through
+  cyan, teal, yellow, and rose while cooling routes shrink back.
+- Added deterministic short-lived sparkle residue to recent packet comet trails
+  without adding random particles or extra public API data.
+
 ## 2.5.26 - 2026-06-01
 
 - Fixed the remaining public Chat duplicate edge case for symbol-only decoded
