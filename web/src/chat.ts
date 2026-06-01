@@ -7,6 +7,7 @@ export const CHAT_SCOPE_OPTIONS = [
 ] as const;
 
 export const CHAT_DISPLAY_DEDUPE_WINDOW_MS = 24 * 60 * 60_000;
+export const CHAT_TEXT_DEDUPE_WINDOW_MS = 10 * 60_000;
 
 export interface ChatFilters {
   query: string;
@@ -92,6 +93,7 @@ export function filterChatMessages(messages: PublicChatMessage[], filters: ChatF
 export function dedupeChatMessages(messages: PublicChatMessage[]): PublicChatMessage[] {
   const seenIds = new Set<string>();
   const seenPublicMessages = new Map<string, number>();
+  const seenTextMessages = new Map<string, number>();
   const out: PublicChatMessage[] = [];
   for (const message of messages) {
     if (seenIds.has(message.id)) continue;
@@ -101,6 +103,12 @@ export function dedupeChatMessages(messages: PublicChatMessage[]): PublicChatMes
       const previousAt = seenPublicMessages.get(displayKey);
       if (previousAt !== undefined && chatWithinDedupeWindow(previousAt, safe.at)) continue;
       seenPublicMessages.set(displayKey, safe.at);
+    }
+    const textKey = chatTextDedupeKey(safe);
+    if (textKey) {
+      const previousAt = seenTextMessages.get(textKey);
+      if (previousAt !== undefined && chatWithinWindow(previousAt, safe.at, CHAT_TEXT_DEDUPE_WINDOW_MS)) continue;
+      seenTextMessages.set(textKey, safe.at);
     }
     seenIds.add(message.id);
     out.push(safe);
@@ -119,8 +127,24 @@ export function chatDisplayDedupeKey(message: PublicChatMessage): string {
   return `${sender}|${text}`;
 }
 
+export function chatTextDedupeKey(message: PublicChatMessage): string {
+  const text = normalizeDisplayToken(message.text);
+  if (!isLongEnoughForTextDedupe(text)) return '';
+  const channel = normalizeDisplayToken(message.channelLabel) || normalizeDisplayToken(message.payloadTypeName) || 'message';
+  return `${channel}|${text}`;
+}
+
 function chatWithinDedupeWindow(a: number, b: number): boolean {
-  return Math.abs(a - b) <= CHAT_DISPLAY_DEDUPE_WINDOW_MS;
+  return chatWithinWindow(a, b, CHAT_DISPLAY_DEDUPE_WINDOW_MS);
+}
+
+function chatWithinWindow(a: number, b: number, windowMs: number): boolean {
+  return Math.abs(a - b) <= windowMs;
+}
+
+function isLongEnoughForTextDedupe(token: string): boolean {
+  if (!token) return false;
+  return token.replace(/\s+/g, '').length >= 14 || token.split(/\s+/).filter(Boolean).length >= 3;
 }
 
 function normalizeDisplayToken(value: string | undefined): string {

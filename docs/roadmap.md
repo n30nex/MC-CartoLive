@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.30` is the active foundation patch toward the next production-ready
+Version `2.5.31` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -198,6 +198,15 @@ Version `2.5.30` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.31 Patch Focus
+
+- Fix the remaining visible public Chat repeat case by collapsing long decoded
+  text rebroadcasts inside a short repeat window even when route or sender
+  wrappers differ.
+- Keep ordinary short replies from different senders visible so normal public
+  chat still reads like a conversation.
+- Keep the public Chat API shape and privacy boundaries unchanged.
 
 ## 2.5.30 Patch Focus
 

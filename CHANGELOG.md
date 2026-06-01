@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.5.31 - 2026-06-01
+
+- Fixed the remaining visible public Chat duplicate case by adding a short
+  text-only repeat guard for long messages, so rebroadcasted decoded texts
+  collapse even when the server sees different route or sender wrappers.
+- Kept short repeated replies from different senders visible, preserving normal
+  conversation flow while removing route/observer echo rows.
+- Added backend and frontend regression coverage for long-text rebroadcasts and
+  short distinct replies.
+
 ## 2.5.30 - 2026-06-01
 
 - Reduced OpenFreeMap 3D route arc geometry cost by lowering ordinary-route

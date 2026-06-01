@@ -59,10 +59,14 @@ describe('chat helpers', () => {
       }),
       message({ id: 'chat-d', at: 20 * 60_000, region: 'YYJ', endpointLabels: ['Salish', 'CyberiaOne'] }),
       message({ id: 'chat-e', at: 21 * 60_000, sender: 'NISMO', text: '☕️' }),
-      message({ id: 'chat-f', at: 22 * 60_000, sender: 'NISMO', text: '☕' })
+      message({ id: 'chat-f', at: 22 * 60_000, sender: 'NISMO', text: '☕' }),
+      message({ id: 'chat-g', at: 23 * 60_000, sender: 'Gateway A', text: 'same long rebroadcast text' }),
+      message({ id: 'chat-h', at: 24 * 60_000, sender: 'Gateway B', text: 'same long rebroadcast text' }),
+      message({ id: 'chat-i', at: 25 * 60_000, sender: 'Short A', text: 'ok' }),
+      message({ id: 'chat-j', at: 26 * 60_000, sender: 'Short B', text: 'ok' })
     ]);
 
-    expect(deduped.map((item) => item.id)).toEqual(['chat-a', 'chat-e']);
+    expect(deduped.map((item) => item.id)).toEqual(['chat-a', 'chat-e', 'chat-g', 'chat-i', 'chat-j']);
   });
 
   it('redacts obvious hashes, keys, path hex, and debug pairs from display text', () => {

@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.30` OpenFreeMap 3D render-cost reduction, palette-aware NetGraph visuals, live-status simplification, calmer Live Follow, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.31` long-text Chat rebroadcast dedupe, OpenFreeMap 3D render-cost reduction, palette-aware NetGraph visuals, live-status simplification, calmer Live Follow, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,19 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.31 - Chat Long-Text Rebroadcast Guard
+
+Goal: close the visible duplicate Chat rows where the same decoded public text
+arrives through different route or sender wrappers.
+
+Scope:
+
+- Keep the existing sender/text full-window duplicate key.
+- Add a short text-only duplicate key for long messages so route/observer
+  rebroadcasts collapse even when wrapper metadata differs.
+- Keep short repeated replies from different senders visible.
+- Preserve the public Chat response shape and public privacy boundaries.
 
 ## 2.5.30 - OpenFreeMap 3D Render Cost Reduction
 

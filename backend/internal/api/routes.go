@@ -390,6 +390,7 @@ const (
 	publicChatDefaultLimit       = 100
 	publicChatMaxRawScan         = 2500
 	publicChatDedupeWindowMs     = publicHistoryMaxWindowMs
+	publicChatTextDedupeWindowMs = int64(10 * time.Minute / time.Millisecond)
 	publicPacketsMaxLimit        = 1000
 	publicPacketsDefaultLimit    = 250
 	publicPacketsMaxRawScan      = 2500
@@ -689,6 +690,7 @@ func (s *Server) publicChat(w http.ResponseWriter, r *http.Request) {
 	messages := make([]live.PublicChatMessage, 0, limit)
 	seenMessages := map[string]struct{}{}
 	seenDisplayMessages := map[string]int64{}
+	seenTextMessages := map[string]int64{}
 	nextCursor := cursor
 	scannedRaw := 0
 	exhausted := false
@@ -746,6 +748,12 @@ func (s *Server) publicChat(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				seenDisplayMessages[displayKey] = message.At
+			}
+			if textKey := publicChatTextDedupeKey(message); textKey != "" {
+				if previousAt, seen := seenTextMessages[textKey]; seen && publicChatWithinWindow(previousAt, message.At, publicChatTextDedupeWindowMs) {
+					continue
+				}
+				seenTextMessages[textKey] = message.At
 			}
 			messages = append(messages, message)
 			if len(messages) >= limit {
@@ -1114,6 +1122,29 @@ func publicChatDisplayDedupeKey(message live.PublicChatMessage) string {
 	return sender + "|" + text
 }
 
+func publicChatTextDedupeKey(message live.PublicChatMessage) string {
+	text := publicChatDisplayDedupeToken(message.Text)
+	if !publicChatLongEnoughForTextDedupe(text) {
+		return ""
+	}
+	channel := publicChatDisplayDedupeToken(message.ChannelLabel)
+	if channel == "" {
+		channel = publicChatDisplayDedupeToken(message.PayloadTypeName)
+	}
+	if channel == "" {
+		channel = "message"
+	}
+	return channel + "|" + text
+}
+
+func publicChatLongEnoughForTextDedupe(token string) bool {
+	if token == "" {
+		return false
+	}
+	compact := strings.ReplaceAll(token, " ", "")
+	return len([]rune(compact)) >= 14 || len(strings.Fields(token)) >= 3
+}
+
 func publicChatDisplayDedupeToken(value string) string {
 	cleaned := publicChatVisibleDedupeText(value)
 	token := strings.Map(func(r rune) rune {
@@ -1151,11 +1182,15 @@ func publicChatVisibleDedupeText(value string) string {
 }
 
 func publicChatWithinDedupeWindow(a, b int64) bool {
+	return publicChatWithinWindow(a, b, publicChatDedupeWindowMs)
+}
+
+func publicChatWithinWindow(a, b, windowMs int64) bool {
 	delta := a - b
 	if delta < 0 {
 		delta = -delta
 	}
-	return delta <= publicChatDedupeWindowMs
+	return delta <= windowMs
 }
 
 func (s *Server) publicLocationIndexes(ctx context.Context) (live.PublicObserverLocationIndex, map[string]string, error) {
