@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 2.5.26 - 2026-06-01
+
+- Fixed the remaining public Chat duplicate edge case for symbol-only decoded
+  messages, such as emoji-only group texts, by adding a safe fallback display
+  dedupe key after control and variation selector cleanup.
+- Kept the stronger 24h sender/text dedupe from 2.5.25 and added regression
+  coverage for repeated symbol-only observer messages.
+
 ## 2.5.25 - 2026-06-01
 
 - Hardened public Chat duplicate suppression again after live testing showed

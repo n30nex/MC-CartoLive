@@ -252,6 +252,14 @@ func TestPublicChatEndpointDedupesRepeatedDecodedMessages(t *testing.T) {
 		MessageText:     "NotSoSmart watch.",
 		Labels:          []string{"Salish", "CyberiaOne"},
 	})
+	insertChatObservation(t, ctx, st, "hash-chat-coffee-one-private", "YOW", observerKey, base+1_210_000, resolve.StatusNoPath, chatObservationOptions{
+		MessageSender: "NISMO",
+		MessageText:   "☕️",
+	})
+	insertChatObservation(t, ctx, st, "hash-chat-coffee-two-private", "YOW", observerKey, base+1_211_000, resolve.StatusNoPath, chatObservationOptions{
+		MessageSender: "NISMO",
+		MessageText:   "☕",
+	})
 
 	server := publicHistoryTestServer(st, func(string) bool { return true })
 	response := httptest.NewRecorder()
@@ -264,13 +272,16 @@ func TestPublicChatEndpointDedupesRepeatedDecodedMessages(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &chat); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := len(chat.Messages), 1; got != want {
+	if got, want := len(chat.Messages), 2; got != want {
 		t.Fatalf("messages = %d, want %d after repeated-message dedupe: %#v", got, want, chat.Messages)
 	}
 	if strings.Count(strings.ReplaceAll(response.Body.String(), "\u200b", ""), "NotSoSmart watch.") != 1 {
 		t.Fatalf("chat response did not keep exactly one repeated public message: %s", response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), "hash-chat-repeat-private") || strings.Contains(response.Body.String(), "hash-chat-distinct-private") || strings.Contains(response.Body.String(), "hash-chat-third-route-private") || strings.Contains(response.Body.String(), "hash-chat-later-private") {
+	if strings.Count(response.Body.String(), "☕") != 1 {
+		t.Fatalf("chat response did not keep exactly one symbol-only public message: %s", response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "hash-chat-repeat-private") || strings.Contains(response.Body.String(), "hash-chat-distinct-private") || strings.Contains(response.Body.String(), "hash-chat-third-route-private") || strings.Contains(response.Body.String(), "hash-chat-later-private") || strings.Contains(response.Body.String(), "hash-chat-coffee") {
 		t.Fatalf("chat response leaked internal packet hashes: %s", response.Body.String())
 	}
 }

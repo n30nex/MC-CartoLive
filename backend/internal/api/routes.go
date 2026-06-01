@@ -1115,7 +1115,22 @@ func publicChatDisplayDedupeKey(message live.PublicChatMessage) string {
 }
 
 func publicChatDisplayDedupeToken(value string) string {
-	value = strings.Map(func(r rune) rune {
+	cleaned := publicChatVisibleDedupeText(value)
+	token := strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			return r
+		}
+		return ' '
+	}, cleaned)
+	token = strings.ToLower(strings.Join(strings.Fields(token), " "))
+	if token != "" {
+		return token
+	}
+	return strings.ToLower(strings.Join(strings.Fields(cleaned), " "))
+}
+
+func publicChatVisibleDedupeText(value string) string {
+	return strings.Map(func(r rune) rune {
 		switch {
 		case r < 0x20 || (r >= 0x7f && r <= 0x9f):
 			return -1
@@ -1125,15 +1140,14 @@ func publicChatDisplayDedupeToken(value string) string {
 			return -1
 		case r >= 0x2060 && r <= 0x206f:
 			return -1
+		case r >= 0xfe00 && r <= 0xfe0f:
+			return -1
 		case r == 0xfeff:
 			return -1
-		case unicode.IsLetter(r) || unicode.IsNumber(r):
-			return r
 		default:
-			return ' '
+			return r
 		}
 	}, value)
-	return strings.ToLower(strings.Join(strings.Fields(value), " "))
 }
 
 func publicChatWithinDedupeWindow(a, b int64) bool {

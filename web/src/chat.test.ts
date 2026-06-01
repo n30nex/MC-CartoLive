@@ -57,10 +57,12 @@ describe('chat helpers', () => {
         payloadTypeName: 'GROUP_TEXT',
         endpointLabels: ['Different', 'Route']
       }),
-      message({ id: 'chat-d', at: 20 * 60_000, region: 'YYJ', endpointLabels: ['Salish', 'CyberiaOne'] })
+      message({ id: 'chat-d', at: 20 * 60_000, region: 'YYJ', endpointLabels: ['Salish', 'CyberiaOne'] }),
+      message({ id: 'chat-e', at: 21 * 60_000, sender: 'NISMO', text: '☕️' }),
+      message({ id: 'chat-f', at: 22 * 60_000, sender: 'NISMO', text: '☕' })
     ]);
 
-    expect(deduped.map((item) => item.id)).toEqual(['chat-a']);
+    expect(deduped.map((item) => item.id)).toEqual(['chat-a', 'chat-e']);
   });
 
   it('redacts obvious hashes, keys, path hex, and debug pairs from display text', () => {

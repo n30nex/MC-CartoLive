@@ -124,11 +124,14 @@ function chatWithinDedupeWindow(a: number, b: number): boolean {
 }
 
 function normalizeDisplayToken(value: string | undefined): string {
-  return safeChatText(value, '')
+  const cleaned = safeChatText(value, '')
     .normalize('NFKC')
-    .replace(CONTROL_TOKEN_RE, '')
+    .replace(CONTROL_TOKEN_RE, '');
+  const alnumToken = cleaned
     .replace(DISPLAY_DEDUPE_SEPARATOR_RE, ' ')
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
+  if (alnumToken) return alnumToken;
+  return cleaned.toLowerCase().replace(/\s+/g, ' ').trim();
 }

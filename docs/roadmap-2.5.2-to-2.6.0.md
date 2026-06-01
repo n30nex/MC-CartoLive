@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.25` Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, live-health/top-bar polish, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.26` Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, live-health/top-bar polish, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -627,7 +627,7 @@ Status: active patch.
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
 
-## 2.5.25 - Chat Duplicate Hardening
+## 2.5.26 - Chat Duplicate Hardening
 
 Goal: close the visible Public Chat duplicate loophole reported after the first
 round of duplicate suppression.
@@ -640,6 +640,8 @@ Scope:
 - Strip hidden/control formatting characters and normalize punctuation-only
   differences before display dedupe so visually identical text rows cannot
   survive as separate messages.
+- Add a symbol-only fallback display key so repeated emoji-only group texts
+  collapse without relying on raw packet hashes or private identifiers.
 - Keep public response shape, cursor behavior, and privacy boundaries
   unchanged.
 
