@@ -25,9 +25,22 @@ import {
   type NetGraphGlow,
   type NetGraphNode
 } from '../netgraph';
+import {
+  buildEdgeRenderPlans,
+  distanceToEdgeCurve,
+  edgeControlPoint,
+  graphTopologySignature,
+  packedComponentCells,
+  packedSeedLayout,
+  pointOnEdgeCurve,
+  stableVisibleGraph,
+  type NetGraphEdgeRenderPlan
+} from '../netgraphLayout';
 import { OBSERVER_NODE_VISUAL, nodeRoleVisual, type NodeIconShape } from '../nodeVisuals';
 import { payloadVisual } from '../payloadVisuals';
 import type { PublicActivity, PublicNode, PublicRoute, PublicRoutePulse } from '../types';
+
+export { packedComponentCells };
 
 interface NetGraphPanelProps {
   nodes: PublicNode[];
@@ -49,7 +62,9 @@ interface SimNode extends NetGraphNode, SimulationNodeDatum {
   radius: number;
 }
 
-interface SimLink extends SimulationLinkDatum<SimNode>, NetGraphEdge {}
+interface SimLink extends SimulationLinkDatum<SimNode>, NetGraphEdge {
+  renderPlan: NetGraphEdgeRenderPlan;
+}
 
 interface GraphTransform {
   x: number;
@@ -103,11 +118,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
   const layoutPausedRef = useRef(false);
 
   const graph = useMemo(() => buildNetGraphData(nodes, routes), [nodes, routes]);
-  const visibleGraph = useMemo(() => ({
-    ...graph,
-    nodes: graph.nodes.slice(0, MAX_RENDERED_NODES),
-    edges: graph.edges.slice(0, MAX_RENDERED_EDGES)
-  }), [graph]);
+  const visibleGraph = useMemo(() => stableVisibleGraph(graph, { maxNodes: MAX_RENDERED_NODES, maxEdges: MAX_RENDERED_EDGES }), [graph]);
   const topologySignature = useMemo(() => graphTopologySignature(visibleGraph), [visibleGraph]);
   const searchMatches = useMemo(() => graphSearchMatches(graph, query), [graph, query]);
   const selectedNode = selected?.type === 'node' ? graph.nodeByID.get(selected.id) ?? null : null;
@@ -215,9 +226,10 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       node.vy = previous.vy ?? 0;
     }
     const nodeIDs = new Set(simNodes.map((node) => node.id));
+    const edgeRenderPlans = buildEdgeRenderPlans(visibleGraph.edges);
     const simLinks = visibleGraph.edges
       .filter((edge) => nodeIDs.has(edge.sourceID) && nodeIDs.has(edge.targetID))
-      .map((edge) => ({ ...edge, source: edge.sourceID, target: edge.targetID } satisfies SimLink));
+      .map((edge) => ({ ...edge, source: edge.sourceID, target: edge.targetID, renderPlan: edgeRenderPlans.get(edge.id)! } satisfies SimLink));
     simNodesRef.current = simNodes;
     simLinksRef.current = simLinks;
     simLinksByIDRef.current = new Map(simLinks.map((edge) => [edge.id, edge]));
@@ -304,7 +316,9 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       if (!latest) continue;
       const source = edge.source;
       const target = edge.target;
+      const renderPlan = edge.renderPlan;
       Object.assign(edge, latest, { source, target });
+      edge.renderPlan = renderPlan;
     }
   }
 
@@ -457,7 +471,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       ctx.globalAlpha = dimmed ? 0.1 : selectedEdge || hoveredEdge ? 0.88 : 0.24;
       ctx.strokeStyle = selectedEdge || hoveredEdge ? '#67e8f9' : edgeColor(edge);
       ctx.lineWidth = selectedEdge || hoveredEdge ? 2.8 : Math.max(0.55, Math.min(1.8, Math.log1p(edge.packetCount) * 0.24));
-      const control = edgeControlPoint(source, target, edge);
+      const control = edgeControlPoint(source, target, edge, edge.renderPlan);
       ctx.beginPath();
       ctx.moveTo(source.x ?? 0, source.y ?? 0);
       ctx.quadraticCurveTo(control.x, control.y, target.x ?? 0, target.y ?? 0);
@@ -475,8 +489,8 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       if (!source || !target) continue;
       const progress = clamp((now - comet.startedAt) / comet.durationMs, 0, 1);
       const color = payloadVisual(comet.payloadTypeName).color;
-      const head = pointOnEdgeCurve(source, target, edge, progress);
-      const tail = pointOnEdgeCurve(source, target, edge, Math.max(0, progress - 0.085));
+      const head = pointOnEdgeCurve(source, target, edge, progress, edge.renderPlan);
+      const tail = pointOnEdgeCurve(source, target, edge, Math.max(0, progress - 0.085), edge.renderPlan);
       ctx.save();
       ctx.globalAlpha = 0.74;
       ctx.strokeStyle = color;
@@ -588,7 +602,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       const source = linkNode(edge.source);
       const target = linkNode(edge.target);
       if (!source || !target) continue;
-      const distance = distanceToEdgeCurve(point, source, target, edge);
+      const distance = distanceToEdgeCurve(point, source, target, edge, edge.renderPlan);
       if (distance <= threshold && distance < bestDistance) {
         best = edge;
         bestDistance = distance;
@@ -860,184 +874,6 @@ function edgeColor(edge: NetGraphEdge): string {
 
 function linkDistance(edge: SimLink): number {
   return Math.max(48, Math.min(132, 52 + Math.sqrt(Math.max(1, edge.distanceKm)) * 3.5));
-}
-
-function graphTopologySignature(graph: NetGraphData): string {
-  const nodes = graph.nodes.map((node) => node.id).sort().join('|');
-  const edges = graph.edges.map((edge) => `${edge.id}:${edge.sourceID}>${edge.targetID}`).sort().join('|');
-  return `${nodes}::${edges}`;
-}
-
-function packedSeedLayout(graph: NetGraphData, width: number, height: number): Map<string, { x: number; y: number; componentID: number; componentX: number; componentY: number }> {
-  const out = new Map<string, { x: number; y: number; componentID: number; componentX: number; componentY: number }>();
-  const components = connectedComponents(graph);
-  if (components.length === 0) return out;
-  const cells = packedComponentCells(components.length, width, height);
-  const largest = Math.max(1, components[0].nodes.length);
-  components.forEach((component, componentID) => {
-    const cell = cells[componentID] ?? { x: width / 2, y: height / 2, width: width * 0.72, height: height * 0.72 };
-    const spreadBase = components.length === 1 ? Math.min(width, height) * 0.31 : Math.min(cell.width, cell.height) * 0.31;
-    const spread = Math.max(34, spreadBase * Math.max(0.52, Math.sqrt(component.nodes.length / largest)));
-    const bounds = latLngBounds(component.nodes);
-    component.nodes
-      .slice()
-      .sort((a, b) => b.degree - a.degree || b.activityCount - a.activityCount || a.label.localeCompare(b.label))
-      .forEach((node, index) => {
-        const ranked = radialSeed(index, component.nodes.length, spread);
-        const hasGeoShape = bounds.latSpan > 0.01 || bounds.lngSpan > 0.01;
-        const geoX = hasGeoShape ? ((node.lng - bounds.minLng) / Math.max(bounds.lngSpan, 0.01) - 0.5) * spread * 1.8 : ranked.x;
-        const geoY = hasGeoShape ? ((bounds.maxLat - node.lat) / Math.max(bounds.latSpan, 0.01) - 0.5) * spread * 1.8 : ranked.y;
-        const blend = component.nodes.length > 3 && hasGeoShape ? 0.32 : 0;
-        out.set(node.id, {
-          x: cell.x + geoX * blend + ranked.x * (1 - blend),
-          y: cell.y + geoY * blend + ranked.y * (1 - blend),
-          componentID,
-          componentX: cell.x,
-          componentY: cell.y
-        });
-      });
-  });
-  return out;
-}
-
-function connectedComponents(graph: NetGraphData): Array<{ nodes: NetGraphNode[] }> {
-  const adjacency = new Map<string, Set<string>>();
-  for (const node of graph.nodes) adjacency.set(node.id, new Set<string>());
-  for (const edge of graph.edges) {
-    adjacency.get(edge.sourceID)?.add(edge.targetID);
-    adjacency.get(edge.targetID)?.add(edge.sourceID);
-  }
-  const byID = graph.nodeByID;
-  const visited = new Set<string>();
-  const components: Array<{ nodes: NetGraphNode[] }> = [];
-  for (const node of graph.nodes) {
-    if (visited.has(node.id)) continue;
-    const queue = [node.id];
-    const ids: string[] = [];
-    visited.add(node.id);
-    for (let index = 0; index < queue.length; index++) {
-      const current = queue[index];
-      ids.push(current);
-      for (const next of adjacency.get(current) ?? []) {
-        if (visited.has(next)) continue;
-        visited.add(next);
-        queue.push(next);
-      }
-    }
-    components.push({ nodes: ids.map((id) => byID.get(id)).filter((item): item is NetGraphNode => Boolean(item)) });
-  }
-  return components.sort((a, b) => b.nodes.length - a.nodes.length);
-}
-
-export function packedComponentCells(count: number, width: number, height: number): Array<{ x: number; y: number; width: number; height: number }> {
-  const centerX = width / 2;
-  const centerY = height / 2;
-  if (count <= 0) return [];
-  const columns = Math.max(1, Math.ceil(Math.sqrt(count * Math.max(0.72, width / Math.max(height, 1)))));
-  const rows = Math.max(1, Math.ceil(count / columns));
-  const usedWidth = width * Math.min(0.72, count <= 2 ? 0.36 : 0.68);
-  const usedHeight = height * Math.min(0.7, count <= 2 ? 0.36 : 0.66);
-  const cellWidth = usedWidth / columns;
-  const cellHeight = usedHeight / rows;
-  const cellSize = Math.max(96, Math.min(cellWidth, cellHeight, Math.min(width, height) * 0.24));
-  const orderedSlots: Array<{ column: number; row: number; distance: number }> = [];
-  for (let row = 0; row < rows; row++) {
-    for (let column = 0; column < columns; column++) {
-      orderedSlots.push({
-        column,
-        row,
-        distance: Math.hypot(column - (columns - 1) / 2, row - (rows - 1) / 2)
-      });
-    }
-  }
-  orderedSlots.sort((a, b) => a.distance - b.distance || a.row - b.row || a.column - b.column);
-  const cells: Array<{ x: number; y: number; width: number; height: number }> = [];
-  for (let index = 0; index < count; index++) {
-    const slot = orderedSlots[index] ?? { column: index % columns, row: Math.floor(index / columns), distance: 0 };
-    cells.push({
-      x: centerX - usedWidth / 2 + (slot.column + 0.5) * cellWidth,
-      y: centerY - usedHeight / 2 + (slot.row + 0.5) * cellHeight,
-      width: cellSize,
-      height: cellSize
-    });
-  }
-  return cells;
-}
-
-function latLngBounds(nodes: NetGraphNode[]): { minLat: number; maxLat: number; minLng: number; maxLng: number; latSpan: number; lngSpan: number } {
-  const lats = nodes.map((node) => node.lat);
-  const lngs = nodes.map((node) => node.lng);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs);
-  const maxLng = Math.max(...lngs);
-  return { minLat, maxLat, minLng, maxLng, latSpan: maxLat - minLat, lngSpan: maxLng - minLng };
-}
-
-function radialSeed(index: number, count: number, spread: number): { x: number; y: number } {
-  if (count <= 1) return { x: 0, y: 0 };
-  const angle = index * 2.399963229728653;
-  const radius = spread * Math.sqrt((index + 0.5) / count);
-  return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
-}
-
-function edgeControlPoint(source: Pick<SimNode, 'x' | 'y'>, target: Pick<SimNode, 'x' | 'y'>, edge: SimLink): { x: number; y: number } {
-  const x1 = source.x ?? 0;
-  const y1 = source.y ?? 0;
-  const x2 = target.x ?? 0;
-  const y2 = target.y ?? 0;
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const length = Math.max(1, Math.hypot(dx, dy));
-  const bendSeed = (stableHash(edge.id) % 1000) / 999 - 0.5;
-  const bend = Math.sign(bendSeed || 1) * Math.min(58, Math.max(10, length * 0.075)) * (0.45 + Math.abs(bendSeed));
-  return {
-    x: (x1 + x2) / 2 + (-dy / length) * bend,
-    y: (y1 + y2) / 2 + (dx / length) * bend
-  };
-}
-
-function pointOnEdgeCurve(source: Pick<SimNode, 'x' | 'y'>, target: Pick<SimNode, 'x' | 'y'>, edge: SimLink, progress: number): { x: number; y: number } {
-  const control = edgeControlPoint(source, target, edge);
-  const t = clamp(progress, 0, 1);
-  const oneMinus = 1 - t;
-  return {
-    x: oneMinus * oneMinus * (source.x ?? 0) + 2 * oneMinus * t * control.x + t * t * (target.x ?? 0),
-    y: oneMinus * oneMinus * (source.y ?? 0) + 2 * oneMinus * t * control.y + t * t * (target.y ?? 0)
-  };
-}
-
-function distanceToEdgeCurve(point: { x: number; y: number }, source: Pick<SimNode, 'x' | 'y'>, target: Pick<SimNode, 'x' | 'y'>, edge: SimLink): number {
-  let best = Infinity;
-  let previous = pointOnEdgeCurve(source, target, edge, 0);
-  for (let step = 1; step <= 18; step++) {
-    const current = pointOnEdgeCurve(source, target, edge, step / 18);
-    best = Math.min(best, distanceToSegment(point, previous, current));
-    previous = current;
-  }
-  return best;
-}
-
-function stableHash(value: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index++) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function distanceToSegment(point: { x: number; y: number }, source: Pick<SimNode, 'x' | 'y'>, target: Pick<SimNode, 'x' | 'y'>): number {
-  const x1 = source.x ?? 0;
-  const y1 = source.y ?? 0;
-  const x2 = target.x ?? 0;
-  const y2 = target.y ?? 0;
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const length = dx * dx + dy * dy;
-  if (length === 0) return Math.hypot(point.x - x1, point.y - y1);
-  const t = clamp(((point.x - x1) * dx + (point.y - y1) * dy) / length, 0, 1);
-  return Math.hypot(point.x - (x1 + t * dx), point.y - (y1 + t * dy));
 }
 
 function clamp(value: number, min: number, max: number): number {

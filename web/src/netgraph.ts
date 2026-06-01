@@ -119,6 +119,20 @@ export function selectionForNode(graph: NetGraphData, nodeID: string): NetGraphS
   return { nodeIDs, edgeIDs };
 }
 
+export function selectedNeighborhood(graph: NetGraphData, nodeID: string): NetGraphData {
+  const node = graph.nodeByID.get(nodeID);
+  if (!node) return emptyGraph();
+  const selection = selectionForNode(graph, nodeID);
+  const nodes = graph.nodes.filter((item) => selection.nodeIDs.has(item.id));
+  const edges = graph.edges.filter((edge) => selection.edgeIDs.has(edge.id) && selection.nodeIDs.has(edge.sourceID) && selection.nodeIDs.has(edge.targetID));
+  return {
+    nodes,
+    edges,
+    nodeByID: new Map(nodes.map((item) => [item.id, item])),
+    edgeByID: new Map(edges.map((edge) => [edge.id, edge]))
+  };
+}
+
 export function selectionForEdge(graph: NetGraphData, edgeID: string): NetGraphSelection {
   const edge = graph.edgeByID.get(edgeID);
   return {
@@ -218,6 +232,10 @@ function observerMatchKey(label: string, lat: number, lng: number): string {
 
 function isFiniteCoordinate(lat: number, lng: number): boolean {
   return Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0;
+}
+
+function emptyGraph(): NetGraphData {
+  return { nodes: [], edges: [], nodeByID: new Map(), edgeByID: new Map() };
 }
 
 function performanceNow(): number {

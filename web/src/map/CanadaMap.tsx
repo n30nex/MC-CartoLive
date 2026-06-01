@@ -57,6 +57,7 @@ import {
   type RoutePayloadGlow
 } from './routeSource';
 import { easeOutCubic, fitToNodes, fitToRoute, fitToSegments, followTrafficPadding, isFollowPoint, mapViewFromMap, mapViewportSize } from './mapCamera';
+import { buildPacketReplayChasePath, pointAlongReplayChasePath, replayChaseBearing, replayChaseZoomForDistance } from './packetReplayChase';
 import { setSourceData, type FeatureCollection } from './sourceDataQueue';
 import { DETAIL_MIN_ZOOM, NODE_CLUSTER_MAX_ZOOM, type MapVisualMode, isClusterZoom, isDetailZoom, visualModeForZoom } from './zoomMode';
 import {
@@ -1210,7 +1211,7 @@ export default function CanadaMap({
 
   const startReplayChaseCamera = (map: maplibregl.Map, segments: PublicRoutePulse['segments'], travelDurationMs: number) => {
     if (baseModeRef.current !== 'openfreemap' || segments.length === 0) return;
-    const path = packetChasePath(segments);
+    const path = buildPacketReplayChasePath(segments);
     if (path.totalDistanceKm <= 0 || path.points.length < 2) return;
     stopReplayChaseCamera();
     let cancelled = false;
@@ -1228,17 +1229,17 @@ export default function CanadaMap({
 
     const steps = Math.max(6, Math.min(16, Math.round(travelDurationMs / 520)));
     const stepMs = Math.max(360, Math.round(travelDurationMs / steps));
-    const zoom = chaseZoomForDistance(path.totalDistanceKm, map.getZoom());
+    const zoom = replayChaseZoomForDistance(path.totalDistanceKm, map.getZoom());
     let index = 0;
     const step = () => {
       if (cancelled || !mapRef.current) return;
       const progress = Math.min(0.98, index / Math.max(1, steps));
       const nextProgress = Math.min(1, progress + 1 / Math.max(1, steps));
-      const current = pointAlongChasePath(path, progress);
-      const next = pointAlongChasePath(path, nextProgress);
+      const current = pointAlongReplayChasePath(path, progress);
+      const next = pointAlongReplayChasePath(path, nextProgress);
       map.easeTo({
         center: [current.lng, current.lat],
-        bearing: bearingBetween(current, next),
+        bearing: replayChaseBearing(current, next),
         pitch: 66,
         zoom,
         duration: stepMs + 120,
@@ -3369,69 +3370,6 @@ function createIcon(color: string, shape: 'diamond' | 'triangle' | 'square' | 'p
   ctx.fill();
   ctx.stroke();
   return ctx.getImageData(0, 0, size, size);
-}
-
-interface ChasePoint {
-  lng: number;
-  lat: number;
-  distanceKm: number;
-}
-
-function packetChasePath(segments: PublicRoutePulse['segments']): { points: ChasePoint[]; totalDistanceKm: number } {
-  const points: ChasePoint[] = [];
-  let totalDistanceKm = 0;
-  for (const segment of segments) {
-    const distanceKm = Number.isFinite(segment.distanceKm) ? Math.max(0.001, segment.distanceKm) : routePointDistanceKm(segment.from, segment.to);
-    if (points.length === 0) points.push({ lng: segment.from.lng, lat: segment.from.lat, distanceKm: 0 });
-    totalDistanceKm += distanceKm;
-    points.push({ lng: segment.to.lng, lat: segment.to.lat, distanceKm: totalDistanceKm });
-  }
-  return { points, totalDistanceKm };
-}
-
-function pointAlongChasePath(path: { points: ChasePoint[]; totalDistanceKm: number }, progress: number): ChasePoint {
-  if (path.points.length <= 1 || path.totalDistanceKm <= 0) return path.points[0] ?? { lng: 0, lat: 0, distanceKm: 0 };
-  const target = Math.max(0, Math.min(1, progress)) * path.totalDistanceKm;
-  let previous = path.points[0];
-  for (let index = 1; index < path.points.length; index += 1) {
-    const next = path.points[index];
-    if (next.distanceKm >= target) {
-      const span = Math.max(0.001, next.distanceKm - previous.distanceKm);
-      const local = (target - previous.distanceKm) / span;
-      return {
-        lng: previous.lng + (next.lng - previous.lng) * local,
-        lat: previous.lat + (next.lat - previous.lat) * local,
-        distanceKm: target
-      };
-    }
-    previous = next;
-  }
-  return path.points[path.points.length - 1];
-}
-
-function bearingBetween(from: ChasePoint, to: ChasePoint): number {
-  const fromLat = (from.lat * Math.PI) / 180;
-  const toLat = (to.lat * Math.PI) / 180;
-  const deltaLng = ((to.lng - from.lng) * Math.PI) / 180;
-  const y = Math.sin(deltaLng) * Math.cos(toLat);
-  const x = Math.cos(fromLat) * Math.sin(toLat) - Math.sin(fromLat) * Math.cos(toLat) * Math.cos(deltaLng);
-  return (Math.atan2(y, x) * 180) / Math.PI;
-}
-
-function chaseZoomForDistance(distanceKm: number, currentZoom: number): number {
-  if (distanceKm > 600) return Math.max(5.9, Math.min(8.2, currentZoom + 0.7));
-  if (distanceKm > 160) return Math.max(7.2, Math.min(9.4, currentZoom + 1));
-  return Math.max(9.2, Math.min(12.3, currentZoom + 1.4));
-}
-
-function routePointDistanceKm(from: { lat: number; lng: number }, to: { lat: number; lng: number }): number {
-  const earthKm = 6371;
-  const dLat = ((to.lat - from.lat) * Math.PI) / 180;
-  const dLng = ((to.lng - from.lng) * Math.PI) / 180;
-  const lat1 = (from.lat * Math.PI) / 180;
-  const lat2 = (to.lat * Math.PI) / 180;
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return earthKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function envURL(key: string, fallback: string): string {

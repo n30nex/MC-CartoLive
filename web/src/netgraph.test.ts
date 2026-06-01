@@ -4,9 +4,11 @@ import {
   graphSearchMatches,
   observerActivityToGraphGlow,
   routePulseToGraphComets,
+  selectedNeighborhood,
   selectionForEdge,
   selectionForNode
 } from './netgraph';
+import { buildEdgeRenderPlans, edgeControlPoint, stableVisibleGraph } from './netgraphLayout';
 import type { PublicActivity, PublicNode, PublicRoute, PublicRoutePulse } from './types';
 
 const nodes: PublicNode[] = [
@@ -37,6 +39,60 @@ describe('netgraph helpers', () => {
     expect([...selectionForNode(graph, 'b').edgeIDs].sort()).toEqual(['r1', 'r2']);
     expect([...selectionForEdge(graph, 'r1').nodeIDs].sort()).toEqual(['a', 'b']);
     expect([...selectionForEdge(graph, 'r1').edgeIDs]).toEqual(['r1']);
+  });
+
+  it('derives a stable visible graph when only packet and activity metadata changes', () => {
+    const graph = buildNetGraphData(nodes, routes);
+    const noisyNodes = nodes.map((item) => ({
+      ...item,
+      activityCount: item.id === 'c' ? 999 : 0,
+      lastSeen: item.lastSeen + 5000
+    }));
+    const noisyRoutes = routes.map((item) => ({
+      ...item,
+      packetCount: item.id === 'r2' ? 999 : 1,
+      lastHeard: item.lastHeard + 5000,
+      payloadTypeNames: [...item.payloadTypeNames, 'NODEINFO_APP']
+    }));
+    const noisyGraph = buildNetGraphData(noisyNodes, noisyRoutes);
+
+    const visible = stableVisibleGraph(graph, { maxNodes: 2, maxEdges: 2 });
+    const noisyVisible = stableVisibleGraph(noisyGraph, { maxNodes: 2, maxEdges: 2 });
+
+    expect(visible.nodes.map((item) => item.id)).toEqual(noisyVisible.nodes.map((item) => item.id));
+    expect(visible.edges.map((item) => item.id)).toEqual(noisyVisible.edges.map((item) => item.id));
+  });
+
+  it('builds a selected 1-hop neighborhood graph', () => {
+    const graph = buildNetGraphData(nodes, routes);
+    const neighborhood = selectedNeighborhood(graph, 'b');
+
+    expect(neighborhood.nodes.map((item) => item.id).sort()).toEqual(['a', 'b', 'c']);
+    expect(neighborhood.edges.map((item) => item.id).sort()).toEqual(['r1', 'r2']);
+    expect(selectedNeighborhood(graph, 'missing').nodes).toEqual([]);
+  });
+
+  it('assigns deterministic edge lanes for shared endpoint corridors', () => {
+    const sharedRoutes = [
+      route('route-c', 'a', 'Alpha', 45, -75, 'b', 'Bravo Observer', 46, -76, 3),
+      route('route-a', 'a', 'Alpha', 45, -75, 'b', 'Bravo Observer', 46, -76, 2),
+      route('route-b', 'b', 'Bravo Observer', 46, -76, 'a', 'Alpha', 45, -75, 1)
+    ];
+    const graph = buildNetGraphData(nodes, sharedRoutes);
+    const plans = buildEdgeRenderPlans(graph.edges);
+    const reorderedPlans = buildEdgeRenderPlans(buildNetGraphData(nodes, sharedRoutes.slice().reverse()).edges);
+
+    expect([...plans.values()].map((plan) => [plan.edgeID, plan.laneIndex, plan.laneCount, plan.laneOffset])).toEqual([
+      ['route-a', 0, 3, -1],
+      ['route-b', 1, 3, 0],
+      ['route-c', 2, 3, 1]
+    ]);
+    expect([...plans.values()]).toEqual([...reorderedPlans.values()]);
+
+    const left = edgeControlPoint({ x: 0, y: 0 }, { x: 100, y: 0 }, graph.edgeByID.get('route-a')!, plans.get('route-a'));
+    const right = edgeControlPoint({ x: 0, y: 0 }, { x: 100, y: 0 }, graph.edgeByID.get('route-c')!, plans.get('route-c'));
+    expect(left.y).toBeLessThan(0);
+    expect(right.y).toBeGreaterThan(0);
   });
 
   it('maps route pulses to matching graph edge comets', () => {

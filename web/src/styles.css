@@ -1,5 +1,6 @@
 @import './styles/packets.css';
 @import './styles/netgraph.css';
+@import './styles/chat.css';
 
 :root {
   color-scheme: dark;

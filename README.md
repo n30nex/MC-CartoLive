@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.14
+# MeshCore MQTT Live Map v2.5.15
 
 Also known as **MC-CartoLive**.
 
@@ -23,19 +23,22 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.14 Feature Gallery
+### v2.5.15 Feature Gallery
 
-Version 2.5.14 keeps the Canada deployment intact while continuing the
+Version 2.5.15 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
 
-This patch adds a release metadata drift guard to keep `VERSION`, backend
-defaults, Docker defaults, web package metadata, README/docs references,
-top-bar localStorage keys, and changelog entries aligned before CI or a release
-check can pass. The browser Setup page from 2.5.13 remains beside Perf,
-Packets, and NetGraph so new operators can generate public-safe `.env` starter
-settings for worldwide, hosted-Canada, or custom private-broker installs without
-exposing MQTT credentials, channel secrets, raw packets, or resolver debug data.
+This patch adds a public-safe Chat page beside NetGraph for decoded public text
+history, with region, channel, time-window, search, refresh, and older-page
+controls. It also tightens NetGraph stability with stable visible graph
+membership and deterministic edge lanes, moves OpenFreeMap packet replay chase
+math onto shared 3D route-arc samples, and adds a public JSON/WebSocket privacy
+scanner to the local release checks. The browser Setup page remains beside
+Perf, Packets, NetGraph, and Chat so new operators can generate public-safe
+`.env` starter settings for worldwide, hosted-Canada, or custom private-broker
+installs without exposing MQTT credentials, channel secrets, raw packets, or
+resolver debug data.
 
 The current 2.6 production polish track also keeps public cache refresh off full
 SQLite stats counts, exposes public-safe cache truncation and packet-search
@@ -86,8 +89,9 @@ packing, Legend-aligned node visuals, and compact node/pathway inspectors.
   low-poly node models, elevated route arcs, and 3D packet comet trails while
   retaining the existing 2D layers for labels, clicks, and fallback rendering.
 - Provides hidden-by-default 24h VCR replay, a Packets tab for true-path packet
-  records, a Perf tab for public-safe runtime counters, and a NetGraph tab for a
-  live connected-node graph using the same sanitized public routes and events.
+  records, a Perf tab for public-safe runtime counters, a NetGraph tab for a
+  live connected-node graph, and a Chat tab for sanitized decoded public text
+  history using the same sanitized public routes and events.
 - Adds a browser first-run Setup tab that generates public-safe world, Canada,
   and custom deployment `.env` starters for packaged installs.
 - Adds top-bar quick help, latest changelog, and feature list popups. First-time
@@ -114,6 +118,7 @@ GET /api/v1/public/state
 GET /api/v1/public/history?from=<ms>&to=<ms>&limit=<n>&cursor=<token>
 GET /api/v1/public/history/summary?from=<ms>&to=<ms>&bucketMs=<n>
 GET /api/v1/public/packets?from=<ms>&to=<ms>&limit=<n>&cursor=<token>&region=&iata=&payload=&minHops=&messageOnly=&q=
+GET /api/v1/public/chat?from=<ms>&to=<ms>&limit=<n>&cursor=<token>&region=&iata=&channel=&q=
 GET /ws/public
 ```
 
@@ -169,7 +174,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.14
+  ghcr.io/n30nex/mc-cartolive:2.5.15
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -180,7 +185,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.14
+  ghcr.io/n30nex/mc-cartolive:2.5.15
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -300,7 +305,7 @@ docker compose build
 
 ## Production Hosting
 
-The recommended v2.5.14 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.15 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

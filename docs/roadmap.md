@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.14` is the active foundation patch toward the next production-ready
+Version `2.5.15` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
@@ -171,7 +171,22 @@ Version `2.5.14` is the active foundation patch toward the next production-ready
 - Run that guard from release-check scripts and CI so backend defaults, Docker
   defaults, web package metadata, docs, top-bar keys, and changelog entries
   cannot silently drift.
+- Add a public JSON privacy scan to local release checks so public endpoints are
+  checked for raw hashes, raw hex, full keys, secrets, tokens, and debug fields.
 - Keep this patch operational only: no public map feature or API schema change.
+
+## 2.5.15 Patch Focus
+
+- Add a public-safe Chat page beside NetGraph for sanitized decoded public text
+  history with region, channel, time-window, search, refresh, and cursor paging.
+- Keep Chat backed by a bounded public endpoint that includes routed and
+  observer-only public text without exposing raw packet data or secrets.
+- Stabilize NetGraph with metadata-stable visible graph selection and
+  deterministic edge lane helpers used by rendering, hit testing, and comets.
+- Move OpenFreeMap packet replay chase math into a pure tested helper built on
+  shared 3D route-arc samples.
+- Keep public privacy checks in release scripts, including public JSON and the
+  `/ws/public` hello frame.
 
 ## Next Cleanup Candidates
 

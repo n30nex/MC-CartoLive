@@ -24,6 +24,7 @@ import ChromePanel from './components/ChromePanel';
 import PerfPanel from './components/PerfPanel';
 import PacketsPanel from './components/PacketsPanel';
 import NetGraphPanel from './components/NetGraphPanel';
+import ChatPanel from './components/ChatPanel';
 import SetupPanel from './components/SetupPanel';
 import MapSettingsDrawer from './components/MapSettingsDrawer';
 import {
@@ -137,6 +138,7 @@ export default function App() {
   const [perfOpen, setPerfOpen] = useState(() => window.location.hash === '#/perf');
   const [packetsOpen, setPacketsOpen] = useState(() => window.location.hash === '#/packets');
   const [netGraphOpen, setNetGraphOpen] = useState(() => window.location.hash === '#/netgraph');
+  const [chatOpen, setChatOpen] = useState(() => window.location.hash === '#/chat');
   const [setupOpen, setSetupOpen] = useState(() => window.location.hash === '#/setup');
   const [packetsPanelMode, setPacketsPanelMode] = useState<'expanded' | 'compactTray'>('expanded');
   const [initialLoadGateOpen, setInitialLoadGateOpen] = useState(true);
@@ -179,12 +181,14 @@ export default function App() {
       const nextPerfOpen = hash === '#/perf';
       const nextPacketsOpen = hash === '#/packets';
       const nextNetGraphOpen = hash === '#/netgraph';
+      const nextChatOpen = hash === '#/chat';
       const nextSetupOpen = hash === '#/setup';
       setPerfOpen(nextPerfOpen);
       setPacketsOpen(nextPacketsOpen);
       setNetGraphOpen(nextNetGraphOpen);
+      setChatOpen(nextChatOpen);
       setSetupOpen(nextSetupOpen);
-      if (nextPerfOpen || nextPacketsOpen || nextNetGraphOpen || nextSetupOpen) {
+      if (nextPerfOpen || nextPacketsOpen || nextNetGraphOpen || nextChatOpen || nextSetupOpen) {
         setPaletteMenuOpen(false);
         setPanelsMenuOpen(false);
         setMapSettingsOpen(false);
@@ -217,6 +221,13 @@ export default function App() {
       window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
     }
     setNetGraphOpen(false);
+  }, []);
+
+  const closeChat = useCallback(() => {
+    if (window.location.hash === '#/chat') {
+      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
+    }
+    setChatOpen(false);
   }, []);
 
   const closeSetup = useCallback(() => {
@@ -1020,7 +1031,7 @@ export default function App() {
         onClearSelection={clearSelection}
       />
       {loadingPositionedNodes && <NodeLoadingToast failed={nodeLoadFailed} drawing={initialNodesReceived} />}
-      <LinkBar perfOpen={perfOpen} packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} setupOpen={setupOpen} />
+      <LinkBar perfOpen={perfOpen} packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} chatOpen={chatOpen} setupOpen={setupOpen} />
       {!chromeHidden && (
         <StatusBar
           stats={state.stats}
@@ -1202,8 +1213,9 @@ export default function App() {
           onClose={closeNetGraph}
         />
       )}
+      {chatOpen && <ChatPanel onClose={closeChat} />}
 
-      {!vcrOpen && packetsPanelMode !== 'compactTray' && !netGraphOpen && !setupOpen && (
+      {!vcrOpen && packetsPanelMode !== 'compactTray' && !netGraphOpen && !chatOpen && !setupOpen && (
         <>
           {!chromeHidden && (
             <div className="bottom-action-dock" aria-label="Map playback and route controls">

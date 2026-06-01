@@ -161,6 +161,7 @@ curl http://localhost:39476/readyz
 curl http://localhost:39476/api/v1/public/state
 curl "http://localhost:39476/api/v1/public/history?limit=10"
 curl "http://localhost:39476/api/v1/public/packets?limit=10"
+curl "http://localhost:39476/api/v1/public/chat?limit=10"
 ```
 
 Run a short local soak when validating release automation:
@@ -179,10 +180,17 @@ Use overrides when testing a branch, alternate host, expected build, or another
 diagnostic region:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.5.14 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.5.15 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
-Check privacy before committing:
+Scan public JSON surfaces for privacy-boundary regressions while the app is
+running:
+
+```powershell
+node .\scripts\check-public-privacy.mjs http://127.0.0.1:39476
+```
+
+Check local files before committing:
 
 ```bash
 git status --short --ignored

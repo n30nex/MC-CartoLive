@@ -71,6 +71,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/public/history", s.publicHistory)
 	mux.HandleFunc("GET /api/v1/public/history/summary", s.publicHistorySummary)
 	mux.HandleFunc("GET /api/v1/public/packets", s.publicPackets)
+	mux.HandleFunc("GET /api/v1/public/chat", s.publicChat)
 	mux.Handle("GET /ws/public", s.PublicHub)
 	if !s.Config.PublicMode {
 		mux.HandleFunc("GET /api/v1/live/state", s.liveState)
@@ -384,6 +385,9 @@ const (
 	publicHistoryMaxWindowMs     = int64(24 * time.Hour / time.Millisecond)
 	publicHistoryMaxLimit        = 2000
 	publicHistoryDefaultLimit    = 1000
+	publicChatMaxLimit           = 500
+	publicChatDefaultLimit       = 100
+	publicChatMaxRawScan         = 2500
 	publicPacketsMaxLimit        = 1000
 	publicPacketsDefaultLimit    = 250
 	publicPacketsMaxRawScan      = 2500
@@ -392,6 +396,7 @@ const (
 	publicHistoryLocationTTL     = 60 * time.Second
 	publicHistorySummaryRoundMs  = int64(30 * time.Second / time.Millisecond)
 	publicHistoryRequestTimeout  = 10 * time.Second
+	publicChatRequestTimeout     = 12 * time.Second
 	publicPacketsRequestTimeout  = 12 * time.Second
 )
 
@@ -651,6 +656,105 @@ func (s *Server) publicHistorySummary(w http.ResponseWriter, r *http.Request) {
 	failed = false
 }
 
+func (s *Server) publicChat(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	failed := true
+	defer func() {
+		s.logAPI("public_chat", time.Since(start), failed)
+	}()
+	if s.Store == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("store is not available"))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), publicChatRequestTimeout)
+	defer cancel()
+	now := time.Now().UnixMilli()
+	from, to := publicHistoryWindow(r, now)
+	limit := queryInt(r, "limit", publicChatDefaultLimit)
+	if limit <= 0 {
+		limit = publicChatDefaultLimit
+	}
+	if limit > publicChatMaxLimit {
+		limit = publicChatMaxLimit
+	}
+	filters := publicChatFiltersFromRequest(r)
+	cursor, err := decodeHistoryCursor(r.URL.Query().Get("cursor"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	messages := make([]live.PublicChatMessage, 0, limit)
+	nextCursor := cursor
+	scannedRaw := 0
+	exhausted := false
+	var observerLocations live.PublicObserverLocationIndex
+	var pathHash3ByNodeID map[string]string
+	locationsReady := false
+	for len(messages) < limit && scannedRaw < publicChatMaxRawScan {
+		rawLimit := minInt(publicChatRawPageSize(limit-len(messages), filters), publicChatMaxRawScan-scannedRaw)
+		rawEvents, err := s.Store.PublicChatEvents(ctx, store.HistoryQuery{
+			From:   from,
+			To:     to,
+			Limit:  rawLimit,
+			Cursor: nextCursor,
+			IATA:   filters.iata,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		scannedRaw += len(rawEvents)
+		if len(rawEvents) == 0 {
+			nextCursor = nil
+			exhausted = true
+			break
+		}
+		if !locationsReady {
+			observerLocations, pathHash3ByNodeID, err = s.publicLocationIndexes(ctx)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			locationsReady = true
+		}
+		for _, rawEvent := range rawEvents {
+			cursorValue := rawEvent.Cursor()
+			nextCursor = &cursorValue
+			if !s.allowsPublicIATA(rawEvent.IATA()) {
+				continue
+			}
+			message, ok := publicChatMessage(rawEvent, observerLocations, pathHash3ByNodeID)
+			if !ok {
+				continue
+			}
+			if !publicChatMatchesFilters(message, filters) {
+				continue
+			}
+			messages = append(messages, message)
+			if len(messages) >= limit {
+				break
+			}
+		}
+		if len(rawEvents) < rawLimit || len(messages) >= limit {
+			exhausted = len(rawEvents) < rawLimit && len(messages) < limit
+			break
+		}
+	}
+
+	writeJSON(w, http.StatusOK, live.PublicChatResponse{
+		ServerTime: now,
+		Messages:   messages,
+		NextCursor: publicChatNextCursorToken(nextCursor, exhausted, len(messages), limit, scannedRaw),
+		Window: live.PublicHistoryWindow{
+			From:  from,
+			To:    to,
+			Count: len(messages),
+		},
+	})
+	failed = false
+}
+
 func (s *Server) publicPackets(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	failed := true
@@ -847,6 +951,130 @@ func publicPacketSearchFields(packet live.PublicPacketPath) []string {
 	return out
 }
 
+type publicChatFilters struct {
+	iata    string
+	channel string
+	query   string
+}
+
+func publicChatFiltersFromRequest(r *http.Request) publicChatFilters {
+	query := r.URL.Query()
+	return publicChatFilters{
+		iata:    firstUpperQuery(query, "region", "iata"),
+		channel: strings.ToLower(trimBounded(query.Get("channel"), 80)),
+		query:   strings.ToLower(trimBounded(query.Get("q"), 120)),
+	}
+}
+
+func publicChatMessage(
+	raw store.HistoryEvent,
+	observerLocations live.PublicObserverLocationIndex,
+	pathHash3ByNodeID map[string]string,
+) (live.PublicChatMessage, bool) {
+	if raw.Edge != nil {
+		pulse, ok := live.PublicRoutePulseFromEdge(*raw.Edge, pathHash3ByNodeID)
+		if !ok {
+			return live.PublicChatMessage{}, false
+		}
+		packet, ok := live.PublicPacketPathFromPulse(pulse)
+		if !ok || strings.TrimSpace(packet.MessageText) == "" {
+			return live.PublicChatMessage{}, false
+		}
+		return live.PublicChatMessage{
+			ID:              "chat-routed-" + strconv.FormatInt(raw.Edge.ID, 10),
+			At:              packet.At,
+			IATA:            packet.IATA,
+			Region:          packet.Region,
+			Sender:          packet.MessageSender,
+			Text:            packet.MessageText,
+			ChannelLabel:    publicChatChannelLabel(packet.PayloadTypeName),
+			PayloadTypeName: packet.PayloadTypeName,
+			Source:          "routed",
+			Anchor:          pulse.MessageAnchor,
+			RouteIDs:        packet.RouteIDs,
+			EndpointLabels:  packet.EndpointLabels,
+		}, true
+	}
+	if raw.Packet != nil {
+		activity := live.PublicActivityFromPacket(
+			*raw.Packet,
+			nil,
+			observerLocations.LocationForPublicKey(raw.Packet.ObserverPublicKey, raw.Packet.IATA),
+		)
+		if strings.TrimSpace(activity.MessageText) == "" {
+			return live.PublicChatMessage{}, false
+		}
+		return live.PublicChatMessage{
+			ID:              "chat-observer-" + strconv.FormatInt(raw.Packet.ID, 10),
+			At:              activity.HeardAt,
+			IATA:            strings.ToUpper(strings.TrimSpace(activity.IATA)),
+			Region:          strings.ToUpper(strings.TrimSpace(activity.Region)),
+			Sender:          activity.MessageSender,
+			Text:            activity.MessageText,
+			ChannelLabel:    publicChatChannelLabel(activity.PayloadTypeName),
+			PayloadTypeName: activity.PayloadTypeName,
+			Source:          "observer",
+			Anchor:          activity.MessageAnchor,
+		}, true
+	}
+	return live.PublicChatMessage{}, false
+}
+
+func publicChatChannelLabel(payloadTypeName string) string {
+	payloadTypeName = strings.TrimSpace(payloadTypeName)
+	switch strings.ToUpper(payloadTypeName) {
+	case "PLAIN_TEXT", "GROUP_TEXT":
+		return "Public"
+	default:
+		return fallbackString(payloadTypeName, "Unknown")
+	}
+}
+
+func publicChatMatchesFilters(message live.PublicChatMessage, filters publicChatFilters) bool {
+	if filters.iata != "" && strings.ToUpper(message.IATA) != filters.iata {
+		return false
+	}
+	if filters.channel != "" &&
+		strings.ToLower(message.ChannelLabel) != filters.channel &&
+		strings.ToLower(message.PayloadTypeName) != filters.channel {
+		return false
+	}
+	if filters.query == "" {
+		return true
+	}
+	for _, field := range publicChatSearchFields(message) {
+		if strings.Contains(strings.ToLower(field), filters.query) {
+			return true
+		}
+	}
+	return false
+}
+
+func publicChatSearchFields(message live.PublicChatMessage) []string {
+	fields := []string{
+		message.ID,
+		message.IATA,
+		message.Region,
+		message.Sender,
+		message.Text,
+		message.ChannelLabel,
+		message.PayloadTypeName,
+		message.Source,
+	}
+	fields = append(fields, message.RouteIDs...)
+	fields = append(fields, message.EndpointLabels...)
+	if message.Anchor != nil {
+		fields = append(fields, message.Anchor.Label)
+	}
+	out := fields[:0]
+	for _, field := range fields {
+		if strings.TrimSpace(field) != "" {
+			out = append(out, field)
+		}
+	}
+	return out
+}
+
 func (s *Server) publicLocationIndexes(ctx context.Context) (live.PublicObserverLocationIndex, map[string]string, error) {
 	if s.historyLocations == nil {
 		s.historyLocations = &historyLocationCache{}
@@ -938,6 +1166,16 @@ func historyRawPageSize(remaining int) int {
 	return limit
 }
 
+func publicChatRawPageSize(remaining int, filters publicChatFilters) int {
+	if remaining <= 0 {
+		return 0
+	}
+	if filters.channel == "" && filters.query == "" {
+		return minInt(maxInt(remaining, 200), 1000)
+	}
+	return minInt(maxInt(remaining*2, 400), 1200)
+}
+
 func publicPacketsRawPageSize(remaining int, filters publicPacketFilters) int {
 	if remaining <= 0 {
 		return 0
@@ -947,6 +1185,16 @@ func publicPacketsRawPageSize(remaining int, filters publicPacketFilters) int {
 		return minInt(maxInt(remaining, 200), 1000)
 	}
 	return minInt(maxInt(remaining*2, 400), 1200)
+}
+
+func publicChatNextCursorToken(cursor *store.HistoryCursor, exhausted bool, matched int, limit int, scannedRaw int) string {
+	if cursor == nil || exhausted {
+		return ""
+	}
+	if matched >= limit || scannedRaw >= publicChatMaxRawScan {
+		return encodeHistoryCursor(*cursor)
+	}
+	return ""
 }
 
 func publicPacketsNextCursorToken(cursor *store.HistoryCursor, exhausted bool, matched int, limit int, scannedRaw int) string {

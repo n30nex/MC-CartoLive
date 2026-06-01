@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, ExternalLink, Gauge, Github, HelpCircle, History, List, Map, Network, RadioTower, Settings2, Sparkles, Wrench, X } from 'lucide-react';
+import { Activity, ExternalLink, Gauge, Github, HelpCircle, History, List, Map, MessageSquareText, Network, RadioTower, Settings2, Sparkles, Wrench, X } from 'lucide-react';
 import { appBrandLogo, appBrandName, appBrandURL, appVersion, buildNumber, buildTime, gitSha, releaseURL } from '../buildInfo';
 import { routeAssetIcons } from '../assets/routes/assets';
 import {
@@ -14,13 +14,16 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.14';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.15';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
-  '2.5.14 adds a release metadata drift guard so version defaults, Docker tags, frontend package metadata, docs, and changelog stay in sync.',
-  'NetGraph is steadier: closer packed components, mobile pinch zoom, role-matched node glyphs, pinned live pulse status, and faster pulse matching.',
+  '2.5.15 adds a public-safe Chat page for decoded public text history with region, channel, time-window, search, and paging controls.',
+  'NetGraph is steadier: stable visible graph membership, deterministic edge lanes, selected-neighborhood helpers, mobile pinch zoom, role-matched node glyphs, and faster pulse matching.',
+  'OpenFreeMap replay chase math now uses shared 3D route-arc samples so selected-packet cinematic replay can stay synchronized with 3D comets.',
+  'Release checks now scan public JSON and the public websocket hello for raw hashes, raw hex, full keys, secrets, tokens, and debug fields.',
+  '2.5.14 added a release metadata drift guard so version defaults, Docker tags, frontend package metadata, docs, and changelog stay in sync.',
   'OpenFreeMap 3D is lighter in dense views by prioritizing visible, focused, fresh, and selected nodes/routes before rebuilding the Three.js scene.',
   'Public text bubbles are back for sanitized decoded group messages, including reload/polling fallback when a sender or observer anchor is public-safe.',
   'Packets is clearer and safer: select focuses a path, Replay pauses live, scan status explains rare filters, and stale requests cannot replace newer searches.',
@@ -33,6 +36,7 @@ const FEATURE_LIST = [
   'OpenFreeMap 3D mode with low-poly repeaters, companions, rooms, observer beacons, route arcs, and 3D comets.',
   'True-path Packets page for sanitized 24h packet browsing and cinematic route replay.',
   'NetGraph view for connected public RF topology with live pulses and compact node/pathway inspectors.',
+  'Public Chat page for sanitized decoded text history with region, channel, and search filters.',
   'Hidden-by-default VCR for pause, scrub, replay, and 24h public-safe route history.',
   'Plot Routes, reachable-node phonebook, layer controls, themes, palettes, Perf Lab, and operator diagnostics.'
 ];
@@ -49,10 +53,11 @@ interface LinkBarProps {
   perfOpen?: boolean;
   packetsOpen?: boolean;
   netGraphOpen?: boolean;
+  chatOpen?: boolean;
   setupOpen?: boolean;
 }
 
-export default function LinkBar({ perfOpen = false, packetsOpen = false, netGraphOpen = false, setupOpen = false }: LinkBarProps) {
+export default function LinkBar({ perfOpen = false, packetsOpen = false, netGraphOpen = false, chatOpen = false, setupOpen = false }: LinkBarProps) {
   const [now, setNow] = useState(() => Date.now());
   const [repoStats, setRepoStats] = useState<RepoStats | null>(() => readCachedRepoStats(browserStorage()));
   const [activeInfoPanel, setActiveInfoPanel] = useState<InfoPanel>(null);
@@ -134,6 +139,10 @@ export default function LinkBar({ perfOpen = false, packetsOpen = false, netGrap
         <a className={`link-bar-perf ${netGraphOpen ? 'active' : ''}`} href="#/netgraph" title="Open live network graph">
           <Network size={13} />
           <span>NetGraph</span>
+        </a>
+        <a className={`link-bar-perf ${chatOpen ? 'active' : ''}`} href="#/chat" title="Open public chat history">
+          <MessageSquareText size={13} />
+          <span>Chat</span>
         </a>
         <a className={`link-bar-perf ${setupOpen ? 'active' : ''}`} href="#/setup" title="Open first-run setup">
           <Wrench size={13} />

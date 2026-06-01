@@ -4,10 +4,18 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 
 	"meshcore-canada-live-map/backend/internal/resolve"
+)
+
+var (
+	publicSecretPairRE = regexp.MustCompile(`(?i)\b(?:broker|resolver|debug|secret|token|key|hash|payload|path)[\w.-]*\s*[:=]\s*\S+`)
+	publicPathHexRE    = regexp.MustCompile(`(?i)\b(?:[a-f0-9]{2}[:\-\s]){5,}[a-f0-9]{2}\b`)
+	publicLongHexRE    = regexp.MustCompile(`(?i)\b(?:0x)?[a-f0-9]{16,}\b`)
+	publicBase64RE     = regexp.MustCompile(`\b[A-Za-z0-9+/]{40,}={0,2}\b`)
 )
 
 type PublicNode struct {
@@ -112,6 +120,28 @@ type PublicPacketPath struct {
 	RouteIDs        []string             `json:"routeIds"`
 	EndpointLabels  []string             `json:"endpointLabels"`
 	Segments        []PublicRouteSegment `json:"segments"`
+}
+
+type PublicChatMessage struct {
+	ID              string               `json:"id"`
+	At              int64                `json:"at"`
+	IATA            string               `json:"iata,omitempty"`
+	Region          string               `json:"region,omitempty"`
+	Sender          string               `json:"sender,omitempty"`
+	Text            string               `json:"text"`
+	ChannelLabel    string               `json:"channelLabel"`
+	PayloadTypeName string               `json:"payloadTypeName"`
+	Source          string               `json:"source"`
+	Anchor          *PublicMessageAnchor `json:"anchor,omitempty"`
+	RouteIDs        []string             `json:"routeIds,omitempty"`
+	EndpointLabels  []string             `json:"endpointLabels,omitempty"`
+}
+
+type PublicChatResponse struct {
+	ServerTime int64               `json:"serverTime"`
+	Messages   []PublicChatMessage `json:"messages"`
+	NextCursor string              `json:"nextCursor,omitempty"`
+	Window     PublicHistoryWindow `json:"window"`
 }
 
 type PublicPacketsResponse struct {
@@ -917,6 +947,7 @@ func publicMessageText(value string) string {
 	if value == "" {
 		return ""
 	}
+	value = redactPublicMessageText(value)
 	runes := []rune(value)
 	if len(runes) > 500 {
 		return string(runes[:500])
@@ -929,9 +960,18 @@ func publicMessageSender(value string) string {
 	if value == "" {
 		return ""
 	}
+	value = redactPublicMessageText(value)
 	runes := []rune(value)
 	if len(runes) > 80 {
 		return string(runes[:80])
 	}
 	return value
+}
+
+func redactPublicMessageText(value string) string {
+	value = publicSecretPairRE.ReplaceAllString(value, "[redacted]")
+	value = publicPathHexRE.ReplaceAllString(value, "[redacted path]")
+	value = publicLongHexRE.ReplaceAllString(value, "[redacted id]")
+	value = publicBase64RE.ReplaceAllString(value, "[redacted key]")
+	return strings.TrimSpace(value)
 }

@@ -15,8 +15,9 @@ Keep these out of git, logs, issues, screenshots, and public artifacts:
 ## Public Outputs
 
 Public endpoints should expose only sanitized live-map data needed for display,
-including the public 24h VCR history feed and true-path packet records derived
-from public routed edge events.
+including the public 24h VCR history feed, true-path packet records derived
+from public routed edge events, and sanitized public chat messages derived from
+decoded public text fields.
 They must not expose:
 
 - full public keys
@@ -39,11 +40,12 @@ route endpoints. This is the 3-byte MeshCore route prefix shown in the mobile
 app's Set Path flow. It is intentionally limited to the route-copy workflow and
 must not be expanded into full public keys.
 
-Decoded message text is exposed only as sanitized public bubble text when the
-backend can decode it from public packet data, the built-in MeshCore default
-Public channel key, or extra private channel secrets provided locally by the
-operator. The frontend can reuse that same sanitized message text as short node
-chatter history for selected nodes.
+Decoded message text is exposed only as sanitized public bubble or Chat text
+when the backend can decode it from public packet data, the built-in MeshCore
+default Public channel key, or extra private channel secrets provided locally by
+the operator. Public Chat must not expose channel secret material, raw channel
+hash bytes, raw payloads, full keys, packet hashes, broker metadata, or resolver
+debug output.
 
 ## Region Allowlist
 
@@ -71,10 +73,12 @@ location, the frontend can show observer-only live activity instead.
 
 The public VCR history endpoints replay only sanitized routed `routePulse`
 shapes already used by the live map. The public packets endpoint exposes only
-records derived from those same mappable routed pulses. They must stay inside
-the same privacy boundary as `/api/v1/public/state` and `/ws/public`: no raw
-packet hashes, raw payloads, full public keys, path hex, summaries, or resolver
-debug reasons.
+records derived from those same mappable routed pulses. The public Chat endpoint
+exposes only sanitized decoded text, sender labels, safe channel labels, and
+public map anchors. They must stay inside the same privacy boundary as
+`/api/v1/public/state` and `/ws/public`: no raw packet hashes, raw payloads,
+full public keys, path hex, summaries, channel secrets, or resolver debug
+reasons.
 
 ## Tests
 

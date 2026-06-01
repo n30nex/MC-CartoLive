@@ -40,6 +40,8 @@ try {
   $from = $now - 600000
   $history = Invoke-RestMethod "$BaseUrl/api/v1/public/history?from=$from&to=$now&limit=25"
   $packets = Invoke-RestMethod "$BaseUrl/api/v1/public/packets?from=$from&to=$now&limit=25"
+  $chat = Invoke-RestMethod "$BaseUrl/api/v1/public/chat?from=$from&to=$now&limit=25"
+  node (Join-Path $root "scripts/check-public-privacy.mjs") $BaseUrl
 
   [PSCustomObject]@{
     BaseUrl = $BaseUrl
@@ -50,6 +52,7 @@ try {
     Routes = $state.stats.activeRoutes
     HistoryEvents = $history.window.count
     PacketPaths = $packets.window.count
+    ChatMessages = $chat.window.count
     PacketIngestState = $health.packetIngestState
     PublicCacheState = $health.publicCacheState
     MapMotionState = $health.mapMotionState

@@ -201,6 +201,28 @@ export interface PublicPacketsResponse {
   scan?: PublicPacketScan;
 }
 
+export interface PublicChatMessage {
+  id: string;
+  at: number;
+  region?: string;
+  iata?: string;
+  sender?: string;
+  text: string;
+  channelLabel?: string;
+  payloadTypeName: string;
+  source?: string;
+  anchor?: PublicMessageAnchor;
+  routeIds?: string[];
+  endpointLabels?: string[];
+}
+
+export interface PublicChatResponse {
+  serverTime: number;
+  messages: PublicChatMessage[];
+  nextCursor?: string;
+  window: PublicHistoryWindow;
+}
+
 export interface PublicPacketScan {
   eventsScanned: number;
   scanLimit: number;

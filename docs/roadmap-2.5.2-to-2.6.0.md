@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.14` release metadata drift guard on `main`
+Baseline audited: `v2.5.15` public Chat, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -550,6 +550,9 @@ Status: started with a cross-file release metadata guard. The current pass adds
 `scripts/check-version-sync.mjs`, runs it from CI and local release checks, and
 fails fast when `VERSION`, backend defaults, Docker defaults, frontend package
 metadata, docs, top-bar localStorage keys, or changelog entries drift.
+The release-check scripts also run `scripts/check-public-privacy.mjs` against a
+running public instance so JSON responses are scanned for raw hashes, raw hex,
+full keys, secrets, tokens, and debug fields before a release is promoted.
 
 ### Release Automation
 
@@ -581,12 +584,19 @@ metadata, docs, top-bar localStorage keys, or changelog entries drift.
 Goal: finish the last user-facing 2.6 feature work without expanding public
 privacy boundaries.
 
+Status: started with the public-safe Chat endpoint and top-bar Chat page,
+metadata-stable NetGraph visible graph helpers, deterministic NetGraph edge
+lanes, selected-neighborhood helpers, and a pure tested OpenFreeMap packet
+replay chase helper based on shared 3D route-arc samples.
+
 ### Public-Safe Chat Page
 
 - Add a top-bar `Chat` page beside NetGraph.
 - Show sanitized decoded public text history only.
 - Filter by region/IATA, channel label, sender/observer label, and time window.
 - Link chat messages back to public map anchors when available.
+- Keep the endpoint bounded and cursor-paged so search does not become an
+  unbounded 24h scan under live traffic.
 - Do not expose raw payloads, raw packet hashes, full public keys, channel
   secrets, broker metadata, or resolver debug data.
 

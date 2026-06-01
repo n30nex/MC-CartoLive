@@ -1,4 +1,4 @@
-import type { PublicHistoryResponse, PublicHistorySummaryResponse, PublicLiveState, PublicPacketsResponse, RuntimeHealth } from './types';
+import type { PublicChatResponse, PublicHistoryResponse, PublicHistorySummaryResponse, PublicLiveState, PublicPacketsResponse, RuntimeHealth } from './types';
 
 async function getJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { headers: { Accept: 'application/json' }, signal });
@@ -60,6 +60,27 @@ export function fetchPublicPackets({ from, to, limit, cursor, iata, region, payl
   if (messageOnly) params.set('messageOnly', 'true');
   if (q) params.set('q', q);
   return getJSON<PublicPacketsResponse>(`/api/v1/public/packets?${params.toString()}`, signal);
+}
+
+export interface PublicChatParams extends PublicHistoryParams {
+  iata?: string;
+  region?: string;
+  channel?: string;
+  q?: string;
+}
+
+export function fetchPublicChat({ from, to, limit, cursor, iata, region, channel, q, signal }: PublicChatParams): Promise<PublicChatResponse> {
+  const params = new URLSearchParams({
+    from: Math.round(from).toString(),
+    to: Math.round(to).toString()
+  });
+  if (limit !== undefined) params.set('limit', Math.round(limit).toString());
+  if (cursor) params.set('cursor', cursor);
+  if (region) params.set('region', region);
+  if (iata) params.set('iata', iata);
+  if (channel) params.set('channel', channel);
+  if (q) params.set('q', q);
+  return getJSON<PublicChatResponse>(`/api/v1/public/chat?${params.toString()}`, signal);
 }
 
 export interface PublicHistorySummaryParams {

@@ -184,6 +184,153 @@ LIMIT ?`
 	return out, rows.Err()
 }
 
+func (s *Store) PublicChatEvents(ctx context.Context, query HistoryQuery) ([]HistoryEvent, error) {
+	limit := query.Limit
+	if limit <= 0 || limit > 2500 {
+		limit = 1000
+	}
+	to := boundedHistoryTo(query.To)
+	edgeWhere := []string{
+		"e.heard_at_ms >= ?",
+		"e.heard_at_ms <= ?",
+		"TRIM(e.message_text) != ''",
+	}
+	edgeArgs := []any{query.From, to}
+	packetWhere := []string{
+		"po.heard_at_ms >= ?",
+		"po.heard_at_ms <= ?",
+		"TRIM(po.message_text) != ''",
+		"NOT EXISTS (SELECT 1 FROM live_edge_events e WHERE e.observation_id=po.id)",
+	}
+	packetArgs := []any{query.From, to}
+	if iata := strings.ToUpper(strings.TrimSpace(query.IATA)); iata != "" {
+		edgeWhere = append(edgeWhere, "UPPER(COALESCE(po.iata, '')) = ?")
+		edgeArgs = append(edgeArgs, iata)
+		packetWhere = append(packetWhere, "UPPER(COALESCE(po.iata, '')) = ?")
+		packetArgs = append(packetArgs, iata)
+	}
+	if payload := strings.ToUpper(strings.TrimSpace(query.PayloadTypeName)); payload != "" {
+		edgeWhere = append(edgeWhere, "UPPER(COALESCE(e.payload_type_name, '')) = ?")
+		edgeArgs = append(edgeArgs, payload)
+		packetWhere = append(packetWhere, "UPPER(COALESCE(po.payload_type_name, '')) = ?")
+		packetArgs = append(packetArgs, payload)
+	}
+	if query.Cursor != nil {
+		edgeWhere = append(edgeWhere, "(e.heard_at_ms < ? OR (e.heard_at_ms = ? AND 2 < ?) OR (e.heard_at_ms = ? AND 2 = ? AND e.id < ?))")
+		edgeArgs = append(edgeArgs, query.Cursor.At, query.Cursor.At, query.Cursor.TypeOrder, query.Cursor.At, query.Cursor.TypeOrder, query.Cursor.ID)
+		packetWhere = append(packetWhere, "(po.heard_at_ms < ? OR (po.heard_at_ms = ? AND 1 < ?) OR (po.heard_at_ms = ? AND 1 = ? AND po.id < ?))")
+		packetArgs = append(packetArgs, query.Cursor.At, query.Cursor.At, query.Cursor.TypeOrder, query.Cursor.At, query.Cursor.TypeOrder, query.Cursor.ID)
+	}
+	sqlText := `
+SELECT type_order, event_type, at_ms, entity_id,
+  packet_id, packet_payload_type_name, packet_route_type_name, packet_observer_public_key,
+  packet_iata, packet_heard_at_ms, packet_hop_count, packet_resolution_status,
+  packet_message_sender, packet_message_text, packet_invalid_for_map,
+  edge_id, edge_observation_id, edge_iata, edge_payload_type, edge_payload_type_name,
+  edge_message_sender, edge_message_text, edge_message_anchor_json, edge_heard_at_ms,
+  edge_segments_json, edge_render_reason
+FROM (
+  SELECT 2 AS type_order, 'routed' AS event_type, e.heard_at_ms AS at_ms, e.id AS entity_id,
+    COALESCE(po.iata, '') AS iata, e.payload_type_name AS payload_filter, e.message_text AS message_filter,
+    0 AS packet_id, '' AS packet_payload_type_name, '' AS packet_route_type_name,
+    '' AS packet_observer_public_key, COALESCE(po.iata, '') AS packet_iata,
+    0 AS packet_heard_at_ms, 0 AS packet_hop_count, '' AS packet_resolution_status,
+    '' AS packet_message_sender, '' AS packet_message_text, 0 AS packet_invalid_for_map,
+    e.id AS edge_id, e.observation_id AS edge_observation_id,
+    COALESCE(po.iata, '') AS edge_iata, e.payload_type AS edge_payload_type,
+    e.payload_type_name AS edge_payload_type_name, e.message_sender AS edge_message_sender,
+    e.message_text AS edge_message_text, e.message_anchor_json AS edge_message_anchor_json,
+    e.heard_at_ms AS edge_heard_at_ms, e.segments_json AS edge_segments_json,
+    e.render_reason AS edge_render_reason
+  FROM live_edge_events e
+  LEFT JOIN packet_observations po ON po.id=e.observation_id
+  WHERE ` + strings.Join(edgeWhere, " AND ") + `
+  UNION ALL
+  SELECT 1 AS type_order, 'observer' AS event_type, po.heard_at_ms AS at_ms, po.id AS entity_id,
+    po.iata AS iata, po.payload_type_name AS payload_filter, po.message_text AS message_filter,
+    po.id AS packet_id, po.payload_type_name AS packet_payload_type_name,
+    po.route_type_name AS packet_route_type_name, po.observer_public_key AS packet_observer_public_key,
+    po.iata AS packet_iata, po.heard_at_ms AS packet_heard_at_ms,
+    po.hop_count AS packet_hop_count, po.resolution_status AS packet_resolution_status,
+    po.message_sender AS packet_message_sender, po.message_text AS packet_message_text,
+    po.invalid_for_map AS packet_invalid_for_map,
+    0 AS edge_id, 0 AS edge_observation_id, '' AS edge_iata, 0 AS edge_payload_type,
+    '' AS edge_payload_type_name, '' AS edge_message_sender, '' AS edge_message_text,
+    '' AS edge_message_anchor_json, 0 AS edge_heard_at_ms, '' AS edge_segments_json,
+    '' AS edge_render_reason
+  FROM packet_observations po
+  WHERE ` + strings.Join(packetWhere, " AND ") + `
+) chat`
+	sqlText += `
+ORDER BY at_ms DESC, type_order DESC, entity_id DESC
+LIMIT ?`
+	args := make([]any, 0, len(edgeArgs)+len(packetArgs)+1)
+	args = append(args, edgeArgs...)
+	args = append(args, packetArgs...)
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []HistoryEvent{}
+	for rows.Next() {
+		var event HistoryEvent
+		var packet live.PacketObservation
+		var packetInvalid int
+		var edge live.EdgeEvent
+		var edgeMessageAnchorJSON string
+		var edgeSegmentsJSON string
+		if err := rows.Scan(
+			&event.TypeOrder,
+			&event.Type,
+			&event.At,
+			&event.ID,
+			&packet.ID,
+			&packet.PayloadTypeName,
+			&packet.RouteTypeName,
+			&packet.ObserverPublicKey,
+			&packet.IATA,
+			&packet.HeardAt,
+			&packet.HopCount,
+			&packet.ResolutionStatus,
+			&packet.MessageSender,
+			&packet.MessageText,
+			&packetInvalid,
+			&edge.ID,
+			&edge.ObservationID,
+			&edge.IATA,
+			&edge.PayloadType,
+			&edge.PayloadTypeName,
+			&edge.MessageSender,
+			&edge.MessageText,
+			&edgeMessageAnchorJSON,
+			&edge.HeardAt,
+			&edgeSegmentsJSON,
+			&edge.RenderReason,
+		); err != nil {
+			return nil, err
+		}
+		if packet.ID > 0 {
+			packet.InvalidForMap = packetInvalid == 1
+			event.Packet = &packet
+		}
+		if edge.ID > 0 {
+			_ = json.Unmarshal([]byte(edgeSegmentsJSON), &edge.Segments)
+			if edgeMessageAnchorJSON != "" {
+				var anchor live.MessageAnchor
+				if err := json.Unmarshal([]byte(edgeMessageAnchorJSON), &anchor); err == nil {
+					edge.MessageAnchor = &anchor
+				}
+			}
+			event.Edge = &edge
+		}
+		out = append(out, event)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) PublicHistorySummary(ctx context.Context, from int64, to int64, bucketMs int64) ([]HistorySummaryRow, error) {
 	if bucketMs <= 0 {
 		bucketMs = int64(time.Hour / time.Millisecond)

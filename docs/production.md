@@ -69,7 +69,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.14
+  ghcr.io/n30nex/mc-cartolive:2.5.15
 ```
 
 For production, keep private settings in an env file and mount persistent data:
@@ -79,7 +79,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.14
+  ghcr.io/n30nex/mc-cartolive:2.5.15
 ```
 
 The published image runs as non-root `appuser`, includes OCI source/version
@@ -132,13 +132,13 @@ docker compose up -d
 
 ## Runtime Notes
 
-- Version 2.5.14 exposes the app version/build in the top project bar. CI builds use
+- Version 2.5.15 exposes the app version/build in the top project bar. CI builds use
   the Git commit SHA when available; local Docker builds use a timestamp fallback
   plus a separate ISO build time for build-age display.
 - Runtime liveness and readiness are split: `/healthz` stays cheap for Docker
   liveness, while `/readyz` verifies DB ping, public cache readiness, static
   frontend availability, and public-safe runtime status.
-- Version 2.5.14 also exposes public-safe public-cache truncation counts,
+- Version 2.5.15 also exposes public-safe public-cache truncation counts,
   packet-search scan pressure, and packet-count refresh latency/failures so
   operators can spot scale pressure without exposing private packet material.
 - The top-bar Setup page generates public-safe `.env` starter snippets for
@@ -211,7 +211,8 @@ hints, and whether the position came from a node or observer record.
 ## Production Readiness Checklist
 
 - Keep `/healthz`, `/readyz`, `/api/v1/public/state`, `/api/v1/public/history`,
-  `/api/v1/public/packets`, and `/ws/public` checks in every deploy smoke test.
+  `/api/v1/public/packets`, `/api/v1/public/chat`, and `/ws/public` checks in
+  every deploy smoke test.
 - Track websocket fanout, WebSocket queue drops, MQTT connectivity, MQTT last
   message age, packet ingest freshness, public cache age, route/observer motion,
   public history latency/errors, SQLite read/write errors, and static asset

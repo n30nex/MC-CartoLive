@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 2.5.15 - 2026-06-01
+
+- Added `GET /api/v1/public/chat` for sanitized decoded public text history,
+  including routed and observer-only messages, region/IATA filters, channel
+  labels, search, cursor paging, and 24h-capped windows.
+- Added a top-bar Chat page beside NetGraph with search, region/channel
+  filters, 1h/6h/24h windows, refresh, load older, empty/error/loading states,
+  and mobile-safe layout.
+- Stabilized NetGraph with metadata-stable visible graph selection,
+  deterministic edge lane helpers shared by drawing, hit testing, and live
+  comets, plus selected-neighborhood helper coverage.
+- Added a pure tested OpenFreeMap packet replay chase helper built from shared
+  3D route-arc samples, then wired CanadaMap's current replay camera math to it.
+- Added `scripts/check-public-privacy.mjs` and wired it into the local release
+  checks so public JSON surfaces are scanned for raw hashes, raw hex, full keys,
+  secrets, debug fields, and other private material before release, including
+  the public WebSocket hello frame.
+- Kept hosted Canada behavior and existing public API response shapes
+  compatible while adding only the new public-safe Chat endpoint.
+
 ## 2.5.14 - 2026-06-01
 
 - Added `scripts/check-version-sync.mjs` to catch release metadata drift across
