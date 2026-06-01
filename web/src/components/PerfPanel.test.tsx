@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import PerfPanel, { formatAge, freshnessTone, toneForState } from './PerfPanel';
+import PerfPanel, { formatAge, freshnessTone, systemSummaryFromHealth, toneForState } from './PerfPanel';
 
 describe('PerfPanel helpers', () => {
   it('classifies live confidence states for compact status chips', () => {
@@ -21,16 +21,26 @@ describe('PerfPanel helpers', () => {
     expect(freshnessTone(360_000, 60_000)).toBe('bad');
   });
 
+  it('summarizes the live system from public-safe health signals', () => {
+    expect(systemSummaryFromHealth({ mqttConnected: true, mqttLastMessageAgeMs: 10_000, publicLiveFresh: true }, { ready: true }, 6, 6)).toEqual({ value: 'live', tone: 'good' });
+    expect(systemSummaryFromHealth({ mqttConnected: false, publicLiveFresh: false }, { ready: true }, 5, 6)).toEqual({ value: 'degraded', tone: 'warn' });
+    expect(systemSummaryFromHealth(null, null, 0, 6)).toEqual({ value: 'offline', tone: 'bad' });
+  });
+
   it('renders the public-safe live status shell', () => {
     const html = renderToStaticMarkup(<PerfPanel onClose={() => undefined} />);
     expect(html).toContain('Live Status');
-    expect(html).toContain('Deployment Health');
-    expect(html).toContain('Frontend / API');
-    expect(html).toContain('MQTT Freshness');
-    expect(html).toContain('Public Cache / State');
-    expect(html).toContain('Routed Live Traffic');
+    expect(html).toContain('Is the system live?');
+    expect(html).toContain('Browser / Public API');
+    expect(html).toContain('MQTT Ingest');
+    expect(html).toContain('Routes / Map Motion');
+    expect(html).toContain('Clients / Public Data');
+    expect(html).toContain('Packet endpoint');
+    expect(html).toContain('Chat endpoint');
     expect(html).not.toContain('Perf Lab');
     expect(html).not.toContain('local-only');
-    expect(html).toContain('raw packet details');
+    expect(html).not.toContain('Git SHA');
+    expect(html).not.toContain('packet hash');
+    expect(html).toContain('Public-safe aggregate checks only.');
   });
 });

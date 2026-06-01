@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.27` Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, live-health/top-bar polish, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.28` live-status simplification, calmer Live Follow, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,22 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.28 - Live Status And Camera Calm
+
+Goal: make the operational top-bar and live-follow behavior easier to trust
+while keeping public APIs and data privacy unchanged.
+
+Scope:
+
+- Replace the Perf page with a direct live/degraded/offline deployment status
+  surface covering backend readiness, browser API reachability, MQTT ingest,
+  routed map motion, WebSocket clients, and Packets/Chat endpoint reachability.
+- Slow Live Follow camera motion, reduce follow zoom targets, and add stronger
+  spacing so normal live traffic does not whip the map around.
+- Parse compact UTC and ISO-like build timestamps strictly so top-bar build age
+  never displays a misleading normalized date.
+- Keep Setup under Guide and keep all status fields public-safe.
 
 ## 2.5.27 - Flat Map Live Pathway Polish
 

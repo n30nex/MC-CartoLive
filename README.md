@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.27
+# MeshCore MQTT Live Map v2.5.28
 
 Also known as **MC-CartoLive**.
 
@@ -23,18 +23,23 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.27 Feature Gallery
+### v2.5.28 Feature Gallery
 
-Version 2.5.27 keeps the Canada deployment intact while continuing the
+Version 2.5.28 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
 
-This patch makes the default flat map’s live motion easier to read: recently
-heard high-frequency pathways get thicker, hue-shifted lines and stronger
-payload glow, then shrink and fade back as the path cools. Packet comet residue
-also leaves deterministic short-lived sparkles so recent true packet movement is
-more obvious without adding random particles or exposing new public data. Setup
-is still available from the Guide overlay for new operators who need public-safe
+This patch makes the live-status and follow controls easier to trust: Perf now
+answers whether the public system is live, the top-bar build age is parsed
+strictly from release metadata, and Live Follow uses slower, lower-zoom camera
+moves that are more watchable during busy traffic.
+
+The default flat map's live motion is also easier to read: recently heard
+high-frequency pathways get thicker, hue-shifted lines and stronger payload
+glow, then shrink and fade back as the path cools. Packet comet residue leaves
+deterministic short-lived sparkles so recent true packet movement is more
+obvious without adding random particles or exposing new public data. Setup is
+still available from the Guide overlay for new operators who need public-safe
 `.env` starter settings, but it is no longer a permanent top-bar page. The
 release also keeps Chat duplicate hardening, NetGraph stability helpers,
 OpenFreeMap packet replay chase math on shared 3D route-arc samples, Docker
@@ -175,7 +180,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.27
+  ghcr.io/n30nex/mc-cartolive:2.5.28
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -186,7 +191,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.27
+  ghcr.io/n30nex/mc-cartolive:2.5.28
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -306,7 +311,7 @@ docker compose build
 
 ## Production Hosting
 
-The recommended v2.5.27 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.28 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

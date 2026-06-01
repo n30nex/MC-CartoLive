@@ -16,12 +16,12 @@ export interface FollowTrafficDecision {
   reason: 'immediate' | 'accepted' | 'duplicate' | 'throttled' | 'camera_busy';
 }
 
-export const FOLLOW_TRAFFIC_MIN_INTERVAL_MS = 12_000;
-export const FOLLOW_TRAFFIC_DURATION_MS = 7_200;
-export const FOLLOW_TRAFFIC_IMMEDIATE_DURATION_MS = 2_600;
-export const FOLLOW_TRAFFIC_MOVING_GRACE_MS = 1_400;
-export const FOLLOW_TRAFFIC_ROUTE_MAX_ZOOM = 7.7;
-export const FOLLOW_TRAFFIC_POINT_ZOOM = 7.1;
+export const FOLLOW_TRAFFIC_MIN_INTERVAL_MS = 16_000;
+export const FOLLOW_TRAFFIC_DURATION_MS = 9_500;
+export const FOLLOW_TRAFFIC_IMMEDIATE_DURATION_MS = 4_200;
+export const FOLLOW_TRAFFIC_MOVING_GRACE_MS = 2_000;
+export const FOLLOW_TRAFFIC_ROUTE_MAX_ZOOM = 7.1;
+export const FOLLOW_TRAFFIC_POINT_ZOOM = 6.3;
 
 export function followTrafficDecision(state: FollowTrafficState, input: FollowTrafficDecisionInput): FollowTrafficDecision {
   if (!input.immediate && state.lastID === input.id) {

@@ -15,13 +15,16 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.27';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.28';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.28 makes Perf a direct public-safe live status page for backend, API, MQTT, map motion, Packets, and Chat.',
+  'Live Follow now uses slower, lower-zoom camera moves and stricter movement spacing so it is watchable during busy traffic.',
+  'Top-bar build age parsing is stricter for release timestamps and no longer trusts invalid normalized dates.',
   '2.5.27 makes active flat-map pathways thicker, clearer, and hue-shifted by recent packet frequency.',
-  'Packet comet residue now leaves short-lived sparkles so recent true packet movement is easier to spot.',
+  'Packet comet residue leaves short-lived sparkles so recent true packet movement is easier to spot.',
   '2.5.26 collapses repeated public Chat messages across the full 24h window, including symbol-only decoded texts.',
   '2.5.23 makes NetGraph calmer with locked pause, gentler topology settling, and less component spread.',
   'OpenFreeMap 3D avoids forced full scene rebuilds after every map move or zoom end.',
@@ -277,7 +280,7 @@ function GuideOverlay({ title, onClose }: { title: string; onClose: () => void }
             'NetGraph renders the connected RF topology with live pulses and node/path inspectors.'
           ]} />
           <GuideSection title="Operations" tone="ops" icon={<Gauge size={18} />} items={[
-            'Perf shows public-safe runtime health, queues, frame timing, and backend readiness.',
+            'Perf shows whether the live deployment is healthy across backend, API, MQTT, map motion, Packets, and Chat.',
             'Health/readiness and smoke scripts help operators confirm live deployments.',
             'Public APIs stay sanitized: no raw hashes, full public keys, broker secrets, or resolver debug data.'
           ]} />

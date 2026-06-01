@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Activity, Database, RefreshCw, Server, Signal, X, Zap } from 'lucide-react';
-import { fetchHealthz, fetchPublicHistory, fetchPublicState, fetchReadyz } from '../api';
-import { parseBuildTime } from '../releaseInfo';
+import { Activity, Radio, RefreshCw, Server, Signal, UsersRound, X } from 'lucide-react';
+import { fetchHealthz, fetchPublicChat, fetchPublicHistory, fetchPublicPackets, fetchPublicState, fetchReadyz } from '../api';
 import type { PublicLiveState, RuntimeHealth } from '../types';
 
 interface PerfPanelProps {
   onClose: () => void;
 }
 
-type EndpointKey = 'health' | 'ready' | 'state' | 'history';
+type EndpointKey = 'health' | 'ready' | 'state' | 'history' | 'packets' | 'chat';
 type PerfTone = 'good' | 'warn' | 'bad' | 'quiet';
 
 interface EndpointStatus {
@@ -22,6 +21,8 @@ interface PerfSnapshot {
   ready: RuntimeHealth | null;
   state: PublicLiveState | null;
   historyEvents: number | null;
+  packetPaths: number | null;
+  chatMessages: number | null;
   endpoints: Record<EndpointKey, EndpointStatus>;
   checkedAt: number;
 }
@@ -30,8 +31,12 @@ const ENDPOINT_LABELS: Record<EndpointKey, string> = {
   health: '/healthz',
   ready: '/readyz',
   state: '/api/v1/public/state',
-  history: '/api/v1/public/history'
+  history: '/api/v1/public/history',
+  packets: '/api/v1/public/packets',
+  chat: '/api/v1/public/chat'
 };
+
+const ENDPOINT_COUNT = Object.keys(ENDPOINT_LABELS).length;
 
 const EMPTY_ENDPOINTS = Object.fromEntries(
   (Object.keys(ENDPOINT_LABELS) as EndpointKey[]).map((key) => [key, { ok: false, label: ENDPOINT_LABELS[key] } satisfies EndpointStatus])
@@ -54,15 +59,19 @@ export default function PerfPanel({ onClose }: PerfPanelProps) {
       fetchHealthz(),
       fetchReadyz(),
       fetchPublicState(),
-      fetchPublicHistory({ from: now - 10 * 60_000, to: now, limit: 25 })
+      fetchPublicHistory({ from: now - 10 * 60_000, to: now, limit: 25 }),
+      fetchPublicPackets({ from: now - 10 * 60_000, to: now, limit: 25 }),
+      fetchPublicChat({ from: now - 60 * 60_000, to: now, limit: 25 })
     ])
-      .then(([healthResult, readyResult, stateResult, historyResult]) => {
+      .then(([healthResult, readyResult, stateResult, historyResult, packetsResult, chatResult]) => {
         if (!mountedRef.current || requestID !== requestIDRef.current) return;
         const endpoints = {
           health: endpointFromResult('health', healthResult),
           ready: endpointFromResult('ready', readyResult),
           state: endpointFromResult('state', stateResult),
-          history: endpointFromResult('history', historyResult)
+          history: endpointFromResult('history', historyResult),
+          packets: endpointFromResult('packets', packetsResult),
+          chat: endpointFromResult('chat', chatResult)
         };
         const online = countOnline(endpoints);
         setSnapshot({
@@ -70,6 +79,8 @@ export default function PerfPanel({ onClose }: PerfPanelProps) {
           ready: settledValue(readyResult),
           state: settledValue(stateResult),
           historyEvents: settledValue(historyResult)?.window.count ?? null,
+          packetPaths: settledValue(packetsResult)?.window.count ?? null,
+          chatMessages: settledValue(chatResult)?.window.count ?? null,
           endpoints,
           checkedAt: Date.now()
         });
@@ -100,18 +111,20 @@ export default function PerfPanel({ onClose }: PerfPanelProps) {
   const endpoints = snapshot?.endpoints ?? EMPTY_ENDPOINTS;
   const lastChecked = useMemo(() => snapshot ? new Date(snapshot.checkedAt).toLocaleTimeString() : 'checking', [snapshot]);
   const apiOnline = countOnline(endpoints);
+  const systemStatus = systemSummary(snapshot);
   const backendStatus = backendSummary(endpoints, ready);
   const mqttStatus = mqttSummary(health);
-  const cacheStatus = cacheSummary(endpoints, health);
-  const routeStatus = routeSummary(health);
+  const mapStatus = mapMotionSummary(health);
+  const wsStatus = websocketSummary(health, state);
+  const packetEndpoint = endpointSummary(endpoints.packets, snapshot?.packetPaths);
+  const chatEndpoint = endpointSummary(endpoints.chat, snapshot?.chatMessages);
 
   return (
     <section className="perf-panel" aria-label="Live deployment status">
       <header className="perf-panel-header">
         <div>
           <span className="panel-eyebrow">Live Status</span>
-          <h2>Deployment Health</h2>
-          <p>Backend, public API, cache, MQTT, and routed traffic freshness.</p>
+          <h2>Is the system live?</h2>
         </div>
         <div className="perf-panel-actions">
           <button type="button" className="icon-button" title="Refresh live status" onClick={refresh}>
@@ -124,75 +137,65 @@ export default function PerfPanel({ onClose }: PerfPanelProps) {
       </header>
 
       <div className="perf-status-strip">
+        <PerfStatus label="System" value={systemStatus.value} tone={systemStatus.tone} />
         <PerfStatus label="Backend" value={backendStatus.value} tone={backendStatus.tone} />
-        <PerfStatus label="API" value={snapshot ? `${apiOnline}/4 online` : 'checking'} tone={snapshot ? reachabilityTone(apiOnline, 4) : 'quiet'} />
-        <PerfStatus label="MQTT" value={mqttStatus.value} tone={mqttStatus.tone} />
-        <PerfStatus label="Cache" value={cacheStatus.value} tone={cacheStatus.tone} />
-        <PerfStatus label="Routes" value={routeStatus.value} tone={routeStatus.tone} />
+        <PerfStatus label="Public API" value={snapshot ? `${apiOnline}/${ENDPOINT_COUNT} online` : 'checking'} tone={snapshot ? reachabilityTone(apiOnline, ENDPOINT_COUNT) : 'quiet'} />
+        <PerfStatus label="MQTT ingest" value={mqttStatus.value} tone={mqttStatus.tone} />
+        <PerfStatus label="Map motion" value={mapStatus.value} tone={mapStatus.tone} />
+        <PerfStatus label="Websocket" value={wsStatus.value} tone={wsStatus.tone} />
+        <PerfStatus label="Packets" value={packetEndpoint.value} tone={packetEndpoint.tone} />
+        <PerfStatus label="Chat" value={chatEndpoint.value} tone={chatEndpoint.tone} />
       </div>
 
       {error && <div className="perf-error" role="alert">{error}</div>}
       {loading && !snapshot && <div className="perf-loading">Checking public live status...</div>}
 
       <div className="perf-grid">
-        <PerfSection icon={<Server size={17} />} title="Backend / Readiness">
+        <PerfSection icon={<Server size={17} />} title="Backend">
           <PerfMetric label="Health endpoint" value={endpointValue(endpoints.health)} tone={endpointTone(endpoints.health)} title={endpoints.health.error} />
           <PerfMetric label="Ready endpoint" value={ready?.ready ? 'ready' : endpointValue(endpoints.ready)} tone={ready?.ready ? 'good' : endpointTone(endpoints.ready)} title={endpoints.ready.error} />
           <PerfMetric label="Database" value={formatReady(health?.dbReady)} tone={readyTone(health?.dbReady)} />
-          <PerfMetric label="Static assets" value={formatReady(health?.staticReady)} tone={readyTone(health?.staticReady)} />
           <PerfMetric label="Public state" value={formatReady(health?.publicStateReady)} tone={readyTone(health?.publicStateReady)} />
-          <PerfMetric label="Build" value={formatBuildSummary(health)} />
+          <PerfMetric label="Cache age" value={formatAge(health?.cacheAgeMs)} tone={freshnessTone(health?.cacheAgeMs, 60_000)} />
         </PerfSection>
 
-        <PerfSection icon={<Signal size={17} />} title="Frontend / API">
-          <PerfMetric label="Health fetch" value={endpointValue(endpoints.health)} tone={endpointTone(endpoints.health)} title={endpoints.health.error} />
-          <PerfMetric label="Readiness fetch" value={endpointValue(endpoints.ready)} tone={endpointTone(endpoints.ready)} title={endpoints.ready.error} />
+        <PerfSection icon={<Signal size={17} />} title="Browser / Public API">
           <PerfMetric label="State fetch" value={endpointValue(endpoints.state)} tone={endpointTone(endpoints.state)} title={endpoints.state.error} />
           <PerfMetric label="History fetch" value={endpointValue(endpoints.history)} tone={endpointTone(endpoints.history)} title={endpoints.history.error} />
-          <PerfMetric label="History sample" value={formatCount(snapshot?.historyEvents)} />
-          <PerfMetric label="Checked" value={lastChecked} />
+          <PerfMetric label="Packet endpoint" value={endpointValue(endpoints.packets)} tone={endpointTone(endpoints.packets)} title={endpoints.packets.error} />
+          <PerfMetric label="Chat endpoint" value={endpointValue(endpoints.chat)} tone={endpointTone(endpoints.chat)} title={endpoints.chat.error} />
+          <PerfMetric label="Last check" value={lastChecked} />
         </PerfSection>
 
-        <PerfSection icon={<Zap size={17} />} title="MQTT Freshness">
+        <PerfSection icon={<Radio size={17} />} title="MQTT Ingest">
           <PerfMetric label="Connection" value={health?.mqttConnected ? 'connected' : health?.mqttConnected === false ? 'offline' : 'unknown'} tone={health?.mqttConnected ? 'good' : health?.mqttConnected === false ? 'bad' : 'quiet'} />
           <PerfMetric label="Message age" value={formatAge(health?.mqttLastMessageAgeMs)} tone={freshnessTone(health?.mqttLastMessageAgeMs, 60_000)} />
           <PerfMetric label="Messages" value={formatCount(health?.mqttMessages ?? state?.stats.mqttMessages)} />
           <PerfMetric label="Reconnects" value={formatCount(health?.mqttReconnects)} />
           <PerfMetric label="Dropped" value={formatCount(health?.mqttDroppedMessages)} />
-          <PerfMetric label="Malformed topics" value={formatCount(health?.mqttMalformedTopics)} />
         </PerfSection>
 
-        <PerfSection icon={<Database size={17} />} title="Public Cache / State">
-          <PerfMetric label="Cache state" value={health?.publicCacheState ?? 'unknown'} tone={toneForState(health?.publicCacheState)} />
-          <PerfMetric label="Cache age" value={formatAge(health?.cacheAgeMs)} tone={freshnessTone(health?.cacheAgeMs, 60_000)} />
-          <PerfMetric label="State age" value={formatAge(stateAgeMs(state, snapshot?.checkedAt))} tone={freshnessTone(stateAgeMs(state, snapshot?.checkedAt), 60_000)} />
-          <PerfMetric label="Cache failures" value={formatCount(health?.cacheRefreshFailures)} tone={(health?.cacheRefreshFailures ?? 0) > 0 ? 'warn' : undefined} />
-          <PerfMetric label="Packets" value={formatCount(state?.stats.packets ?? health?.packets)} />
-          <PerfMetric label="Nodes / routes" value={`${formatCount(state?.stats.activeNodes ?? health?.nodesWithPosition)} / ${formatCount(state?.stats.activeRoutes ?? health?.edgeEvents)}`} />
-        </PerfSection>
-
-        <PerfSection icon={<Activity size={17} />} title="Routed Live Traffic">
+        <PerfSection icon={<Activity size={17} />} title="Routes / Map Motion">
           <PerfMetric label="Ingest" value={health?.packetIngestState ?? 'unknown'} tone={toneForState(health?.packetIngestState)} />
-          <PerfMetric label="Confidence" value={health?.liveConfidenceState ?? 'unknown'} tone={toneForState(health?.liveConfidenceState)} />
-          <PerfMetric label="Route motion" value={health?.routeMotionState ?? health?.mapMotionState ?? 'unknown'} tone={toneForState(health?.routeMotionState ?? health?.mapMotionState)} />
+          <PerfMetric label="Map motion" value={health?.mapMotionState ?? 'unknown'} tone={toneForState(health?.mapMotionState)} />
+          <PerfMetric label="Route motion" value={health?.routeMotionState ?? 'unknown'} tone={toneForState(health?.routeMotionState)} />
           <PerfMetric label="Observer motion" value={health?.observerMotionState ?? 'unknown'} tone={toneForState(health?.observerMotionState)} />
           <PerfMetric label="Route pulse age" value={formatAge(health?.recentRoutePulseAgeMs)} tone={freshnessTone(health?.recentRoutePulseAgeMs, 60_000)} />
           <PerfMetric label="Observer age" value={formatAge(health?.recentObserverBurstAgeMs)} tone={freshnessTone(health?.recentObserverBurstAgeMs, 60_000)} />
-          <PerfMetric label="Unresolved" value={formatCount(health?.unresolved)} />
         </PerfSection>
 
-        <PerfSection icon={<Server size={17} />} title="Build / Runtime">
-          <PerfMetric label="Version" value={health?.version ?? 'unknown'} />
-          <PerfMetric label="Git SHA" value={shortSha(health?.gitSha)} />
-          <PerfMetric label="Build time" value={formatBuildTime(health?.buildTime)} />
-          <PerfMetric label="Health source" value={health?.cached ? 'cached' : health ? 'live' : 'unknown'} tone={health?.cached ? 'warn' : health ? 'good' : 'quiet'} />
+        <PerfSection icon={<UsersRound size={17} />} title="Clients / Public Data">
           <PerfMetric label="WS clients" value={formatCount(health?.wsClients ?? state?.stats.wsClients)} />
           <PerfMetric label="WS drops" value={formatCount(health?.wsDroppedMessages)} tone={(health?.wsDroppedMessages ?? 0) > 0 ? 'warn' : undefined} />
+          <PerfMetric label="Total packets" value={formatCount(state?.stats.packets ?? health?.packets)} />
+          <PerfMetric label="Nodes / routes" value={`${formatCount(state?.stats.activeNodes ?? health?.nodesWithPosition)} / ${formatCount(state?.stats.activeRoutes ?? health?.edgeEvents)}`} />
+          <PerfMetric label="History sample" value={formatCount(snapshot?.historyEvents)} />
+          <PerfMetric label="Packet / chat sample" value={`${formatCount(snapshot?.packetPaths)} / ${formatCount(snapshot?.chatMessages)}`} />
         </PerfSection>
       </div>
 
       <p className="perf-note">
-        This view uses public health and aggregate live-map counters only; raw packet details, full public keys, broker credentials, and resolver debug output stay out of the browser.
+        Public-safe aggregate checks only.
       </p>
     </section>
   );
@@ -298,6 +301,22 @@ function backendSummary(endpoints: Record<EndpointKey, EndpointStatus>, ready: R
   return { value: 'unreachable', tone: 'bad' };
 }
 
+function systemSummary(snapshot: PerfSnapshot | null): { value: string; tone: PerfTone } {
+  if (!snapshot) return { value: 'checking', tone: 'quiet' };
+  return systemSummaryFromHealth(snapshot.health, snapshot.ready, countOnline(snapshot.endpoints), ENDPOINT_COUNT);
+}
+
+export function systemSummaryFromHealth(health: RuntimeHealth | null, ready: RuntimeHealth | null, apiOnline: number, apiTotal: number): { value: string; tone: PerfTone } {
+  if (apiTotal <= 0 || apiOnline <= 0) return { value: 'offline', tone: 'bad' };
+  const backendReady = ready?.ready === true;
+  const apiReady = apiOnline >= apiTotal;
+  const mqttReady = health?.mqttConnected === true && (freshnessTone(health.mqttLastMessageAgeMs, 60_000) ?? 'good') !== 'bad';
+  const publicLive = health?.publicLiveFresh !== false;
+  if (backendReady && apiReady && mqttReady && publicLive) return { value: 'live', tone: 'good' };
+  if (backendReady || apiOnline > 0) return { value: 'degraded', tone: 'warn' };
+  return { value: 'offline', tone: 'bad' };
+}
+
 function mqttSummary(health: RuntimeHealth | null): { value: string; tone: PerfTone } {
   if (health?.mqttConnected) {
     return { value: health.mqttLastMessageAgeMs === undefined ? 'connected' : formatAge(health.mqttLastMessageAgeMs), tone: freshnessTone(health.mqttLastMessageAgeMs, 60_000) ?? 'good' };
@@ -306,16 +325,24 @@ function mqttSummary(health: RuntimeHealth | null): { value: string; tone: PerfT
   return { value: 'unknown', tone: 'quiet' };
 }
 
-function cacheSummary(endpoints: Record<EndpointKey, EndpointStatus>, health: RuntimeHealth | null): { value: string; tone: PerfTone } {
-  if (health?.publicStateReady === false) return { value: 'warming', tone: 'warn' };
-  if (health?.cacheAgeMs !== undefined) return { value: formatAge(health.cacheAgeMs), tone: freshnessTone(health.cacheAgeMs, 60_000) ?? 'quiet' };
-  if (endpoints.state.ok) return { value: 'reachable', tone: 'good' };
-  return { value: 'unknown', tone: 'quiet' };
+function mapMotionSummary(health: RuntimeHealth | null): { value: string; tone: PerfTone } {
+  const state = health?.mapMotionState ?? health?.routeMotionState ?? health?.liveConfidenceState;
+  return { value: state ?? 'unknown', tone: toneForState(state) };
 }
 
-function routeSummary(health: RuntimeHealth | null): { value: string; tone: PerfTone } {
-  const state = health?.routeMotionState ?? health?.mapMotionState ?? health?.liveConfidenceState;
-  return { value: state ?? 'unknown', tone: toneForState(state) };
+function websocketSummary(health: RuntimeHealth | null, state: PublicLiveState | null): { value: string; tone: PerfTone } {
+  const clients = health?.wsClients ?? state?.stats.wsClients;
+  if (clients === undefined || !Number.isFinite(clients)) return { value: 'unknown', tone: 'quiet' };
+  const drops = health?.wsDroppedMessages ?? 0;
+  const count = Math.max(0, Math.floor(clients));
+  return { value: `${count.toLocaleString()} ${count === 1 ? 'client' : 'clients'}`, tone: drops > 0 ? 'warn' : count > 0 ? 'good' : 'quiet' };
+}
+
+function endpointSummary(endpoint: EndpointStatus, sampleCount: number | null | undefined): { value: string; tone: PerfTone } {
+  if (!endpoint.ok) return { value: 'offline', tone: 'bad' };
+  if (sampleCount === null || sampleCount === undefined || !Number.isFinite(sampleCount)) return { value: 'online', tone: 'good' };
+  const count = Math.max(0, Math.floor(sampleCount));
+  return { value: `${count.toLocaleString()} ${count === 1 ? 'sample' : 'samples'}`, tone: 'good' };
 }
 
 function formatReady(value: boolean | undefined): string {
@@ -331,28 +358,4 @@ function readyTone(value: boolean | undefined): PerfTone | undefined {
 function formatCount(value: number | undefined | null): string {
   if (value === undefined || value === null || !Number.isFinite(value)) return 'unknown';
   return Math.max(0, Math.floor(value)).toLocaleString();
-}
-
-function stateAgeMs(state: PublicLiveState | null, checkedAt: number | undefined): number | undefined {
-  if (!state || checkedAt === undefined || !Number.isFinite(state.serverTime)) return undefined;
-  return Math.max(0, checkedAt - state.serverTime);
-}
-
-function formatBuildSummary(health: RuntimeHealth | null): string {
-  if (!health) return 'unknown';
-  const version = health.version ?? 'unknown';
-  const sha = shortSha(health.gitSha);
-  return sha === 'unknown' ? version : `${version} / ${sha}`;
-}
-
-function formatBuildTime(value: string | undefined): string {
-  if (!value) return 'unknown';
-  const parsed = parseBuildTime(value);
-  if (!Number.isFinite(parsed)) return value;
-  return new Date(parsed).toLocaleString();
-}
-
-function shortSha(value: string | undefined): string {
-  const normalized = value?.trim() ?? '';
-  return /^[0-9a-f]{7,40}$/i.test(normalized) ? normalized.slice(0, 7) : 'unknown';
 }

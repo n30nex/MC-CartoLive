@@ -52,6 +52,14 @@ describe('release metadata helpers', () => {
     expect(formatBuildAge('20260601T085222Z', now)).toBe('built 7m ago');
   });
 
+  it('strictly parses top-bar build times without normalizing invalid dates', () => {
+    expect(parseBuildTime('2026-06-01 08:52:22 UTC')).toBe(Date.parse('2026-06-01T08:52:22Z'));
+    expect(parseBuildTime('2026-06-01T10:52:22+02:00')).toBe(Date.parse('2026-06-01T08:52:22Z'));
+    expect(parseBuildTime('2026-06-01T08:52:22.123456789Z')).toBe(Date.parse('2026-06-01T08:52:22.123Z'));
+    expect(parseBuildTime('2026-02-31T00:00:00Z')).toBeNaN();
+    expect(parseBuildTime('2026-06-01T08:52:22+24:00')).toBeNaN();
+  });
+
   it('normalizes and caches GitHub stats without trusting invalid payloads', () => {
     const storage = new MemoryStorage() as unknown as Storage;
     const now = 10_000;

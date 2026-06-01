@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.5.28 - 2026-06-01
+
+- Reworked the Perf page into a compact public-safe live status view covering
+  backend readiness, browser API reachability, MQTT ingest freshness, routed
+  map motion, WebSocket clients, and the Packets/Chat endpoints.
+- Made Live Follow calmer with longer eased camera moves, a longer movement
+  interval, lower follow zoom targets, and a stronger moving-camera guard.
+- Tightened top-bar build-age parsing for compact UTC and ISO-like timestamps
+  so invalid build dates no longer normalize into misleading ages.
+
 ## 2.5.27 - 2026-06-01
 
 - Made active flat-map pathways easier to read by increasing the bounded

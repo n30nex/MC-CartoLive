@@ -5,15 +5,16 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.27` is the active foundation patch toward the next production-ready
+Version `2.5.28` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: NetGraph stability, OpenFreeMap 3D production polish,
-  backend scale, Packets/VCR data-path stability, light-mode route contrast,
-  mobile/browser regression coverage, and visible Chat duplicate suppression.
+- Current patch focus: public-safe live status, calmer Live Follow camera
+  movement, strict build-age parsing, NetGraph stability, OpenFreeMap 3D
+  production polish, backend scale, Packets/VCR data-path stability,
+  light-mode route contrast, and mobile/browser regression coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -196,6 +197,16 @@ Version `2.5.27` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.28 Patch Focus
+
+- Replace the Perf page with a concise public-safe live status view that checks
+  backend readiness, browser public API reachability, MQTT ingest freshness,
+  routed map motion, WebSocket clients, and Packets/Chat endpoints.
+- Make Live Follow calmer by using longer eased camera moves, lower follow zoom
+  targets, a longer movement interval, and a stronger moving-camera guard.
+- Make compact top-bar build-age parsing strict for compact UTC and ISO-like
+  release timestamps.
 
 ## 2.5.27 Patch Focus
 

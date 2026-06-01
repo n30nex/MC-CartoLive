@@ -17,6 +17,7 @@ export const GITHUB_STATS_CACHE_TTL_MS = 30 * 60_000;
 
 const SHORT_SHA_LENGTH = 7;
 const COMPACT_UTC_BUILD_TIME_RE = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/;
+const ISO_LIKE_BUILD_TIME_RE = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(\.\d{1,9})?)?(Z| UTC|[+-]\d{2}:?\d{2})?$/;
 
 export function releaseURLForVersion(version: string, baseURL = GITHUB_REPO_URL): string {
   return `${baseURL}/releases/tag/v${version}`;
@@ -58,21 +59,64 @@ export function parseBuildTime(value: string | null | undefined): number {
   const compact = COMPACT_UTC_BUILD_TIME_RE.exec(trimmed);
   if (compact) {
     const [, year, month, day, hour, minute, second] = compact;
-    const parsed = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
-    const date = new Date(parsed);
-    if (
-      date.getUTCFullYear() !== Number(year) ||
-      date.getUTCMonth() !== Number(month) - 1 ||
-      date.getUTCDate() !== Number(day) ||
-      date.getUTCHours() !== Number(hour) ||
-      date.getUTCMinutes() !== Number(minute) ||
-      date.getUTCSeconds() !== Number(second)
-    ) {
-      return Number.NaN;
-    }
-    return Number.isFinite(parsed) ? parsed : Number.NaN;
+    return parseBuildTimeParts(year, month, day, hour, minute, second, undefined, 'Z');
   }
-  return Date.parse(trimmed);
+  const isoLike = ISO_LIKE_BUILD_TIME_RE.exec(trimmed);
+  if (isoLike) {
+    const [, year, month, day, hour, minute, second = '0', fraction, zone = 'Z'] = isoLike;
+    return parseBuildTimeParts(year, month, day, hour, minute, second, fraction, zone);
+  }
+  return Number.NaN;
+}
+
+function parseBuildTimeParts(
+  year: string,
+  month: string,
+  day: string,
+  hour: string,
+  minute: string,
+  second: string,
+  fraction: string | undefined,
+  zone: string
+): number {
+  const ms = fraction ? Number(fraction.slice(1, 4).padEnd(3, '0')) : 0;
+  const values = {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hour: Number(hour),
+    minute: Number(minute),
+    second: Number(second),
+    ms
+  };
+  const localUTC = Date.UTC(values.year, values.month - 1, values.day, values.hour, values.minute, values.second, values.ms);
+  const localDate = new Date(localUTC);
+  if (
+    !Number.isFinite(localUTC) ||
+    localDate.getUTCFullYear() !== values.year ||
+    localDate.getUTCMonth() !== values.month - 1 ||
+    localDate.getUTCDate() !== values.day ||
+    localDate.getUTCHours() !== values.hour ||
+    localDate.getUTCMinutes() !== values.minute ||
+    localDate.getUTCSeconds() !== values.second
+  ) {
+    return Number.NaN;
+  }
+  const offsetMinutes = parseBuildZoneOffsetMinutes(zone);
+  if (!Number.isFinite(offsetMinutes)) return Number.NaN;
+  return localUTC - offsetMinutes * 60_000;
+}
+
+function parseBuildZoneOffsetMinutes(zone: string): number {
+  if (zone === 'Z' || zone === ' UTC' || zone === '') return 0;
+  const match = /^([+-])(\d{2}):?(\d{2})$/.exec(zone);
+  if (!match) return Number.NaN;
+  const [, sign, hours, minutes] = match;
+  const offsetHours = Number(hours);
+  const offsetMinutes = Number(minutes);
+  if (offsetHours > 23 || offsetMinutes > 59) return Number.NaN;
+  const total = offsetHours * 60 + offsetMinutes;
+  return sign === '+' ? total : -total;
 }
 
 export function normalizeRepoStats(payload: unknown): RepoStats | null {
