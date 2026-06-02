@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.5.42 - 2026-06-02
+
+- Updated CI and GHCR publish workflows to current Node 24-capable GitHub and
+  Docker action majors.
+- Kept the existing backend tests, frontend tests/build, Docker smoke,
+  worldwide fixture smoke, GHCR image publish, SBOM, and provenance attestation
+  behavior intact.
+- Addressed the GitHub Actions Node 20 action-runtime deprecation warning seen
+  during package publish.
+
 ## 2.5.41 - 2026-06-02
 
 - Removed the remaining full `Store.Stats()` multi-count query from the legacy

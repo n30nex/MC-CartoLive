@@ -1,6 +1,6 @@
 {
   "name": "mc-cartolive-web",
-  "version": "2.5.41",
+  "version": "2.5.42",
   "private": true,
   "type": "module",
   "scripts": {

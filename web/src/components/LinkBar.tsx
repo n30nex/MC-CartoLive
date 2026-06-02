@@ -15,11 +15,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.41';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.42';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.42 updates CI and GHCR publish workflows to current Node 24-capable GitHub and Docker action majors.',
   '2.5.41 removes the remaining full stats multi-count query from the legacy public-state fallback path.',
   '2.5.40 removes the all-observer scan from ingest fallback endpoint matching and uses exact public-key/region observer lookup instead.',
   '2.5.39 removes periodic full-table stats queries from runtime counter logging on large production databases.',

@@ -5,19 +5,19 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.41` is the active foundation patch toward the next production-ready
+Version `2.5.42` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: cacheless public-state fallback pressure reduction,
-  ingest observer lookup pressure reduction, runtime counter logging pressure
-  reduction, NetGraph hidden-tab animation pausing, render-quality controls,
-  quality-aware animation frame pacing, calmer Live Follow, smoother
-  OpenFreeMap 3D and flat-map animation budgets, backend scale, Packets/VCR
-  data-path stability, light-mode route contrast, and mobile/browser regression
-  coverage.
+- Current patch focus: release workflow Node 24 compatibility, cacheless
+  public-state fallback pressure reduction, ingest observer lookup pressure
+  reduction, runtime counter logging pressure reduction, NetGraph hidden-tab
+  animation pausing, render-quality controls, quality-aware animation frame
+  pacing, calmer Live Follow, smoother OpenFreeMap 3D and flat-map animation
+  budgets, backend scale, Packets/VCR data-path stability, light-mode route
+  contrast, and mobile/browser regression coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -200,6 +200,16 @@ Version `2.5.41` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.42 Patch Focus
+
+- Update CI and GHCR publish workflows to current Node 24-capable GitHub and
+  Docker action majors.
+- Keep existing backend tests, frontend tests/build, Docker smoke, worldwide
+  fixture smoke, GHCR image publish, SBOM, and provenance attestation behavior
+  intact.
+- Remove the GitHub Actions Node 20 action-runtime deprecation warning from the
+  package release path.
 
 ## 2.5.41 Patch Focus
 
