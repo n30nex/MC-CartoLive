@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.5.40 - 2026-06-02
+
+- Removed the all-observer scan from ingest fallback endpoint matching.
+  Publisher fallback now uses the exact indexed public-key/region observer
+  lookup after the normal node lookup misses.
+- Added backend coverage for positioned observer endpoint conversion, invalid
+  observer coordinate rejection, and exact-region observer lookup.
+- Reduced read pressure for route/message anchoring on larger deployments while
+  keeping public APIs, response schemas, privacy boundaries, and hosted Canada
+  behavior unchanged.
+
 ## 2.5.39 - 2026-06-02
 
 - Removed the periodic full `Store.Stats()` call from runtime counter logging

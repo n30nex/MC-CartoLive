@@ -2,18 +2,18 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.5.39` runtime counter logging pressure reduction,
-NetGraph hidden-tab frame/layout pause, render-quality frame pacing, calmer
-Live Follow, direct live/not-live Perf labels, render-quality controls,
-OpenFreeMap/flat-map render budget reductions, live-status simplification,
-broader palette token coverage, NetGraph legend/icon alignment, browser smoke
-gate and mobile Perf/Packets clipping fix, OpenFreeMap selected-packet chase
-camera refinement, OpenFreeMap 3D adaptive LOD/budgets, long-text Chat
-rebroadcast dedupe, OpenFreeMap 3D render-cost reduction, palette-aware
-NetGraph visuals, strict build-age parsing, Chat duplicate suppression
-hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability,
-OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D
-chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.40` ingest observer lookup pressure reduction, runtime
+counter logging pressure reduction, NetGraph hidden-tab frame/layout pause,
+render-quality frame pacing, calmer Live Follow, direct live/not-live Perf
+labels, render-quality controls, OpenFreeMap/flat-map render budget reductions,
+live-status simplification, broader palette token coverage, NetGraph
+legend/icon alignment, browser smoke gate and mobile Perf/Packets clipping fix,
+OpenFreeMap selected-packet chase camera refinement, OpenFreeMap 3D adaptive
+LOD/budgets, long-text Chat rebroadcast dedupe, OpenFreeMap 3D render-cost
+reduction, palette-aware NetGraph visuals, strict build-age parsing, Chat
+duplicate suppression hardening, Chat pressure guard, Chat query indexes,
+NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route
+readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -637,6 +637,22 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.40 - Ingest Observer Lookup Pressure Reduction
+
+Goal: avoid an all-observer table scan on packet ingest when a publisher is not
+already known as a positioned node.
+
+Scope:
+
+- Keep node lookup as the preferred endpoint source.
+- Replace the fallback `Store.Observers()` scan with the exact
+  `ObserverByPublicKeyIATA` lookup for the publisher public key and region.
+- Reuse the same coordinate validation rules before creating observer fallback
+  route/message anchors.
+- Add backend coverage for valid positioned observers, invalid observer
+  coordinates, and exact-region lookup behavior.
+- Keep public APIs, privacy boundaries, and hosted Canada behavior unchanged.
 
 ## 2.5.39 - Runtime Counter Logging Pressure Reduction
 

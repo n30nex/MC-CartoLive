@@ -431,22 +431,24 @@ func (a *Application) observerEndpoint(ctx context.Context, msg imqtt.Normalized
 	if err == nil && hasCoords(node) {
 		return nodeEndpoint(node), true
 	}
-	observers, err := a.Store.Observers(ctx)
+	observer, err := a.Store.ObserverByPublicKeyIATA(ctx, msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA)
 	if err != nil {
 		return live.EdgeEndpoint{}, false
 	}
-	for _, observer := range observers {
-		if observer.PublicKey == msg.TopicInfo.PublisherPK && observer.IATA == msg.TopicInfo.IATA && observer.Latitude != nil && observer.Longitude != nil && validMapCoords(*observer.Latitude, *observer.Longitude) {
-			return live.EdgeEndpoint{
-				NodeID:    observer.PublicKey,
-				Name:      displayName(observer.Name, observer.PublicKey),
-				Lat:       *observer.Latitude,
-				Lng:       *observer.Longitude,
-				PathHash3: pathHash3(observer.PublicKey),
-			}, true
-		}
+	return observerRecordEndpoint(observer)
+}
+
+func observerRecordEndpoint(observer live.Observer) (live.EdgeEndpoint, bool) {
+	if observer.Latitude == nil || observer.Longitude == nil || !validMapCoords(*observer.Latitude, *observer.Longitude) {
+		return live.EdgeEndpoint{}, false
 	}
-	return live.EdgeEndpoint{}, false
+	return live.EdgeEndpoint{
+		NodeID:    observer.PublicKey,
+		Name:      displayName(observer.Name, observer.PublicKey),
+		Lat:       *observer.Latitude,
+		Lng:       *observer.Longitude,
+		PathHash3: pathHash3(observer.PublicKey),
+	}, true
 }
 
 func fullPublicKeyFromPayload(parsed meshcore.ParsedPacket) string {

@@ -5,17 +5,18 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.39` is the active foundation patch toward the next production-ready
+Version `2.5.40` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: runtime counter logging pressure reduction, NetGraph
-  hidden-tab animation pausing, render-quality controls, quality-aware
-  animation frame pacing, calmer Live Follow, smoother OpenFreeMap 3D and
-  flat-map animation budgets, backend scale, Packets/VCR data-path stability,
-  light-mode route contrast, and mobile/browser regression coverage.
+- Current patch focus: ingest observer lookup pressure reduction, runtime
+  counter logging pressure reduction, NetGraph hidden-tab animation pausing,
+  render-quality controls, quality-aware animation frame pacing, calmer Live
+  Follow, smoother OpenFreeMap 3D and flat-map animation budgets, backend scale,
+  Packets/VCR data-path stability, light-mode route contrast, and
+  mobile/browser regression coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -198,6 +199,16 @@ Version `2.5.39` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.40 Patch Focus
+
+- Remove the all-observer scan from ingest fallback endpoint matching.
+- Use the exact indexed public-key/region observer lookup after normal node
+  lookup misses.
+- Keep route/message anchoring, true-route validation, public schemas, privacy
+  boundaries, and hosted Canada behavior unchanged.
+- Add backend coverage for positioned observer conversion, invalid coordinate
+  rejection, and exact-region observer lookup.
 
 ## 2.5.39 Patch Focus
 
