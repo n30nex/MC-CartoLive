@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { mkdir } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +12,7 @@ const { chromium } = requireFromWeb('playwright');
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:39476';
 const DEFAULT_OUTPUT_DIR = path.join(rootDir, 'artifacts', 'browser-smoke');
+const appVersion = readFileSync(path.join(rootDir, 'VERSION'), 'utf8').trim();
 
 const viewports = [
   { name: 'desktop-1920', width: 1920, height: 1080, isMobile: false, hasTouch: false },
@@ -27,7 +29,8 @@ const scenarios = [
       { selector: '.top-actions', label: 'top map actions' },
       { selector: '.vcr-mini-clock', label: 'mini live clock' },
       { selector: '.maplibregl-ctrl-bottom-right', label: 'map controls' }
-    ]
+    ],
+    actions: [smokeLiveMapControls]
   },
   {
     name: 'perf',
@@ -139,9 +142,10 @@ async function runScenario(browser, viewport, scenario) {
       for (const key of Object.keys(localStorage)) {
         if (key.startsWith('mc-cartolive-welcome-guide-dismissed-')) localStorage.setItem(key, '1');
       }
-      localStorage.setItem('mc-cartolive-welcome-guide-dismissed-2.5.33', '1');
-      localStorage.setItem('mc-cartolive-welcome-guide-dismissed-2.5.34', '1');
-    });
+    }, appVersion);
+    await page.addInitScript((version) => {
+      localStorage.setItem(`mc-cartolive-welcome-guide-dismissed-${version}`, '1');
+    }, appVersion);
     await page.goto(urlForScenario(baseUrl, scenario.hash), { waitUntil: 'domcontentloaded', timeout: 45_000 });
     await dismissWelcome(page);
     await page.waitForSelector(scenario.waitFor, { state: 'visible', timeout: 45_000 });
@@ -149,6 +153,10 @@ async function runScenario(browser, viewport, scenario) {
 
     for (const check of scenario.checks) {
       await assertVisibleInViewport(page, check.selector, check.label, viewport);
+    }
+
+    for (const action of scenario.actions ?? []) {
+      await action(page, viewport);
     }
 
     if (consoleErrors.length > 0) errors.push(...consoleErrors.map((item) => `console error: ${item}`));
@@ -176,6 +184,84 @@ async function runScenario(browser, viewport, scenario) {
   } finally {
     await context.close();
   }
+}
+
+async function smokeLiveMapControls(page, viewport) {
+  await smokeOpenFreeMapToggle(page, viewport);
+  await smokePalettePicker(page, viewport);
+  await smokeMapSettings(page, viewport);
+  await smokeVcr(page, viewport);
+  await smokeTopInfoPanels(page, viewport);
+}
+
+async function smokeOpenFreeMapToggle(page, viewport) {
+  const toggle = page.locator('.map-base-toggle').first();
+  await toggle.waitFor({ state: 'visible', timeout: 12_000 });
+  await toggle.click();
+  await page.waitForSelector('.map-base-toggle.active', { state: 'visible', timeout: 15_000 });
+  await page.waitForTimeout(500);
+  await assertVisibleInViewport(page, '.maplibregl-canvas', 'OpenFreeMap canvas', viewport);
+  await toggle.click();
+  await page.waitForTimeout(300);
+}
+
+async function smokePalettePicker(page, viewport) {
+  const toggle = page.locator('.palette-toggle').first();
+  await toggle.waitFor({ state: 'visible', timeout: 12_000 });
+  await toggle.click();
+  await assertVisibleInViewport(page, '.palette-picker', 'palette picker', viewport);
+  const options = page.locator('.palette-picker button');
+  const optionCount = await options.count();
+  if (optionCount < 4) throw new Error(`palette picker has too few options: ${optionCount}`);
+  await options.nth(Math.min(1, optionCount - 1)).click();
+  await page.waitForSelector('.palette-picker', { state: 'hidden', timeout: 5_000 });
+}
+
+async function smokeMapSettings(page, viewport) {
+  const toggle = page.locator('.map-settings-toggle').first();
+  await toggle.waitFor({ state: 'visible', timeout: 12_000 });
+  await toggle.click();
+  await assertVisibleInViewport(page, '.map-settings-drawer', 'map settings drawer', viewport);
+  await page.locator('.map-settings-drawer').getByText(/Live Packet Style/i).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.getByRole('button', { name: /Close map settings/i }).click();
+  await page.waitForSelector('.map-settings-drawer', { state: 'hidden', timeout: 5_000 });
+}
+
+async function smokeVcr(page, viewport) {
+  await page.locator('.vcr-mini-clock').first().click();
+  await assertVisibleInViewport(page, '.vcr-bar', 'VCR controls', viewport);
+  await assertVisibleInViewport(page, '.vcr-timeline-shell', 'VCR timeline', viewport);
+
+  const timeline = page.locator('.vcr-timeline-shell').first();
+  const box = await timeline.boundingBox();
+  if (box) {
+    await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.5);
+    await page.waitForSelector('.vcr-hover-time', { state: 'visible', timeout: 5_000 });
+    await assertVisibleInViewport(page, '.vcr-hover-time', 'VCR hover timestamp', viewport);
+  }
+
+  await page.getByRole('button', { name: /Change replay speed/i }).click();
+  await page.getByRole('button', { name: /Hide VCR controls and return live/i }).click();
+  await page.waitForSelector('.vcr-bar', { state: 'hidden', timeout: 5_000 });
+  await assertVisibleInViewport(page, '.vcr-mini-clock', 'mini live clock after VCR close', viewport);
+}
+
+async function smokeTopInfoPanels(page, viewport) {
+  if (viewport.isMobile) return;
+
+  await clickTopInfoButton(page, /Changelog/i, '.link-bar-info-popover', 'latest changelog popover', viewport);
+  await clickTopInfoButton(page, /Features/i, '.link-bar-info-popover', 'feature list popover', viewport);
+  await clickTopInfoButton(page, /Guide/i, '.guide-overlay', 'guide overlay', viewport);
+}
+
+async function clickTopInfoButton(page, name, selector, label, viewport) {
+  const button = page.getByRole('button', { name }).first();
+  if (!await button.isVisible({ timeout: 1000 }).catch(() => false)) return;
+  await button.click();
+  await assertVisibleInViewport(page, selector, label, viewport);
+  const close = page.locator(selector).getByRole('button', { name: /close/i }).first();
+  if (await close.isVisible({ timeout: 1000 }).catch(() => false)) await close.click();
+  await page.waitForSelector(selector, { state: 'hidden', timeout: 5_000 }).catch(() => {});
 }
 
 async function assertVisibleInViewport(page, selector, label, viewport) {

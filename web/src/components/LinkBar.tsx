@@ -15,38 +15,17 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.50';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.51';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
-  '2.5.50 adds reusable package smoke for built and published images, covering synthetic and worldwide fixture modes plus public privacy scans.',
-  '2.5.49 exposes public-safe Packets search-path counters so operators can see projected FTS, substring fallback, and no-query request counts.',
-  '2.5.48 syncs existing projected packet paths into the public-safe FTS search index and exposes search-index catch-up in health/readiness.',
-  '2.5.47 adds the public-safe FTS index for projected packet-path search with safe fallback while upgrade windows catch up.',
-  '2.5.46 exposes public-safe Packets projection-path counters so operators can see indexed projection serves vs conversion fallbacks.',
-  '2.5.45 exposes public-safe packet-path projection backfill progress in health/readiness so operators can see upgrade catch-up.',
-  '2.5.44 backfills missing recent public packet-path projections in bounded startup batches so upgraded DBs reach the fast Packets path sooner.',
-  '2.5.43 adds internal public-safe packet-path projection groundwork so Packets can move away from conversion scans.',
-  '2.5.42 updates CI and GHCR publish workflows to current Node 24-capable GitHub and Docker action majors.',
-  '2.5.41 removes the remaining full stats multi-count query from the legacy public-state fallback path.',
-  '2.5.40 removes the all-observer scan from ingest fallback endpoint matching and uses exact public-key/region observer lookup instead.',
-  '2.5.39 removes periodic full-table stats queries from runtime counter logging on large production databases.',
-  '2.5.36 adds a render quality control and lowers default 3D/canvas render pressure for smoother OpenFreeMap and flat-map motion.',
-  '2.5.35 simplifies Perf into live/not-live status, slows Live Follow, expands palette coverage, and aligns NetGraph visuals with map icons.',
-  '2.5.34 adds repeatable desktop/mobile browser smoke coverage and fixes mobile Perf/Packets panel clipping.',
-  '2.5.33 improves selected OpenFreeMap packet replay with a trailing chase camera, smoother cadence, and distance-aware pitch.',
-  '2.5.32 reduces OpenFreeMap 3D load at detail zoom with adaptive node/route budgets and lightweight marker LOD for ordinary nodes.',
-  '2.5.31 fixes the remaining visible Chat repeat case by collapsing long rebroadcasted public text within a short repeat window, even when route/sender wrappers differ.',
-  '2.5.30 reduces OpenFreeMap 3D route/comet render cost with cheaper ordinary arcs, cached comet paths, and fewer node-scene rebuilds.',
-  '2.5.29 makes NetGraph palette-aware, including canvas background, selected pathways, labels, observer accents, and panel chrome.',
-  '2.5.28 makes Perf a direct public-safe live status page for backend, API, MQTT, map motion, Packets, and Chat.',
-  'Live Follow uses slower, lower-zoom camera moves and stricter movement spacing so it is watchable during busy traffic.',
-  '2.5.27 makes active flat-map pathways thicker, clearer, and hue-shifted by recent packet frequency.',
-  'Packet comet residue leaves short-lived sparkles so recent true packet movement is easier to spot.',
-  '2.5.26 collapses repeated public Chat messages across the full 24h window, including symbol-only decoded texts.',
-  '2.5.23 makes NetGraph calmer with locked pause, gentler topology settling, and less component spread.',
-  'OpenFreeMap 3D avoids forced full scene rebuilds after every map move or zoom end.'
+  '2.5.51 expands desktop/mobile browser smoke to exercise VCR, palette, Map Settings, OpenFreeMap 3D, and top-bar guide popovers.',
+  '2.5.50 verifies built and published GHCR images with synthetic and worldwide fixture modes plus public privacy scans.',
+  'Packets now uses projected public-safe packet paths, FTS-backed search when indexed, and health counters for projection/search pressure.',
+  'OpenFreeMap 3D has lower render pressure, adaptive budgets, route arcs, node models, and selected-packet chase replay polish.',
+  'Perf, Chat, Packets, NetGraph, and browser smoke checks are part of the 2.6 production confidence path.',
+  'Runtime hot-path database pressure has been reduced across public state fallback, ingest observer lookup, stats logging, and packet-path backfill.'
 ];
 
 const FEATURE_LIST = [

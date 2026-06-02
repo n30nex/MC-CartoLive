@@ -742,7 +742,10 @@ button {
   top: 50px;
   right: 110px;
   width: min(430px, calc(100vw - 24px));
+  max-height: calc(100vh - 72px);
   padding: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .link-bar-info-popover header,

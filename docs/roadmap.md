@@ -5,13 +5,14 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.50` is the active foundation patch toward the next production-ready
+Version `2.5.51` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: packaged-image release-gate smoke automation,
+- Current patch focus: expanded browser-control smoke coverage,
+  packaged-image release-gate smoke automation,
   projected Packets search-path observability,
   projected packet-path search-index upgrade catch-up,
   public-safe projected packet-path FTS search indexing,
@@ -53,6 +54,16 @@ Version `2.5.50` is the active foundation patch toward the next production-ready
   screenshot artifacts, and operator diagnostic scripts.
 - Keep docs concise enough that new operators can deploy, smoke test, diagnose,
   back up, restore, and upgrade without reading historical planning notes.
+
+## 2.5.51 Patch Focus
+
+- Expand browser smoke beyond page-open checks so it exercises OpenFreeMap 3D,
+  palette selection, Map Settings, VCR open/scrub/close, and top-bar help
+  popovers.
+- Keep the smoke useful for both desktop and 390px mobile while avoiding flaky
+  WebGL pixel readback.
+- Fix the oversized top-bar changelog popover and keep in-app changelog copy
+  compact.
 
 ## 2.5.50 Patch Focus
 

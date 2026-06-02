@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 2.5.51 - 2026-06-02
+
+- Expanded `scripts/browser-smoke.mjs` so the live-map scenario now exercises
+  OpenFreeMap 3D, palette selection, Map Settings, VCR open/scrub/close, and
+  top-bar help popovers on desktop/mobile where available.
+- Fixed the top-bar changelog popover so it scrolls inside the viewport instead
+  of clipping off-screen on desktop.
+- Compacted the in-app changelog copy to a current production summary while
+  keeping the full release notes linked.
+- Preserved public APIs, true-route validation, hosted Canada behavior,
+  package worldwide behavior, and privacy boundaries.
+
 ## 2.5.50 - 2026-06-02
 
 - Added `scripts/package-smoke.mjs` to smoke a built or published image in both

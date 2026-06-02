@@ -2,7 +2,8 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.5.50` packaged-image release-gate smoke automation,
+Baseline audited: `v2.5.51` expanded browser-control smoke coverage,
+packaged-image release-gate smoke automation,
 projected Packets search-path observability,
 projected packet-path search-index upgrade catch-up, public-safe projected
 packet-path FTS search indexing, public-safe
@@ -26,8 +27,10 @@ backfill for upgraded databases, backfill progress fields in health/readiness,
 projection-vs-fallback Packets request counters, indexed projected packet
 search with fallback while upgrade windows catch up, background FTS catch-up
 for already-projected packet rows, and health/readiness counters that show
-whether projected text searches use FTS or substring fallback, plus reusable
-package smoke coverage for synthetic and worldwide fixture modes.
+whether projected text searches use FTS or substring fallback, reusable package
+smoke coverage for synthetic and worldwide fixture modes, and browser smoke
+coverage for OpenFreeMap 3D, palettes, Map Settings, VCR, and top-bar help
+popovers.
 
 ## Audit Coverage
 
@@ -68,9 +71,9 @@ current surfaces dependable enough for public operators:
 - **Packets/VCR data plane:** move from bounded conversion scans toward a
   public-safe indexed packet-path projection so 24h search and scrub replay stay
   fast as databases grow.
-- **Mobile/browser regression gate:** add repeatable desktop and 390px smoke
-  coverage for map controls, Packets, VCR, palette, settings, and OpenFreeMap
-  3D.
+- **Mobile/browser regression gate:** keep expanding repeatable desktop and
+  390px smoke coverage around map controls, Packets, VCR, palette, settings,
+  OpenFreeMap 3D, and major-release screenshot artifacts.
 - **NetGraph as a core feature:** finish edge overlap reduction,
   selected-neighborhood focus, mobile interaction, and optional layout locking
   so the graph feels inspectable instead of animated for its own sake.
@@ -104,6 +107,27 @@ These decisions were confirmed on 2026-06-01 and should guide the rest of the
 - Saved screenshot artifacts are required for major releases like 2.6.0, not
   every patch release.
 - The final 2.6 feature slot is NetGraph improvements plus the Chat page.
+
+## 2.5.51 - Browser Control Smoke Expansion
+
+Goal: make the 2.6 browser regression gate cover the controls that have
+historically broken without requiring manual visual inspection for every patch.
+
+Status: implemented with live-map browser-smoke actions for OpenFreeMap 3D,
+palette selection, Map Settings, VCR open/scrub/close, and desktop top-bar help
+popovers. The same gate caught the oversized changelog popover, which now
+scrolls inside the viewport.
+
+### Acceptance
+
+- Desktop and 390px mobile smoke still cover live map, Perf, Packets, Chat, and
+  NetGraph pages.
+- The live-map scenario exercises VCR, palette, settings, and OpenFreeMap 3D
+  controls where they are available.
+- The smoke avoids flaky WebGL pixel readback while still verifying that map
+  canvas and controls remain visible in viewport.
+- Public APIs, hosted Canada behavior, packaged worldwide defaults, true-route
+  validation, and privacy boundaries remain unchanged.
 
 ## 2.5.50 - Packaged Image Release-Gate Smoke
 
