@@ -25,6 +25,9 @@ type RuntimeStats struct {
 	publicPacketsProjectionErrors   atomic.Int64
 	publicPacketsProjectionLastAtMs atomic.Int64
 	publicPacketsProjectionComplete atomic.Int64
+	publicPacketsSearchFTS          atomic.Int64
+	publicPacketsSearchSubstring    atomic.Int64
+	publicPacketsSearchNoQuery      atomic.Int64
 	cacheRefreshFailures            atomic.Int64
 	cacheRefreshLastLatencyMs       atomic.Int64
 	cacheRefreshLastAtMs            atomic.Int64
@@ -63,6 +66,9 @@ type RuntimeStatsSnapshot struct {
 	PublicPacketsProjectionErrors   int64 `json:"publicPacketsProjectionErrors"`
 	PublicPacketsProjectionLastAtMs int64 `json:"publicPacketsProjectionLastAtMs"`
 	PublicPacketsProjectionComplete bool  `json:"publicPacketsProjectionComplete"`
+	PublicPacketsSearchFTS          int64 `json:"publicPacketsSearchFTS"`
+	PublicPacketsSearchSubstring    int64 `json:"publicPacketsSearchSubstring"`
+	PublicPacketsSearchNoQuery      int64 `json:"publicPacketsSearchNoQuery"`
 	CacheRefreshFailures            int64 `json:"cacheRefreshFailures"`
 	CacheRefreshLastLatencyMs       int64 `json:"cacheRefreshLastLatencyMs"`
 	CacheRefreshLastAtMs            int64 `json:"cacheRefreshLastAtMs"`
@@ -162,6 +168,20 @@ func (s *RuntimeStats) RecordPublicPacketsProjection(served bool, complete bool,
 	s.publicPacketsProjectionLastAtMs.Store(time.Now().UnixMilli())
 }
 
+func (s *RuntimeStats) RecordPublicPacketsSearchMode(mode string) {
+	if s == nil {
+		return
+	}
+	switch mode {
+	case "projectedFts":
+		s.publicPacketsSearchFTS.Add(1)
+	case "projectedSubstring":
+		s.publicPacketsSearchSubstring.Add(1)
+	default:
+		s.publicPacketsSearchNoQuery.Add(1)
+	}
+}
+
 func (s *RuntimeStats) RecordCacheRefresh(duration time.Duration, failed bool) {
 	if s == nil {
 		return
@@ -234,6 +254,9 @@ func (s *RuntimeStats) Snapshot() RuntimeStatsSnapshot {
 		PublicPacketsProjectionErrors:   s.publicPacketsProjectionErrors.Load(),
 		PublicPacketsProjectionLastAtMs: s.publicPacketsProjectionLastAtMs.Load(),
 		PublicPacketsProjectionComplete: s.publicPacketsProjectionComplete.Load() == 1,
+		PublicPacketsSearchFTS:          s.publicPacketsSearchFTS.Load(),
+		PublicPacketsSearchSubstring:    s.publicPacketsSearchSubstring.Load(),
+		PublicPacketsSearchNoQuery:      s.publicPacketsSearchNoQuery.Load(),
 		CacheRefreshFailures:            s.cacheRefreshFailures.Load(),
 		CacheRefreshLastLatencyMs:       s.cacheRefreshLastLatencyMs.Load(),
 		CacheRefreshLastAtMs:            s.cacheRefreshLastAtMs.Load(),

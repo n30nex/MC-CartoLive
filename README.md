@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.48
+# MeshCore MQTT Live Map v2.5.49
 
 Also known as **MC-CartoLive**.
 
@@ -23,15 +23,21 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.48 Feature Gallery
+### v2.5.49 Feature Gallery
 
-Version 2.5.48 keeps the Canada deployment intact while continuing the
+Version 2.5.49 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
 
-This patch makes the public-safe Packets search index upgrade path complete:
-the background packet-path backfill now also syncs existing projected packet
-rows into the FTS search table, and health/readiness exposes whether that
+This patch makes Packets search behavior explainable in production:
+health/readiness now counts projected searches served by FTS, projected searches
+that safely fall back to substring matching, and projected requests without a
+text query. Operators can confirm whether `/api/v1/public/packets?q=...` is
+using the indexed path without exposing the query text or private packet data.
+
+Version 2.5.48 completed the public-safe Packets search index upgrade path:
+the background packet-path backfill also syncs existing projected packet rows
+into the FTS search table, and health/readiness exposes whether that
 search-index catch-up still has work remaining.
 
 Version 2.5.47 added the public-safe FTS search index for projected packet
@@ -284,7 +290,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.48
+  ghcr.io/n30nex/mc-cartolive:2.5.49
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -295,7 +301,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.48
+  ghcr.io/n30nex/mc-cartolive:2.5.49
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -429,7 +435,7 @@ map, Perf, Packets, Chat, and NetGraph. Screenshots are written to
 
 ## Production Hosting
 
-The recommended v2.5.48 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.49 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

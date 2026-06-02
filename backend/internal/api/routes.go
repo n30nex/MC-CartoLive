@@ -173,6 +173,9 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 		"publicPacketsProjectionErrors":   runtime.PublicPacketsProjectionErrors,
 		"publicPacketsProjectionLastAt":   runtime.PublicPacketsProjectionLastAtMs,
 		"publicPacketsProjectionComplete": runtime.PublicPacketsProjectionComplete,
+		"publicPacketsSearchFTS":          runtime.PublicPacketsSearchFTS,
+		"publicPacketsSearchSubstring":    runtime.PublicPacketsSearchSubstring,
+		"publicPacketsSearchNoQuery":      runtime.PublicPacketsSearchNoQuery,
 		"packetPathBackfillFailures":      runtime.PacketPathBackfillFailures,
 		"packetPathBackfillLatencyMs":     runtime.PacketPathBackfillLastLatencyMs,
 		"packetPathBackfillLastAt":        runtime.PacketPathBackfillLastAtMs,
@@ -933,9 +936,10 @@ func (s *Server) publicPacketsFromProjection(
 	nextCursor := cursor
 	scanned := 0
 	exhausted := false
+	searchMode := store.PublicPacketPathSearchNone
 	for len(packets) < limit && scanned < publicPacketsMaxRawScan {
 		rawLimit := minInt(publicPacketsRawPageSize(limit-len(packets), filters), publicPacketsMaxRawScan-scanned)
-		rawPackets, rawCursor, err := s.Store.PublicPacketPaths(ctx, store.PublicPacketPathQuery{
+		rawPackets, rawCursor, rawSearchMode, err := s.Store.PublicPacketPaths(ctx, store.PublicPacketPathQuery{
 			From:            from,
 			To:              to,
 			Limit:           rawLimit,
@@ -951,6 +955,9 @@ func (s *Server) publicPacketsFromProjection(
 				s.Runtime.RecordPublicPacketsProjection(false, true, true)
 			}
 			return false
+		}
+		if rawSearchMode != store.PublicPacketPathSearchNone {
+			searchMode = rawSearchMode
 		}
 		scanned += len(rawPackets)
 		if len(rawPackets) == 0 {
@@ -984,6 +991,7 @@ func (s *Server) publicPacketsFromProjection(
 	nextCursorToken := publicPacketsNextCursorToken(nextCursor, exhausted, len(packets), limit, scanned)
 	if s.Runtime != nil {
 		s.Runtime.RecordPublicPacketsProjection(true, true, false)
+		s.Runtime.RecordPublicPacketsSearchMode(string(searchMode))
 		s.Runtime.RecordPublicPacketsScan(scanned, nextCursorToken != "" && scanned >= publicPacketsMaxRawScan)
 	}
 	writeJSON(w, http.StatusOK, live.PublicPacketsResponse{

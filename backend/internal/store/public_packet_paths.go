@@ -23,6 +23,14 @@ type PublicPacketPathQuery struct {
 	Search          string
 }
 
+type PublicPacketPathSearchMode string
+
+const (
+	PublicPacketPathSearchNone      PublicPacketPathSearchMode = "none"
+	PublicPacketPathSearchFTS       PublicPacketPathSearchMode = "projectedFts"
+	PublicPacketPathSearchSubstring PublicPacketPathSearchMode = "projectedSubstring"
+)
+
 type PublicPacketPathBackfillResult struct {
 	Scanned              int
 	Projected            int
@@ -49,12 +57,13 @@ SELECT EXISTS (
 	return missing == 0, nil
 }
 
-func (s *Store) PublicPacketPaths(ctx context.Context, query PublicPacketPathQuery) ([]live.PublicPacketPath, *HistoryCursor, error) {
+func (s *Store) PublicPacketPaths(ctx context.Context, query PublicPacketPathQuery) ([]live.PublicPacketPath, *HistoryCursor, PublicPacketPathSearchMode, error) {
 	limit := query.Limit
 	if limit <= 0 || limit > 1000 {
 		limit = 500
 	}
 	to := boundedHistoryTo(query.To)
+	searchMode := PublicPacketPathSearchNone
 	sqlText := `
 SELECT edge_id, heard_at_ms, iata, region, payload_type_name, message_sender, message_text,
   hop_count, segment_count, distance_km, route_ids_json, endpoint_labels_json, segments_json
@@ -80,12 +89,14 @@ WHERE mappable=1 AND heard_at_ms >= ? AND heard_at_ms <= ?`
 		if ftsQuery := publicPacketPathFTSQuery(search); ftsQuery != "" && s.publicPacketPathSearchIndexComplete(ctx, query.From, to) {
 			sqlText += ` AND edge_id IN (
   SELECT rowid FROM public_packet_paths_fts
-  WHERE public_packet_paths_fts MATCH ?
+			WHERE public_packet_paths_fts MATCH ?
 )`
 			args = append(args, ftsQuery)
+			searchMode = PublicPacketPathSearchFTS
 		} else {
 			sqlText += ` AND instr(search_text, ?) > 0`
 			args = append(args, search)
+			searchMode = PublicPacketPathSearchSubstring
 		}
 	}
 	if query.Cursor != nil {
@@ -99,7 +110,7 @@ LIMIT ?`
 
 	rows, err := s.db.QueryContext(ctx, sqlText, args...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, searchMode, err
 	}
 	defer rows.Close()
 
@@ -109,7 +120,7 @@ LIMIT ?`
 	for rows.Next() {
 		packet, edgeID, err := scanPublicPacketPathProjection(rows)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, searchMode, err
 		}
 		if len(packets) >= limit {
 			next = last
@@ -119,9 +130,9 @@ LIMIT ?`
 		last = &HistoryCursor{At: packet.At, TypeOrder: 2, ID: edgeID}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, err
+		return nil, nil, searchMode, err
 	}
-	return packets, next, nil
+	return packets, next, searchMode, nil
 }
 
 func (s *Store) publicPacketPathSearchIndexComplete(ctx context.Context, from int64, to int64) bool {

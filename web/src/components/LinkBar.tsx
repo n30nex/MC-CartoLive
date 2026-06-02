@@ -15,11 +15,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.48';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.49';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.49 exposes public-safe Packets search-path counters so operators can see projected FTS, substring fallback, and no-query request counts.',
   '2.5.48 syncs existing projected packet paths into the public-safe FTS search index and exposes search-index catch-up in health/readiness.',
   '2.5.47 adds the public-safe FTS index for projected packet-path search with safe fallback while upgrade windows catch up.',
   '2.5.46 exposes public-safe Packets projection-path counters so operators can see indexed projection serves vs conversion fallbacks.',

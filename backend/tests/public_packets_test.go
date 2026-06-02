@@ -233,7 +233,7 @@ func TestPublicPacketPathProjectionIsSanitizedAndFilterable(t *testing.T) {
 	if !complete {
 		t.Fatalf("projection should cover both valid and non-mappable edge rows")
 	}
-	packets, next, err := st.PublicPacketPaths(ctx, store.PublicPacketPathQuery{
+	packets, next, searchMode, err := st.PublicPacketPaths(ctx, store.PublicPacketPathQuery{
 		From:            base,
 		To:              base + 3_000,
 		Limit:           10,
@@ -245,6 +245,9 @@ func TestPublicPacketPathProjectionIsSanitizedAndFilterable(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if searchMode != store.PublicPacketPathSearchFTS {
+		t.Fatalf("projection search mode = %q, want %q", searchMode, store.PublicPacketPathSearchFTS)
 	}
 	if next != nil {
 		t.Fatalf("projection cursor = %#v, want exhausted single page", next)
@@ -305,6 +308,51 @@ func TestPublicPacketsEndpointUsesProjectionWithoutLeakingDisallowedRegions(t *t
 	}
 	if raw := response.Body.String(); strings.Contains(raw, "PRG") || strings.Contains(raw, "hash-projection") {
 		t.Fatalf("projected response leaked disallowed/private data: %s", raw)
+	}
+}
+
+func TestPublicPacketsEndpointRecordsProjectedSearchModes(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := st.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+	})
+
+	observerKey := "AA00000000000000000000000000000000000000000000000000000000000000"
+	base := time.Now().Add(-time.Hour).UnixMilli()
+	validID := insertHistoryObservation(t, ctx, st, "hash-search-mode-private", "YKF", observerKey, base+1_000, resolve.StatusHigh)
+	insertHistoryEdgeWithOptions(t, ctx, st, validID, "hash-search-mode-private", base+1_000, historyEdgeOptions{
+		PayloadTypeName: "GROUP_TEXT",
+		MessageSender:   "Corebot",
+		MessageText:     "hello search mode",
+		Labels:          []string{"YKF Corebot", "Krabs Repeater"},
+	})
+
+	server := publicHistoryTestServer(st, func(string) bool { return true })
+	server.Runtime = live.NewRuntimeStats()
+	for _, url := range []string{
+		"/api/v1/public/packets?from=" + ms(base) + "&to=" + ms(base+2_000) + "&limit=10&q=krabs",
+		"/api/v1/public/packets?from=" + ms(base) + "&to=" + ms(base+2_000) + "&limit=10&q=!!!",
+		"/api/v1/public/packets?from=" + ms(base) + "&to=" + ms(base+2_000) + "&limit=10",
+	} {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, url, nil)
+		server.Routes().ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("packets status = %d url=%s body=%s", response.Code, url, response.Body.String())
+		}
+		if strings.Contains(response.Body.String(), "hash-search-mode-private") {
+			t.Fatalf("projected response leaked private hash: %s", response.Body.String())
+		}
+	}
+	snapshot := server.Runtime.Snapshot()
+	if snapshot.PublicPacketsSearchFTS != 1 || snapshot.PublicPacketsSearchSubstring != 1 || snapshot.PublicPacketsSearchNoQuery != 1 {
+		t.Fatalf("projected search counters = %#v, want one FTS, substring, and no-query request", snapshot)
 	}
 }
 

@@ -69,7 +69,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.48
+  ghcr.io/n30nex/mc-cartolive:2.5.49
 ```
 
 For production, keep private settings in an env file and mount persistent data:
@@ -79,7 +79,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.48
+  ghcr.io/n30nex/mc-cartolive:2.5.49
 ```
 
 The published image runs as non-root `appuser`, includes OCI source/version
@@ -132,12 +132,17 @@ docker compose up -d
 
 ## Runtime Notes
 
-- Version 2.5.48 exposes the app version/build in the top project bar. CI builds use
+- Version 2.5.49 exposes the app version/build in the top project bar. CI builds use
   the Git commit SHA when available; local Docker builds use a timestamp fallback
   plus a separate ISO build time for build-age display.
 - Runtime liveness and readiness are split: `/healthz` stays cheap for Docker
   liveness, while `/readyz` verifies DB ping, public cache readiness, static
   frontend availability, and public-safe runtime status.
+- Version 2.5.49 adds public-safe Packets search-path counters to `/healthz`
+  and `/readyz`: projected FTS searches, projected substring fallback searches,
+  and projected requests without a text query. These fields help operators
+  confirm whether `/api/v1/public/packets?q=...` is using the fast search path
+  without exposing raw query text or private packet data.
 - Version 2.5.48 syncs existing projected packet paths into the public-safe FTS
   search table during the normal background backfill loop. `/healthz` and
   `/readyz` expose the latest search-index sync count and whether search-index

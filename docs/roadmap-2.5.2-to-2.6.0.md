@@ -2,8 +2,9 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.5.48` projected packet-path search-index upgrade
-catch-up, public-safe projected packet-path FTS search indexing, public-safe
+Baseline audited: `v2.5.49` projected Packets search-path observability,
+projected packet-path search-index upgrade catch-up, public-safe projected
+packet-path FTS search indexing, public-safe
 Packets projection-path observability, public-safe packet-path projection
 backfill observability, bounded public packet-path projection backfill, public
 packet-path projection groundwork, release workflow Node 24 compatibility, cacheless
@@ -22,8 +23,9 @@ readability, NetGraph helper, 3D chase-helper, release-privacy scan work, and
 the first internal public packet-path projection slice, recent projection
 backfill for upgraded databases, backfill progress fields in health/readiness,
 projection-vs-fallback Packets request counters, indexed projected packet
-search with fallback while upgrade windows catch up, and background FTS catch-up
-for already-projected packet rows.
+search with fallback while upgrade windows catch up, background FTS catch-up
+for already-projected packet rows, and health/readiness counters that show
+whether projected text searches use FTS or substring fallback.
 
 ## Audit Coverage
 
@@ -100,6 +102,24 @@ These decisions were confirmed on 2026-06-01 and should guide the rest of the
 - Saved screenshot artifacts are required for major releases like 2.6.0, not
   every patch release.
 - The final 2.6 feature slot is NetGraph improvements plus the Chat page.
+
+## 2.5.49 - Projected Packets Search-Path Observability
+
+Goal: make `/api/v1/public/packets?q=...` execution paths visible to operators
+without exposing query text, raw packets, or private packet material.
+
+Status: implemented with explicit store-level projected search mode metadata
+and public-safe runtime counters. `/healthz` and `/readyz` now report how many
+projected Packets requests used the FTS index, how many fell back to safe
+substring search, and how many had no text query.
+
+### Acceptance
+
+- Operators can tell whether projected packet text searches are using FTS or
+  substring fallback.
+- Search mode counters are public-safe aggregate counts only.
+- Public packet response shape, cursor behavior, route validation, region
+  scoping, hosted Canada behavior, and privacy boundaries remain unchanged.
 
 ## 2.5.48 - Projected Packet-Path Search Index Catch-Up
 

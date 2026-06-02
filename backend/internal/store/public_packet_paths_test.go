@@ -61,7 +61,7 @@ func TestBackfillPublicPacketPathsProjectsMissingLegacyEdges(t *testing.T) {
 	if !complete {
 		t.Fatalf("projection should be complete after backfill")
 	}
-	packets, next, err := s.PublicPacketPaths(ctx, PublicPacketPathQuery{
+	packets, next, searchMode, err := s.PublicPacketPaths(ctx, PublicPacketPathQuery{
 		From:        now - 10_000,
 		To:          now,
 		Limit:       10,
@@ -71,6 +71,9 @@ func TestBackfillPublicPacketPathsProjectsMissingLegacyEdges(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if searchMode != PublicPacketPathSearchFTS {
+		t.Fatalf("search mode = %q, want %q", searchMode, PublicPacketPathSearchFTS)
 	}
 	if next != nil {
 		t.Fatalf("next cursor = %#v, want exhausted", next)
@@ -120,7 +123,7 @@ func TestPublicPacketPathSearchIndexFallbackKeepsResults(t *testing.T) {
 	if !s.publicPacketPathSearchIndexComplete(ctx, now-10_000, now) {
 		t.Fatalf("search index should be complete after trigger-indexed backfill")
 	}
-	packets, _, err := s.PublicPacketPaths(ctx, PublicPacketPathQuery{
+	packets, _, searchMode, err := s.PublicPacketPaths(ctx, PublicPacketPathQuery{
 		From:   now - 10_000,
 		To:     now,
 		Limit:  10,
@@ -128,6 +131,9 @@ func TestPublicPacketPathSearchIndexFallbackKeepsResults(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if searchMode != PublicPacketPathSearchFTS {
+		t.Fatalf("indexed search mode = %q, want %q", searchMode, PublicPacketPathSearchFTS)
 	}
 	if len(packets) != 1 || packets[0].EndpointLabels[1] != "Krabs Repeater" {
 		t.Fatalf("indexed search packets = %#v, want Krabs match", packets)
@@ -139,7 +145,7 @@ func TestPublicPacketPathSearchIndexFallbackKeepsResults(t *testing.T) {
 	if s.publicPacketPathSearchIndexComplete(ctx, now-10_000, now) {
 		t.Fatalf("search index should report incomplete after deleting FTS rows")
 	}
-	packets, _, err = s.PublicPacketPaths(ctx, PublicPacketPathQuery{
+	packets, _, searchMode, err = s.PublicPacketPaths(ctx, PublicPacketPathQuery{
 		From:   now - 10_000,
 		To:     now,
 		Limit:  10,
@@ -147,6 +153,9 @@ func TestPublicPacketPathSearchIndexFallbackKeepsResults(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if searchMode != PublicPacketPathSearchSubstring {
+		t.Fatalf("fallback search mode = %q, want %q", searchMode, PublicPacketPathSearchSubstring)
 	}
 	if len(packets) != 1 || packets[0].EndpointLabels[1] != "Krabs Repeater" {
 		t.Fatalf("fallback search packets = %#v, want Krabs match", packets)
@@ -162,7 +171,7 @@ func TestPublicPacketPathSearchIndexFallbackKeepsResults(t *testing.T) {
 	if !s.publicPacketPathSearchIndexComplete(ctx, now-10_000, now) {
 		t.Fatalf("search index should be complete after sync-only backfill")
 	}
-	packets, _, err = s.PublicPacketPaths(ctx, PublicPacketPathQuery{
+	packets, _, searchMode, err = s.PublicPacketPaths(ctx, PublicPacketPathQuery{
 		From:   now - 10_000,
 		To:     now,
 		Limit:  10,
@@ -170,6 +179,9 @@ func TestPublicPacketPathSearchIndexFallbackKeepsResults(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if searchMode != PublicPacketPathSearchFTS {
+		t.Fatalf("post-sync search mode = %q, want %q", searchMode, PublicPacketPathSearchFTS)
 	}
 	if len(packets) != 1 || packets[0].EndpointLabels[1] != "Krabs Repeater" {
 		t.Fatalf("post-sync indexed search packets = %#v, want Krabs match", packets)

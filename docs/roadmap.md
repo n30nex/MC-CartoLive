@@ -5,13 +5,14 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.48` is the active foundation patch toward the next production-ready
+Version `2.5.49` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: projected packet-path search-index upgrade catch-up,
+- Current patch focus: projected Packets search-path observability,
+  projected packet-path search-index upgrade catch-up,
   public-safe projected packet-path FTS search indexing,
   public-safe Packets projection-path observability, public-safe packet-path
   projection backfill observability, bounded public packet-path projection
@@ -51,6 +52,15 @@ Version `2.5.48` is the active foundation patch toward the next production-ready
   screenshot artifacts, and operator diagnostic scripts.
 - Keep docs concise enough that new operators can deploy, smoke test, diagnose,
   back up, restore, and upgrade without reading historical planning notes.
+
+## 2.5.49 Patch Focus
+
+- Count projected `/api/v1/public/packets` text searches by execution path:
+  FTS index, safe substring fallback, or no text query.
+- Expose those counters through public-safe `/healthz` and `/readyz` fields
+  without logging or returning private packet material or raw query text.
+- Preserve public packet response shapes, true-route validation, hosted Canada
+  scoping, package worldwide behavior, and privacy boundaries.
 
 ## 2.5.48 Patch Focus
 

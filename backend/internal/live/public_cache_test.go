@@ -39,6 +39,9 @@ func TestRuntimeStatsRecordsPacketPressure(t *testing.T) {
 	stats.RecordPublicPacketsScan(2500, true)
 	stats.RecordPublicPacketsProjection(true, true, false)
 	stats.RecordPublicPacketsProjection(false, false, true)
+	stats.RecordPublicPacketsSearchMode("projectedFts")
+	stats.RecordPublicPacketsSearchMode("projectedSubstring")
+	stats.RecordPublicPacketsSearchMode("none")
 	stats.RecordPacketCountRefresh(12*time.Millisecond, true)
 	stats.RecordPacketPathBackfill(9*time.Millisecond, true, 4, 3, 2, 1, 6, true, true)
 
@@ -52,6 +55,9 @@ func TestRuntimeStatsRecordsPacketPressure(t *testing.T) {
 		snapshot.PublicPacketsProjectionLastAtMs <= 0 ||
 		snapshot.PublicPacketsProjectionComplete {
 		t.Fatalf("packet projection stats = %#v", snapshot)
+	}
+	if snapshot.PublicPacketsSearchFTS != 1 || snapshot.PublicPacketsSearchSubstring != 1 || snapshot.PublicPacketsSearchNoQuery != 1 {
+		t.Fatalf("packet search stats = %#v", snapshot)
 	}
 	if snapshot.PacketCountRefreshFailures != 1 || snapshot.PacketCountRefreshLastLatencyMs != 12 || snapshot.PacketCountRefreshLastAtMs <= 0 {
 		t.Fatalf("packet count refresh stats = %#v", snapshot)

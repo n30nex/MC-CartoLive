@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.5.49 - 2026-06-02
+
+- Added public-safe Packets search-path counters to `/healthz` and `/readyz`
+  so operators can see projected FTS searches, projected substring searches,
+  and projected no-query requests separately.
+- Exposed explicit store-level projected search mode metadata without changing
+  `/api/v1/public/packets` response shape.
+- Preserved cursor behavior, true-route validation, hosted Canada scope,
+  worldwide package behavior, and privacy boundaries.
+
 ## 2.5.48 - 2026-06-02
 
 - Extended the public packet-path background backfill to also sync existing
