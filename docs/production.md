@@ -69,7 +69,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.47
+  ghcr.io/n30nex/mc-cartolive:2.5.48
 ```
 
 For production, keep private settings in an env file and mount persistent data:
@@ -79,7 +79,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.47
+  ghcr.io/n30nex/mc-cartolive:2.5.48
 ```
 
 The published image runs as non-root `appuser`, includes OCI source/version
@@ -132,13 +132,17 @@ docker compose up -d
 
 ## Runtime Notes
 
-- Version 2.5.47 exposes the app version/build in the top project bar. CI builds use
+- Version 2.5.48 exposes the app version/build in the top project bar. CI builds use
   the Git commit SHA when available; local Docker builds use a timestamp fallback
   plus a separate ISO build time for build-age display.
 - Runtime liveness and readiness are split: `/healthz` stays cheap for Docker
   liveness, while `/readyz` verifies DB ping, public cache readiness, static
   frontend availability, and public-safe runtime status.
-- Version 2.5.47 also exposes public-safe public-cache truncation counts,
+- Version 2.5.48 syncs existing projected packet paths into the public-safe FTS
+  search table during the normal background backfill loop. `/healthz` and
+  `/readyz` expose the latest search-index sync count and whether search-index
+  catch-up still has work remaining.
+- Runtime health also exposes public-safe public-cache truncation counts,
   packet-search scan pressure, and packet-count refresh latency/failures so
   operators can spot scale pressure without exposing private packet material.
 - Version 2.5.47 also creates a public-safe FTS index for projected packet

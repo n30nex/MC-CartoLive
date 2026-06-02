@@ -180,6 +180,8 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 		"packetPathBackfillProjected":     runtime.PacketPathBackfillLastProjected,
 		"packetPathBackfillMappable":      runtime.PacketPathBackfillLastMappable,
 		"packetPathBackfillInvalid":       runtime.PacketPathBackfillLastInvalid,
+		"packetPathSearchIndexSynced":     runtime.PacketPathSearchIndexLastSync,
+		"packetPathSearchIndexRemaining":  runtime.PacketPathSearchIndexRemaining,
 		"packetPathBackfillRemaining":     runtime.PacketPathBackfillRemaining,
 		"cacheRefreshFailures":            runtime.CacheRefreshFailures,
 		"packetCountRefreshFailures":      runtime.PacketCountRefreshFailures,

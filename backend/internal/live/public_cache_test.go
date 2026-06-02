@@ -40,7 +40,7 @@ func TestRuntimeStatsRecordsPacketPressure(t *testing.T) {
 	stats.RecordPublicPacketsProjection(true, true, false)
 	stats.RecordPublicPacketsProjection(false, false, true)
 	stats.RecordPacketCountRefresh(12*time.Millisecond, true)
-	stats.RecordPacketPathBackfill(9*time.Millisecond, true, 4, 3, 2, 1, true)
+	stats.RecordPacketPathBackfill(9*time.Millisecond, true, 4, 3, 2, 1, 6, true, true)
 
 	snapshot := stats.Snapshot()
 	if snapshot.PublicPacketsLastScan != 2500 || snapshot.PublicPacketsScanCapped != 1 {
@@ -63,6 +63,8 @@ func TestRuntimeStatsRecordsPacketPressure(t *testing.T) {
 		snapshot.PacketPathBackfillLastProjected != 3 ||
 		snapshot.PacketPathBackfillLastMappable != 2 ||
 		snapshot.PacketPathBackfillLastInvalid != 1 ||
+		snapshot.PacketPathSearchIndexLastSync != 6 ||
+		!snapshot.PacketPathSearchIndexRemaining ||
 		!snapshot.PacketPathBackfillRemaining {
 		t.Fatalf("packet path backfill stats = %#v", snapshot)
 	}

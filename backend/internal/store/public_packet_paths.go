@@ -24,11 +24,13 @@ type PublicPacketPathQuery struct {
 }
 
 type PublicPacketPathBackfillResult struct {
-	Scanned     int
-	Projected   int
-	Mappable    int
-	NonMappable int
-	Remaining   bool
+	Scanned              int
+	Projected            int
+	Mappable             int
+	NonMappable          int
+	SearchIndexed        int
+	SearchIndexRemaining bool
+	Remaining            bool
 }
 
 func (s *Store) PublicPacketPathProjectionComplete(ctx context.Context, from int64, to int64) (bool, error) {
@@ -149,35 +151,42 @@ func (s *Store) BackfillPublicPacketPaths(ctx context.Context, from int64, to in
 		return PublicPacketPathBackfillResult{}, err
 	}
 	result := PublicPacketPathBackfillResult{Scanned: len(edges)}
-	if len(edges) == 0 {
-		return result, nil
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return result, err
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
-	for _, edge := range edges {
-		mappable, err := insertPublicPacketPathTx(ctx, tx, edge, edge.IATA)
+	if len(edges) > 0 {
+		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {
 			return result, err
 		}
-		result.Projected++
-		if mappable {
-			result.Mappable++
-		} else {
-			result.NonMappable++
+		committed := false
+		defer func() {
+			if !committed {
+				_ = tx.Rollback()
+			}
+		}()
+		for _, edge := range edges {
+			mappable, err := insertPublicPacketPathTx(ctx, tx, edge, edge.IATA)
+			if err != nil {
+				return result, err
+			}
+			result.Projected++
+			if mappable {
+				result.Mappable++
+			} else {
+				result.NonMappable++
+			}
 		}
+		if err := tx.Commit(); err != nil {
+			return result, err
+		}
+		committed = true
 	}
-	if err := tx.Commit(); err != nil {
+
+	indexed, searchRemaining, err := s.syncPublicPacketPathSearchIndex(ctx, from, to, limit)
+	if err != nil {
 		return result, err
 	}
-	committed = true
+	result.SearchIndexed = indexed
+	result.SearchIndexRemaining = searchRemaining
+
 	var remaining int
 	if err := s.db.QueryRowContext(ctx, `
 SELECT EXISTS (
@@ -186,11 +195,83 @@ SELECT EXISTS (
   WHERE e.heard_at_ms >= ? AND e.heard_at_ms <= ?
     AND NOT EXISTS (SELECT 1 FROM public_packet_paths p WHERE p.edge_id=e.id)
   LIMIT 1
-)`, from, boundedHistoryTo(to)).Scan(&remaining); err != nil {
+	)`, from, boundedHistoryTo(to)).Scan(&remaining); err != nil {
 		return result, err
 	}
-	result.Remaining = remaining != 0
+	result.Remaining = remaining != 0 || searchRemaining
 	return result, nil
+}
+
+func (s *Store) syncPublicPacketPathSearchIndex(ctx context.Context, from int64, to int64, limit int) (int, bool, error) {
+	if limit <= 0 || limit > 2000 {
+		limit = 500
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT p.edge_id, p.search_text
+FROM public_packet_paths p
+WHERE p.mappable=1
+  AND p.search_text != ''
+  AND p.heard_at_ms >= ? AND p.heard_at_ms <= ?
+  AND NOT EXISTS (SELECT 1 FROM public_packet_paths_fts f WHERE f.rowid=p.edge_id)
+ORDER BY p.heard_at_ms DESC, p.edge_id DESC
+LIMIT ?`, from, boundedHistoryTo(to), limit)
+	if err != nil {
+		return 0, true, err
+	}
+	defer rows.Close()
+	type searchRow struct {
+		edgeID int64
+		text   string
+	}
+	missing := []searchRow{}
+	for rows.Next() {
+		var item searchRow
+		if err := rows.Scan(&item.edgeID, &item.text); err != nil {
+			return 0, true, err
+		}
+		missing = append(missing, item)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, true, err
+	}
+	if len(missing) == 0 {
+		return 0, false, nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, true, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	for _, item := range missing {
+		if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO public_packet_paths_fts(rowid, search_text) VALUES (?, ?)`, item.edgeID, item.text); err != nil {
+			return 0, true, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, true, err
+	}
+	committed = true
+
+	var remaining int
+	if err := s.db.QueryRowContext(ctx, `
+SELECT EXISTS (
+  SELECT 1
+  FROM public_packet_paths p
+  WHERE p.mappable=1
+    AND p.search_text != ''
+    AND p.heard_at_ms >= ? AND p.heard_at_ms <= ?
+    AND NOT EXISTS (SELECT 1 FROM public_packet_paths_fts f WHERE f.rowid=p.edge_id)
+  LIMIT 1
+)`, from, boundedHistoryTo(to)).Scan(&remaining); err != nil {
+		return len(missing), true, err
+	}
+	return len(missing), remaining != 0, nil
 }
 
 func (s *Store) publicPacketPathMissingEdges(ctx context.Context, from int64, to int64, limit int) ([]live.EdgeEvent, error) {

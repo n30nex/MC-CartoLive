@@ -2,11 +2,11 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.5.47` public-safe projected packet-path FTS search
-indexing, public-safe Packets projection-path observability, public-safe
-packet-path projection backfill observability, bounded public packet-path
-projection backfill, public packet-path projection groundwork, release workflow
-Node 24 compatibility, cacheless
+Baseline audited: `v2.5.48` projected packet-path search-index upgrade
+catch-up, public-safe projected packet-path FTS search indexing, public-safe
+Packets projection-path observability, public-safe packet-path projection
+backfill observability, bounded public packet-path projection backfill, public
+packet-path projection groundwork, release workflow Node 24 compatibility, cacheless
 public-state fallback pressure reduction, ingest observer lookup pressure
 reduction, runtime counter logging pressure reduction, NetGraph hidden-tab
 frame/layout pause, render-quality frame pacing, calmer Live Follow, direct
@@ -21,8 +21,9 @@ indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route
 readability, NetGraph helper, 3D chase-helper, release-privacy scan work, and
 the first internal public packet-path projection slice, recent projection
 backfill for upgraded databases, backfill progress fields in health/readiness,
-projection-vs-fallback Packets request counters, and indexed projected packet
-search with fallback while upgrade windows catch up.
+projection-vs-fallback Packets request counters, indexed projected packet
+search with fallback while upgrade windows catch up, and background FTS catch-up
+for already-projected packet rows.
 
 ## Audit Coverage
 
@@ -99,6 +100,27 @@ These decisions were confirmed on 2026-06-01 and should guide the rest of the
 - Saved screenshot artifacts are required for major releases like 2.6.0, not
   every patch release.
 - The final 2.6 feature slot is NetGraph improvements plus the Chat page.
+
+## 2.5.48 - Projected Packet-Path Search Index Catch-Up
+
+Goal: make the 2.5.47 indexed search path complete on upgraded databases that
+already had projected packet rows before the FTS table existed.
+
+Status: implemented by extending the normal public packet-path background
+backfill loop. When no route projections are missing, the same bounded worker
+now syncs existing public-safe `public_packet_paths.search_text` rows into the
+FTS table. `/healthz` and `/readyz` expose the latest sync count and whether
+search-index catch-up still has work remaining.
+
+### Acceptance
+
+- Existing projected packet rows with missing FTS rows are indexed in bounded
+  batches without rereading private packet data.
+- Packet search still falls back safely until the requested window is indexed.
+- Operators can see search-index catch-up through public-safe health/readiness
+  fields.
+- Public packet response shape, cursor behavior, route validation, region
+  scoping, hosted Canada behavior, and privacy boundaries remain unchanged.
 
 ## 2.5.47 - Projected Packet-Path Search Index
 

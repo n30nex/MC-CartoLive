@@ -698,16 +698,18 @@ func (a *Application) backfillPublicPacketPathsOnce(ctx context.Context, window 
 	defer cancel()
 	result, err := a.Store.BackfillPublicPacketPaths(backfillCtx, now.Add(-window).UnixMilli(), now.UnixMilli(), batch)
 	if err != nil {
-		a.Runtime.RecordPacketPathBackfill(time.Since(start), true, 0, 0, 0, 0, true)
+		a.Runtime.RecordPacketPathBackfill(time.Since(start), true, 0, 0, 0, 0, 0, true, true)
 		return true, err
 	}
-	a.Runtime.RecordPacketPathBackfill(time.Since(start), false, result.Scanned, result.Projected, result.Mappable, result.NonMappable, result.Remaining)
-	if result.Scanned > 0 {
+	a.Runtime.RecordPacketPathBackfill(time.Since(start), false, result.Scanned, result.Projected, result.Mappable, result.NonMappable, result.SearchIndexed, result.SearchIndexRemaining, result.Remaining)
+	if result.Scanned > 0 || result.SearchIndexed > 0 {
 		a.Log.Info("public packet path backfill",
 			"scanned", result.Scanned,
 			"projected", result.Projected,
 			"mappable", result.Mappable,
 			"non_mappable", result.NonMappable,
+			"search_indexed", result.SearchIndexed,
+			"search_index_remaining", result.SearchIndexRemaining,
 			"remaining", result.Remaining,
 		)
 	}

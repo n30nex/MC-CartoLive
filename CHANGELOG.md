@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.5.48 - 2026-06-02
+
+- Extended the public packet-path background backfill to also sync existing
+  projected packet rows into the public-safe FTS search index after upgrade.
+- Added public-safe `/healthz` and `/readyz` counters for packet-path search
+  index sync count and whether search-index catch-up still has remaining work.
+- Preserved `/api/v1/public/packets` response shape, cursor behavior,
+  true-route validation, hosted Canada scope, worldwide package behavior, and
+  privacy boundaries.
+
 ## 2.5.47 - 2026-06-02
 
 - Added a public-safe FTS index for projected packet-path search fields so

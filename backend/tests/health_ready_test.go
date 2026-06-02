@@ -45,7 +45,7 @@ func TestHealthzIncludesPublicSafeOperationalFields(t *testing.T) {
 	runtime.RecordPublicPacketsScan(2500, true)
 	runtime.RecordPublicPacketsProjection(true, true, false)
 	runtime.RecordPacketCountRefresh(19*time.Millisecond, false)
-	runtime.RecordPacketPathBackfill(23*time.Millisecond, false, 7, 6, 5, 1, true)
+	runtime.RecordPacketPathBackfill(23*time.Millisecond, false, 7, 6, 5, 1, 4, true, true)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	server := api.Server{
 		Config:            api.Config{PublicMode: true, AppVersion: "2.1.10", GitSHA: "abcdef1", BuildTime: "2026-05-23T00:00:00Z"},
@@ -68,7 +68,7 @@ func TestHealthzIncludesPublicSafeOperationalFields(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"cacheAgeMs", "cacheTruncatedNodes", "cacheTruncatedRoutes", "cacheTruncatedRecentPulses", "cacheTruncatedRecentActivity", "mqttConnected", "wsDroppedMessages", "publicStateReady", "dbReady", "version", "gitSha", "buildTime", "publicHistoryRequests", "publicPacketsRequests", "publicPacketsErrors", "publicPacketsLatencyMs", "publicPacketsLastScan", "publicPacketsScanCapped", "publicPacketsProjectionServed", "publicPacketsProjectionFallback", "publicPacketsProjectionErrors", "publicPacketsProjectionLastAt", "publicPacketsProjectionComplete", "packetPathBackfillFailures", "packetPathBackfillLatencyMs", "packetPathBackfillLastAt", "packetPathBackfillLastScan", "packetPathBackfillProjected", "packetPathBackfillMappable", "packetPathBackfillInvalid", "packetPathBackfillRemaining", "packetCountRefreshFailures", "packetCountRefreshLatencyMs", "packetCountRefreshLastAt", "recentRoutePulseAgeMs", "recentObserverBurstAgeMs", "packetIngestState", "publicCacheState", "routeMotionState", "observerMotionState", "mapMotionState", "liveConfidenceState", "packetIngestFresh", "mapMotionFresh", "publicLiveFresh"} {
+	for _, key := range []string{"cacheAgeMs", "cacheTruncatedNodes", "cacheTruncatedRoutes", "cacheTruncatedRecentPulses", "cacheTruncatedRecentActivity", "mqttConnected", "wsDroppedMessages", "publicStateReady", "dbReady", "version", "gitSha", "buildTime", "publicHistoryRequests", "publicPacketsRequests", "publicPacketsErrors", "publicPacketsLatencyMs", "publicPacketsLastScan", "publicPacketsScanCapped", "publicPacketsProjectionServed", "publicPacketsProjectionFallback", "publicPacketsProjectionErrors", "publicPacketsProjectionLastAt", "publicPacketsProjectionComplete", "packetPathBackfillFailures", "packetPathBackfillLatencyMs", "packetPathBackfillLastAt", "packetPathBackfillLastScan", "packetPathBackfillProjected", "packetPathBackfillMappable", "packetPathBackfillInvalid", "packetPathSearchIndexSynced", "packetPathSearchIndexRemaining", "packetPathBackfillRemaining", "packetCountRefreshFailures", "packetCountRefreshLatencyMs", "packetCountRefreshLastAt", "recentRoutePulseAgeMs", "recentObserverBurstAgeMs", "packetIngestState", "publicCacheState", "routeMotionState", "observerMotionState", "mapMotionState", "liveConfidenceState", "packetIngestFresh", "mapMotionFresh", "publicLiveFresh"} {
 		if _, ok := payload[key]; !ok {
 			t.Fatalf("healthz missing %q in %#v", key, payload)
 		}
@@ -81,6 +81,9 @@ func TestHealthzIncludesPublicSafeOperationalFields(t *testing.T) {
 	}
 	if payload["packetPathBackfillLastScan"] != float64(7) || payload["packetPathBackfillRemaining"] != true {
 		t.Fatalf("packet path backfill counters = %#v", payload)
+	}
+	if payload["packetPathSearchIndexSynced"] != float64(4) || payload["packetPathSearchIndexRemaining"] != true {
+		t.Fatalf("packet path search index counters = %#v", payload)
 	}
 	if payload["version"] != "2.1.10" || payload["gitSha"] != "abcdef1" || payload["buildTime"] == "" {
 		t.Fatalf("build metadata = %#v", payload)

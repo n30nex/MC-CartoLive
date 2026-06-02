@@ -38,6 +38,8 @@ type RuntimeStats struct {
 	packetPathBackfillLastProjected atomic.Int64
 	packetPathBackfillLastMappable  atomic.Int64
 	packetPathBackfillLastInvalid   atomic.Int64
+	packetPathSearchIndexLastSync   atomic.Int64
+	packetPathSearchIndexRemaining  atomic.Int64
 	packetPathBackfillRemaining     atomic.Int64
 }
 
@@ -74,6 +76,8 @@ type RuntimeStatsSnapshot struct {
 	PacketPathBackfillLastProjected int64 `json:"packetPathBackfillLastProjected"`
 	PacketPathBackfillLastMappable  int64 `json:"packetPathBackfillLastMappable"`
 	PacketPathBackfillLastInvalid   int64 `json:"packetPathBackfillLastInvalid"`
+	PacketPathSearchIndexLastSync   int64 `json:"packetPathSearchIndexLastSync"`
+	PacketPathSearchIndexRemaining  bool  `json:"packetPathSearchIndexRemaining"`
 	PacketPathBackfillRemaining     bool  `json:"packetPathBackfillRemaining"`
 }
 
@@ -180,7 +184,7 @@ func (s *RuntimeStats) RecordPacketCountRefresh(duration time.Duration, failed b
 	s.packetCountRefreshLastAtMs.Store(time.Now().UnixMilli())
 }
 
-func (s *RuntimeStats) RecordPacketPathBackfill(duration time.Duration, failed bool, scanned int, projected int, mappable int, nonMappable int, remaining bool) {
+func (s *RuntimeStats) RecordPacketPathBackfill(duration time.Duration, failed bool, scanned int, projected int, mappable int, nonMappable int, searchIndexed int, searchRemaining bool, remaining bool) {
 	if s == nil {
 		return
 	}
@@ -193,6 +197,12 @@ func (s *RuntimeStats) RecordPacketPathBackfill(duration time.Duration, failed b
 	s.packetPathBackfillLastProjected.Store(int64(maxInt(projected, 0)))
 	s.packetPathBackfillLastMappable.Store(int64(maxInt(mappable, 0)))
 	s.packetPathBackfillLastInvalid.Store(int64(maxInt(nonMappable, 0)))
+	s.packetPathSearchIndexLastSync.Store(int64(maxInt(searchIndexed, 0)))
+	if searchRemaining {
+		s.packetPathSearchIndexRemaining.Store(1)
+	} else {
+		s.packetPathSearchIndexRemaining.Store(0)
+	}
 	if remaining {
 		s.packetPathBackfillRemaining.Store(1)
 	} else {
@@ -237,6 +247,8 @@ func (s *RuntimeStats) Snapshot() RuntimeStatsSnapshot {
 		PacketPathBackfillLastProjected: s.packetPathBackfillLastProjected.Load(),
 		PacketPathBackfillLastMappable:  s.packetPathBackfillLastMappable.Load(),
 		PacketPathBackfillLastInvalid:   s.packetPathBackfillLastInvalid.Load(),
+		PacketPathSearchIndexLastSync:   s.packetPathSearchIndexLastSync.Load(),
+		PacketPathSearchIndexRemaining:  s.packetPathSearchIndexRemaining.Load() == 1,
 		PacketPathBackfillRemaining:     s.packetPathBackfillRemaining.Load() == 1,
 	}
 }

@@ -151,6 +151,29 @@ func TestPublicPacketPathSearchIndexFallbackKeepsResults(t *testing.T) {
 	if len(packets) != 1 || packets[0].EndpointLabels[1] != "Krabs Repeater" {
 		t.Fatalf("fallback search packets = %#v, want Krabs match", packets)
 	}
+
+	result, err := s.BackfillPublicPacketPaths(ctx, now-10_000, now, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Scanned != 0 || result.Projected != 0 || result.SearchIndexed != 1 || result.SearchIndexRemaining || result.Remaining {
+		t.Fatalf("search index sync result = %#v, want one indexed legacy projection and no remaining work", result)
+	}
+	if !s.publicPacketPathSearchIndexComplete(ctx, now-10_000, now) {
+		t.Fatalf("search index should be complete after sync-only backfill")
+	}
+	packets, _, err = s.PublicPacketPaths(ctx, PublicPacketPathQuery{
+		From:   now - 10_000,
+		To:     now,
+		Limit:  10,
+		Search: "krabs",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packets) != 1 || packets[0].EndpointLabels[1] != "Krabs Repeater" {
+		t.Fatalf("post-sync indexed search packets = %#v, want Krabs match", packets)
+	}
 }
 
 func TestPublicPacketPathFTSQuerySanitizesFreeformSearch(t *testing.T) {
