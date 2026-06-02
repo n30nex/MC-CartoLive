@@ -354,13 +354,13 @@ func (s *Server) publicState(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	stats, err := s.Store.Stats(ctx)
+	packetCount, err := s.Store.PacketCount(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	publicState := live.BuildPublicLiveState(state, live.PublicStats{
-		Packets:       stats.Packets,
+		Packets:       packetCount,
 		MQTTConnected: s.mqttConnected(),
 		MQTTMessages:  s.mqttTotal(),
 		WSClients:     s.wsClientCount(),

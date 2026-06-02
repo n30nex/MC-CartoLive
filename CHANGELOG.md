@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.5.41 - 2026-06-02
+
+- Removed the remaining full `Store.Stats()` multi-count query from the legacy
+  `/api/v1/public/state` fallback path.
+- The normal cached public-state path remains unchanged; if the fallback is
+  used, it now combines the bounded live-state read with the cheaper packet
+  count path.
+- Added backend coverage for the cacheless public-state fallback packet total.
+- Kept public APIs, response schemas, privacy boundaries, and hosted Canada
+  behavior unchanged.
+
 ## 2.5.40 - 2026-06-02
 
 - Removed the all-observer scan from ingest fallback endpoint matching.

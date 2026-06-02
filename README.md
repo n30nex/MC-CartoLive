@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.40
+# MeshCore MQTT Live Map v2.5.41
 
 Also known as **MC-CartoLive**.
 
@@ -23,16 +23,22 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.40 Feature Gallery
+### v2.5.41 Feature Gallery
 
-Version 2.5.40 keeps the Canada deployment intact while continuing the
+Version 2.5.41 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
 
-This patch removes the all-observer scan from ingest fallback endpoint matching.
-When a packet publisher is not already known as a positioned node, the backend
-now uses the exact indexed public-key/region observer lookup, reducing ingest
-read pressure on larger deployments while preserving true-route and
+This patch removes the remaining full `Store.Stats()` multi-count query from
+the legacy public-state fallback path. If the cache callback is unavailable,
+`/api/v1/public/state` now uses the bounded live-state read plus the cheaper
+packet-count path, keeping public schemas unchanged while reducing database
+pressure in package/test fallback modes.
+
+Version 2.5.40 removed the all-observer scan from ingest fallback endpoint
+matching. When a packet publisher is not already known as a positioned node, the
+backend now uses the exact indexed public-key/region observer lookup, reducing
+ingest read pressure on larger deployments while preserving true-route and
 public-safety rules.
 
 Version 2.5.39 removed periodic full-table stats queries from runtime logging on
@@ -241,7 +247,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.40
+  ghcr.io/n30nex/mc-cartolive:2.5.41
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -252,7 +258,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.40
+  ghcr.io/n30nex/mc-cartolive:2.5.41
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -383,7 +389,7 @@ map, Perf, Packets, Chat, and NetGraph. Screenshots are written to
 
 ## Production Hosting
 
-The recommended v2.5.40 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.41 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

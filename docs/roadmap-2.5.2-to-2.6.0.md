@@ -2,18 +2,19 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.5.40` ingest observer lookup pressure reduction, runtime
-counter logging pressure reduction, NetGraph hidden-tab frame/layout pause,
-render-quality frame pacing, calmer Live Follow, direct live/not-live Perf
-labels, render-quality controls, OpenFreeMap/flat-map render budget reductions,
-live-status simplification, broader palette token coverage, NetGraph
-legend/icon alignment, browser smoke gate and mobile Perf/Packets clipping fix,
-OpenFreeMap selected-packet chase camera refinement, OpenFreeMap 3D adaptive
-LOD/budgets, long-text Chat rebroadcast dedupe, OpenFreeMap 3D render-cost
-reduction, palette-aware NetGraph visuals, strict build-age parsing, Chat
-duplicate suppression hardening, Chat pressure guard, Chat query indexes,
-NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route
-readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.41` cacheless public-state fallback pressure reduction,
+ingest observer lookup pressure reduction, runtime counter logging pressure
+reduction, NetGraph hidden-tab frame/layout pause, render-quality frame pacing,
+calmer Live Follow, direct live/not-live Perf labels, render-quality controls,
+OpenFreeMap/flat-map render budget reductions, live-status simplification,
+broader palette token coverage, NetGraph legend/icon alignment, browser smoke
+gate and mobile Perf/Packets clipping fix, OpenFreeMap selected-packet chase
+camera refinement, OpenFreeMap 3D adaptive LOD/budgets, long-text Chat
+rebroadcast dedupe, OpenFreeMap 3D render-cost reduction, palette-aware
+NetGraph visuals, strict build-age parsing, Chat duplicate suppression
+hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability,
+OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D
+chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -103,8 +104,12 @@ These decisions were confirmed on 2026-06-01 and should guide the rest of the
 
 - Worldwide support is present, but many internal concepts are still named IATA. Public compatibility can stay, but operator-facing language should become `region` first.
 - Public cache caps are fixed at 2500 nodes, 2500 routes, 240 recent pulses, and 240 activity records. That is acceptable for the hosted Canada map today, but it can silently truncate larger worldwide installs.
-- `Store.Stats()` performs multiple full `COUNT(*)` queries and is called during public cache refresh. This can become noisy as packet tables grow past millions of rows.
-- History/packet conversion uses a cached public location index, but the ingestion fallback path still scans all observers when a node lookup misses. That is risky under heavy ingest.
+- `Store.Stats()` still exists for private debug stats, but the public cache,
+  runtime counter logs, and cacheless public-state fallback no longer call the
+  full multi-count path.
+- History/packet conversion uses a cached public location index, and the ingest
+  observer fallback now uses exact public-key/region lookup after node lookup
+  misses. The remaining Packets/VCR risk is rare-filter scan/conversion cost.
 - The public Packets endpoint keeps the response shape compatible and bounded, but rare filters still require scanning/converting multiple edge-event pages. It needs a better public-safe packet path index before 2.6.
 - Current health/readiness counters are useful, but they need more actionable fields around cache truncation, slow public packet searches, DB timeouts, and websocket freshness.
 
@@ -637,6 +642,21 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.41 - Cacheless Public-State Fallback Pressure Reduction
+
+Goal: keep the legacy cacheless `/api/v1/public/state` fallback off the full
+multi-count `Store.Stats()` path.
+
+Scope:
+
+- Keep the normal cached public-state path unchanged.
+- Replace fallback `Store.Stats()` usage with `Store.PacketCount()` for the
+  public packet total.
+- Keep fallback live-state reads bounded by the existing recent packet and edge
+  limits.
+- Add backend coverage for the cacheless public-state fallback packet total.
+- Keep public APIs, privacy boundaries, and hosted Canada behavior unchanged.
 
 ## 2.5.40 - Ingest Observer Lookup Pressure Reduction
 
