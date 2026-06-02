@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+	"unicode"
 
 	"meshcore-canada-live-map/backend/internal/live"
 )
@@ -74,8 +75,16 @@ WHERE mappable=1 AND heard_at_ms >= ? AND heard_at_ms <= ?`
 		sqlText += ` AND message_text != ''`
 	}
 	if search := strings.ToLower(strings.TrimSpace(query.Search)); search != "" {
-		sqlText += ` AND instr(search_text, ?) > 0`
-		args = append(args, search)
+		if ftsQuery := publicPacketPathFTSQuery(search); ftsQuery != "" && s.publicPacketPathSearchIndexComplete(ctx, query.From, to) {
+			sqlText += ` AND edge_id IN (
+  SELECT rowid FROM public_packet_paths_fts
+  WHERE public_packet_paths_fts MATCH ?
+)`
+			args = append(args, ftsQuery)
+		} else {
+			sqlText += ` AND instr(search_text, ?) > 0`
+			args = append(args, search)
+		}
 	}
 	if query.Cursor != nil {
 		sqlText += ` AND (heard_at_ms < ? OR (heard_at_ms = ? AND edge_id < ?))`
@@ -111,6 +120,24 @@ LIMIT ?`
 		return nil, nil, err
 	}
 	return packets, next, nil
+}
+
+func (s *Store) publicPacketPathSearchIndexComplete(ctx context.Context, from int64, to int64) bool {
+	if s == nil || s.db == nil {
+		return false
+	}
+	var missing int
+	err := s.db.QueryRowContext(ctx, `
+SELECT EXISTS (
+  SELECT 1
+  FROM public_packet_paths p
+  WHERE p.mappable=1
+    AND p.search_text != ''
+    AND p.heard_at_ms >= ? AND p.heard_at_ms <= ?
+    AND NOT EXISTS (SELECT 1 FROM public_packet_paths_fts f WHERE f.rowid=p.edge_id)
+  LIMIT 1
+)`, from, boundedHistoryTo(to)).Scan(&missing)
+	return err == nil && missing == 0
 }
 
 func (s *Store) BackfillPublicPacketPaths(ctx context.Context, from int64, to int64, limit int) (PublicPacketPathBackfillResult, error) {
@@ -375,6 +402,33 @@ func publicPacketPathSearchText(packet live.PublicPacketPath) string {
 		)
 	}
 	return strings.ToLower(strings.Join(fields, " "))
+}
+
+func publicPacketPathFTSQuery(search string) string {
+	tokens := []string{}
+	var builder strings.Builder
+	flush := func() {
+		if builder.Len() == 0 {
+			return
+		}
+		tokens = append(tokens, builder.String()+"*")
+		builder.Reset()
+	}
+	for _, item := range strings.ToLower(search) {
+		if unicode.IsLetter(item) || unicode.IsDigit(item) {
+			builder.WriteRune(item)
+			continue
+		}
+		flush()
+		if len(tokens) >= 8 {
+			break
+		}
+	}
+	flush()
+	if len(tokens) > 8 {
+		tokens = tokens[:8]
+	}
+	return strings.Join(tokens, " ")
 }
 
 func publicProjectionText(value string) string {

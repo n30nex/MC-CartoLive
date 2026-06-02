@@ -93,6 +93,74 @@ func TestBackfillPublicPacketPathsProjectsMissingLegacyEdges(t *testing.T) {
 	}
 }
 
+func TestPublicPacketPathSearchIndexFallbackKeepsResults(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := s.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+	})
+
+	now := time.Now().UnixMilli()
+	validObservation := insertPacketPathBackfillObservation(t, ctx, s, "hash-fts-valid-private", "YKF", now-2_000)
+	insertPacketPathBackfillEdge(t, ctx, s, validObservation, "hash-fts-valid-private", "GROUP_TEXT", "Corebot", "hello from indexed search", now-2_000, []live.EdgeSegment{
+		{
+			From:       live.EdgeEndpoint{NodeID: "node-a", Name: "YKF Corebot", Lat: 43.65, Lng: -79.38, PathHash3: "AAAAAA"},
+			To:         live.EdgeEndpoint{NodeID: "node-b", Name: "Krabs Repeater", Lat: 43.75, Lng: -79.48, PathHash3: "BBBBBB"},
+			DistanceKM: 14,
+		},
+	})
+	if _, err := s.BackfillPublicPacketPaths(ctx, now-10_000, now, 10); err != nil {
+		t.Fatal(err)
+	}
+	if !s.publicPacketPathSearchIndexComplete(ctx, now-10_000, now) {
+		t.Fatalf("search index should be complete after trigger-indexed backfill")
+	}
+	packets, _, err := s.PublicPacketPaths(ctx, PublicPacketPathQuery{
+		From:   now - 10_000,
+		To:     now,
+		Limit:  10,
+		Search: "krabs",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packets) != 1 || packets[0].EndpointLabels[1] != "Krabs Repeater" {
+		t.Fatalf("indexed search packets = %#v, want Krabs match", packets)
+	}
+
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM public_packet_paths_fts`); err != nil {
+		t.Fatal(err)
+	}
+	if s.publicPacketPathSearchIndexComplete(ctx, now-10_000, now) {
+		t.Fatalf("search index should report incomplete after deleting FTS rows")
+	}
+	packets, _, err = s.PublicPacketPaths(ctx, PublicPacketPathQuery{
+		From:   now - 10_000,
+		To:     now,
+		Limit:  10,
+		Search: "krabs",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packets) != 1 || packets[0].EndpointLabels[1] != "Krabs Repeater" {
+		t.Fatalf("fallback search packets = %#v, want Krabs match", packets)
+	}
+}
+
+func TestPublicPacketPathFTSQuerySanitizesFreeformSearch(t *testing.T) {
+	got := publicPacketPathFTSQuery(`Krabs / YKF-Corebot!!! hidden" OR route`)
+	want := "krabs* ykf* corebot* hidden* or* route*"
+	if got != want {
+		t.Fatalf("FTS query = %q, want %q", got, want)
+	}
+}
+
 func insertPacketPathBackfillObservation(t *testing.T, ctx context.Context, s *Store, hash string, region string, heardAt int64) int64 {
 	t.Helper()
 	if _, err := s.db.ExecContext(ctx, `

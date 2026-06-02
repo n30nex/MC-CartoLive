@@ -15,11 +15,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.46';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.47';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.47 adds a public-safe FTS index for projected packet-path search with safe fallback while upgrade windows catch up.',
   '2.5.46 exposes public-safe Packets projection-path counters so operators can see indexed projection serves vs conversion fallbacks.',
   '2.5.45 exposes public-safe packet-path projection backfill progress in health/readiness so operators can see upgrade catch-up.',
   '2.5.44 backfills missing recent public packet-path projections in bounded startup batches so upgraded DBs reach the fast Packets path sooner.',

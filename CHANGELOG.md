@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.5.47 - 2026-06-02
+
+- Added a public-safe FTS index for projected packet-path search fields so
+  complete indexed windows can avoid `instr(search_text, ...)` scans during
+  `/api/v1/public/packets` search.
+- Kept upgrade behavior safe by using FTS only when the requested projected
+  packet window is fully indexed; incomplete windows fall back to the existing
+  search path instead of hiding true routed packets.
+- Preserved public packet response shape, cursor behavior, true-route
+  validation, region scoping, hosted Canada behavior, and privacy boundaries.
+
 ## 2.5.46 - 2026-06-02
 
 - Added public-safe Packets projection-path counters to `/healthz` and

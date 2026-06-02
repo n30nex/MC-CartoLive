@@ -2,10 +2,11 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.5.46` public-safe Packets projection-path
-observability, public-safe packet-path projection backfill observability,
-bounded public packet-path projection backfill, public packet-path projection
-groundwork, release workflow Node 24 compatibility, cacheless
+Baseline audited: `v2.5.47` public-safe projected packet-path FTS search
+indexing, public-safe Packets projection-path observability, public-safe
+packet-path projection backfill observability, bounded public packet-path
+projection backfill, public packet-path projection groundwork, release workflow
+Node 24 compatibility, cacheless
 public-state fallback pressure reduction, ingest observer lookup pressure
 reduction, runtime counter logging pressure reduction, NetGraph hidden-tab
 frame/layout pause, render-quality frame pacing, calmer Live Follow, direct
@@ -20,7 +21,8 @@ indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route
 readability, NetGraph helper, 3D chase-helper, release-privacy scan work, and
 the first internal public packet-path projection slice, recent projection
 backfill for upgraded databases, backfill progress fields in health/readiness,
-and projection-vs-fallback Packets request counters.
+projection-vs-fallback Packets request counters, and indexed projected packet
+search with fallback while upgrade windows catch up.
 
 ## Audit Coverage
 
@@ -97,6 +99,27 @@ These decisions were confirmed on 2026-06-01 and should guide the rest of the
 - Saved screenshot artifacts are required for major releases like 2.6.0, not
   every patch release.
 - The final 2.6 feature slot is NetGraph improvements plus the Chat page.
+
+## 2.5.47 - Projected Packet-Path Search Index
+
+Goal: reduce `/api/v1/public/packets` search pressure by indexing the
+public-safe projected packet search text while preserving compatible fallback
+behavior for upgraded databases.
+
+Status: implemented with a standalone FTS5 table maintained by
+`public_packet_paths` triggers. `PublicPacketPaths` uses FTS only when the
+requested window has a complete FTS index; otherwise it falls back to the
+previous `search_text` filter so true routed packets are not hidden during
+upgrade catch-up.
+
+### Acceptance
+
+- Complete projected packet windows can use indexed text search.
+- Incomplete search-index windows still return matching true routed packets via
+  the existing fallback.
+- FTS queries are built from sanitized prefix tokens, not raw user query syntax.
+- Public packet response shape, cursor behavior, route validation, region
+  scoping, hosted Canada behavior, and privacy boundaries remain unchanged.
 
 ## 2.5.46 - Packets Projection-Path Observability
 

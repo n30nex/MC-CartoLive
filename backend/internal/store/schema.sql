@@ -182,3 +182,18 @@ CREATE INDEX IF NOT EXISTS idx_public_packet_paths_recent ON public_packet_paths
 CREATE INDEX IF NOT EXISTS idx_public_packet_paths_region_recent ON public_packet_paths(region, mappable, heard_at_ms DESC, edge_id DESC);
 CREATE INDEX IF NOT EXISTS idx_public_packet_paths_payload_recent ON public_packet_paths(payload_type_name, mappable, heard_at_ms DESC, edge_id DESC);
 CREATE INDEX IF NOT EXISTS idx_public_packet_paths_message_recent ON public_packet_paths(mappable, heard_at_ms DESC, edge_id DESC) WHERE message_text != '';
+
+CREATE VIRTUAL TABLE IF NOT EXISTS public_packet_paths_fts USING fts5(search_text);
+
+CREATE TRIGGER IF NOT EXISTS public_packet_paths_ai AFTER INSERT ON public_packet_paths BEGIN
+  INSERT INTO public_packet_paths_fts(rowid, search_text) VALUES (new.edge_id, new.search_text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS public_packet_paths_au AFTER UPDATE ON public_packet_paths BEGIN
+  DELETE FROM public_packet_paths_fts WHERE rowid=old.edge_id;
+  INSERT INTO public_packet_paths_fts(rowid, search_text) VALUES (new.edge_id, new.search_text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS public_packet_paths_ad AFTER DELETE ON public_packet_paths BEGIN
+  DELETE FROM public_packet_paths_fts WHERE rowid=old.edge_id;
+END;

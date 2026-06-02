@@ -5,15 +5,16 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.46` is the active foundation patch toward the next production-ready
+Version `2.5.47` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: public-safe Packets projection-path observability,
-  public-safe packet-path projection backfill observability, bounded public
-  packet-path projection backfill, public packet-path projection groundwork,
+- Current patch focus: public-safe projected packet-path FTS search indexing,
+  public-safe Packets projection-path observability, public-safe packet-path
+  projection backfill observability, bounded public packet-path projection
+  backfill, public packet-path projection groundwork,
   release workflow Node 24 compatibility,
   cacheless public-state fallback pressure reduction, ingest observer lookup
   pressure reduction, runtime counter logging pressure reduction, NetGraph
@@ -49,6 +50,14 @@ Version `2.5.46` is the active foundation patch toward the next production-ready
   screenshot artifacts, and operator diagnostic scripts.
 - Keep docs concise enough that new operators can deploy, smoke test, diagnose,
   back up, restore, and upgrade without reading historical planning notes.
+
+## 2.5.47 Patch Focus
+
+- Add a public-safe FTS index for projected packet-path search fields.
+- Use indexed search only for projected packet windows where the search index
+  is complete; otherwise fall back to the existing search path.
+- Preserve public packet response shapes, true-route validation, hosted Canada
+  scoping, package worldwide behavior, and privacy boundaries.
 
 ## 2.5.46 Patch Focus
 
