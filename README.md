@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.38
+# MeshCore MQTT Live Map v2.5.39
 
 Also known as **MC-CartoLive**.
 
@@ -23,16 +23,20 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.38 Feature Gallery
+### v2.5.39 Feature Gallery
 
-Version 2.5.38 keeps the Canada deployment intact while continuing the
+Version 2.5.39 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
 
-This patch pauses NetGraph canvas animation frames and D3 force layout work
-while the browser tab is hidden, then resumes drawing cleanly when the page is
-visible again. It is a narrow production-smoothness patch for long-lived public
-viewer sessions.
+This patch removes periodic full-table stats queries from runtime logging on
+large production databases. Runtime counters now use cached public-state and
+runtime snapshots for packet totals, public node/route counts, cache age,
+truncation, websocket pressure, MQTT freshness, and refresh latency.
+
+Version 2.5.38 paused NetGraph canvas animation frames and D3 force layout work
+while the browser tab is hidden, then resumed drawing cleanly when the page
+became visible again.
 
 Version 2.5.37 added render-quality frame pacing for both the flat packet
 canvas and OpenFreeMap 3D layer, so `Smooth` and `Balanced` modes reduce
@@ -231,7 +235,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.38
+  ghcr.io/n30nex/mc-cartolive:2.5.39
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -242,7 +246,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.38
+  ghcr.io/n30nex/mc-cartolive:2.5.39
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -373,7 +377,7 @@ map, Perf, Packets, Chat, and NetGraph. Screenshots are written to
 
 ## Production Hosting
 
-The recommended v2.5.38 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.39 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

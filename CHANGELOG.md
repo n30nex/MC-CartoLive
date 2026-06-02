@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 2.5.39 - 2026-06-02
+
+- Removed the periodic full `Store.Stats()` call from runtime counter logging
+  so the app no longer runs several full-table `COUNT(*)` queries every 30
+  seconds on large production databases.
+- Replaced those log fields with public-cache and runtime-stat snapshots for
+  packet totals, public node/route counts, cache age/truncation, websocket
+  pressure, MQTT freshness, and refresh latencies.
+- Added backend coverage proving the runtime log snapshot uses cached state and
+  works without an attached store.
+- Kept public APIs, response schemas, privacy boundaries, and hosted Canada
+  behavior unchanged.
+
 ## 2.5.38 - 2026-06-02
 
 - Paused NetGraph canvas animation frames and D3 force layout work while the

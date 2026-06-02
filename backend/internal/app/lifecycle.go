@@ -35,6 +35,30 @@ type Application struct {
 	packetCount    atomic.Int64
 }
 
+type runtimeCounterLogSnapshot struct {
+	MQTTConnected                bool
+	MQTTMessagesTotal            int64
+	MQTTMessagesDropped          int64
+	MQTTLastMessageAgeMs         int64
+	PacketsTotal                 int64
+	PublicNodes                  int
+	PublicRoutes                 int
+	PublicRecentPulses           int
+	PublicRecentActivity         int
+	PublicCacheAgeMs             int64
+	PublicCacheTruncatedNodes    int64
+	PublicCacheTruncatedRoutes   int64
+	PublicCacheTruncatedPulses   int64
+	PublicCacheTruncatedActivity int64
+	WSClients                    int
+	PublicWSClients              int
+	PublicWSDropped              int64
+	CacheRefreshFailures         int64
+	CacheRefreshLatencyMs        int64
+	PacketCountRefreshFailures   int64
+	PacketCountRefreshLatencyMs  int64
+}
+
 type yamlConfig struct {
 	ForwarderRoles []string `yaml:"forwarderRoles"`
 	Regions        []struct {
@@ -450,28 +474,83 @@ func (a *Application) logCounters(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			stats, err := a.Store.Stats(ctx)
-			if err != nil {
-				a.Log.Warn("stats failed", "error", err)
-				continue
-			}
+			snapshot := a.runtimeCounterLogSnapshot(time.Now())
 			a.Log.Info("runtime counters",
-				"mqtt_connected", a.MQTT.Connected(),
-				"mqtt_messages_total", a.MQTT.TotalMessages(),
-				"mqtt_messages_dropped", a.MQTT.DroppedMessages(),
-				"packets_total", stats.Packets,
-				"observations_total", stats.Observations,
-				"nodes_positioned", stats.NodesWithPosition,
-				"observations_ambiguous", stats.Ambiguous,
-				"observations_unresolved", stats.Unresolved,
-				"edge_events_emitted", stats.EdgeEvents,
-				"ws_clients", a.Hub.ClientCount(),
-				"public_ws_clients", a.PublicHub.ClientCount(),
-				"public_ws_dropped", a.PublicHub.Stats().DroppedMessages,
-				"cache_refresh_failures", a.Runtime.Snapshot().CacheRefreshFailures,
+				"mqtt_connected", snapshot.MQTTConnected,
+				"mqtt_messages_total", snapshot.MQTTMessagesTotal,
+				"mqtt_messages_dropped", snapshot.MQTTMessagesDropped,
+				"mqtt_last_message_age_ms", snapshot.MQTTLastMessageAgeMs,
+				"packets_total", snapshot.PacketsTotal,
+				"public_nodes", snapshot.PublicNodes,
+				"public_routes", snapshot.PublicRoutes,
+				"public_recent_pulses", snapshot.PublicRecentPulses,
+				"public_recent_activity", snapshot.PublicRecentActivity,
+				"public_cache_age_ms", snapshot.PublicCacheAgeMs,
+				"public_cache_truncated_nodes", snapshot.PublicCacheTruncatedNodes,
+				"public_cache_truncated_routes", snapshot.PublicCacheTruncatedRoutes,
+				"public_cache_truncated_pulses", snapshot.PublicCacheTruncatedPulses,
+				"public_cache_truncated_activity", snapshot.PublicCacheTruncatedActivity,
+				"ws_clients", snapshot.WSClients,
+				"public_ws_clients", snapshot.PublicWSClients,
+				"public_ws_dropped", snapshot.PublicWSDropped,
+				"cache_refresh_failures", snapshot.CacheRefreshFailures,
+				"cache_refresh_latency_ms", snapshot.CacheRefreshLatencyMs,
+				"packet_count_refresh_failures", snapshot.PacketCountRefreshFailures,
+				"packet_count_refresh_latency_ms", snapshot.PacketCountRefreshLatencyMs,
 			)
 		}
 	}
+}
+
+func (a *Application) runtimeCounterLogSnapshot(now time.Time) runtimeCounterLogSnapshot {
+	var out runtimeCounterLogSnapshot
+	if a == nil {
+		return out
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	if a.MQTT != nil {
+		mqtt := a.MQTT.Status(now)
+		out.MQTTConnected = mqtt.Connected
+		out.MQTTMessagesTotal = mqtt.TotalMessages
+		out.MQTTMessagesDropped = mqtt.DroppedMessages
+		out.MQTTLastMessageAgeMs = mqtt.LastMessageAgeMs
+	}
+	if a.Hub != nil {
+		out.WSClients = a.Hub.Stats().Clients
+	}
+	if a.PublicHub != nil {
+		publicHub := a.PublicHub.Stats()
+		out.PublicWSClients = publicHub.Clients
+		out.PublicWSDropped = publicHub.DroppedMessages
+	}
+	if a.PublicCache != nil {
+		cacheStatus := a.PublicCache.Status(now)
+		out.PublicCacheAgeMs = cacheStatus.CacheAgeMs
+		out.PublicCacheTruncatedNodes = cacheStatus.TruncatedNodes
+		out.PublicCacheTruncatedRoutes = cacheStatus.TruncatedRoutes
+		out.PublicCacheTruncatedPulses = cacheStatus.TruncatedRecentPulses
+		out.PublicCacheTruncatedActivity = cacheStatus.TruncatedRecentActivity
+		if state, ok := a.PublicCache.Snapshot(); ok {
+			out.PacketsTotal = state.Stats.Packets
+			out.PublicNodes = len(state.Nodes)
+			out.PublicRoutes = len(state.Routes)
+			out.PublicRecentPulses = len(state.RecentPulses)
+			out.PublicRecentActivity = len(state.RecentActivity)
+		}
+	}
+	if count := a.packetCount.Load(); count > 0 {
+		out.PacketsTotal = count
+	}
+	if a.Runtime != nil {
+		runtime := a.Runtime.Snapshot()
+		out.CacheRefreshFailures = runtime.CacheRefreshFailures
+		out.CacheRefreshLatencyMs = runtime.CacheRefreshLastLatencyMs
+		out.PacketCountRefreshFailures = runtime.PacketCountRefreshFailures
+		out.PacketCountRefreshLatencyMs = runtime.PacketCountRefreshLastLatencyMs
+	}
+	return out
 }
 
 func (a *Application) RefreshPublicStateCache(ctx context.Context) error {

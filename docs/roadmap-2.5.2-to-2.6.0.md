@@ -2,17 +2,18 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.5.38` NetGraph hidden-tab frame/layout pause,
-render-quality frame pacing, calmer Live Follow, direct live/not-live Perf
-labels, render-quality controls, OpenFreeMap/flat-map render budget reductions,
-live-status simplification, broader palette token coverage, NetGraph
-legend/icon alignment, browser smoke gate and mobile Perf/Packets clipping fix,
-OpenFreeMap selected-packet chase camera refinement, OpenFreeMap 3D adaptive
-LOD/budgets, long-text Chat rebroadcast dedupe, OpenFreeMap 3D render-cost
-reduction, palette-aware NetGraph visuals, strict build-age parsing, Chat
-duplicate suppression hardening, Chat pressure guard, Chat query indexes,
-NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route
-readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.39` runtime counter logging pressure reduction,
+NetGraph hidden-tab frame/layout pause, render-quality frame pacing, calmer
+Live Follow, direct live/not-live Perf labels, render-quality controls,
+OpenFreeMap/flat-map render budget reductions, live-status simplification,
+broader palette token coverage, NetGraph legend/icon alignment, browser smoke
+gate and mobile Perf/Packets clipping fix, OpenFreeMap selected-packet chase
+camera refinement, OpenFreeMap 3D adaptive LOD/budgets, long-text Chat
+rebroadcast dedupe, OpenFreeMap 3D render-cost reduction, palette-aware
+NetGraph visuals, strict build-age parsing, Chat duplicate suppression
+hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability,
+OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D
+chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -636,6 +637,21 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.39 - Runtime Counter Logging Pressure Reduction
+
+Goal: reduce backend read pressure on large SQLite databases by keeping
+periodic runtime logs off full-table statistics queries.
+
+Scope:
+
+- Remove the 30-second `Store.Stats()` call from runtime counter logging.
+- Use cached public-state counts for packet totals, public nodes, routes,
+  recent pulses, and recent activity.
+- Use runtime snapshots for cache refresh latency/failures, packet-count
+  refresh latency/failures, websocket pressure, and MQTT freshness.
+- Keep debug stats and public API behavior unchanged.
+- Keep public APIs, privacy boundaries, and hosted Canada behavior unchanged.
 
 ## 2.5.38 - NetGraph Hidden-Tab Animation Pause
 
