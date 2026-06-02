@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 2.5.38 - 2026-06-02
+
+- Paused NetGraph canvas animation frames and D3 force layout work while the
+  browser tab is hidden, then resumed drawing cleanly when the page becomes
+  visible again.
+- Added a focused NetGraph frame-gating helper and test coverage so live graph
+  comets and observer glows do not keep scheduling offscreen work.
+- Kept public APIs, privacy boundaries, and hosted Canada behavior unchanged.
+
 ## 2.5.37 - 2026-06-02
 
 - Added render-quality frame pacing for the flat packet canvas so `Smooth` and

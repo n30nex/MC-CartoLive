@@ -5,16 +5,17 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.37` is the active foundation patch toward the next production-ready
+Version `2.5.38` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: render-quality controls, quality-aware animation frame
-  pacing, calmer Live Follow, smoother OpenFreeMap 3D and flat-map animation
-  budgets, backend scale, Packets/VCR data-path stability, light-mode route
-  contrast, and mobile/browser regression coverage.
+- Current patch focus: NetGraph hidden-tab animation pausing, render-quality
+  controls, quality-aware animation frame pacing, calmer Live Follow, smoother
+  OpenFreeMap 3D and flat-map animation budgets, backend scale, Packets/VCR
+  data-path stability, light-mode route contrast, and mobile/browser regression
+  coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -197,6 +198,15 @@ Version `2.5.37` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.38 Patch Focus
+
+- Stop NetGraph canvas animation frames and D3 force layout work while the
+  browser tab is hidden.
+- Resume drawing cleanly when NetGraph becomes visible again without changing
+  graph topology, public API schemas, or privacy boundaries.
+- Add focused helper coverage for the NetGraph frame gate.
+- Keep hosted Canada behavior unchanged.
 
 ## 2.5.37 Patch Focus
 

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import NetGraphPanel, { netGraphSettlePlan, netGraphThemeFromStyle, packedComponentCells } from './NetGraphPanel';
+import NetGraphPanel, { netGraphSettlePlan, netGraphShouldRunFrame, netGraphThemeFromStyle, packedComponentCells } from './NetGraphPanel';
 
 describe('NetGraphPanel', () => {
   it('renders the closeable live graph shell without private packet language', () => {
@@ -42,6 +42,13 @@ describe('NetGraphPanel', () => {
     expect(major.ticks).toBeGreaterThan(incremental.ticks);
     expect(incremental.alpha).toBeLessThan(major.alpha);
     expect(incremental.restart).toBe(true);
+  });
+
+  it('gates NetGraph animation frames while the page is hidden', () => {
+    expect(netGraphShouldRunFrame({ pageHidden: false, activeComets: true, activeGlows: false })).toBe(true);
+    expect(netGraphShouldRunFrame({ pageHidden: false, activeComets: false, activeGlows: true })).toBe(true);
+    expect(netGraphShouldRunFrame({ pageHidden: true, activeComets: true, activeGlows: true })).toBe(false);
+    expect(netGraphShouldRunFrame({ pageHidden: false, activeComets: false, activeGlows: false })).toBe(false);
   });
 
   it('uses active palette tokens for canvas colors in dark and light modes', () => {

@@ -130,6 +130,16 @@ export interface NetGraphSettlePlan {
   restart: boolean;
 }
 
+export interface NetGraphFrameState {
+  pageHidden: boolean;
+  activeComets: boolean;
+  activeGlows: boolean;
+}
+
+export function netGraphShouldRunFrame({ pageHidden, activeComets, activeGlows }: NetGraphFrameState): boolean {
+  return !pageHidden && (activeComets || activeGlows);
+}
+
 export default function NetGraphPanel({ nodes, routes, pulses, activity, socketStatus, onClose }: NetGraphPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const simulationRef = useRef<Simulation<SimNode, SimLink> | null>(null);
@@ -151,6 +161,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
   const cometsRef = useRef<NetGraphComet[]>([]);
   const glowsRef = useRef<NetGraphGlow[]>([]);
   const hasFittedRef = useRef(false);
+  const pageHiddenRef = useRef(typeof document !== 'undefined' ? document.hidden : false);
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<SelectedGraphItem>(null);
   const [hovered, setHovered] = useState<SelectedGraphItem>(null);
@@ -171,9 +182,11 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
   }, [graph, selected]);
 
   const scheduleDraw = useCallback(() => {
+    if (pageHiddenRef.current) return;
     if (rafRef.current !== 0) return;
     rafRef.current = window.requestAnimationFrame(() => {
       rafRef.current = 0;
+      if (pageHiddenRef.current) return;
       drawGraph();
       if (hasActiveMotion()) scheduleDraw();
     });
@@ -200,6 +213,28 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     if (layoutPaused) simulationRef.current?.stop();
   }, [layoutPaused]);
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const onVisibilityChange = () => {
+      pageHiddenRef.current = document.hidden;
+      if (document.hidden) {
+        if (rafRef.current !== 0) {
+          window.cancelAnimationFrame(rafRef.current);
+          rafRef.current = 0;
+        }
+        simulationRef.current?.stop();
+        return;
+      }
+      if (!layoutPausedRef.current && simulationRef.current && simulationRef.current.alpha() > 0.002) {
+        simulationRef.current.restart();
+      }
+      scheduleDraw();
+    };
+    onVisibilityChange();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [scheduleDraw]);
+
   const fitGraph = useCallback(() => {
     const canvas = canvasRef.current;
     const simNodes = simNodesRef.current;
@@ -225,7 +260,8 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       node.fx = null;
       node.fy = null;
     }
-    simulationRef.current?.alpha(0.9).restart();
+    simulationRef.current?.alpha(0.9);
+    if (!pageHiddenRef.current) simulationRef.current?.restart();
     setLayoutPaused(false);
     fitGraph();
   }, [fitGraph]);
@@ -300,11 +336,16 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     if (settlePlan.ticks > 0) simulation.tick(settlePlan.ticks);
     simulation.on('tick', scheduleDraw);
     simulationRef.current = simulation;
-    if (settlePlan.restart) simulation.alpha(settlePlan.alpha).restart();
+    if (settlePlan.restart) {
+      simulation.alpha(settlePlan.alpha);
+      if (!pageHiddenRef.current) simulation.restart();
+    }
     scheduleDraw();
     if (!hasFittedRef.current) {
       hasFittedRef.current = true;
-      window.setTimeout(fitGraph, 40);
+      window.setTimeout(() => {
+        if (!pageHiddenRef.current) fitGraph();
+      }, 40);
     }
     return () => {
       simulationRef.current?.stop();
@@ -346,7 +387,10 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     setLayoutPaused((value) => {
       const next = !value;
       if (next) simulationRef.current?.stop();
-      else simulationRef.current?.alphaTarget(0.04).restart();
+      else {
+        simulationRef.current?.alphaTarget(0.04);
+        if (!pageHiddenRef.current) simulationRef.current?.restart();
+      }
       return next;
     });
   };
@@ -511,7 +555,11 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
 
   function hasActiveMotion(): boolean {
     const now = performance.now();
-    return cometsRef.current.some((comet) => now - comet.startedAt < comet.durationMs + 700) || glowsRef.current.some((glow) => now - glow.startedAt < glow.durationMs);
+    return netGraphShouldRunFrame({
+      pageHidden: pageHiddenRef.current,
+      activeComets: cometsRef.current.some((comet) => now - comet.startedAt < comet.durationMs + 700),
+      activeGlows: glowsRef.current.some((glow) => now - glow.startedAt < glow.durationMs)
+    });
   }
 
   function drawEdges(ctx: CanvasRenderingContext2D, selection: ReturnType<typeof selectionForNode>, hoverSelection: ReturnType<typeof selectionForNode> | null, theme: NetGraphThemeTokens) {
