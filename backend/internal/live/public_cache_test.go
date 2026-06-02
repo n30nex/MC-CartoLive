@@ -37,12 +37,21 @@ func TestPublicCacheStatusReportsTruncation(t *testing.T) {
 func TestRuntimeStatsRecordsPacketPressure(t *testing.T) {
 	stats := NewRuntimeStats()
 	stats.RecordPublicPacketsScan(2500, true)
+	stats.RecordPublicPacketsProjection(true, true, false)
+	stats.RecordPublicPacketsProjection(false, false, true)
 	stats.RecordPacketCountRefresh(12*time.Millisecond, true)
 	stats.RecordPacketPathBackfill(9*time.Millisecond, true, 4, 3, 2, 1, true)
 
 	snapshot := stats.Snapshot()
 	if snapshot.PublicPacketsLastScan != 2500 || snapshot.PublicPacketsScanCapped != 1 {
 		t.Fatalf("packet scan stats = %#v", snapshot)
+	}
+	if snapshot.PublicPacketsProjectionServed != 1 ||
+		snapshot.PublicPacketsProjectionFallback != 1 ||
+		snapshot.PublicPacketsProjectionErrors != 1 ||
+		snapshot.PublicPacketsProjectionLastAtMs <= 0 ||
+		snapshot.PublicPacketsProjectionComplete {
+		t.Fatalf("packet projection stats = %#v", snapshot)
 	}
 	if snapshot.PacketCountRefreshFailures != 1 || snapshot.PacketCountRefreshLastLatencyMs != 12 || snapshot.PacketCountRefreshLastAtMs <= 0 {
 		t.Fatalf("packet count refresh stats = %#v", snapshot)

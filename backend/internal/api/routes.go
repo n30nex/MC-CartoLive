@@ -126,61 +126,66 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 		runtime = s.Runtime.Snapshot()
 	}
 	payload := map[string]any{
-		"ok":                           true,
-		"ready":                        true,
-		"dbReady":                      dbReady,
-		"staticReady":                  staticReady,
-		"publicStateReady":             cacheStatus.Ready,
-		"cacheAgeMs":                   cacheStatus.CacheAgeMs,
-		"cacheUpdatedAt":               cacheStatus.UpdatedAt,
-		"cacheTruncatedNodes":          cacheStatus.TruncatedNodes,
-		"cacheTruncatedRoutes":         cacheStatus.TruncatedRoutes,
-		"cacheTruncatedRecentPulses":   cacheStatus.TruncatedRecentPulses,
-		"cacheTruncatedRecentActivity": cacheStatus.TruncatedRecentActivity,
-		"mqttConnected":                mqttStatus.Connected,
-		"mqttLastMessageAgeMs":         mqttStatus.LastMessageAgeMs,
-		"mqttMessages":                 mqttStatus.TotalMessages,
-		"mqttDroppedMessages":          mqttStatus.DroppedMessages,
-		"mqttReconnects":               mqttStatus.Reconnects,
-		"mqttMalformedTopics":          mqttStatus.MalformedTopics,
-		"wsClients":                    s.wsClientCount(),
-		"wsDroppedMessages":            publicHubStats.DroppedMessages,
-		"wsQueueHighWater":             publicHubStats.QueueHighWater,
-		"wsPingFailures":               publicHubStats.PingFailures,
-		"version":                      fallbackString(s.Config.AppVersion, "dev"),
-		"gitSha":                       fallbackString(s.Config.GitSHA, "unknown"),
-		"buildTime":                    fallbackString(s.Config.BuildTime, "unknown"),
-		"mapRegionPreset":              s.Config.MapRegionPreset,
-		"mapBounds":                    s.Config.MapBounds,
-		"defaultRegion":                s.Config.DefaultRegion,
-		"defaultCenter":                []float64{s.Config.DefaultCenterLng, s.Config.DefaultCenterLat},
-		"defaultZoom":                  s.Config.DefaultZoom,
-		"publicRegionRestricted":       s.Config.PublicRegionRestricted || s.Config.PublicIATARestricted,
-		"publicStateRequests":          runtime.PublicStateRequests,
-		"publicStateErrors":            runtime.PublicStateErrors,
-		"publicHistoryRequests":        runtime.PublicHistoryRequests,
-		"publicHistoryErrors":          runtime.PublicHistoryErrors,
-		"publicHistoryLatencyMs":       runtime.PublicHistoryLastLatencyMs,
-		"publicSummaryRequests":        runtime.PublicSummaryRequests,
-		"publicSummaryErrors":          runtime.PublicSummaryErrors,
-		"publicPacketsRequests":        runtime.PublicPacketsRequests,
-		"publicPacketsErrors":          runtime.PublicPacketsErrors,
-		"publicPacketsLatencyMs":       runtime.PublicPacketsLastLatencyMs,
-		"publicPacketsLastScan":        runtime.PublicPacketsLastScan,
-		"publicPacketsScanCapped":      runtime.PublicPacketsScanCapped,
-		"packetPathBackfillFailures":   runtime.PacketPathBackfillFailures,
-		"packetPathBackfillLatencyMs":  runtime.PacketPathBackfillLastLatencyMs,
-		"packetPathBackfillLastAt":     runtime.PacketPathBackfillLastAtMs,
-		"packetPathBackfillLastScan":   runtime.PacketPathBackfillLastScanned,
-		"packetPathBackfillProjected":  runtime.PacketPathBackfillLastProjected,
-		"packetPathBackfillMappable":   runtime.PacketPathBackfillLastMappable,
-		"packetPathBackfillInvalid":    runtime.PacketPathBackfillLastInvalid,
-		"packetPathBackfillRemaining":  runtime.PacketPathBackfillRemaining,
-		"cacheRefreshFailures":         runtime.CacheRefreshFailures,
-		"packetCountRefreshFailures":   runtime.PacketCountRefreshFailures,
-		"packetCountRefreshLatencyMs":  runtime.PacketCountRefreshLastLatencyMs,
-		"packetCountRefreshLastAt":     runtime.PacketCountRefreshLastAtMs,
-		"cached":                       cacheStatus.Ready,
+		"ok":                              true,
+		"ready":                           true,
+		"dbReady":                         dbReady,
+		"staticReady":                     staticReady,
+		"publicStateReady":                cacheStatus.Ready,
+		"cacheAgeMs":                      cacheStatus.CacheAgeMs,
+		"cacheUpdatedAt":                  cacheStatus.UpdatedAt,
+		"cacheTruncatedNodes":             cacheStatus.TruncatedNodes,
+		"cacheTruncatedRoutes":            cacheStatus.TruncatedRoutes,
+		"cacheTruncatedRecentPulses":      cacheStatus.TruncatedRecentPulses,
+		"cacheTruncatedRecentActivity":    cacheStatus.TruncatedRecentActivity,
+		"mqttConnected":                   mqttStatus.Connected,
+		"mqttLastMessageAgeMs":            mqttStatus.LastMessageAgeMs,
+		"mqttMessages":                    mqttStatus.TotalMessages,
+		"mqttDroppedMessages":             mqttStatus.DroppedMessages,
+		"mqttReconnects":                  mqttStatus.Reconnects,
+		"mqttMalformedTopics":             mqttStatus.MalformedTopics,
+		"wsClients":                       s.wsClientCount(),
+		"wsDroppedMessages":               publicHubStats.DroppedMessages,
+		"wsQueueHighWater":                publicHubStats.QueueHighWater,
+		"wsPingFailures":                  publicHubStats.PingFailures,
+		"version":                         fallbackString(s.Config.AppVersion, "dev"),
+		"gitSha":                          fallbackString(s.Config.GitSHA, "unknown"),
+		"buildTime":                       fallbackString(s.Config.BuildTime, "unknown"),
+		"mapRegionPreset":                 s.Config.MapRegionPreset,
+		"mapBounds":                       s.Config.MapBounds,
+		"defaultRegion":                   s.Config.DefaultRegion,
+		"defaultCenter":                   []float64{s.Config.DefaultCenterLng, s.Config.DefaultCenterLat},
+		"defaultZoom":                     s.Config.DefaultZoom,
+		"publicRegionRestricted":          s.Config.PublicRegionRestricted || s.Config.PublicIATARestricted,
+		"publicStateRequests":             runtime.PublicStateRequests,
+		"publicStateErrors":               runtime.PublicStateErrors,
+		"publicHistoryRequests":           runtime.PublicHistoryRequests,
+		"publicHistoryErrors":             runtime.PublicHistoryErrors,
+		"publicHistoryLatencyMs":          runtime.PublicHistoryLastLatencyMs,
+		"publicSummaryRequests":           runtime.PublicSummaryRequests,
+		"publicSummaryErrors":             runtime.PublicSummaryErrors,
+		"publicPacketsRequests":           runtime.PublicPacketsRequests,
+		"publicPacketsErrors":             runtime.PublicPacketsErrors,
+		"publicPacketsLatencyMs":          runtime.PublicPacketsLastLatencyMs,
+		"publicPacketsLastScan":           runtime.PublicPacketsLastScan,
+		"publicPacketsScanCapped":         runtime.PublicPacketsScanCapped,
+		"publicPacketsProjectionServed":   runtime.PublicPacketsProjectionServed,
+		"publicPacketsProjectionFallback": runtime.PublicPacketsProjectionFallback,
+		"publicPacketsProjectionErrors":   runtime.PublicPacketsProjectionErrors,
+		"publicPacketsProjectionLastAt":   runtime.PublicPacketsProjectionLastAtMs,
+		"publicPacketsProjectionComplete": runtime.PublicPacketsProjectionComplete,
+		"packetPathBackfillFailures":      runtime.PacketPathBackfillFailures,
+		"packetPathBackfillLatencyMs":     runtime.PacketPathBackfillLastLatencyMs,
+		"packetPathBackfillLastAt":        runtime.PacketPathBackfillLastAtMs,
+		"packetPathBackfillLastScan":      runtime.PacketPathBackfillLastScanned,
+		"packetPathBackfillProjected":     runtime.PacketPathBackfillLastProjected,
+		"packetPathBackfillMappable":      runtime.PacketPathBackfillLastMappable,
+		"packetPathBackfillInvalid":       runtime.PacketPathBackfillLastInvalid,
+		"packetPathBackfillRemaining":     runtime.PacketPathBackfillRemaining,
+		"cacheRefreshFailures":            runtime.CacheRefreshFailures,
+		"packetCountRefreshFailures":      runtime.PacketCountRefreshFailures,
+		"packetCountRefreshLatencyMs":     runtime.PacketCountRefreshLastLatencyMs,
+		"packetCountRefreshLastAt":        runtime.PacketCountRefreshLastAtMs,
+		"cached":                          cacheStatus.Ready,
 	}
 	if s.PublicState != nil {
 		if state, ok := s.PublicState(); ok {
@@ -910,7 +915,16 @@ func (s *Server) publicPacketsFromProjection(
 	filters publicPacketFilters,
 ) bool {
 	complete, err := s.Store.PublicPacketPathProjectionComplete(ctx, from, to)
-	if err != nil || !complete {
+	if err != nil {
+		if s.Runtime != nil {
+			s.Runtime.RecordPublicPacketsProjection(false, false, true)
+		}
+		return false
+	}
+	if !complete {
+		if s.Runtime != nil {
+			s.Runtime.RecordPublicPacketsProjection(false, false, false)
+		}
 		return false
 	}
 	packets := make([]live.PublicPacketPath, 0, limit)
@@ -931,6 +945,9 @@ func (s *Server) publicPacketsFromProjection(
 			Search:          filters.query,
 		})
 		if err != nil {
+			if s.Runtime != nil {
+				s.Runtime.RecordPublicPacketsProjection(false, true, true)
+			}
 			return false
 		}
 		scanned += len(rawPackets)
@@ -964,6 +981,7 @@ func (s *Server) publicPacketsFromProjection(
 	}
 	nextCursorToken := publicPacketsNextCursorToken(nextCursor, exhausted, len(packets), limit, scanned)
 	if s.Runtime != nil {
+		s.Runtime.RecordPublicPacketsProjection(true, true, false)
 		s.Runtime.RecordPublicPacketsScan(scanned, nextCursorToken != "" && scanned >= publicPacketsMaxRawScan)
 	}
 	writeJSON(w, http.StatusOK, live.PublicPacketsResponse{

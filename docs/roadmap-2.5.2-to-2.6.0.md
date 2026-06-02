@@ -2,9 +2,10 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.5.45` public-safe packet-path projection backfill
-observability, bounded public packet-path projection backfill, public
-packet-path projection groundwork, release workflow Node 24 compatibility, cacheless
+Baseline audited: `v2.5.46` public-safe Packets projection-path
+observability, public-safe packet-path projection backfill observability,
+bounded public packet-path projection backfill, public packet-path projection
+groundwork, release workflow Node 24 compatibility, cacheless
 public-state fallback pressure reduction, ingest observer lookup pressure
 reduction, runtime counter logging pressure reduction, NetGraph hidden-tab
 frame/layout pause, render-quality frame pacing, calmer Live Follow, direct
@@ -18,8 +19,8 @@ parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query
 indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route
 readability, NetGraph helper, 3D chase-helper, release-privacy scan work, and
 the first internal public packet-path projection slice, recent projection
-backfill for upgraded databases, and backfill progress fields in
-health/readiness.
+backfill for upgraded databases, backfill progress fields in health/readiness,
+and projection-vs-fallback Packets request counters.
 
 ## Audit Coverage
 
@@ -96,6 +97,24 @@ These decisions were confirmed on 2026-06-01 and should guide the rest of the
 - Saved screenshot artifacts are required for major releases like 2.6.0, not
   every patch release.
 - The final 2.6 feature slot is NetGraph improvements plus the Chat page.
+
+## 2.5.46 - Packets Projection-Path Observability
+
+Goal: make the remaining Packets data-plane pressure visible without changing
+public packet response shapes.
+
+Status: implemented through public-safe `/healthz` and `/readyz` fields. The
+runtime now counts projected packet requests served from the indexed
+projection, requests that fell back to legacy conversion, projection query
+errors, and whether the last requested window was projection-complete.
+
+### Acceptance
+
+- Operators can see whether `/api/v1/public/packets` is using the indexed
+  projection path or falling back to conversion.
+- Projection check/query errors increment a public-safe error counter.
+- No public packet API schema, cursor behavior, true-route validation, region
+  scoping, or privacy boundary is changed.
 
 ## 2.5.45 - Packet-Path Projection Backfill Observability
 

@@ -20,6 +20,11 @@ type RuntimeStats struct {
 	publicPacketsLastLatencyMs      atomic.Int64
 	publicPacketsLastScan           atomic.Int64
 	publicPacketsScanCapped         atomic.Int64
+	publicPacketsProjectionServed   atomic.Int64
+	publicPacketsProjectionFallback atomic.Int64
+	publicPacketsProjectionErrors   atomic.Int64
+	publicPacketsProjectionLastAtMs atomic.Int64
+	publicPacketsProjectionComplete atomic.Int64
 	cacheRefreshFailures            atomic.Int64
 	cacheRefreshLastLatencyMs       atomic.Int64
 	cacheRefreshLastAtMs            atomic.Int64
@@ -51,6 +56,11 @@ type RuntimeStatsSnapshot struct {
 	PublicPacketsLastLatencyMs      int64 `json:"publicPacketsLastLatencyMs"`
 	PublicPacketsLastScan           int64 `json:"publicPacketsLastScan"`
 	PublicPacketsScanCapped         int64 `json:"publicPacketsScanCapped"`
+	PublicPacketsProjectionServed   int64 `json:"publicPacketsProjectionServed"`
+	PublicPacketsProjectionFallback int64 `json:"publicPacketsProjectionFallback"`
+	PublicPacketsProjectionErrors   int64 `json:"publicPacketsProjectionErrors"`
+	PublicPacketsProjectionLastAtMs int64 `json:"publicPacketsProjectionLastAtMs"`
+	PublicPacketsProjectionComplete bool  `json:"publicPacketsProjectionComplete"`
 	CacheRefreshFailures            int64 `json:"cacheRefreshFailures"`
 	CacheRefreshLastLatencyMs       int64 `json:"cacheRefreshLastLatencyMs"`
 	CacheRefreshLastAtMs            int64 `json:"cacheRefreshLastAtMs"`
@@ -128,6 +138,26 @@ func (s *RuntimeStats) RecordPublicPacketsScan(eventsScanned int, capped bool) {
 	}
 }
 
+func (s *RuntimeStats) RecordPublicPacketsProjection(served bool, complete bool, failed bool) {
+	if s == nil {
+		return
+	}
+	if served {
+		s.publicPacketsProjectionServed.Add(1)
+	} else {
+		s.publicPacketsProjectionFallback.Add(1)
+	}
+	if failed {
+		s.publicPacketsProjectionErrors.Add(1)
+	}
+	if complete {
+		s.publicPacketsProjectionComplete.Store(1)
+	} else {
+		s.publicPacketsProjectionComplete.Store(0)
+	}
+	s.publicPacketsProjectionLastAtMs.Store(time.Now().UnixMilli())
+}
+
 func (s *RuntimeStats) RecordCacheRefresh(duration time.Duration, failed bool) {
 	if s == nil {
 		return
@@ -189,6 +219,11 @@ func (s *RuntimeStats) Snapshot() RuntimeStatsSnapshot {
 		PublicPacketsLastLatencyMs:      s.publicPacketsLastLatencyMs.Load(),
 		PublicPacketsLastScan:           s.publicPacketsLastScan.Load(),
 		PublicPacketsScanCapped:         s.publicPacketsScanCapped.Load(),
+		PublicPacketsProjectionServed:   s.publicPacketsProjectionServed.Load(),
+		PublicPacketsProjectionFallback: s.publicPacketsProjectionFallback.Load(),
+		PublicPacketsProjectionErrors:   s.publicPacketsProjectionErrors.Load(),
+		PublicPacketsProjectionLastAtMs: s.publicPacketsProjectionLastAtMs.Load(),
+		PublicPacketsProjectionComplete: s.publicPacketsProjectionComplete.Load() == 1,
 		CacheRefreshFailures:            s.cacheRefreshFailures.Load(),
 		CacheRefreshLastLatencyMs:       s.cacheRefreshLastLatencyMs.Load(),
 		CacheRefreshLastAtMs:            s.cacheRefreshLastAtMs.Load(),

@@ -5,15 +5,16 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.45` is the active foundation patch toward the next production-ready
+Version `2.5.46` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: public-safe packet-path projection backfill
-  observability, bounded public packet-path projection backfill, public
-  packet-path projection groundwork, release workflow Node 24 compatibility,
+- Current patch focus: public-safe Packets projection-path observability,
+  public-safe packet-path projection backfill observability, bounded public
+  packet-path projection backfill, public packet-path projection groundwork,
+  release workflow Node 24 compatibility,
   cacheless public-state fallback pressure reduction, ingest observer lookup
   pressure reduction, runtime counter logging pressure reduction, NetGraph
   hidden-tab animation pausing, render-quality controls, quality-aware animation
@@ -48,6 +49,15 @@ Version `2.5.45` is the active foundation patch toward the next production-ready
   screenshot artifacts, and operator diagnostic scripts.
 - Keep docs concise enough that new operators can deploy, smoke test, diagnose,
   back up, restore, and upgrade without reading historical planning notes.
+
+## 2.5.46 Patch Focus
+
+- Expose public-safe `/api/v1/public/packets` projection-path counters in
+  `/healthz` and `/readyz`.
+- Count indexed projection serves, conversion fallbacks, projection errors, and
+  whether the latest requested packet window was projection-complete.
+- Preserve public packet response shapes, true-route validation, hosted Canada
+  scoping, package worldwide behavior, and privacy boundaries.
 
 ## 2.5.45 Patch Focus
 

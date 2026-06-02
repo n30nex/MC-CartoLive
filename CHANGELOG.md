@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 2.5.46 - 2026-06-02
+
+- Added public-safe Packets projection-path counters to `/healthz` and
+  `/readyz` so operators can see indexed projection serves, conversion
+  fallbacks, projection errors, and whether the latest requested window was
+  projection-complete.
+- Recorded projection-vs-fallback decisions inside `/api/v1/public/packets`
+  without changing response shape, cursor behavior, true-route validation, or
+  privacy boundaries.
+- Kept hosted Canada scoping and package worldwide/private-broker behavior
+  unchanged.
+
 ## 2.5.45 - 2026-06-02
 
 - Exposed public-safe packet-path projection backfill progress in `/healthz`
