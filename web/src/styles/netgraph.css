@@ -140,6 +140,74 @@
   font-weight: 800;
 }
 
+.netgraph-legend {
+  position: absolute;
+  top: 14px;
+  left: calc(14px + var(--ui-safe-left, 0px));
+  width: min(324px, calc(100% - 28px));
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--mc-border, #38bdf8) 46%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--mc-surface-strong, #101827) 78%, transparent);
+  color: var(--mc-text, #edf5ff);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 36px var(--mc-shadow, rgba(0, 0, 0, 0.28));
+  pointer-events: none;
+}
+
+.netgraph-legend-group {
+  display: grid;
+  gap: 7px;
+}
+
+.netgraph-legend-group > span {
+  color: color-mix(in srgb, var(--mc-accent, #38bdf8) 76%, var(--mc-text, #ffffff));
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.netgraph-legend-group > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.netgraph-legend-item,
+.netgraph-legend-payload {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--mc-border, #38bdf8) 42%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--mc-control-bg, #101827) 72%, transparent);
+  color: var(--mc-text-normal, #cbd5e1);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.netgraph-legend-item img {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
+.netgraph-legend-payload {
+  border-color: color-mix(in srgb, var(--payload-color) 48%, transparent);
+}
+
+.netgraph-legend-payload i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--payload-color);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--payload-color) 72%, transparent);
+}
+
 .netgraph-inspector {
   position: absolute;
   right: 18px;
@@ -162,6 +230,19 @@
 .netgraph-inspector h3 {
   margin: 4px 28px 12px 0;
   font-size: 1.08rem;
+}
+
+.netgraph-inspector-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.netgraph-inspector-title img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--mc-accent, #38bdf8) 46%, transparent));
 }
 
 .netgraph-inspector p {
@@ -213,7 +294,8 @@
 
 .app-shell[data-theme-mode="light"] .netgraph-live-chip,
 .app-shell[data-theme-mode="light"] .netgraph-inspector,
-.app-shell[data-theme-mode="light"] .netgraph-empty {
+.app-shell[data-theme-mode="light"] .netgraph-empty,
+.app-shell[data-theme-mode="light"] .netgraph-legend {
   background: color-mix(in srgb, var(--mc-surface-strong, #ffffff) 88%, transparent);
 }
 
@@ -269,5 +351,13 @@
     top: 10px;
     bottom: auto;
     left: calc(10px + var(--ui-safe-left, 0px));
+  }
+
+  .netgraph-legend {
+    top: 58px;
+    left: calc(10px + var(--ui-safe-left, 0px));
+    max-width: calc(100% - 20px);
+    max-height: 32vh;
+    overflow: hidden;
   }
 }

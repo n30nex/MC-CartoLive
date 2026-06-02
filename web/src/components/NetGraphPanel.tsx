@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Activity, Maximize2, Pause, Play, RotateCcw, Search, X } from 'lucide-react';
 import {
   forceCenter,
@@ -36,8 +36,8 @@ import {
   stableVisibleGraph,
   type NetGraphEdgeRenderPlan
 } from '../netgraphLayout';
-import { OBSERVER_NODE_VISUAL, nodeRoleVisual, type NodeIconShape } from '../nodeVisuals';
-import { payloadVisual } from '../payloadVisuals';
+import { NODE_ROLE_VISUALS, OBSERVER_NODE_VISUAL, nodeRoleVisual, type NodeIconShape } from '../nodeVisuals';
+import { payloadLegendVisuals, payloadVisual } from '../payloadVisuals';
 import type { PublicActivity, PublicNode, PublicRoute, PublicRoutePulse } from '../types';
 
 export { packedComponentCells };
@@ -709,6 +709,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
         />
         {!canvasReady && <div className="netgraph-empty">Preparing graph layout...</div>}
         {graph.nodes.length === 0 && <div className="netgraph-empty">No connected public routes are available yet.</div>}
+        <NetGraphLegend />
         <div className="netgraph-live-chip">
           <Activity size={14} />
           <span>{socketStatus}</span>
@@ -736,6 +737,7 @@ function NetGraphInspector({
   directRouteCount: number;
   onClear: () => void;
 }) {
+  const selectedNodeVisual = selectedNode ? selectedNode.isObserver ? OBSERVER_NODE_VISUAL : nodeRoleVisual(selectedNode.role) : null;
   if (!selectedNode && !selectedEdge) {
     return (
       <aside className="netgraph-inspector empty">
@@ -752,7 +754,10 @@ function NetGraphInspector({
       {selectedNode && (
         <>
           <span className="panel-eyebrow">{selectedNode.isObserver ? 'Observer node' : selectedNode.role}</span>
-          <h3>{selectedNode.label}</h3>
+          <h3 className="netgraph-inspector-title">
+            {selectedNodeVisual && <img src={selectedNodeVisual.icon} alt="" />}
+            <span>{selectedNode.label}</span>
+          </h3>
           <dl>
             <div><dt>Role</dt><dd>{selectedNode.role}</dd></div>
             <div><dt>Observer</dt><dd>{selectedNode.isObserver ? 'Yes' : 'No'}</dd></div>
@@ -776,6 +781,41 @@ function NetGraphInspector({
           </dl>
         </>
       )}
+    </aside>
+  );
+}
+
+function NetGraphLegend() {
+  const roleVisuals = [...NODE_ROLE_VISUALS.slice(0, 3), OBSERVER_NODE_VISUAL, ...NODE_ROLE_VISUALS.slice(3)];
+  const payloads = payloadLegendVisuals();
+  return (
+    <aside className="netgraph-legend" aria-label="NetGraph legend">
+      <div className="netgraph-legend-group">
+        <span>Devices</span>
+        <div>
+          {roleVisuals.map((visual) => (
+            <span key={visual.key} className="netgraph-legend-item">
+              <img src={visual.icon} alt="" />
+              <b>{visual.label}</b>
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="netgraph-legend-group">
+        <span>Packets</span>
+        <div>
+          {payloads.map((visual) => (
+            <span
+              key={visual.className}
+              className="netgraph-legend-payload"
+              style={{ '--payload-color': visual.color } as CSSProperties}
+            >
+              <i />
+              <b>{visual.shortLabel}</b>
+            </span>
+          ))}
+        </div>
+      </div>
     </aside>
   );
 }

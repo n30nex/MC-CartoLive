@@ -3254,7 +3254,7 @@ function followTrafficTarget(
       center: usablePoints[0],
       zoom,
       duration: decision.durationMs,
-      easing: easeOutCubic
+      easing: easeLinear
     });
     return;
   }
@@ -3263,7 +3263,7 @@ function followTrafficTarget(
     padding: followTrafficPadding(map),
     maxZoom: FOLLOW_TRAFFIC_ROUTE_MAX_ZOOM,
     duration: decision.durationMs,
-    easing: easeOutCubic
+    easing: easeLinear
   });
 }
 

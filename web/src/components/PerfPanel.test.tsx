@@ -22,25 +22,26 @@ describe('PerfPanel helpers', () => {
   });
 
   it('summarizes the live system from public-safe health signals', () => {
-    expect(systemSummaryFromHealth({ mqttConnected: true, mqttLastMessageAgeMs: 10_000, publicLiveFresh: true }, { ready: true }, 6, 6)).toEqual({ value: 'live', tone: 'good' });
-    expect(systemSummaryFromHealth({ mqttConnected: false, publicLiveFresh: false }, { ready: true }, 5, 6)).toEqual({ value: 'degraded', tone: 'warn' });
-    expect(systemSummaryFromHealth(null, null, 0, 6)).toEqual({ value: 'offline', tone: 'bad' });
+    expect(systemSummaryFromHealth({ mqttConnected: true, mqttLastMessageAgeMs: 10_000, routeMotionState: 'moving' }, { ready: true }, 3, 3)).toEqual({ value: 'live', tone: 'good' });
+    expect(systemSummaryFromHealth({ mqttConnected: false, routeMotionState: 'stale' }, { ready: true }, 2, 3)).toEqual({ value: 'degraded', tone: 'warn' });
+    expect(systemSummaryFromHealth(null, null, 0, 3)).toEqual({ value: 'offline', tone: 'bad' });
   });
 
   it('renders the public-safe live status shell', () => {
     const html = renderToStaticMarkup(<PerfPanel onClose={() => undefined} />);
     expect(html).toContain('Live Status');
     expect(html).toContain('Is the system live?');
-    expect(html).toContain('Browser / Public API');
-    expect(html).toContain('MQTT Ingest');
-    expect(html).toContain('Routes / Map Motion');
-    expect(html).toContain('Clients / Public Data');
-    expect(html).toContain('Packet endpoint');
-    expect(html).toContain('Chat endpoint');
+    expect(html).toContain('Backend');
+    expect(html).toContain('Frontend');
+    expect(html).toContain('MQTT');
+    expect(html).toContain('Live routes');
+    expect(html).not.toContain('History fetch');
+    expect(html).not.toContain('Packet endpoint');
+    expect(html).not.toContain('Chat endpoint');
     expect(html).not.toContain('Perf Lab');
     expect(html).not.toContain('local-only');
     expect(html).not.toContain('Git SHA');
     expect(html).not.toContain('packet hash');
-    expect(html).toContain('Public-safe aggregate checks only.');
+    expect(html).toContain('Public-safe live checks only.');
   });
 });

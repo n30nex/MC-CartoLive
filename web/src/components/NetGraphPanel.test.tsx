@@ -10,6 +10,10 @@ describe('NetGraphPanel', () => {
     expect(html).toContain('NetGraph');
     expect(html).toContain('Live Network Graph');
     expect(html).toContain('Search nodes, routes, region');
+    expect(html).toContain('Devices');
+    expect(html).toContain('Packets');
+    expect(html).toContain('Repeater');
+    expect(html).toContain('Observer');
     expect(html).toContain('Close');
     expect(html).not.toContain('packet hash');
     expect(html).not.toContain('raw path');

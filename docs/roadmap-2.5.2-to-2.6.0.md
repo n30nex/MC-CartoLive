@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.34` browser smoke gate and mobile Perf/Packets clipping fix, OpenFreeMap selected-packet chase camera refinement, OpenFreeMap 3D adaptive LOD/budgets, long-text Chat rebroadcast dedupe, OpenFreeMap 3D render-cost reduction, palette-aware NetGraph visuals, live-status simplification, calmer Live Follow, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.35` live-status simplification, slower Live Follow, broader palette token coverage, NetGraph legend/icon alignment, browser smoke gate and mobile Perf/Packets clipping fix, OpenFreeMap selected-packet chase camera refinement, OpenFreeMap 3D adaptive LOD/budgets, long-text Chat rebroadcast dedupe, OpenFreeMap 3D render-cost reduction, palette-aware NetGraph visuals, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,25 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.35 - Live Status, Live Follow, Theme, And NetGraph Visual Polish
+
+Goal: address the next user-facing 2.6 readiness issues without changing
+public schemas: Perf must be a useful live/not-live page, Live Follow must be
+watchable, more UI status color must follow the selected palette, and NetGraph
+must look like part of the same map product.
+
+Scope:
+
+- Replace the broad Perf detail view with four direct status surfaces:
+  backend, frontend/public API, MQTT ingest, and live routes.
+- Reduce Perf refresh pressure by polling only health, readiness, and public
+  state.
+- Increase Live Follow camera duration and minimum spacing, use lower zoom caps,
+  and use linear movement for less jumpy live-follow behavior.
+- Add missing palette aliases for warning/error status styling.
+- Add a compact NetGraph legend and selected-node role icons sourced from the
+  same device and payload registries as the live map legend.
 
 ## 2.5.34 - Browser Smoke Gate And Mobile Panel Fix
 

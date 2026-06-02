@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Activity, Radio, RefreshCw, Server, Signal, UsersRound, X } from 'lucide-react';
-import { fetchHealthz, fetchPublicChat, fetchPublicHistory, fetchPublicPackets, fetchPublicState, fetchReadyz } from '../api';
+import { MonitorSmartphone, Radio, RefreshCw, Route, Server, X } from 'lucide-react';
+import { fetchHealthz, fetchPublicState, fetchReadyz } from '../api';
 import type { PublicLiveState, RuntimeHealth } from '../types';
 
 interface PerfPanelProps {
   onClose: () => void;
 }
 
-type EndpointKey = 'health' | 'ready' | 'state' | 'history' | 'packets' | 'chat';
+type EndpointKey = 'health' | 'ready' | 'state';
 type PerfTone = 'good' | 'warn' | 'bad' | 'quiet';
 
 interface EndpointStatus {
@@ -20,9 +20,6 @@ interface PerfSnapshot {
   health: RuntimeHealth | null;
   ready: RuntimeHealth | null;
   state: PublicLiveState | null;
-  historyEvents: number | null;
-  packetPaths: number | null;
-  chatMessages: number | null;
   endpoints: Record<EndpointKey, EndpointStatus>;
   checkedAt: number;
 }
@@ -30,10 +27,7 @@ interface PerfSnapshot {
 const ENDPOINT_LABELS: Record<EndpointKey, string> = {
   health: '/healthz',
   ready: '/readyz',
-  state: '/api/v1/public/state',
-  history: '/api/v1/public/history',
-  packets: '/api/v1/public/packets',
-  chat: '/api/v1/public/chat'
+  state: '/api/v1/public/state'
 };
 
 const ENDPOINT_COUNT = Object.keys(ENDPOINT_LABELS).length;
@@ -54,33 +48,23 @@ export default function PerfPanel({ onClose }: PerfPanelProps) {
     requestIDRef.current = requestID;
     setLoading(true);
     setError(null);
-    const now = Date.now();
     Promise.allSettled([
       fetchHealthz(),
       fetchReadyz(),
-      fetchPublicState(),
-      fetchPublicHistory({ from: now - 10 * 60_000, to: now, limit: 25 }),
-      fetchPublicPackets({ from: now - 10 * 60_000, to: now, limit: 25 }),
-      fetchPublicChat({ from: now - 60 * 60_000, to: now, limit: 25 })
+      fetchPublicState()
     ])
-      .then(([healthResult, readyResult, stateResult, historyResult, packetsResult, chatResult]) => {
+      .then(([healthResult, readyResult, stateResult]) => {
         if (!mountedRef.current || requestID !== requestIDRef.current) return;
         const endpoints = {
           health: endpointFromResult('health', healthResult),
           ready: endpointFromResult('ready', readyResult),
-          state: endpointFromResult('state', stateResult),
-          history: endpointFromResult('history', historyResult),
-          packets: endpointFromResult('packets', packetsResult),
-          chat: endpointFromResult('chat', chatResult)
+          state: endpointFromResult('state', stateResult)
         };
         const online = countOnline(endpoints);
         setSnapshot({
           health: settledValue(healthResult),
           ready: settledValue(readyResult),
           state: settledValue(stateResult),
-          historyEvents: settledValue(historyResult)?.window.count ?? null,
-          packetPaths: settledValue(packetsResult)?.window.count ?? null,
-          chatMessages: settledValue(chatResult)?.window.count ?? null,
           endpoints,
           checkedAt: Date.now()
         });
@@ -109,22 +93,21 @@ export default function PerfPanel({ onClose }: PerfPanelProps) {
   const ready = snapshot?.ready ?? null;
   const state = snapshot?.state ?? null;
   const endpoints = snapshot?.endpoints ?? EMPTY_ENDPOINTS;
-  const lastChecked = useMemo(() => snapshot ? new Date(snapshot.checkedAt).toLocaleTimeString() : 'checking', [snapshot]);
   const apiOnline = countOnline(endpoints);
+  const lastChecked = useMemo(() => snapshot ? new Date(snapshot.checkedAt).toLocaleTimeString() : 'checking', [snapshot]);
   const systemStatus = systemSummary(snapshot);
-  const backendStatus = backendSummary(endpoints, ready);
+  const backendStatus = backendSummary(endpoints, ready, health);
+  const frontendStatus = frontendSummary(endpoints, health);
   const mqttStatus = mqttSummary(health);
-  const mapStatus = mapMotionSummary(health);
-  const wsStatus = websocketSummary(health, state);
-  const packetEndpoint = endpointSummary(endpoints.packets, snapshot?.packetPaths);
-  const chatEndpoint = endpointSummary(endpoints.chat, snapshot?.chatMessages);
+  const routeStatus = liveRouteSummary(health);
 
   return (
-    <section className="perf-panel" aria-label="Live deployment status">
+    <section className="perf-panel perf-live-panel" aria-label="Live deployment status">
       <header className="perf-panel-header">
         <div>
           <span className="panel-eyebrow">Live Status</span>
           <h2>Is the system live?</h2>
+          <p>{lastChecked}</p>
         </div>
         <div className="perf-panel-actions">
           <button type="button" className="icon-button" title="Refresh live status" onClick={refresh}>
@@ -136,75 +119,64 @@ export default function PerfPanel({ onClose }: PerfPanelProps) {
         </div>
       </header>
 
-      <div className="perf-status-strip">
-        <PerfStatus label="System" value={systemStatus.value} tone={systemStatus.tone} />
-        <PerfStatus label="Backend" value={backendStatus.value} tone={backendStatus.tone} />
-        <PerfStatus label="Public API" value={snapshot ? `${apiOnline}/${ENDPOINT_COUNT} online` : 'checking'} tone={snapshot ? reachabilityTone(apiOnline, ENDPOINT_COUNT) : 'quiet'} />
-        <PerfStatus label="MQTT ingest" value={mqttStatus.value} tone={mqttStatus.tone} />
-        <PerfStatus label="Map motion" value={mapStatus.value} tone={mapStatus.tone} />
-        <PerfStatus label="Websocket" value={wsStatus.value} tone={wsStatus.tone} />
-        <PerfStatus label="Packets" value={packetEndpoint.value} tone={packetEndpoint.tone} />
-        <PerfStatus label="Chat" value={chatEndpoint.value} tone={chatEndpoint.tone} />
+      <div className={`perf-live-hero perf-${systemStatus.tone}`}>
+        <span>System</span>
+        <strong>{systemStatus.value}</strong>
       </div>
 
       {error && <div className="perf-error" role="alert">{error}</div>}
-      {loading && !snapshot && <div className="perf-loading">Checking public live status...</div>}
+      {loading && !snapshot && <div className="perf-loading">Checking live status...</div>}
 
-      <div className="perf-grid">
-        <PerfSection icon={<Server size={17} />} title="Backend">
-          <PerfMetric label="Health endpoint" value={endpointValue(endpoints.health)} tone={endpointTone(endpoints.health)} title={endpoints.health.error} />
-          <PerfMetric label="Ready endpoint" value={ready?.ready ? 'ready' : endpointValue(endpoints.ready)} tone={ready?.ready ? 'good' : endpointTone(endpoints.ready)} title={endpoints.ready.error} />
-          <PerfMetric label="Database" value={formatReady(health?.dbReady)} tone={readyTone(health?.dbReady)} />
-          <PerfMetric label="Public state" value={formatReady(health?.publicStateReady)} tone={readyTone(health?.publicStateReady)} />
-          <PerfMetric label="Cache age" value={formatAge(health?.cacheAgeMs)} tone={freshnessTone(health?.cacheAgeMs, 60_000)} />
-        </PerfSection>
+      <div className="perf-grid perf-live-grid">
+        <PerfLiveCard icon={<Server size={18} />} label="Backend" status={backendStatus.value} tone={backendStatus.tone}>
+          <PerfMetric label="Ready" value={formatReady(ready?.ready)} tone={readyTone(ready?.ready)} />
+          <PerfMetric label="DB" value={formatReady(health?.dbReady)} tone={readyTone(health?.dbReady)} />
+          <PerfMetric label="Cache" value={formatAge(health?.cacheAgeMs)} tone={freshnessTone(health?.cacheAgeMs, 60_000)} />
+        </PerfLiveCard>
 
-        <PerfSection icon={<Signal size={17} />} title="Browser / Public API">
-          <PerfMetric label="State fetch" value={endpointValue(endpoints.state)} tone={endpointTone(endpoints.state)} title={endpoints.state.error} />
-          <PerfMetric label="History fetch" value={endpointValue(endpoints.history)} tone={endpointTone(endpoints.history)} title={endpoints.history.error} />
-          <PerfMetric label="Packet endpoint" value={endpointValue(endpoints.packets)} tone={endpointTone(endpoints.packets)} title={endpoints.packets.error} />
-          <PerfMetric label="Chat endpoint" value={endpointValue(endpoints.chat)} tone={endpointTone(endpoints.chat)} title={endpoints.chat.error} />
-          <PerfMetric label="Last check" value={lastChecked} />
-        </PerfSection>
+        <PerfLiveCard icon={<MonitorSmartphone size={18} />} label="Frontend" status={frontendStatus.value} tone={frontendStatus.tone}>
+          <PerfMetric label="App" value={health?.staticReady === false ? 'static issue' : 'loaded'} tone={health?.staticReady === false ? 'bad' : 'good'} />
+          <PerfMetric label="State API" value={endpointValue(endpoints.state)} tone={endpointTone(endpoints.state)} title={endpoints.state.error} />
+          <PerfMetric label="Public API" value={snapshot ? `${apiOnline}/${ENDPOINT_COUNT}` : 'checking'} tone={snapshot ? reachabilityTone(apiOnline, ENDPOINT_COUNT) : 'quiet'} />
+        </PerfLiveCard>
 
-        <PerfSection icon={<Radio size={17} />} title="MQTT Ingest">
+        <PerfLiveCard icon={<Radio size={18} />} label="MQTT" status={mqttStatus.value} tone={mqttStatus.tone}>
           <PerfMetric label="Connection" value={health?.mqttConnected ? 'connected' : health?.mqttConnected === false ? 'offline' : 'unknown'} tone={health?.mqttConnected ? 'good' : health?.mqttConnected === false ? 'bad' : 'quiet'} />
-          <PerfMetric label="Message age" value={formatAge(health?.mqttLastMessageAgeMs)} tone={freshnessTone(health?.mqttLastMessageAgeMs, 60_000)} />
-          <PerfMetric label="Messages" value={formatCount(health?.mqttMessages ?? state?.stats.mqttMessages)} />
-          <PerfMetric label="Reconnects" value={formatCount(health?.mqttReconnects)} />
-          <PerfMetric label="Dropped" value={formatCount(health?.mqttDroppedMessages)} />
-        </PerfSection>
+          <PerfMetric label="Last packet" value={formatAge(health?.mqttLastMessageAgeMs)} tone={freshnessTone(health?.mqttLastMessageAgeMs, 60_000)} />
+          <PerfMetric label="Drops" value={formatCount(health?.mqttDroppedMessages)} tone={(health?.mqttDroppedMessages ?? 0) > 0 ? 'warn' : undefined} />
+        </PerfLiveCard>
 
-        <PerfSection icon={<Activity size={17} />} title="Routes / Map Motion">
-          <PerfMetric label="Ingest" value={health?.packetIngestState ?? 'unknown'} tone={toneForState(health?.packetIngestState)} />
-          <PerfMetric label="Map motion" value={health?.mapMotionState ?? 'unknown'} tone={toneForState(health?.mapMotionState)} />
+        <PerfLiveCard icon={<Route size={18} />} label="Live routes" status={routeStatus.value} tone={routeStatus.tone}>
           <PerfMetric label="Route motion" value={health?.routeMotionState ?? 'unknown'} tone={toneForState(health?.routeMotionState)} />
-          <PerfMetric label="Observer motion" value={health?.observerMotionState ?? 'unknown'} tone={toneForState(health?.observerMotionState)} />
-          <PerfMetric label="Route pulse age" value={formatAge(health?.recentRoutePulseAgeMs)} tone={freshnessTone(health?.recentRoutePulseAgeMs, 60_000)} />
-          <PerfMetric label="Observer age" value={formatAge(health?.recentObserverBurstAgeMs)} tone={freshnessTone(health?.recentObserverBurstAgeMs, 60_000)} />
-        </PerfSection>
-
-        <PerfSection icon={<UsersRound size={17} />} title="Clients / Public Data">
-          <PerfMetric label="WS clients" value={formatCount(health?.wsClients ?? state?.stats.wsClients)} />
-          <PerfMetric label="WS drops" value={formatCount(health?.wsDroppedMessages)} tone={(health?.wsDroppedMessages ?? 0) > 0 ? 'warn' : undefined} />
-          <PerfMetric label="Total packets" value={formatCount(state?.stats.packets ?? health?.packets)} />
-          <PerfMetric label="Nodes / routes" value={`${formatCount(state?.stats.activeNodes ?? health?.nodesWithPosition)} / ${formatCount(state?.stats.activeRoutes ?? health?.edgeEvents)}`} />
-          <PerfMetric label="History sample" value={formatCount(snapshot?.historyEvents)} />
-          <PerfMetric label="Packet / chat sample" value={`${formatCount(snapshot?.packetPaths)} / ${formatCount(snapshot?.chatMessages)}`} />
-        </PerfSection>
+          <PerfMetric label="Route pulse" value={formatAge(health?.recentRoutePulseAgeMs)} tone={freshnessTone(health?.recentRoutePulseAgeMs, 60_000)} />
+          <PerfMetric label="Routes" value={formatCount(state?.stats.activeRoutes ?? health?.edgeEvents)} />
+        </PerfLiveCard>
       </div>
 
       <p className="perf-note">
-        Public-safe aggregate checks only.
+        Public-safe live checks only.
       </p>
     </section>
   );
 }
 
-function PerfSection({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+function PerfLiveCard({
+  icon,
+  label,
+  status,
+  tone,
+  children
+}: {
+  icon: ReactNode;
+  label: string;
+  status: string;
+  tone: PerfTone;
+  children: ReactNode;
+}) {
   return (
-    <section className="perf-card">
-      <h3>{icon}<span>{title}</span></h3>
+    <section className={`perf-card perf-live-card perf-${tone}`}>
+      <h3>{icon}<span>{label}</span></h3>
+      <strong className="perf-live-card-status">{status}</strong>
       <div className="perf-metrics">{children}</div>
     </section>
   );
@@ -213,15 +185,6 @@ function PerfSection({ icon, title, children }: { icon: ReactNode; title: string
 function PerfMetric({ label, value, tone, title }: { label: string; value: string; tone?: PerfTone; title?: string }) {
   return (
     <div className={`perf-metric ${tone ? `perf-${tone}` : ''}`} title={title}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function PerfStatus({ label, value, tone }: { label: string; value: string; tone: PerfTone }) {
-  return (
-    <div className={`perf-status perf-${tone}`}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
@@ -294,11 +257,17 @@ function reachabilityTone(online: number, total: number): PerfTone {
   return 'bad';
 }
 
-function backendSummary(endpoints: Record<EndpointKey, EndpointStatus>, ready: RuntimeHealth | null): { value: string; tone: PerfTone } {
-  if (ready?.ready) return { value: 'ready', tone: 'good' };
-  if (endpoints.ready.ok) return { value: 'not ready', tone: 'warn' };
-  if (endpoints.health.ok) return { value: 'health only', tone: 'warn' };
-  return { value: 'unreachable', tone: 'bad' };
+function backendSummary(endpoints: Record<EndpointKey, EndpointStatus>, ready: RuntimeHealth | null, health: RuntimeHealth | null): { value: string; tone: PerfTone } {
+  if (ready?.ready && health?.dbReady !== false && health?.publicStateReady !== false) return { value: 'ready', tone: 'good' };
+  if (endpoints.health.ok || endpoints.ready.ok) return { value: 'degraded', tone: 'warn' };
+  return { value: 'offline', tone: 'bad' };
+}
+
+function frontendSummary(endpoints: Record<EndpointKey, EndpointStatus>, health: RuntimeHealth | null): { value: string; tone: PerfTone } {
+  if (endpoints.state.ok && health?.staticReady !== false) return { value: 'online', tone: 'good' };
+  if (endpoints.health.ok && health?.staticReady === false) return { value: 'static issue', tone: 'warn' };
+  if (endpoints.health.ok) return { value: 'degraded', tone: 'warn' };
+  return { value: 'offline', tone: 'bad' };
 }
 
 function systemSummary(snapshot: PerfSnapshot | null): { value: string; tone: PerfTone } {
@@ -311,38 +280,24 @@ export function systemSummaryFromHealth(health: RuntimeHealth | null, ready: Run
   const backendReady = ready?.ready === true;
   const apiReady = apiOnline >= apiTotal;
   const mqttReady = health?.mqttConnected === true && (freshnessTone(health.mqttLastMessageAgeMs, 60_000) ?? 'good') !== 'bad';
-  const publicLive = health?.publicLiveFresh !== false;
-  if (backendReady && apiReady && mqttReady && publicLive) return { value: 'live', tone: 'good' };
+  const routesReady = health?.routeMotionState === 'moving' || health?.routeMotionState === 'fresh' || health?.mapMotionState === 'moving';
+  if (backendReady && apiReady && mqttReady && routesReady) return { value: 'live', tone: 'good' };
   if (backendReady || apiOnline > 0) return { value: 'degraded', tone: 'warn' };
   return { value: 'offline', tone: 'bad' };
 }
 
 function mqttSummary(health: RuntimeHealth | null): { value: string; tone: PerfTone } {
   if (health?.mqttConnected) {
-    return { value: health.mqttLastMessageAgeMs === undefined ? 'connected' : formatAge(health.mqttLastMessageAgeMs), tone: freshnessTone(health.mqttLastMessageAgeMs, 60_000) ?? 'good' };
+    const tone = freshnessTone(health.mqttLastMessageAgeMs, 60_000) ?? 'good';
+    return { value: tone === 'good' ? 'fresh' : formatAge(health.mqttLastMessageAgeMs), tone };
   }
   if (health?.mqttConnected === false) return { value: 'offline', tone: 'bad' };
   return { value: 'unknown', tone: 'quiet' };
 }
 
-function mapMotionSummary(health: RuntimeHealth | null): { value: string; tone: PerfTone } {
-  const state = health?.mapMotionState ?? health?.routeMotionState ?? health?.liveConfidenceState;
+function liveRouteSummary(health: RuntimeHealth | null): { value: string; tone: PerfTone } {
+  const state = health?.routeMotionState ?? health?.mapMotionState ?? health?.liveConfidenceState;
   return { value: state ?? 'unknown', tone: toneForState(state) };
-}
-
-function websocketSummary(health: RuntimeHealth | null, state: PublicLiveState | null): { value: string; tone: PerfTone } {
-  const clients = health?.wsClients ?? state?.stats.wsClients;
-  if (clients === undefined || !Number.isFinite(clients)) return { value: 'unknown', tone: 'quiet' };
-  const drops = health?.wsDroppedMessages ?? 0;
-  const count = Math.max(0, Math.floor(clients));
-  return { value: `${count.toLocaleString()} ${count === 1 ? 'client' : 'clients'}`, tone: drops > 0 ? 'warn' : count > 0 ? 'good' : 'quiet' };
-}
-
-function endpointSummary(endpoint: EndpointStatus, sampleCount: number | null | undefined): { value: string; tone: PerfTone } {
-  if (!endpoint.ok) return { value: 'offline', tone: 'bad' };
-  if (sampleCount === null || sampleCount === undefined || !Number.isFinite(sampleCount)) return { value: 'online', tone: 'good' };
-  const count = Math.max(0, Math.floor(sampleCount));
-  return { value: `${count.toLocaleString()} ${count === 1 ? 'sample' : 'samples'}`, tone: 'good' };
 }
 
 function formatReady(value: boolean | undefined): string {

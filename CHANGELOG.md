@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 2.5.35 - 2026-06-02
+
+- Simplified the Perf page into direct live/not-live checks for backend,
+  frontend/public API, MQTT ingest, and live routed motion.
+- Reduced Perf refresh pressure by polling only `/healthz`, `/readyz`, and
+  public state instead of sampling history, Packets, and Chat on every refresh.
+- Made Live Follow more watchable with longer linear camera moves, lower zoom
+  targets, and a longer spacing gate between camera jumps.
+- Added missing palette aliases for warning/error UI states so more controls and
+  status surfaces inherit the selected theme.
+- Added a compact NetGraph legend and node-inspector icons using the same role
+  and payload visual registries as the live map legend.
+
 ## 2.5.34 - 2026-06-01
 
 - Added a Playwright-based browser smoke script for desktop `1920x1080` and

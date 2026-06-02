@@ -10,11 +10,11 @@ import {
 
 describe('follow traffic decisions', () => {
   it('uses slower camera timings for watchable live following', () => {
-    expect(FOLLOW_TRAFFIC_DURATION_MS).toBeGreaterThanOrEqual(9_000);
-    expect(FOLLOW_TRAFFIC_IMMEDIATE_DURATION_MS).toBeGreaterThanOrEqual(4_000);
-    expect(FOLLOW_TRAFFIC_MIN_INTERVAL_MS).toBeGreaterThanOrEqual(FOLLOW_TRAFFIC_DURATION_MS + 5_000);
-    expect(FOLLOW_TRAFFIC_ROUTE_MAX_ZOOM).toBeLessThanOrEqual(7.2);
-    expect(FOLLOW_TRAFFIC_POINT_ZOOM).toBeLessThanOrEqual(6.4);
+    expect(FOLLOW_TRAFFIC_DURATION_MS).toBeGreaterThanOrEqual(14_000);
+    expect(FOLLOW_TRAFFIC_IMMEDIATE_DURATION_MS).toBeGreaterThanOrEqual(7_000);
+    expect(FOLLOW_TRAFFIC_MIN_INTERVAL_MS).toBeGreaterThanOrEqual(FOLLOW_TRAFFIC_DURATION_MS + 9_000);
+    expect(FOLLOW_TRAFFIC_ROUTE_MAX_ZOOM).toBeLessThanOrEqual(6.3);
+    expect(FOLLOW_TRAFFIC_POINT_ZOOM).toBeLessThanOrEqual(5.7);
   });
 
   it('accepts immediate movement with a shorter startup duration', () => {
