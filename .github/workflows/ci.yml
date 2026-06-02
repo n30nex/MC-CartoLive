@@ -82,63 +82,7 @@ jobs:
 
       - name: Smoke built image
         run: |
-          trap 'docker logs mc-cartolive-ci --tail 160 || true; cat /tmp/mc-health.json /tmp/mc-ready.json /tmp/mc-packets.json 2>/dev/null || true' ERR
-          docker run -d --name mc-cartolive-ci -p 18080:8080 \
-            -e MQTT_ENABLED=false \
-            -e PUBLIC_MODE=true \
-            -e PUBLIC_BASE_URL=http://127.0.0.1:18080 \
-            -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-            meshcore-canada-live-map:ci
-          for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:18080/healthz >/tmp/mc-health.json; then
-              break
-            fi
-            sleep 1
-          done
-          for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:18080/readyz >/tmp/mc-ready.json; then
-              break
-            fi
-            sleep 1
-          done
-          python3 -c 'import json,os; data=json.load(open("/tmp/mc-health.json")); assert data.get("version") == os.environ["APP_VERSION"], data'
-          docker exec mc-cartolive-ci test -s /app/examples/fixtures/synthetic-live.ndjson
-          for i in $(seq 1 90); do
-            curl -fsS 'http://127.0.0.1:18080/api/v1/public/packets?limit=25' >/tmp/mc-packets.json
-            if python3 -c 'import json,sys; sys.exit(0 if len(json.load(open("/tmp/mc-packets.json")).get("packets", [])) > 0 else 1)'; then
-              break
-            fi
-            sleep 1
-          done
-          python3 -c 'import json,sys; data=json.load(open("/tmp/mc-packets.json")); assert len(data.get("packets", [])) > 0, data'
-
-      - name: Smoke world fixture
-        run: |
-          trap 'docker logs mc-cartolive-world-ci --tail 160 || true; cat /tmp/mc-world-ready.json /tmp/mc-world-state.json /tmp/mc-world-packets.json 2>/dev/null || true' ERR
-          docker run -d --name mc-cartolive-world-ci -p 18081:8080 \
-            -e MQTT_ENABLED=false \
-            -e PUBLIC_MODE=true \
-            -e PUBLIC_BASE_URL=http://127.0.0.1:18081 \
-            -e MAP_REGION_PRESET=world \
-            -e DEFAULT_REGION=r1 \
-            -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/worldwide-r1.ndjson \
-            meshcore-canada-live-map:ci
-          for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:18081/readyz >/tmp/mc-world-ready.json; then
-              break
-            fi
-            sleep 1
-          done
-          python3 -c 'import json,os; data=json.load(open("/tmp/mc-world-ready.json")); assert data.get("version") == os.environ["APP_VERSION"], data'
-          for i in $(seq 1 90); do
-            curl -fsS 'http://127.0.0.1:18081/api/v1/public/state' >/tmp/mc-world-state.json
-            if python3 -c 'import json,sys; data=json.load(open("/tmp/mc-world-state.json")); sys.exit(0 if data.get("map", {}).get("regionPreset") == "world" and len(data.get("nodes", [])) > 0 and len(data.get("routes", [])) > 0 else 1)'; then
-              break
-            fi
-            sleep 1
-          done
-          curl -fsS 'http://127.0.0.1:18081/api/v1/public/packets?limit=25' >/tmp/mc-world-packets.json
-          python3 -c 'import json,sys; data=json.load(open("/tmp/mc-world-packets.json")); assert len(data.get("packets", [])) > 0, data; assert data["packets"][0].get("region"), data'
+          node scripts/package-smoke.mjs --image meshcore-canada-live-map:ci --version "$APP_VERSION"
 
   secret-scan:
     name: Secret scan

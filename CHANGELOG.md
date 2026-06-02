@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 2.5.50 - 2026-06-02
+
+- Added `scripts/package-smoke.mjs` to smoke a built or published image in both
+  synthetic and worldwide fixture modes.
+- Wired package smoke into local release checks and CI Docker image smoke so the
+  2.6 release gate reuses one public-safe image verification path.
+- Added a GHCR post-push smoke step to the Docker publish workflow so tagged
+  releases verify the published image digest before provenance attestation.
+- Preserved public APIs, true-route validation, hosted Canada behavior, and
+  privacy boundaries.
+
 ## 2.5.49 - 2026-06-02
 
 - Added public-safe Packets search-path counters to `/healthz` and `/readyz`

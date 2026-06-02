@@ -69,7 +69,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.49
+  ghcr.io/n30nex/mc-cartolive:2.5.50
 ```
 
 For production, keep private settings in an env file and mount persistent data:
@@ -79,7 +79,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.49
+  ghcr.io/n30nex/mc-cartolive:2.5.50
 ```
 
 The published image runs as non-root `appuser`, includes OCI source/version
@@ -132,12 +132,16 @@ docker compose up -d
 
 ## Runtime Notes
 
-- Version 2.5.49 exposes the app version/build in the top project bar. CI builds use
+- Version 2.5.50 exposes the app version/build in the top project bar. CI builds use
   the Git commit SHA when available; local Docker builds use a timestamp fallback
   plus a separate ISO build time for build-age display.
 - Runtime liveness and readiness are split: `/healthz` stays cheap for Docker
   liveness, while `/readyz` verifies DB ping, public cache readiness, static
   frontend availability, and public-safe runtime status.
+- Version 2.5.50 adds `scripts/package-smoke.mjs`, a reusable packaged-image
+  smoke that runs both the synthetic fixture and worldwide `r1` fixture, checks
+  public APIs, and runs the public privacy scanner against each temporary
+  container.
 - Version 2.5.49 adds public-safe Packets search-path counters to `/healthz`
   and `/readyz`: projected FTS searches, projected substring fallback searches,
   and projected requests without a text query. These fields help operators
@@ -248,9 +252,20 @@ hints, and whether the position came from a node or observer record.
   changes. Use `scripts/browser-smoke.mjs` to check the live map, Perf,
   Packets, Chat, and NetGraph at desktop `1920x1080` and mobile `390px`.
 - Run `scripts/release-check.ps1` on Windows or `scripts/release-check.sh` on
-  Linux/macOS before tagging or after deploying. Add `-RunBrowserSmoke` on
-  Windows or `RUN_BROWSER_SMOKE=1` on Linux/macOS when doing a release-candidate
-  UI gate.
+  Linux/macOS before tagging or after deploying. Add `-RunPackageSmoke` on
+  Windows or `RUN_PACKAGE_SMOKE=1` on Linux/macOS to smoke the built image in
+  both synthetic and worldwide fixture modes. Add `-RunBrowserSmoke` on Windows
+  or `RUN_BROWSER_SMOKE=1` on Linux/macOS when doing a release-candidate UI gate.
+
+```powershell
+.\scripts\release-check.ps1 -BaseUrl http://127.0.0.1:39476 -RunPackageSmoke -RunBrowserSmoke
+```
+
+- To test a published package directly, run:
+
+```powershell
+node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.5.50 --pull
+```
 
 ```powershell
 npm --prefix web exec playwright install chromium

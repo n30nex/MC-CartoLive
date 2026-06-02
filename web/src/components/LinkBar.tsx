@@ -15,11 +15,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.49';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.50';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.50 adds reusable package smoke for built and published images, covering synthetic and worldwide fixture modes plus public privacy scans.',
   '2.5.49 exposes public-safe Packets search-path counters so operators can see projected FTS, substring fallback, and no-query request counts.',
   '2.5.48 syncs existing projected packet paths into the public-safe FTS search index and exposes search-index catch-up in health/readiness.',
   '2.5.47 adds the public-safe FTS index for projected packet-path search with safe fallback while upgrade windows catch up.',

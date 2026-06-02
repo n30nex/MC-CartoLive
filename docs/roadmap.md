@@ -5,13 +5,14 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.49` is the active foundation patch toward the next production-ready
+Version `2.5.50` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: projected Packets search-path observability,
+- Current patch focus: packaged-image release-gate smoke automation,
+  projected Packets search-path observability,
   projected packet-path search-index upgrade catch-up,
   public-safe projected packet-path FTS search indexing,
   public-safe Packets projection-path observability, public-safe packet-path
@@ -52,6 +53,15 @@ Version `2.5.49` is the active foundation patch toward the next production-ready
   screenshot artifacts, and operator diagnostic scripts.
 - Keep docs concise enough that new operators can deploy, smoke test, diagnose,
   back up, restore, and upgrade without reading historical planning notes.
+
+## 2.5.50 Patch Focus
+
+- Add a reusable packaged-image smoke script that verifies both synthetic and
+  worldwide fixture modes from a built or published image.
+- Wire the package smoke into local release checks, CI Docker image smoke, and
+  the GHCR publish workflow after image push.
+- Keep the package smoke public-safe by checking health/readiness, public
+  state/history/packets/chat, and the public privacy scanner only.
 
 ## 2.5.49 Patch Focus
 

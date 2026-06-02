@@ -19,6 +19,11 @@ if [ "${SKIP_DOCKER:-0}" != "1" ]; then
   docker compose build
 fi
 
+if [ "${RUN_PACKAGE_SMOKE:-0}" = "1" ]; then
+  PACKAGE_IMAGE="${PACKAGE_SMOKE_IMAGE:-meshcore-canada-live-map-meshcore-live-map:latest}"
+  node "$ROOT/scripts/package-smoke.mjs" --image "$PACKAGE_IMAGE" --version "$(tr -d '\r\n' < VERSION)"
+fi
+
 curl -fsS "$BASE_URL/healthz" >/tmp/mc-cartolive-health.json
 curl -fsS "$BASE_URL/readyz" >/tmp/mc-cartolive-ready.json
 curl -fsS "$BASE_URL/api/v1/public/state" >/tmp/mc-cartolive-state.json

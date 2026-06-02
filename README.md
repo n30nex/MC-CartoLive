@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.49
+# MeshCore MQTT Live Map v2.5.50
 
 Also known as **MC-CartoLive**.
 
@@ -23,13 +23,19 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.49 Feature Gallery
+### v2.5.50 Feature Gallery
 
-Version 2.5.49 keeps the Canada deployment intact while continuing the
+Version 2.5.50 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
 
-This patch makes Packets search behavior explainable in production:
+This patch hardens the 2.6 release gate: `scripts/package-smoke.mjs` now runs a
+built or published image through both the synthetic hosted-style fixture and the
+worldwide `r1` fixture, checks health/readiness/state/history/packets/chat, and
+runs the public privacy scanner. CI and the GHCR publish workflow reuse the same
+package-smoke path so tagged images are tested after they are pushed.
+
+Version 2.5.49 made Packets search behavior explainable in production:
 health/readiness now counts projected searches served by FTS, projected searches
 that safely fall back to substring matching, and projected requests without a
 text query. Operators can confirm whether `/api/v1/public/packets?q=...` is
@@ -290,7 +296,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.49
+  ghcr.io/n30nex/mc-cartolive:2.5.50
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -301,7 +307,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.49
+  ghcr.io/n30nex/mc-cartolive:2.5.50
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -433,9 +439,19 @@ The smoke checks desktop `1920x1080` and mobile `390px` layouts for the live
 map, Perf, Packets, Chat, and NetGraph. Screenshots are written to
 `artifacts/browser-smoke` by default.
 
+Packaged image smoke for the 2.6 release gate:
+
+```powershell
+node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.5.50 --pull
+```
+
+The package smoke runs the image in synthetic and worldwide `r1` fixture modes,
+checks public APIs, verifies packet paths are returned, and runs the public
+privacy scanner against both temporary containers.
+
 ## Production Hosting
 
-The recommended v2.5.49 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.50 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

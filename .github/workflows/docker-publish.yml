@@ -83,6 +83,13 @@ jobs:
             VITE_BUILD_TIME=${{ steps.build_meta.outputs.build_time }}
             VITE_BUILD_NUMBER=${{ steps.build_meta.outputs.build_number }}
 
+      - name: Smoke published GHCR image
+        run: |
+          node scripts/package-smoke.mjs \
+            --image "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}" \
+            --version "${{ steps.build_meta.outputs.version }}" \
+            --pull
+
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v4
         with:

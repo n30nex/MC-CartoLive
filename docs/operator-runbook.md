@@ -33,6 +33,22 @@ On Windows:
 .\scripts\release-check.ps1 -BaseUrl http://127.0.0.1:39476
 ```
 
+To include packaged-image fixture smoke in the local release check:
+
+```powershell
+.\scripts\release-check.ps1 -BaseUrl http://127.0.0.1:39476 -RunPackageSmoke
+```
+
+The package smoke can also be run directly against a local image, a GHCR tag, or
+a GHCR digest:
+
+```powershell
+node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.5.50 --pull
+```
+
+It starts temporary containers for the synthetic fixture and worldwide `r1`
+fixture, checks public APIs, and runs the public privacy scanner.
+
 For browser layout smoke during release-candidate UI checks:
 
 ```powershell

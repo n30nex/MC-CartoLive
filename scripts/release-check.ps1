@@ -3,6 +3,8 @@ param(
   [switch]$SkipDocker,
   [switch]$RunBrowserSmoke,
   [string]$BrowserSmokeBaseUrl = "",
+  [switch]$RunPackageSmoke,
+  [string]$PackageSmokeImage = "",
   [switch]$RunLiveSmoke,
   [string]$LiveSmokeBaseUrl = "https://carto.canadaverse.org"
 )
@@ -33,6 +35,11 @@ try {
 
   if (-not $SkipDocker) {
     docker compose build
+  }
+
+  if ($RunPackageSmoke) {
+    $packageImage = if ($PackageSmokeImage) { $PackageSmokeImage } else { "meshcore-canada-live-map-meshcore-live-map:latest" }
+    node (Join-Path $root "scripts/package-smoke.mjs") --image $packageImage --version ((Get-Content (Join-Path $root "VERSION") -TotalCount 1).Trim())
   }
 
   $health = Invoke-RestMethod "$BaseUrl/healthz"

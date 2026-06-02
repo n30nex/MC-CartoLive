@@ -2,7 +2,8 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.5.49` projected Packets search-path observability,
+Baseline audited: `v2.5.50` packaged-image release-gate smoke automation,
+projected Packets search-path observability,
 projected packet-path search-index upgrade catch-up, public-safe projected
 packet-path FTS search indexing, public-safe
 Packets projection-path observability, public-safe packet-path projection
@@ -25,7 +26,8 @@ backfill for upgraded databases, backfill progress fields in health/readiness,
 projection-vs-fallback Packets request counters, indexed projected packet
 search with fallback while upgrade windows catch up, background FTS catch-up
 for already-projected packet rows, and health/readiness counters that show
-whether projected text searches use FTS or substring fallback.
+whether projected text searches use FTS or substring fallback, plus reusable
+package smoke coverage for synthetic and worldwide fixture modes.
 
 ## Audit Coverage
 
@@ -102,6 +104,26 @@ These decisions were confirmed on 2026-06-01 and should guide the rest of the
 - Saved screenshot artifacts are required for major releases like 2.6.0, not
   every patch release.
 - The final 2.6 feature slot is NetGraph improvements plus the Chat page.
+
+## 2.5.50 - Packaged Image Release-Gate Smoke
+
+Goal: close the release-gate gap where CI smoked local images but the published
+GHCR image was not verified after push.
+
+Status: implemented with `scripts/package-smoke.mjs`, local release-check
+integration, CI Docker image smoke reuse, and a GHCR post-push smoke step in
+the Docker publish workflow.
+
+### Acceptance
+
+- One script can smoke any image reference, including a local Docker image,
+  `ghcr.io/n30nex/mc-cartolive:<version>`, or a GHCR digest.
+- The smoke verifies synthetic and worldwide fixture modes, public APIs,
+  Packets paths, Chat windows, readiness metadata, and public privacy scanning.
+- CI uses the script for local image smoke and the publish workflow uses it
+  after pushing the tagged image.
+- Public APIs, true-route validation, hosted Canada behavior, package worldwide
+  defaults, and privacy boundaries remain unchanged.
 
 ## 2.5.49 - Projected Packets Search-Path Observability
 
