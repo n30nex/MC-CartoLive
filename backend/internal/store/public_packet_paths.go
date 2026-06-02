@@ -22,6 +22,14 @@ type PublicPacketPathQuery struct {
 	Search          string
 }
 
+type PublicPacketPathBackfillResult struct {
+	Scanned     int
+	Projected   int
+	Mappable    int
+	NonMappable int
+	Remaining   bool
+}
+
 func (s *Store) PublicPacketPathProjectionComplete(ctx context.Context, from int64, to int64) (bool, error) {
 	var missing int
 	err := s.db.QueryRowContext(ctx, `
@@ -105,7 +113,89 @@ LIMIT ?`
 	return packets, next, nil
 }
 
-func insertPublicPacketPathTx(ctx context.Context, tx *sql.Tx, edge live.EdgeEvent, region string) error {
+func (s *Store) BackfillPublicPacketPaths(ctx context.Context, from int64, to int64, limit int) (PublicPacketPathBackfillResult, error) {
+	if limit <= 0 || limit > 2000 {
+		limit = 500
+	}
+	edges, err := s.publicPacketPathMissingEdges(ctx, from, to, limit)
+	if err != nil {
+		return PublicPacketPathBackfillResult{}, err
+	}
+	result := PublicPacketPathBackfillResult{Scanned: len(edges)}
+	if len(edges) == 0 {
+		return result, nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return result, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	for _, edge := range edges {
+		mappable, err := insertPublicPacketPathTx(ctx, tx, edge, edge.IATA)
+		if err != nil {
+			return result, err
+		}
+		result.Projected++
+		if mappable {
+			result.Mappable++
+		} else {
+			result.NonMappable++
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return result, err
+	}
+	committed = true
+	var remaining int
+	if err := s.db.QueryRowContext(ctx, `
+SELECT EXISTS (
+  SELECT 1
+  FROM live_edge_events e
+  WHERE e.heard_at_ms >= ? AND e.heard_at_ms <= ?
+    AND NOT EXISTS (SELECT 1 FROM public_packet_paths p WHERE p.edge_id=e.id)
+  LIMIT 1
+)`, from, boundedHistoryTo(to)).Scan(&remaining); err != nil {
+		return result, err
+	}
+	result.Remaining = remaining != 0
+	return result, nil
+}
+
+func (s *Store) publicPacketPathMissingEdges(ctx context.Context, from int64, to int64, limit int) ([]live.EdgeEvent, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT e.id, e.packet_hash, e.observation_id, COALESCE(po.iata, '') AS edge_iata,
+  e.payload_type, e.payload_type_name, e.message_sender, e.message_text,
+  e.message_anchor_json, e.heard_at_ms, e.segments_json, e.render_reason
+FROM live_edge_events e
+LEFT JOIN packet_observations po ON po.id=e.observation_id
+WHERE e.heard_at_ms >= ? AND e.heard_at_ms <= ?
+  AND NOT EXISTS (SELECT 1 FROM public_packet_paths p WHERE p.edge_id=e.id)
+ORDER BY e.heard_at_ms DESC, e.id DESC
+LIMIT ?`, from, boundedHistoryTo(to), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	edges := []live.EdgeEvent{}
+	for rows.Next() {
+		edge, err := scanPublicPacketPathBackfillEdge(rows)
+		if err != nil {
+			return nil, err
+		}
+		edges = append(edges, edge)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return edges, nil
+}
+
+func insertPublicPacketPathTx(ctx context.Context, tx *sql.Tx, edge live.EdgeEvent, region string) (bool, error) {
 	edge.IATA = strings.ToUpper(strings.TrimSpace(region))
 	region = edge.IATA
 	packet, ok := live.PublicPacketPathFromPulse(mustPublicRoutePulse(edge))
@@ -123,7 +213,14 @@ ON CONFLICT(edge_id) DO UPDATE SET
   region=excluded.region,
   payload_type_name=excluded.payload_type_name,
   message_sender=excluded.message_sender,
-  message_text=excluded.message_text`,
+  message_text=excluded.message_text,
+  hop_count=0,
+  segment_count=0,
+  distance_km=0,
+  route_ids_json='[]',
+  endpoint_labels_json='[]',
+  segments_json='[]',
+  search_text=''`,
 			edge.ID,
 			edge.ObservationID,
 			edge.HeardAt,
@@ -134,7 +231,7 @@ ON CONFLICT(edge_id) DO UPDATE SET
 			publicProjectionText(edge.MessageText),
 			time.Now().UnixMilli(),
 		)
-		return err
+		return false, err
 	}
 	packet.ID = "pulse-" + int64String(edge.ID)
 	packet.IATA = region
@@ -182,7 +279,7 @@ ON CONFLICT(edge_id) DO UPDATE SET
 		searchText,
 		time.Now().UnixMilli(),
 	)
-	return err
+	return true, err
 }
 
 func mustPublicRoutePulse(edge live.EdgeEvent) live.PublicRoutePulse {
@@ -225,6 +322,36 @@ func scanPublicPacketPathProjection(rows *sql.Rows) (live.PublicPacketPath, int6
 		return live.PublicPacketPath{}, 0, err
 	}
 	return packet, edgeID, nil
+}
+
+func scanPublicPacketPathBackfillEdge(rows *sql.Rows) (live.EdgeEvent, error) {
+	var edge live.EdgeEvent
+	var messageAnchorJSON string
+	var segmentsJSON string
+	if err := rows.Scan(
+		&edge.ID,
+		&edge.PacketHash,
+		&edge.ObservationID,
+		&edge.IATA,
+		&edge.PayloadType,
+		&edge.PayloadTypeName,
+		&edge.MessageSender,
+		&edge.MessageText,
+		&messageAnchorJSON,
+		&edge.HeardAt,
+		&segmentsJSON,
+		&edge.RenderReason,
+	); err != nil {
+		return live.EdgeEvent{}, err
+	}
+	if messageAnchorJSON != "" {
+		var anchor live.MessageAnchor
+		if err := json.Unmarshal([]byte(messageAnchorJSON), &anchor); err == nil {
+			edge.MessageAnchor = &anchor
+		}
+	}
+	_ = json.Unmarshal([]byte(segmentsJSON), &edge.Segments)
+	return edge, nil
 }
 
 func publicPacketPathSearchText(packet live.PublicPacketPath) string {

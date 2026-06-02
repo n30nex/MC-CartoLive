@@ -134,6 +134,7 @@ func (a *Application) Start(ctx context.Context) error {
 	go a.refreshPacketCountLoop(ctx)
 	go a.refreshPublicStateCacheOnce(ctx, "warm")
 	go a.refreshPublicStateCacheLoop(ctx)
+	go a.backfillPublicPacketPathsLoop(ctx)
 	if err := a.MQTT.Start(ctx); err != nil {
 		a.Log.Error("mqtt start failed", "error", err)
 	}
@@ -657,6 +658,57 @@ func (a *Application) refreshPacketCountOnce(ctx context.Context) {
 	a.packetCount.Store(count)
 	a.PublicCache.SetPacketCount(count)
 	failed = false
+}
+
+func (a *Application) backfillPublicPacketPathsLoop(ctx context.Context) {
+	if !a.Config.PublicPacketPathBackfillEnabled {
+		return
+	}
+	batch := a.Config.PublicPacketPathBackfillBatch
+	if batch <= 0 {
+		return
+	}
+	window := time.Duration(a.Config.PublicPacketPathBackfillHours) * time.Hour
+	if window <= 0 {
+		window = 24 * time.Hour
+	}
+	delay := 2 * time.Second
+	for {
+		remaining, err := a.backfillPublicPacketPathsOnce(ctx, window, batch)
+		if err != nil {
+			a.Log.Warn("public packet path backfill failed", "error", err)
+			delay = 30 * time.Second
+		} else if !remaining {
+			return
+		} else {
+			delay = 2 * time.Second
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+	}
+}
+
+func (a *Application) backfillPublicPacketPathsOnce(ctx context.Context, window time.Duration, batch int) (bool, error) {
+	now := time.Now()
+	backfillCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	result, err := a.Store.BackfillPublicPacketPaths(backfillCtx, now.Add(-window).UnixMilli(), now.UnixMilli(), batch)
+	if err != nil {
+		return true, err
+	}
+	if result.Scanned > 0 {
+		a.Log.Info("public packet path backfill",
+			"scanned", result.Scanned,
+			"projected", result.Projected,
+			"mappable", result.Mappable,
+			"non_mappable", result.NonMappable,
+			"remaining", result.Remaining,
+		)
+	}
+	return result.Remaining, nil
 }
 
 func loadYAMLConfig(path string, log *slog.Logger) yamlConfig {

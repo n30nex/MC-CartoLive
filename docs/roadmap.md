@@ -5,20 +5,20 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.43` is the active foundation patch toward the next production-ready
+Version `2.5.44` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: public packet-path projection groundwork, release
-  workflow Node 24 compatibility, cacheless public-state fallback pressure
-  reduction, ingest observer lookup pressure reduction, runtime counter logging
-  pressure reduction, NetGraph hidden-tab animation pausing, render-quality
-  controls, quality-aware animation frame pacing, calmer Live Follow, smoother
-  OpenFreeMap 3D and flat-map animation budgets, backend scale, Packets/VCR
-  data-path stability, light-mode route contrast, and mobile/browser regression
-  coverage.
+- Current patch focus: bounded public packet-path projection backfill, public
+  packet-path projection groundwork, release workflow Node 24 compatibility,
+  cacheless public-state fallback pressure reduction, ingest observer lookup
+  pressure reduction, runtime counter logging pressure reduction, NetGraph
+  hidden-tab animation pausing, render-quality controls, quality-aware animation
+  frame pacing, calmer Live Follow, smoother OpenFreeMap 3D and flat-map
+  animation budgets, backend scale, Packets/VCR data-path stability, light-mode
+  route contrast, and mobile/browser regression coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -201,6 +201,15 @@ Version `2.5.43` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.44 Patch Focus
+
+- Backfill missing recent public-safe packet-path projection rows in bounded
+  startup batches so upgraded databases can reach the indexed Packets path
+  without waiting for old rows to age out.
+- Keep the catch-up window and batch size operator-tunable through env config.
+- Preserve public response shapes, true-route validation, hosted Canada scoping,
+  and privacy boundaries.
 
 ## 2.5.43 Patch Focus
 

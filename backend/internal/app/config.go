@@ -12,46 +12,49 @@ import (
 )
 
 type Config struct {
-	ListenAddr              string
-	AppVersion              string
-	GitSHA                  string
-	BuildTime               string
-	PublicBaseURL           string
-	DataDir                 string
-	DBPath                  string
-	LogLevel                string
-	MQTTEnabled             bool
-	MQTTBrokerURL           string
-	MQTTTopic               string
-	MQTTClientID            string
-	AuthMode                string
-	MQTTUsername            string
-	MQTTPassword            string
-	MeshcorePublicKey       string
-	MeshcorePrivateKey      string
-	MeshcoreChannelSecrets  []string
-	MQTTTokenAudience       string
-	StrictRFOnly            bool
-	RequireRSSIOrSNRForEdge bool
-	MaxUnverifiedEdgeKM     float64
-	AllowLongTraceEdges     bool
-	DefaultCenterLat        float64
-	DefaultCenterLng        float64
-	DefaultZoom             float64
-	DefaultRegion           string
-	MapRegionPreset         string
-	MapBounds               live.CoordinateBounds
-	PublicMode              bool
-	RecentPacketLimit       int
-	RecentEdgeEventLimit    int
-	WSClientQueueSize       int
-	MQTTIngestQueueSize     int
-	PublicIATAs             []string
-	PublicRegions           []string
-	PublicCacheRefreshSec   int
-	ConfigYAML              string
-	FixtureReplayPath       string
-	FixtureRecordEnabled    bool
+	ListenAddr                      string
+	AppVersion                      string
+	GitSHA                          string
+	BuildTime                       string
+	PublicBaseURL                   string
+	DataDir                         string
+	DBPath                          string
+	LogLevel                        string
+	MQTTEnabled                     bool
+	MQTTBrokerURL                   string
+	MQTTTopic                       string
+	MQTTClientID                    string
+	AuthMode                        string
+	MQTTUsername                    string
+	MQTTPassword                    string
+	MeshcorePublicKey               string
+	MeshcorePrivateKey              string
+	MeshcoreChannelSecrets          []string
+	MQTTTokenAudience               string
+	StrictRFOnly                    bool
+	RequireRSSIOrSNRForEdge         bool
+	MaxUnverifiedEdgeKM             float64
+	AllowLongTraceEdges             bool
+	DefaultCenterLat                float64
+	DefaultCenterLng                float64
+	DefaultZoom                     float64
+	DefaultRegion                   string
+	MapRegionPreset                 string
+	MapBounds                       live.CoordinateBounds
+	PublicMode                      bool
+	RecentPacketLimit               int
+	RecentEdgeEventLimit            int
+	WSClientQueueSize               int
+	MQTTIngestQueueSize             int
+	PublicIATAs                     []string
+	PublicRegions                   []string
+	PublicCacheRefreshSec           int
+	PublicPacketPathBackfillEnabled bool
+	PublicPacketPathBackfillBatch   int
+	PublicPacketPathBackfillHours   int
+	ConfigYAML                      string
+	FixtureReplayPath               string
+	FixtureRecordEnabled            bool
 }
 
 func LoadConfig() (Config, error) {
@@ -65,46 +68,49 @@ func LoadConfig() (Config, error) {
 	defaultCenterLat, defaultCenterLng, defaultZoom, defaultRegion := mapDefaultsForPreset(mapPreset, mapBounds)
 	publicRegions := configuredPublicRegions(mapPreset)
 	cfg := Config{
-		ListenAddr:              envString("LISTEN_ADDR", ":8080"),
-		AppVersion:              envString("APP_VERSION", "2.5.43"),
-		GitSHA:                  envString("GIT_SHA", envString("VITE_GIT_SHA", "")),
-		BuildTime:               envString("BUILD_TIME", envString("VITE_BUILD_TIME", "")),
-		PublicBaseURL:           envString("PUBLIC_BASE_URL", "http://localhost:8080"),
-		DataDir:                 envString("DATA_DIR", "./data"),
-		DBPath:                  envString("DB_PATH", "./data/meshcore-live.db"),
-		LogLevel:                envString("LOG_LEVEL", "info"),
-		MQTTEnabled:             envBool("MQTT_ENABLED", true),
-		MQTTBrokerURL:           envString("MQTT_BROKER_URL", "wss://mqtt1.meshcore.ca:443/mqtt"),
-		MQTTTopic:               envString("MQTT_TOPIC", "meshcore/#"),
-		MQTTClientID:            envString("MQTT_CLIENT_ID", "meshcore-canada-live-map-local"),
-		AuthMode:                envString("MESHCORE_AUTH_MODE", "subscriber"),
-		MQTTUsername:            os.Getenv("MQTT_USERNAME"),
-		MQTTPassword:            os.Getenv("MQTT_PASSWORD"),
-		MeshcorePublicKey:       os.Getenv("MESHCORE_PUBLIC_KEY_HEX"),
-		MeshcorePrivateKey:      os.Getenv("MESHCORE_PRIVATE_KEY_HEX"),
-		MeshcoreChannelSecrets:  envList("MESHCORE_CHANNEL_SECRETS"),
-		MQTTTokenAudience:       envString("MQTT_TOKEN_AUDIENCE", "mqtt1.meshcore.ca"),
-		StrictRFOnly:            envBool("STRICT_RF_ONLY", true),
-		RequireRSSIOrSNRForEdge: envBool("REQUIRE_RSSI_OR_SNR_FOR_EDGE", true),
-		MaxUnverifiedEdgeKM:     envFloat("MAX_UNVERIFIED_EDGE_KM", 150),
-		AllowLongTraceEdges:     envBool("ALLOW_LONG_TRACE_EDGES", true),
-		DefaultCenterLat:        envFloat("DEFAULT_CENTER_LAT", defaultCenterLat),
-		DefaultCenterLng:        envFloat("DEFAULT_CENTER_LNG", defaultCenterLng),
-		DefaultZoom:             envFloat("DEFAULT_ZOOM", defaultZoom),
-		DefaultRegion:           envString("DEFAULT_REGION", defaultRegion),
-		MapRegionPreset:         mapPreset,
-		MapBounds:               mapBounds,
-		PublicMode:              envBool("PUBLIC_MODE", true),
-		RecentPacketLimit:       envInt("RECENT_PACKET_LIMIT", 1000),
-		RecentEdgeEventLimit:    envInt("RECENT_EDGE_EVENT_LIMIT", 2000),
-		WSClientQueueSize:       envInt("WS_CLIENT_QUEUE_SIZE", 512),
-		MQTTIngestQueueSize:     envInt("MQTT_INGEST_QUEUE_SIZE", 4096),
-		PublicIATAs:             publicRegions,
-		PublicRegions:           append([]string{}, publicRegions...),
-		PublicCacheRefreshSec:   envInt("PUBLIC_CACHE_REFRESH_SECONDS", 10),
-		ConfigYAML:              envString("CONFIG_YAML", "./data/config.yaml"),
-		FixtureReplayPath:       os.Getenv("FIXTURE_REPLAY_PATH"),
-		FixtureRecordEnabled:    envBool("FIXTURE_RECORD_ENABLED", false),
+		ListenAddr:                      envString("LISTEN_ADDR", ":8080"),
+		AppVersion:                      envString("APP_VERSION", "2.5.44"),
+		GitSHA:                          envString("GIT_SHA", envString("VITE_GIT_SHA", "")),
+		BuildTime:                       envString("BUILD_TIME", envString("VITE_BUILD_TIME", "")),
+		PublicBaseURL:                   envString("PUBLIC_BASE_URL", "http://localhost:8080"),
+		DataDir:                         envString("DATA_DIR", "./data"),
+		DBPath:                          envString("DB_PATH", "./data/meshcore-live.db"),
+		LogLevel:                        envString("LOG_LEVEL", "info"),
+		MQTTEnabled:                     envBool("MQTT_ENABLED", true),
+		MQTTBrokerURL:                   envString("MQTT_BROKER_URL", "wss://mqtt1.meshcore.ca:443/mqtt"),
+		MQTTTopic:                       envString("MQTT_TOPIC", "meshcore/#"),
+		MQTTClientID:                    envString("MQTT_CLIENT_ID", "meshcore-canada-live-map-local"),
+		AuthMode:                        envString("MESHCORE_AUTH_MODE", "subscriber"),
+		MQTTUsername:                    os.Getenv("MQTT_USERNAME"),
+		MQTTPassword:                    os.Getenv("MQTT_PASSWORD"),
+		MeshcorePublicKey:               os.Getenv("MESHCORE_PUBLIC_KEY_HEX"),
+		MeshcorePrivateKey:              os.Getenv("MESHCORE_PRIVATE_KEY_HEX"),
+		MeshcoreChannelSecrets:          envList("MESHCORE_CHANNEL_SECRETS"),
+		MQTTTokenAudience:               envString("MQTT_TOKEN_AUDIENCE", "mqtt1.meshcore.ca"),
+		StrictRFOnly:                    envBool("STRICT_RF_ONLY", true),
+		RequireRSSIOrSNRForEdge:         envBool("REQUIRE_RSSI_OR_SNR_FOR_EDGE", true),
+		MaxUnverifiedEdgeKM:             envFloat("MAX_UNVERIFIED_EDGE_KM", 150),
+		AllowLongTraceEdges:             envBool("ALLOW_LONG_TRACE_EDGES", true),
+		DefaultCenterLat:                envFloat("DEFAULT_CENTER_LAT", defaultCenterLat),
+		DefaultCenterLng:                envFloat("DEFAULT_CENTER_LNG", defaultCenterLng),
+		DefaultZoom:                     envFloat("DEFAULT_ZOOM", defaultZoom),
+		DefaultRegion:                   envString("DEFAULT_REGION", defaultRegion),
+		MapRegionPreset:                 mapPreset,
+		MapBounds:                       mapBounds,
+		PublicMode:                      envBool("PUBLIC_MODE", true),
+		RecentPacketLimit:               envInt("RECENT_PACKET_LIMIT", 1000),
+		RecentEdgeEventLimit:            envInt("RECENT_EDGE_EVENT_LIMIT", 2000),
+		WSClientQueueSize:               envInt("WS_CLIENT_QUEUE_SIZE", 512),
+		MQTTIngestQueueSize:             envInt("MQTT_INGEST_QUEUE_SIZE", 4096),
+		PublicIATAs:                     publicRegions,
+		PublicRegions:                   append([]string{}, publicRegions...),
+		PublicCacheRefreshSec:           envInt("PUBLIC_CACHE_REFRESH_SECONDS", 10),
+		PublicPacketPathBackfillEnabled: envBool("PUBLIC_PACKET_PATH_BACKFILL_ENABLED", true),
+		PublicPacketPathBackfillBatch:   envInt("PUBLIC_PACKET_PATH_BACKFILL_BATCH", 500),
+		PublicPacketPathBackfillHours:   envInt("PUBLIC_PACKET_PATH_BACKFILL_HOURS", 24),
+		ConfigYAML:                      envString("CONFIG_YAML", "./data/config.yaml"),
+		FixtureReplayPath:               os.Getenv("FIXTURE_REPLAY_PATH"),
+		FixtureRecordEnabled:            envBool("FIXTURE_RECORD_ENABLED", false),
 	}
 	if cfg.AuthMode == "subscriber" && cfg.MQTTEnabled && (cfg.MQTTUsername == "" || cfg.MQTTPassword == "") {
 		return cfg, fmt.Errorf("MQTT subscriber auth requires MQTT_USERNAME and MQTT_PASSWORD or MQTT_ENABLED=false")

@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.43
+# MeshCore MQTT Live Map v2.5.44
 
 Also known as **MC-CartoLive**.
 
@@ -23,14 +23,20 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.43 Feature Gallery
+### v2.5.44 Feature Gallery
 
-Version 2.5.43 keeps the Canada deployment intact while continuing the
+Version 2.5.44 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
 
-This patch starts the production Packets data-plane work by adding an internal,
-public-safe packet-path projection. New true-route edge events now write a
+This patch continues the production Packets data-plane work by adding a bounded
+startup backfill for recent public-safe packet-path projections. Upgraded
+databases now fill missing projection rows in small background batches, so the
+Packets page can reach the indexed path faster instead of waiting for old rows
+to age out naturally.
+
+Version 2.5.43 started the production Packets data-plane work by adding an
+internal, public-safe packet-path projection. New true-route edge events write a
 sanitized indexed packet path alongside the existing live edge record, and
 `/api/v1/public/packets` prefers that projection when the requested window is
 fully covered while falling back safely for older database windows.
@@ -258,7 +264,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.43
+  ghcr.io/n30nex/mc-cartolive:2.5.44
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -269,7 +275,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.43
+  ghcr.io/n30nex/mc-cartolive:2.5.44
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -295,6 +301,9 @@ Important settings:
 | `MAP_BOUNDS` | optional | Custom bounds as `minLat,minLng,maxLat,maxLng`, for example `-45,110,-10,155` for Australia-style bounds. |
 | `PUBLIC_REGIONS` | optional | Preferred public region allowlist. Empty means allow all safe broker region labels. |
 | `PUBLIC_IATAS` | optional | Deprecated 2.x alias for `PUBLIC_REGIONS`; kept for existing Canada deployments. |
+| `PUBLIC_PACKET_PATH_BACKFILL_ENABLED` | optional | Defaults to `true`; fills missing recent public-safe packet-path projection rows after upgrades. |
+| `PUBLIC_PACKET_PATH_BACKFILL_BATCH` | optional | Defaults to `500`; max missing edge rows projected per backfill pass. |
+| `PUBLIC_PACKET_PATH_BACKFILL_HOURS` | optional | Defaults to `24`; recent window to make projection-complete for Packets. |
 | `VITE_APP_BRAND_NAME` | optional build arg | Top-bar deployment brand. Defaults to `MC-CartoLive`; hosted Canada can set `MeshCore Canada`. |
 | `VITE_APP_BRAND_URL` | optional build arg | Link used by the top-bar brand. Defaults to the MC-CartoLive GitHub repo. |
 | `VITE_APP_BRAND_LOGO` | optional build arg | Public URL/path for the top-bar logo. Empty uses the bundled MC-CartoLive app icon. |
@@ -400,7 +409,7 @@ map, Perf, Packets, Chat, and NetGraph. Screenshots are written to
 
 ## Production Hosting
 
-The recommended v2.5.43 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.44 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

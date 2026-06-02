@@ -50,7 +50,7 @@ INSERT INTO live_edge_events (
 	if strings.TrimSpace(region) == "" {
 		_ = tx.QueryRowContext(ctx, `SELECT COALESCE(iata, '') FROM packet_observations WHERE id=?`, event.ObservationID).Scan(&region)
 	}
-	if err := insertPublicPacketPathTx(ctx, tx, event, region); err != nil {
+	if _, err := insertPublicPacketPathTx(ctx, tx, event, region); err != nil {
 		return event, err
 	}
 	if err := tx.Commit(); err != nil {

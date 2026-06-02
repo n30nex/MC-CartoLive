@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 2.5.44 - 2026-06-02
+
+- Added a bounded startup backfill for missing recent public-safe packet-path
+  projection rows so upgraded databases can reach the indexed Packets path
+  without waiting for older edge rows to age out naturally.
+- Added `PUBLIC_PACKET_PATH_BACKFILL_ENABLED`,
+  `PUBLIC_PACKET_PATH_BACKFILL_BATCH`, and
+  `PUBLIC_PACKET_PATH_BACKFILL_HOURS` for operators who need to slow or disable
+  upgrade catch-up work.
+- Kept `/api/v1/public/packets` response shape, true-route validation, hosted
+  Canada scoping, and public privacy boundaries unchanged.
+
 ## 2.5.43 - 2026-06-02
 
 - Added an internal public-safe packet-path projection table for sanitized true

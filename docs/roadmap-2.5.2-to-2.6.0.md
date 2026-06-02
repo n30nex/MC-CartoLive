@@ -2,7 +2,8 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.5.43` public packet-path projection groundwork, release workflow Node 24 compatibility, cacheless
+Baseline audited: `v2.5.44` bounded public packet-path projection backfill,
+public packet-path projection groundwork, release workflow Node 24 compatibility, cacheless
 public-state fallback pressure reduction, ingest observer lookup pressure
 reduction, runtime counter logging pressure reduction, NetGraph hidden-tab
 frame/layout pause, render-quality frame pacing, calmer Live Follow, direct
@@ -15,7 +16,8 @@ render-cost reduction, palette-aware NetGraph visuals, strict build-age
 parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query
 indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route
 readability, NetGraph helper, 3D chase-helper, release-privacy scan work, and
-the first internal public packet-path projection slice
+the first internal public packet-path projection slice, and recent projection
+backfill for upgraded databases
 
 ## Audit Coverage
 
@@ -92,6 +94,27 @@ These decisions were confirmed on 2026-06-01 and should guide the rest of the
 - Saved screenshot artifacts are required for major releases like 2.6.0, not
   every patch release.
 - The final 2.6 feature slot is NetGraph improvements plus the Chat page.
+
+## 2.5.44 - Public Packet-Path Projection Backfill
+
+Goal: make upgraded databases reach the indexed Packets projection path quickly
+without blocking startup or changing public APIs.
+
+Status: implemented as a bounded background startup loop. The app scans only
+missing `live_edge_events` rows inside the configured recent window, writes
+public-safe packet-path projection rows or non-mappable markers, and exits once
+the window is complete.
+
+### Acceptance
+
+- Old live edge rows inside the configured window are projected in bounded
+  batches.
+- Invalid or unmappable rows become non-mappable markers so projection
+  completeness checks remain correct.
+- Operators can tune or disable catch-up with
+  `PUBLIC_PACKET_PATH_BACKFILL_ENABLED`, `PUBLIC_PACKET_PATH_BACKFILL_BATCH`,
+  and `PUBLIC_PACKET_PATH_BACKFILL_HOURS`.
+- Public response shapes and privacy boundaries remain unchanged.
 
 ## 2.5.43 - Public Packet-Path Projection Groundwork
 
