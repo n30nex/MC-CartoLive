@@ -9,6 +9,7 @@ import {
   nodeModelLOD,
   nodeModelKind,
   openFreeMap3DCometBudget,
+  openFreeMap3DFrameInterval,
   openFreeMap3DNodeBudget,
   openFreeMap3DObserverGlowBudget,
   openFreeMap3DRouteBudget,
@@ -73,6 +74,9 @@ describe('OpenFreeMap 3D layer helpers', () => {
     expect(openFreeMap3DRouteBudget(13, 'high')).toBeGreaterThanOrEqual(760);
     expect(openFreeMap3DCometBudget('smooth')).toBeLessThan(openFreeMap3DCometBudget('high'));
     expect(openFreeMap3DObserverGlowBudget('smooth')).toBeLessThan(openFreeMap3DObserverGlowBudget('high'));
+    expect(openFreeMap3DFrameInterval('smooth')).toBeGreaterThan(openFreeMap3DFrameInterval('balanced'));
+    expect(openFreeMap3DFrameInterval('balanced')).toBeGreaterThan(openFreeMap3DFrameInterval('high'));
+    expect(openFreeMap3DFrameInterval('high')).toBeLessThanOrEqual(17);
   });
 
   it('keeps fresh or focused 3D routes without including every offscreen route', () => {

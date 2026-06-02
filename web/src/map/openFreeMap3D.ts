@@ -17,6 +17,9 @@ export const MAX_NODE_MODELS = 720;
 export const MAX_ROUTE_ARCS = 900;
 export const MAX_3D_ACTIVE_COMETS = 180;
 export const MAX_3D_OBSERVER_GLOWS = 80;
+export const OPENFREEMAP_3D_FRAME_INTERVAL_SMOOTH_MS = 34;
+export const OPENFREEMAP_3D_FRAME_INTERVAL_BALANCED_MS = 23;
+export const OPENFREEMAP_3D_FRAME_INTERVAL_HIGH_MS = 16;
 const ROUTE_FRESH_MS = 5 * 60_000;
 const OBSERVER_GLOW_MS = 5200;
 const PACKET_AFTERGLOW_MS = 900;
@@ -113,6 +116,8 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
   private routeSignature = '';
   private activeComets: ActiveComet[] = [];
   private observerGlows: ObserverGlow[] = [];
+  private repaintTimer = 0;
+  private lastAnimationFrameAt = 0;
   private paused = false;
   private disposed = false;
   private readonly handleMoveEnd = () => {
@@ -198,6 +203,10 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
     disposeObject(this.cometRoot);
     disposeObject(this.observerRoot);
     this.renderer?.dispose();
+    if (this.repaintTimer !== 0) {
+      window.clearTimeout(this.repaintTimer);
+      this.repaintTimer = 0;
+    }
     this.map = null;
     this.renderer = null;
     this.camera = null;
@@ -241,10 +250,30 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
   private render(args: { defaultProjectionData?: { mainMatrix?: number[] | Float32Array } }) {
     if (!this.renderer || !this.scene || !this.camera || !args.defaultProjectionData?.mainMatrix) return;
     this.camera.projectionMatrix = new THREE.Matrix4().fromArray(Array.from(args.defaultProjectionData.mainMatrix));
-    const active = this.updateAnimations(performance.now());
+    const now = performance.now();
+    const frameInterval = openFreeMap3DFrameInterval(this.packetVisualSettings.renderQuality);
+    const elapsed = now - this.lastAnimationFrameAt;
+    let active = this.hasActiveAnimations();
+    if (active && (this.lastAnimationFrameAt === 0 || elapsed >= frameInterval)) {
+      active = this.updateAnimations(now);
+      this.lastAnimationFrameAt = now;
+    }
     this.renderer.resetState();
     this.renderer.render(this.scene, this.camera);
-    if (active) this.map?.triggerRepaint();
+    if (active) this.requestAnimationRepaint(Math.max(1, frameInterval - (performance.now() - this.lastAnimationFrameAt)));
+  }
+
+  private requestAnimationRepaint(delayMs: number) {
+    if (!this.map || this.disposed) return;
+    if (delayMs <= 1) {
+      this.map.triggerRepaint();
+      return;
+    }
+    if (this.repaintTimer !== 0) return;
+    this.repaintTimer = window.setTimeout(() => {
+      this.repaintTimer = 0;
+      this.map?.triggerRepaint();
+    }, delayMs);
   }
 
   private updateAnimations(now: number): boolean {
@@ -366,6 +395,12 @@ export function openFreeMap3DRouteBudget(zoom: number, quality: RenderQuality = 
   if (zoom < 10) return Math.round(260 * scale);
   if (zoom < 12) return Math.round(460 * scale);
   return Math.min(MAX_ROUTE_ARCS, Math.round(640 * scale));
+}
+
+export function openFreeMap3DFrameInterval(quality: RenderQuality = 'balanced'): number {
+  if (quality === 'smooth') return OPENFREEMAP_3D_FRAME_INTERVAL_SMOOTH_MS;
+  if (quality === 'high') return OPENFREEMAP_3D_FRAME_INTERVAL_HIGH_MS;
+  return OPENFREEMAP_3D_FRAME_INTERVAL_BALANCED_MS;
 }
 
 export function nodeModelLOD(node: PublicNode, focus: NodeFocus, zoom: number): NodeModelLOD {

@@ -3249,7 +3249,7 @@ function followTrafficTarget(
   map.stop();
   if (usablePoints.length === 1) {
     const currentZoom = map.getZoom();
-    const zoom = Math.max(FOLLOW_TRAFFIC_POINT_ZOOM, Math.min(currentZoom, FOLLOW_TRAFFIC_ROUTE_MAX_ZOOM + 0.7));
+    const zoom = Math.max(FOLLOW_TRAFFIC_POINT_ZOOM, Math.min(currentZoom, FOLLOW_TRAFFIC_ROUTE_MAX_ZOOM + 0.3));
     map.easeTo({
       center: usablePoints[0],
       zoom,

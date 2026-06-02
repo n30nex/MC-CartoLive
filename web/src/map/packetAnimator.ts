@@ -33,6 +33,9 @@ export const MAX_OBSERVER_BURSTS_PER_LOCATION = 1;
 export const OBSERVER_BURST_LOCATION_INTERVAL_MS = 4200;
 export const ROUTE_SPARKLE_WINDOW_MS = 6500;
 export const MAX_ROUTE_SPARKLES_PER_TRACE = 5;
+export const PACKET_FRAME_INTERVAL_SMOOTH_MS = 34;
+export const PACKET_FRAME_INTERVAL_BALANCED_MS = 23;
+export const PACKET_FRAME_INTERVAL_HIGH_MS = 16;
 
 const RESIDUE_PRUNE_INTERVAL_MS = 1000;
 
@@ -344,6 +347,13 @@ export class PacketAnimator {
     this.raf = 0;
     if (this.paused && !this.pulses.some((pulse) => pulse.force)) {
       recordPacketSkippedFrame();
+      return;
+    }
+    const frameInterval = packetFrameInterval(this.visualSettings.renderQuality);
+    const frameAge = now - this.lastRenderedAt;
+    if (!this.forceNextFrame && this.lastRenderedAt > 0 && frameAge >= 0 && frameAge < frameInterval) {
+      recordPacketSkippedFrame();
+      this.requestFrame(Math.max(1, frameInterval - frameAge));
       return;
     }
     this.pruneResidue(now);
@@ -1110,6 +1120,12 @@ export function packetMaskCacheInterval(quality: RenderQuality = 'balanced'): nu
   if (quality === 'smooth') return 260;
   if (quality === 'high') return MASK_CACHE_INTERVAL_MS;
   return 190;
+}
+
+export function packetFrameInterval(quality: RenderQuality = 'balanced'): number {
+  if (quality === 'smooth') return PACKET_FRAME_INTERVAL_SMOOTH_MS;
+  if (quality === 'high') return PACKET_FRAME_INTERVAL_HIGH_MS;
+  return PACKET_FRAME_INTERVAL_BALANCED_MS;
 }
 
 function pointAlongSegment(x0: number, y0: number, x1: number, y1: number, progress: number) {

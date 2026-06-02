@@ -24,6 +24,7 @@ import {
   observerBurstAllowed,
   observerBurstKey,
   packetCanvasDpr,
+  packetFrameInterval,
   packetMaskCacheInterval,
   packetObserverAuraBudget,
   packetTraceAuraBudget,
@@ -92,6 +93,9 @@ describe('packet animation timing', () => {
     expect(packetTraceAuraBudget('smooth')).toBeLessThan(packetTraceAuraBudget('high'));
     expect(packetObserverAuraBudget('smooth')).toBeLessThan(packetObserverAuraBudget('high'));
     expect(packetMaskCacheInterval('smooth')).toBeGreaterThan(packetMaskCacheInterval('high'));
+    expect(packetFrameInterval('smooth')).toBeGreaterThan(packetFrameInterval('balanced'));
+    expect(packetFrameInterval('balanced')).toBeGreaterThan(packetFrameInterval('high'));
+    expect(packetFrameInterval('high')).toBeLessThanOrEqual(17);
     expect(MAX_ACTIVE_OBSERVER_BURSTS).toBe(24);
     expect(MAX_OBSERVER_BURSTS_PER_LOCATION).toBe(1);
     expect(OBSERVER_AURA_WINDOW_MS).toBe(150_000);

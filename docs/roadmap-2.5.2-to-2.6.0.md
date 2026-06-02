@@ -1,8 +1,18 @@
 # MC-CartoLive 2.5.2 to 2.6.0 Roadmap
 
-Last audited: 2026-06-01
+Last audited: 2026-06-02
 
-Baseline audited: `v2.5.36` render-quality controls, OpenFreeMap/flat-map render budget reductions, live-status simplification, slower Live Follow, broader palette token coverage, NetGraph legend/icon alignment, browser smoke gate and mobile Perf/Packets clipping fix, OpenFreeMap selected-packet chase camera refinement, OpenFreeMap 3D adaptive LOD/budgets, long-text Chat rebroadcast dedupe, OpenFreeMap 3D render-cost reduction, palette-aware NetGraph visuals, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.37` render-quality frame pacing, calmer Live Follow,
+direct live/not-live Perf labels, render-quality controls, OpenFreeMap/flat-map
+render budget reductions, live-status simplification, broader palette token
+coverage, NetGraph legend/icon alignment, browser smoke gate and mobile
+Perf/Packets clipping fix, OpenFreeMap selected-packet chase camera refinement,
+OpenFreeMap 3D adaptive LOD/budgets, long-text Chat rebroadcast dedupe,
+OpenFreeMap 3D render-cost reduction, palette-aware NetGraph visuals, strict
+build-age parsing, Chat duplicate suppression hardening, Chat pressure guard,
+Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard,
+flatter route readability, NetGraph helper, 3D chase-helper, and
+release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +636,23 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.37 - Animation Frame Pacing And Live Status Clarity
+
+Goal: make the Smooth/Balanced render-quality setting reduce actual animation
+frame pressure and make the live-status page answer the user's live/not-live
+question more directly.
+
+Scope:
+
+- Pace flat-map packet canvas frames by selected render quality.
+- Pace OpenFreeMap 3D custom-layer repaints by selected render quality.
+- Keep High mode closest to the richest previous cadence while Smooth and
+  Balanced trade animation cadence for lower CPU/GPU pressure.
+- Make Live Follow even calmer with longer camera moves, longer spacing, lower
+  route/point zoom targets, and less single-observer zoom-in.
+- Make Perf primary cards read `live`, `degraded`, `quiet`, or `not live`.
+- Keep public APIs, privacy boundaries, and hosted Canada behavior unchanged.
 
 ## 2.5.36 - Render Quality And Map Animation Budget
 

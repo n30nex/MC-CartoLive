@@ -258,16 +258,16 @@ function reachabilityTone(online: number, total: number): PerfTone {
 }
 
 function backendSummary(endpoints: Record<EndpointKey, EndpointStatus>, ready: RuntimeHealth | null, health: RuntimeHealth | null): { value: string; tone: PerfTone } {
-  if (ready?.ready && health?.dbReady !== false && health?.publicStateReady !== false) return { value: 'ready', tone: 'good' };
+  if (ready?.ready && health?.dbReady !== false && health?.publicStateReady !== false) return { value: 'live', tone: 'good' };
   if (endpoints.health.ok || endpoints.ready.ok) return { value: 'degraded', tone: 'warn' };
-  return { value: 'offline', tone: 'bad' };
+  return { value: 'not live', tone: 'bad' };
 }
 
 function frontendSummary(endpoints: Record<EndpointKey, EndpointStatus>, health: RuntimeHealth | null): { value: string; tone: PerfTone } {
-  if (endpoints.state.ok && health?.staticReady !== false) return { value: 'online', tone: 'good' };
+  if (endpoints.state.ok && health?.staticReady !== false) return { value: 'live', tone: 'good' };
   if (endpoints.health.ok && health?.staticReady === false) return { value: 'static issue', tone: 'warn' };
   if (endpoints.health.ok) return { value: 'degraded', tone: 'warn' };
-  return { value: 'offline', tone: 'bad' };
+  return { value: 'not live', tone: 'bad' };
 }
 
 function systemSummary(snapshot: PerfSnapshot | null): { value: string; tone: PerfTone } {
@@ -276,7 +276,7 @@ function systemSummary(snapshot: PerfSnapshot | null): { value: string; tone: Pe
 }
 
 export function systemSummaryFromHealth(health: RuntimeHealth | null, ready: RuntimeHealth | null, apiOnline: number, apiTotal: number): { value: string; tone: PerfTone } {
-  if (apiTotal <= 0 || apiOnline <= 0) return { value: 'offline', tone: 'bad' };
+  if (apiTotal <= 0 || apiOnline <= 0) return { value: 'not live', tone: 'bad' };
   const backendReady = ready?.ready === true;
   const apiReady = apiOnline >= apiTotal;
   const mqttReady = health?.mqttConnected === true && (freshnessTone(health.mqttLastMessageAgeMs, 60_000) ?? 'good') !== 'bad';
@@ -289,15 +289,19 @@ export function systemSummaryFromHealth(health: RuntimeHealth | null, ready: Run
 function mqttSummary(health: RuntimeHealth | null): { value: string; tone: PerfTone } {
   if (health?.mqttConnected) {
     const tone = freshnessTone(health.mqttLastMessageAgeMs, 60_000) ?? 'good';
-    return { value: tone === 'good' ? 'fresh' : formatAge(health.mqttLastMessageAgeMs), tone };
+    return { value: tone === 'good' ? 'live' : 'degraded', tone };
   }
-  if (health?.mqttConnected === false) return { value: 'offline', tone: 'bad' };
+  if (health?.mqttConnected === false) return { value: 'not live', tone: 'bad' };
   return { value: 'unknown', tone: 'quiet' };
 }
 
 function liveRouteSummary(health: RuntimeHealth | null): { value: string; tone: PerfTone } {
   const state = health?.routeMotionState ?? health?.mapMotionState ?? health?.liveConfidenceState;
-  return { value: state ?? 'unknown', tone: toneForState(state) };
+  const tone = toneForState(state);
+  if (tone === 'good') return { value: 'live', tone };
+  if (tone === 'warn') return { value: 'degraded', tone };
+  if (tone === 'bad') return { value: 'not live', tone };
+  return { value: state === 'quiet' ? 'quiet' : 'unknown', tone };
 }
 
 function formatReady(value: boolean | undefined): string {

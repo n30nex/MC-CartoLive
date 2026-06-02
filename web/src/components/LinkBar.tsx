@@ -15,11 +15,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.36';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.37';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.37 adds render-quality frame pacing for flat-map and OpenFreeMap 3D animation loops, calms Live Follow again, and makes Perf card statuses read live/degraded/quiet/not live.',
   '2.5.36 adds a render quality control and lowers default 3D/canvas render pressure for smoother OpenFreeMap and flat-map motion.',
   '2.5.35 simplifies Perf into live/not-live status, slows Live Follow, expands palette coverage, and aligns NetGraph visuals with map icons.',
   '2.5.34 adds repeatable desktop/mobile browser smoke coverage and fixes mobile Perf/Packets panel clipping.',

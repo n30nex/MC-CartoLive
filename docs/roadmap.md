@@ -5,15 +5,16 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.36` is the active foundation patch toward the next production-ready
+Version `2.5.37` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: render-quality controls, smoother OpenFreeMap 3D and
-  flat-map animation budgets, backend scale, Packets/VCR data-path stability,
-  light-mode route contrast, and mobile/browser regression coverage.
+- Current patch focus: render-quality controls, quality-aware animation frame
+  pacing, calmer Live Follow, smoother OpenFreeMap 3D and flat-map animation
+  budgets, backend scale, Packets/VCR data-path stability, light-mode route
+  contrast, and mobile/browser regression coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -196,6 +197,18 @@ Version `2.5.36` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.37 Patch Focus
+
+- Pace flat-map packet canvas frames by selected render quality so `Smooth` and
+  `Balanced` modes reduce frame cadence as well as visual density.
+- Pace OpenFreeMap 3D custom-layer repaints by selected render quality so live
+  3D comets and glows do not create an uncapped repaint loop.
+- Make Live Follow slower and broader again with lower zoom targets and longer
+  camera spacing.
+- Make Perf primary cards answer `live`, `degraded`, `quiet`, or `not live`
+  before showing public-safe details.
+- Keep public APIs, privacy boundaries, and hosted Canada behavior unchanged.
 
 ## 2.5.36 Patch Focus
 

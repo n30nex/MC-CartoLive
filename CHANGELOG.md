@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 2.5.37 - 2026-06-02
+
+- Added render-quality frame pacing for the flat packet canvas so `Smooth` and
+  `Balanced` modes reduce animation cadence, not only canvas DPR and overlay
+  density.
+- Added render-quality repaint pacing for the OpenFreeMap 3D custom layer so
+  active 3D comets and observer glows do not force an uncapped repaint loop.
+- Made Live Follow more conservative with longer camera moves, longer spacing,
+  lower point/route zoom targets, and less single-observer zoom-in.
+- Changed the Perf page's primary card labels to direct `live`, `degraded`,
+  `quiet`, and `not live` states while keeping public-safe supporting details.
+
 ## 2.5.36 - 2026-06-02
 
 - Added a persisted Map Settings render quality control with `Smooth`,
