@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 2.5.43 - 2026-06-02
+
+- Added an internal public-safe packet-path projection table for sanitized true
+  route packet records.
+- Wrote projection rows when live edge events are inserted, including
+  non-mappable marker rows so completeness checks remain correct.
+- Made `/api/v1/public/packets` prefer projected packet paths when the requested
+  time window is fully projected, while falling back to the existing conversion
+  path for older database windows.
+- Preserved the existing public response shape and privacy boundaries: no raw
+  packet hashes, raw path hex, full public keys, resolver debug fields, broker
+  data, or private payloads are exposed.
+
 ## 2.5.42 - 2026-06-02
 
 - Updated CI and GHCR publish workflows to current Node 24-capable GitHub and

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strconv"
+	"strings"
 	"time"
 
 	"meshcore-canada-live-map/backend/internal/live"
@@ -13,7 +15,17 @@ const maxFutureEdgeSkew = 5 * time.Minute
 
 func (s *Store) InsertEdgeEvent(ctx context.Context, event live.EdgeEvent) (live.EdgeEvent, error) {
 	now := time.Now().UnixMilli()
-	result, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return event, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	result, err := tx.ExecContext(ctx, `
 INSERT INTO live_edge_events (
   packet_hash, observation_id, payload_type, payload_type_name, message_sender, message_text, message_anchor_json,
   heard_at_ms, segments_json, render_reason, created_at_ms
@@ -34,6 +46,17 @@ INSERT INTO live_edge_events (
 		return event, err
 	}
 	event.ID, _ = result.LastInsertId()
+	region := event.IATA
+	if strings.TrimSpace(region) == "" {
+		_ = tx.QueryRowContext(ctx, `SELECT COALESCE(iata, '') FROM packet_observations WHERE id=?`, event.ObservationID).Scan(&region)
+	}
+	if err := insertPublicPacketPathTx(ctx, tx, event, region); err != nil {
+		return event, err
+	}
+	if err := tx.Commit(); err != nil {
+		return event, err
+	}
+	committed = true
 	return event, nil
 }
 
@@ -86,4 +109,8 @@ func EncodeMessageAnchor(anchor *live.MessageAnchor) string {
 		return ""
 	}
 	return string(data)
+}
+
+func int64String(value int64) string {
+	return strconv.FormatInt(value, 10)
 }

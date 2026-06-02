@@ -155,3 +155,30 @@ CREATE INDEX IF NOT EXISTS idx_live_edge_events_observation ON live_edge_events(
 CREATE INDEX IF NOT EXISTS idx_live_edge_events_payload_recent ON live_edge_events(payload_type_name, heard_at_ms DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_live_edge_events_message_recent ON live_edge_events(heard_at_ms DESC, id DESC) WHERE message_text != '';
 CREATE INDEX IF NOT EXISTS idx_live_edge_events_payload_message_recent ON live_edge_events(payload_type_name, heard_at_ms DESC, id DESC) WHERE message_text != '';
+
+CREATE TABLE IF NOT EXISTS public_packet_paths (
+  edge_id INTEGER PRIMARY KEY,
+  observation_id INTEGER NOT NULL,
+  mappable INTEGER NOT NULL DEFAULT 1,
+  heard_at_ms INTEGER NOT NULL,
+  iata TEXT NOT NULL DEFAULT '',
+  region TEXT NOT NULL DEFAULT '',
+  payload_type_name TEXT NOT NULL DEFAULT '',
+  message_sender TEXT NOT NULL DEFAULT '',
+  message_text TEXT NOT NULL DEFAULT '',
+  hop_count INTEGER NOT NULL DEFAULT 0,
+  segment_count INTEGER NOT NULL DEFAULT 0,
+  distance_km REAL NOT NULL DEFAULT 0,
+  route_ids_json TEXT NOT NULL DEFAULT '[]',
+  endpoint_labels_json TEXT NOT NULL DEFAULT '[]',
+  segments_json TEXT NOT NULL DEFAULT '[]',
+  search_text TEXT NOT NULL DEFAULT '',
+  created_at_ms INTEGER NOT NULL,
+  FOREIGN KEY(edge_id) REFERENCES live_edge_events(id),
+  FOREIGN KEY(observation_id) REFERENCES packet_observations(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_public_packet_paths_recent ON public_packet_paths(mappable, heard_at_ms DESC, edge_id DESC);
+CREATE INDEX IF NOT EXISTS idx_public_packet_paths_region_recent ON public_packet_paths(region, mappable, heard_at_ms DESC, edge_id DESC);
+CREATE INDEX IF NOT EXISTS idx_public_packet_paths_payload_recent ON public_packet_paths(payload_type_name, mappable, heard_at_ms DESC, edge_id DESC);
+CREATE INDEX IF NOT EXISTS idx_public_packet_paths_message_recent ON public_packet_paths(mappable, heard_at_ms DESC, edge_id DESC) WHERE message_text != '';

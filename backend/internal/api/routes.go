@@ -806,6 +806,10 @@ func (s *Server) publicPackets(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if s.publicPacketsFromProjection(w, ctx, now, from, to, limit, cursor, filters) {
+		failed = false
+		return
+	}
 	packets := make([]live.PublicPacketPath, 0, limit)
 	nextCursor := cursor
 	scannedRaw := 0
@@ -885,6 +889,101 @@ func (s *Server) publicPackets(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	failed = false
+}
+
+func (s *Server) publicPacketsFromProjection(
+	w http.ResponseWriter,
+	ctx context.Context,
+	now int64,
+	from int64,
+	to int64,
+	limit int,
+	cursor *store.HistoryCursor,
+	filters publicPacketFilters,
+) bool {
+	complete, err := s.Store.PublicPacketPathProjectionComplete(ctx, from, to)
+	if err != nil || !complete {
+		return false
+	}
+	packets := make([]live.PublicPacketPath, 0, limit)
+	nextCursor := cursor
+	scanned := 0
+	exhausted := false
+	for len(packets) < limit && scanned < publicPacketsMaxRawScan {
+		rawLimit := minInt(publicPacketsRawPageSize(limit-len(packets), filters), publicPacketsMaxRawScan-scanned)
+		rawPackets, rawCursor, err := s.Store.PublicPacketPaths(ctx, store.PublicPacketPathQuery{
+			From:            from,
+			To:              to,
+			Limit:           rawLimit,
+			Cursor:          nextCursor,
+			IATA:            filters.iata,
+			PayloadTypeName: filters.payload,
+			MinHops:         filters.minHops,
+			MessageOnly:     filters.messageOnly,
+			Search:          filters.query,
+		})
+		if err != nil {
+			return false
+		}
+		scanned += len(rawPackets)
+		if len(rawPackets) == 0 {
+			nextCursor = nil
+			exhausted = true
+			break
+		}
+		lastScannedCursor := nextCursor
+		for _, packet := range rawPackets {
+			if packetCursor := publicPacketProjectionCursor(packet); packetCursor != nil {
+				lastScannedCursor = packetCursor
+			}
+			if !s.allowsPublicIATA(packet.IATA) {
+				continue
+			}
+			packets = append(packets, packet)
+			if len(packets) >= limit {
+				nextCursor = lastScannedCursor
+				break
+			}
+		}
+		if len(packets) >= limit {
+			break
+		}
+		nextCursor = rawCursor
+		if rawCursor == nil {
+			exhausted = rawCursor == nil && len(packets) < limit
+			break
+		}
+	}
+	nextCursorToken := publicPacketsNextCursorToken(nextCursor, exhausted, len(packets), limit, scanned)
+	if s.Runtime != nil {
+		s.Runtime.RecordPublicPacketsScan(scanned, nextCursorToken != "" && scanned >= publicPacketsMaxRawScan)
+	}
+	writeJSON(w, http.StatusOK, live.PublicPacketsResponse{
+		ServerTime: now,
+		Packets:    packets,
+		NextCursor: nextCursorToken,
+		Window: live.PublicHistoryWindow{
+			From:  from,
+			To:    to,
+			Count: len(packets),
+		},
+		Scan: live.PublicPacketScan{
+			EventsScanned: scanned,
+			ScanLimit:     publicPacketsMaxRawScan,
+			Filtered:      filters.hasAny(),
+			Partial:       nextCursorToken != "",
+		},
+	})
+	return true
+}
+
+func publicPacketProjectionCursor(packet live.PublicPacketPath) *store.HistoryCursor {
+	idText := strings.TrimPrefix(packet.ID, "pulse-")
+	id, err := strconv.ParseInt(idText, 10, 64)
+	if err != nil || id <= 0 {
+		return nil
+	}
+	return &store.HistoryCursor{At: packet.At, TypeOrder: 2, ID: id}
 }
 
 type publicPacketFilters struct {

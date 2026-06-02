@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.5.42` release workflow Node 24 compatibility, cacheless
+Baseline audited: `v2.5.43` public packet-path projection groundwork, release workflow Node 24 compatibility, cacheless
 public-state fallback pressure reduction, ingest observer lookup pressure
 reduction, runtime counter logging pressure reduction, NetGraph hidden-tab
 frame/layout pause, render-quality frame pacing, calmer Live Follow, direct
@@ -14,7 +14,8 @@ clipping fix, OpenFreeMap selected-packet chase camera refinement, OpenFreeMap
 render-cost reduction, palette-aware NetGraph visuals, strict build-age
 parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query
 indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route
-readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+readability, NetGraph helper, 3D chase-helper, release-privacy scan work, and
+the first internal public packet-path projection slice
 
 ## Audit Coverage
 
@@ -91,6 +92,28 @@ These decisions were confirmed on 2026-06-01 and should guide the rest of the
 - Saved screenshot artifacts are required for major releases like 2.6.0, not
   every patch release.
 - The final 2.6 feature slot is NetGraph improvements plus the Chat page.
+
+## 2.5.43 - Public Packet-Path Projection Groundwork
+
+Goal: start replacing Packets endpoint conversion scans with an indexed
+public-safe projection while preserving existing responses and older database
+behavior.
+
+Status: implemented for new live edge writes. `public_packet_paths` stores only
+sanitized packet-path fields already allowed in public responses. New edge
+events write either a mappable projected packet path or a non-mappable marker
+row. `/api/v1/public/packets` prefers the projection when the requested window
+is fully covered and otherwise falls back to the existing conversion path so
+older 24h windows do not lose results.
+
+### Acceptance
+
+- New projected rows expose no raw packet hashes, raw path hex, full public
+  keys, resolver debug fields, broker data, or private payloads.
+- Invalid or unmappable edge rows do not appear in public Packets results but
+  still count toward projection completeness.
+- Region allowlists still apply when projected rows are used.
+- Existing Packets response shape and cursor behavior remain compatible.
 
 ## Confirmed Findings
 

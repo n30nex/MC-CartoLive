@@ -202,6 +202,112 @@ func TestPublicPacketsEndpointFiltersAcrossSanitizedPacketFields(t *testing.T) {
 	}
 }
 
+func TestPublicPacketPathProjectionIsSanitizedAndFilterable(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := st.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+	})
+
+	observerKey := "AA00000000000000000000000000000000000000000000000000000000000000"
+	base := time.Now().Add(-time.Hour).UnixMilli()
+	validID := insertHistoryObservation(t, ctx, st, "hash-projection-private", "YKF", observerKey, base+1_000, resolve.StatusHigh)
+	insertHistoryEdgeWithOptions(t, ctx, st, validID, "hash-projection-private", base+1_000, historyEdgeOptions{
+		PayloadTypeName: "GROUP_TEXT",
+		MessageSender:   "Corebot",
+		MessageText:     "hello projection",
+		Labels:          []string{"YKF Corebot", "Krabs Repeater", "Room Observer"},
+	})
+	invalidID := insertHistoryObservation(t, ctx, st, "hash-projection-invalid-private", "YKF", observerKey, base+2_000, resolve.StatusHigh)
+	insertInvalidHistoryEdge(t, ctx, st, invalidID, "hash-projection-invalid-private", base+2_000)
+
+	complete, err := st.PublicPacketPathProjectionComplete(ctx, base, base+3_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !complete {
+		t.Fatalf("projection should cover both valid and non-mappable edge rows")
+	}
+	packets, next, err := st.PublicPacketPaths(ctx, store.PublicPacketPathQuery{
+		From:            base,
+		To:              base + 3_000,
+		Limit:           10,
+		IATA:            "ykf",
+		PayloadTypeName: "group_text",
+		MinHops:         2,
+		MessageOnly:     true,
+		Search:          "krabs",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != nil {
+		t.Fatalf("projection cursor = %#v, want exhausted single page", next)
+	}
+	if len(packets) != 1 {
+		t.Fatalf("projection packets = %#v, want one valid mappable packet", packets)
+	}
+	packet := packets[0]
+	if packet.IATA != "YKF" || packet.Region != "YKF" || packet.HopCount != 2 || packet.SegmentCount != 2 || packet.MessageText != "hello projection" {
+		t.Fatalf("projected packet = %#v", packet)
+	}
+	raw, err := json.Marshal(packet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"hash-projection", "packetHash", "pathHex", "observerPublicKey", "private resolver reason", "secret summary"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("projected packet leaked forbidden value %q: %s", forbidden, raw)
+		}
+	}
+}
+
+func TestPublicPacketsEndpointUsesProjectionWithoutLeakingDisallowedRegions(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := st.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+	})
+
+	observerKey := "AA00000000000000000000000000000000000000000000000000000000000000"
+	base := time.Now().Add(-time.Hour).UnixMilli()
+	allowedID := insertHistoryObservation(t, ctx, st, "hash-projection-allowed-private", "YYZ", observerKey, base+1_000, resolve.StatusHigh)
+	insertHistoryEdge(t, ctx, st, allowedID, "hash-projection-allowed-private", base+1_000)
+	disallowedID := insertHistoryObservation(t, ctx, st, "hash-projection-disallowed-private", "PRG", observerKey, base+2_000, resolve.StatusHigh)
+	insertHistoryEdge(t, ctx, st, disallowedID, "hash-projection-disallowed-private", base+2_000)
+
+	server := publicHistoryTestServer(st, func(iata string) bool { return strings.ToUpper(iata) == "YYZ" })
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/public/packets?from="+ms(base)+"&to="+ms(base+3_000)+"&limit=10", nil)
+	server.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("packets status = %d body=%s", response.Code, response.Body.String())
+	}
+	var packets live.PublicPacketsResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &packets); err != nil {
+		t.Fatal(err)
+	}
+	if len(packets.Packets) != 1 || packets.Packets[0].IATA != "YYZ" {
+		t.Fatalf("packets = %#v, want only allowed projected packet", packets.Packets)
+	}
+	if packets.Scan.EventsScanned != 2 || packets.Scan.Partial {
+		t.Fatalf("projection scan summary = %#v, want scanned projected rows with complete page", packets.Scan)
+	}
+	if raw := response.Body.String(); strings.Contains(raw, "PRG") || strings.Contains(raw, "hash-projection") {
+		t.Fatalf("projected response leaked disallowed/private data: %s", raw)
+	}
+}
+
 type historyEdgeOptions struct {
 	PayloadTypeName string
 	MessageSender   string
