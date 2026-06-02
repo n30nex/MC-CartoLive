@@ -15,11 +15,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.44';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.45';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.45 exposes public-safe packet-path projection backfill progress in health/readiness so operators can see upgrade catch-up.',
   '2.5.44 backfills missing recent public packet-path projections in bounded startup batches so upgraded DBs reach the fast Packets path sooner.',
   '2.5.43 adds internal public-safe packet-path projection groundwork so Packets can move away from conversion scans.',
   '2.5.42 updates CI and GHCR publish workflows to current Node 24-capable GitHub and Docker action majors.',

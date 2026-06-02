@@ -2,8 +2,9 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.5.44` bounded public packet-path projection backfill,
-public packet-path projection groundwork, release workflow Node 24 compatibility, cacheless
+Baseline audited: `v2.5.45` public-safe packet-path projection backfill
+observability, bounded public packet-path projection backfill, public
+packet-path projection groundwork, release workflow Node 24 compatibility, cacheless
 public-state fallback pressure reduction, ingest observer lookup pressure
 reduction, runtime counter logging pressure reduction, NetGraph hidden-tab
 frame/layout pause, render-quality frame pacing, calmer Live Follow, direct
@@ -16,8 +17,9 @@ render-cost reduction, palette-aware NetGraph visuals, strict build-age
 parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query
 indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route
 readability, NetGraph helper, 3D chase-helper, release-privacy scan work, and
-the first internal public packet-path projection slice, and recent projection
-backfill for upgraded databases
+the first internal public packet-path projection slice, recent projection
+backfill for upgraded databases, and backfill progress fields in
+health/readiness.
 
 ## Audit Coverage
 
@@ -94,6 +96,24 @@ These decisions were confirmed on 2026-06-01 and should guide the rest of the
 - Saved screenshot artifacts are required for major releases like 2.6.0, not
   every patch release.
 - The final 2.6 feature slot is NetGraph improvements plus the Chat page.
+
+## 2.5.45 - Packet-Path Projection Backfill Observability
+
+Goal: make packet-path projection catch-up visible to operators without adding
+public debug endpoints or exposing private packet material.
+
+Status: implemented through public-safe `/healthz` and `/readyz` fields. The
+runtime now records the latest backfill latency, scan count, projected count,
+mappable count, non-mappable count, remaining-work flag, and failure count.
+
+### Acceptance
+
+- Operators can tell whether upgraded databases are still catching up to the
+  indexed Packets path.
+- Failed backfill attempts increment a public-safe failure counter.
+- No public packet/path response shape changes are introduced.
+- True-route validation, hosted Canada scoping, and public privacy boundaries
+  remain unchanged.
 
 ## 2.5.44 - Public Packet-Path Projection Backfill
 

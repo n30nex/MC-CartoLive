@@ -69,7 +69,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.44
+  ghcr.io/n30nex/mc-cartolive:2.5.45
 ```
 
 For production, keep private settings in an env file and mount persistent data:
@@ -79,7 +79,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.44
+  ghcr.io/n30nex/mc-cartolive:2.5.45
 ```
 
 The published image runs as non-root `appuser`, includes OCI source/version
@@ -132,15 +132,18 @@ docker compose up -d
 
 ## Runtime Notes
 
-- Version 2.5.44 exposes the app version/build in the top project bar. CI builds use
+- Version 2.5.45 exposes the app version/build in the top project bar. CI builds use
   the Git commit SHA when available; local Docker builds use a timestamp fallback
   plus a separate ISO build time for build-age display.
 - Runtime liveness and readiness are split: `/healthz` stays cheap for Docker
   liveness, while `/readyz` verifies DB ping, public cache readiness, static
   frontend availability, and public-safe runtime status.
-- Version 2.5.44 also exposes public-safe public-cache truncation counts,
+- Version 2.5.45 also exposes public-safe public-cache truncation counts,
   packet-search scan pressure, and packet-count refresh latency/failures so
   operators can spot scale pressure without exposing private packet material.
+- Version 2.5.45 also exposes public-safe packet-path projection backfill
+  progress so operators can see whether upgraded databases are still catching
+  up to the indexed Packets path.
 - Version 2.5.44 backfills missing recent public-safe packet-path projections in
   bounded startup batches. Tune `PUBLIC_PACKET_PATH_BACKFILL_ENABLED`,
   `PUBLIC_PACKET_PATH_BACKFILL_BATCH`, and `PUBLIC_PACKET_PATH_BACKFILL_HOURS`

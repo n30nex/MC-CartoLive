@@ -38,6 +38,7 @@ func TestRuntimeStatsRecordsPacketPressure(t *testing.T) {
 	stats := NewRuntimeStats()
 	stats.RecordPublicPacketsScan(2500, true)
 	stats.RecordPacketCountRefresh(12*time.Millisecond, true)
+	stats.RecordPacketPathBackfill(9*time.Millisecond, true, 4, 3, 2, 1, true)
 
 	snapshot := stats.Snapshot()
 	if snapshot.PublicPacketsLastScan != 2500 || snapshot.PublicPacketsScanCapped != 1 {
@@ -45,5 +46,15 @@ func TestRuntimeStatsRecordsPacketPressure(t *testing.T) {
 	}
 	if snapshot.PacketCountRefreshFailures != 1 || snapshot.PacketCountRefreshLastLatencyMs != 12 || snapshot.PacketCountRefreshLastAtMs <= 0 {
 		t.Fatalf("packet count refresh stats = %#v", snapshot)
+	}
+	if snapshot.PacketPathBackfillFailures != 1 ||
+		snapshot.PacketPathBackfillLastLatencyMs != 9 ||
+		snapshot.PacketPathBackfillLastAtMs <= 0 ||
+		snapshot.PacketPathBackfillLastScanned != 4 ||
+		snapshot.PacketPathBackfillLastProjected != 3 ||
+		snapshot.PacketPathBackfillLastMappable != 2 ||
+		snapshot.PacketPathBackfillLastInvalid != 1 ||
+		!snapshot.PacketPathBackfillRemaining {
+		t.Fatalf("packet path backfill stats = %#v", snapshot)
 	}
 }

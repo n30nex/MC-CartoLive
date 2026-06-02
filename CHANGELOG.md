@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 2.5.45 - 2026-06-02
+
+- Exposed public-safe packet-path projection backfill progress in `/healthz`
+  and `/readyz` so operators can see whether upgraded databases are still
+  catching up to the indexed Packets path.
+- Added runtime counters for last backfill latency, last scan count, projected
+  rows, mappable rows, non-mappable rows, remaining work, and failure count.
+- Preserved `/api/v1/public/packets` response shape, true-route validation,
+  hosted Canada scoping, and public privacy boundaries.
+
 ## 2.5.44 - 2026-06-02
 
 - Added a bounded startup backfill for missing recent public-safe packet-path

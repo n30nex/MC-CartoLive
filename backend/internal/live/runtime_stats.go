@@ -26,6 +26,14 @@ type RuntimeStats struct {
 	packetCountRefreshFailures      atomic.Int64
 	packetCountRefreshLastLatencyMs atomic.Int64
 	packetCountRefreshLastAtMs      atomic.Int64
+	packetPathBackfillFailures      atomic.Int64
+	packetPathBackfillLastLatencyMs atomic.Int64
+	packetPathBackfillLastAtMs      atomic.Int64
+	packetPathBackfillLastScanned   atomic.Int64
+	packetPathBackfillLastProjected atomic.Int64
+	packetPathBackfillLastMappable  atomic.Int64
+	packetPathBackfillLastInvalid   atomic.Int64
+	packetPathBackfillRemaining     atomic.Int64
 }
 
 type RuntimeStatsSnapshot struct {
@@ -49,6 +57,14 @@ type RuntimeStatsSnapshot struct {
 	PacketCountRefreshFailures      int64 `json:"packetCountRefreshFailures"`
 	PacketCountRefreshLastLatencyMs int64 `json:"packetCountRefreshLastLatencyMs"`
 	PacketCountRefreshLastAtMs      int64 `json:"packetCountRefreshLastAtMs"`
+	PacketPathBackfillFailures      int64 `json:"packetPathBackfillFailures"`
+	PacketPathBackfillLastLatencyMs int64 `json:"packetPathBackfillLastLatencyMs"`
+	PacketPathBackfillLastAtMs      int64 `json:"packetPathBackfillLastAtMs"`
+	PacketPathBackfillLastScanned   int64 `json:"packetPathBackfillLastScanned"`
+	PacketPathBackfillLastProjected int64 `json:"packetPathBackfillLastProjected"`
+	PacketPathBackfillLastMappable  int64 `json:"packetPathBackfillLastMappable"`
+	PacketPathBackfillLastInvalid   int64 `json:"packetPathBackfillLastInvalid"`
+	PacketPathBackfillRemaining     bool  `json:"packetPathBackfillRemaining"`
 }
 
 func NewRuntimeStats() *RuntimeStats {
@@ -134,6 +150,26 @@ func (s *RuntimeStats) RecordPacketCountRefresh(duration time.Duration, failed b
 	s.packetCountRefreshLastAtMs.Store(time.Now().UnixMilli())
 }
 
+func (s *RuntimeStats) RecordPacketPathBackfill(duration time.Duration, failed bool, scanned int, projected int, mappable int, nonMappable int, remaining bool) {
+	if s == nil {
+		return
+	}
+	if failed {
+		s.packetPathBackfillFailures.Add(1)
+	}
+	s.packetPathBackfillLastLatencyMs.Store(duration.Milliseconds())
+	s.packetPathBackfillLastAtMs.Store(time.Now().UnixMilli())
+	s.packetPathBackfillLastScanned.Store(int64(maxInt(scanned, 0)))
+	s.packetPathBackfillLastProjected.Store(int64(maxInt(projected, 0)))
+	s.packetPathBackfillLastMappable.Store(int64(maxInt(mappable, 0)))
+	s.packetPathBackfillLastInvalid.Store(int64(maxInt(nonMappable, 0)))
+	if remaining {
+		s.packetPathBackfillRemaining.Store(1)
+	} else {
+		s.packetPathBackfillRemaining.Store(0)
+	}
+}
+
 func (s *RuntimeStats) Snapshot() RuntimeStatsSnapshot {
 	if s == nil {
 		return RuntimeStatsSnapshot{}
@@ -159,5 +195,20 @@ func (s *RuntimeStats) Snapshot() RuntimeStatsSnapshot {
 		PacketCountRefreshFailures:      s.packetCountRefreshFailures.Load(),
 		PacketCountRefreshLastLatencyMs: s.packetCountRefreshLastLatencyMs.Load(),
 		PacketCountRefreshLastAtMs:      s.packetCountRefreshLastAtMs.Load(),
+		PacketPathBackfillFailures:      s.packetPathBackfillFailures.Load(),
+		PacketPathBackfillLastLatencyMs: s.packetPathBackfillLastLatencyMs.Load(),
+		PacketPathBackfillLastAtMs:      s.packetPathBackfillLastAtMs.Load(),
+		PacketPathBackfillLastScanned:   s.packetPathBackfillLastScanned.Load(),
+		PacketPathBackfillLastProjected: s.packetPathBackfillLastProjected.Load(),
+		PacketPathBackfillLastMappable:  s.packetPathBackfillLastMappable.Load(),
+		PacketPathBackfillLastInvalid:   s.packetPathBackfillLastInvalid.Load(),
+		PacketPathBackfillRemaining:     s.packetPathBackfillRemaining.Load() == 1,
 	}
+}
+
+func maxInt(value int, minimum int) int {
+	if value < minimum {
+		return minimum
+	}
+	return value
 }

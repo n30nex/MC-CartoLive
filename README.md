@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.5.44
+# MeshCore MQTT Live Map v2.5.45
 
 Also known as **MC-CartoLive**.
 
@@ -23,17 +23,22 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.5.44 Feature Gallery
+### v2.5.45 Feature Gallery
 
-Version 2.5.44 keeps the Canada deployment intact while continuing the
+Version 2.5.45 keeps the Canada deployment intact while continuing the
 worldwide/private broker support introduced in the 2.5 line with configurable
 map bounds and generic region labels.
 
-This patch continues the production Packets data-plane work by adding a bounded
-startup backfill for recent public-safe packet-path projections. Upgraded
-databases now fill missing projection rows in small background batches, so the
-Packets page can reach the indexed path faster instead of waiting for old rows
-to age out naturally.
+This patch makes that Packets data-plane work more explainable by exposing
+public-safe packet-path projection backfill progress in `/healthz` and
+`/readyz`: last scan size, projected count, mappable/non-mappable split,
+latency, failures, and whether catch-up still has work remaining.
+
+Version 2.5.44 continued the production Packets data-plane work by adding a
+bounded startup backfill for recent public-safe packet-path projections.
+Upgraded databases fill missing projection rows in small background batches, so
+the Packets page can reach the indexed path faster instead of waiting for old
+rows to age out naturally.
 
 Version 2.5.43 started the production Packets data-plane work by adding an
 internal, public-safe packet-path projection. New true-route edge events write a
@@ -264,7 +269,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.44
+  ghcr.io/n30nex/mc-cartolive:2.5.45
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -275,7 +280,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.44
+  ghcr.io/n30nex/mc-cartolive:2.5.45
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -409,7 +414,7 @@ map, Perf, Packets, Chat, and NetGraph. Screenshots are written to
 
 ## Production Hosting
 
-The recommended v2.5.44 release path is clone + Docker Compose on a VPS or local
+The recommended v2.5.45 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:
