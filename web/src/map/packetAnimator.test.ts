@@ -23,6 +23,10 @@ import {
   observerAuraAlpha,
   observerBurstAllowed,
   observerBurstKey,
+  packetCanvasDpr,
+  packetMaskCacheInterval,
+  packetObserverAuraBudget,
+  packetTraceAuraBudget,
   packetTravelDuration,
   routeResidueAlpha,
   routeResidueSparkleAlpha,
@@ -83,6 +87,11 @@ describe('packet animation timing', () => {
     expect(MASK_CACHE_INTERVAL_MS).toBeGreaterThanOrEqual(100);
     expect(MAX_TRACE_AURA_ROUTES).toBeLessThanOrEqual(200);
     expect(MAX_OBSERVER_AURA_LOCATIONS).toBeLessThanOrEqual(140);
+    expect(packetCanvasDpr('smooth')).toBeLessThan(packetCanvasDpr('balanced'));
+    expect(packetCanvasDpr('balanced')).toBeLessThan(packetCanvasDpr('high'));
+    expect(packetTraceAuraBudget('smooth')).toBeLessThan(packetTraceAuraBudget('high'));
+    expect(packetObserverAuraBudget('smooth')).toBeLessThan(packetObserverAuraBudget('high'));
+    expect(packetMaskCacheInterval('smooth')).toBeGreaterThan(packetMaskCacheInterval('high'));
     expect(MAX_ACTIVE_OBSERVER_BURSTS).toBe(24);
     expect(MAX_OBSERVER_BURSTS_PER_LOCATION).toBe(1);
     expect(OBSERVER_AURA_WINDOW_MS).toBe(150_000);
@@ -91,7 +100,10 @@ describe('packet animation timing', () => {
   it('bounds recent route sparkle residue for visible but cheap packet trails', () => {
     expect(routeResidueSparkleCount(0, 100)).toBe(0);
     expect(routeResidueSparkleCount(1, 100)).toBe(1);
-    expect(routeResidueSparkleCount(999, 100)).toBe(MAX_ROUTE_SPARKLES_PER_TRACE);
+    expect(routeResidueSparkleCount(999, 100)).toBe(3);
+    expect(routeResidueSparkleCount(999, 100, 'high')).toBe(MAX_ROUTE_SPARKLES_PER_TRACE);
+    expect(routeResidueSparkleCount(2, 100, 'smooth')).toBe(0);
+    expect(routeResidueSparkleCount(9, 100, 'smooth')).toBe(1);
     expect(routeResidueSparkleCount(999, ROUTE_SPARKLE_WINDOW_MS + 1)).toBe(0);
     expect(routeResidueSparkleAlpha(100, 1, 0.2)).toBeGreaterThan(0);
     expect(routeResidueSparkleAlpha(ROUTE_SPARKLE_WINDOW_MS + 1, 1, 0.2)).toBe(0);

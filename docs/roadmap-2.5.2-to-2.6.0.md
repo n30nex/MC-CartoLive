@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-01
 
-Baseline audited: `v2.5.35` live-status simplification, slower Live Follow, broader palette token coverage, NetGraph legend/icon alignment, browser smoke gate and mobile Perf/Packets clipping fix, OpenFreeMap selected-packet chase camera refinement, OpenFreeMap 3D adaptive LOD/budgets, long-text Chat rebroadcast dedupe, OpenFreeMap 3D render-cost reduction, palette-aware NetGraph visuals, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
+Baseline audited: `v2.5.36` render-quality controls, OpenFreeMap/flat-map render budget reductions, live-status simplification, slower Live Follow, broader palette token coverage, NetGraph legend/icon alignment, browser smoke gate and mobile Perf/Packets clipping fix, OpenFreeMap selected-packet chase camera refinement, OpenFreeMap 3D adaptive LOD/budgets, long-text Chat rebroadcast dedupe, OpenFreeMap 3D render-cost reduction, palette-aware NetGraph visuals, strict build-age parsing, Chat duplicate suppression hardening, Chat pressure guard, Chat query indexes, NetGraph layout stability, OpenFreeMap 3D rebuild guard, flatter route readability, NetGraph helper, 3D chase-helper, and release-privacy scan work
 
 ## Audit Coverage
 
@@ -626,6 +626,24 @@ Status: active patch.
 - Keep first-run Setup available from Guide, but remove it from the permanent
   top navigation beside Perf, Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
+
+## 2.5.36 - Render Quality And Map Animation Budget
+
+Goal: improve OpenFreeMap 3D and flat-map smoothness without changing public
+data schemas or reducing the user's ability to choose richer visuals.
+
+Scope:
+
+- Add a persisted `Smooth` / `Balanced` / `High` render quality setting under
+  Map Settings.
+- Use render quality to scale OpenFreeMap 3D node, route, comet, observer glow,
+  and route-arc geometry budgets.
+- Use render quality to scale flat-map packet canvas DPR, mask refresh cadence,
+  route residue budget, observer aura budget, and decorative sparkle work.
+- Dispose capped/dropped Three.js comet and observer-glow objects as soon as
+  they leave the active budget.
+- Keep the default Balanced mode smoother than prior releases while preserving
+  High mode for richer visuals on stronger clients.
 
 ## 2.5.35 - Live Status, Live Follow, Theme, And NetGraph Visual Polish
 

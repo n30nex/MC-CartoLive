@@ -1,4 +1,5 @@
 export type PacketAnimationStyle = 'comet' | 'pulse' | 'minimal';
+export type RenderQuality = 'smooth' | 'balanced' | 'high';
 
 export interface MapLayerSettings {
   clusters: boolean;
@@ -23,6 +24,7 @@ export interface PacketVisualSettings {
   trail: number;
   animationStyle: PacketAnimationStyle;
   showLiveCometsAtAllZooms: boolean;
+  renderQuality: RenderQuality;
 }
 
 export interface MapSettings {
@@ -54,7 +56,8 @@ export const DEFAULT_PACKET_VISUAL_SETTINGS: PacketVisualSettings = {
   brightness: 1,
   trail: 1,
   animationStyle: 'comet',
-  showLiveCometsAtAllZooms: false
+  showLiveCometsAtAllZooms: false,
+  renderQuality: 'balanced'
 };
 
 export const DEFAULT_MAP_SETTINGS: MapSettings = {
@@ -97,7 +100,8 @@ export function normalizePacketVisualSettings(input: unknown): PacketVisualSetti
     brightness: clampNumber(raw.brightness, 0.4, 1.6, DEFAULT_PACKET_VISUAL_SETTINGS.brightness),
     trail: clampNumber(raw.trail, 0, 2, DEFAULT_PACKET_VISUAL_SETTINGS.trail),
     animationStyle: isPacketAnimationStyle(raw.animationStyle) ? raw.animationStyle : DEFAULT_PACKET_VISUAL_SETTINGS.animationStyle,
-    showLiveCometsAtAllZooms: boolOrDefault(raw.showLiveCometsAtAllZooms, DEFAULT_PACKET_VISUAL_SETTINGS.showLiveCometsAtAllZooms)
+    showLiveCometsAtAllZooms: boolOrDefault(raw.showLiveCometsAtAllZooms, DEFAULT_PACKET_VISUAL_SETTINGS.showLiveCometsAtAllZooms),
+    renderQuality: isRenderQuality(raw.renderQuality) ? raw.renderQuality : DEFAULT_PACKET_VISUAL_SETTINGS.renderQuality
   };
 }
 
@@ -121,6 +125,10 @@ export function isPacketAnimationStyle(value: unknown): value is PacketAnimation
   return value === 'comet' || value === 'pulse' || value === 'minimal';
 }
 
+export function isRenderQuality(value: unknown): value is RenderQuality {
+  return value === 'smooth' || value === 'balanced' || value === 'high';
+}
+
 export function layerSettingsSignature(settings: MapLayerSettings): string {
   return [
     settings.clusters,
@@ -141,7 +149,7 @@ export function layerSettingsSignature(settings: MapLayerSettings): string {
 }
 
 export function packetVisualSignature(settings: PacketVisualSettings): string {
-  return `${settings.speed.toFixed(2)}:${settings.brightness.toFixed(2)}:${settings.trail.toFixed(2)}:${settings.animationStyle}:${settings.showLiveCometsAtAllZooms ? '1' : '0'}`;
+  return `${settings.speed.toFixed(2)}:${settings.brightness.toFixed(2)}:${settings.trail.toFixed(2)}:${settings.animationStyle}:${settings.showLiveCometsAtAllZooms ? '1' : '0'}:${settings.renderQuality}`;
 }
 
 function boolOrDefault(value: unknown, fallback: boolean): boolean {

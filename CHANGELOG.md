@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 2.5.36 - 2026-06-02
+
+- Added a persisted Map Settings render quality control with `Smooth`,
+  `Balanced`, and `High` modes for packet and OpenFreeMap rendering.
+- Lowered the default OpenFreeMap 3D render pressure by scaling node, route,
+  comet, observer glow, and route-arc geometry budgets from the selected render
+  quality.
+- Reduced flat-map packet canvas cost by scaling canvas DPR, residue budgets,
+  observer aura budgets, mask refresh cadence, and decorative route sparkles by
+  render quality.
+- Fixed a long-session OpenFreeMap 3D leak where capped/dropped packet comets
+  and observer glows were removed from arrays but their Three.js objects could
+  stay attached to the scene.
+- Switched the OpenFreeMap Three.js renderer to request high-performance GPU
+  rendering without antialiasing the custom layer, preserving the 2D MapLibre
+  layers for labels and hit testing.
+
 ## 2.5.35 - 2026-06-02
 
 - Simplified the Perf page into direct live/not-live checks for backend,

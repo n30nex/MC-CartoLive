@@ -5,17 +5,15 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.35` is the active foundation patch toward the next production-ready
+Version `2.5.36` is the active foundation patch toward the next production-ready
 `2.6.0` release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: public-safe live status simplification, calmer Live
-  Follow camera movement, wider palette token coverage, NetGraph visual
-  alignment with the map legend, OpenFreeMap 3D render-cost reduction, backend
-  scale, Packets/VCR data-path stability, light-mode route contrast, and
-  mobile/browser regression coverage.
+- Current patch focus: render-quality controls, smoother OpenFreeMap 3D and
+  flat-map animation budgets, backend scale, Packets/VCR data-path stability,
+  light-mode route contrast, and mobile/browser regression coverage.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -198,6 +196,18 @@ Version `2.5.35` is the active foundation patch toward the next production-ready
   navigation.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
+
+## 2.5.36 Patch Focus
+
+- Add a persisted Smooth/Balanced/High render quality control under Map
+  Settings.
+- Use the selected render quality to scale OpenFreeMap 3D node, route, comet,
+  observer glow, and route-arc geometry budgets.
+- Use the selected render quality to scale flat-map packet canvas DPR, masking,
+  residue, observer aura, and sparkle work.
+- Dispose capped/dropped 3D comet and observer-glow objects immediately so
+  long live sessions do not accumulate hidden Three.js objects.
+- Keep public APIs, privacy boundaries, and hosted Canada behavior unchanged.
 
 ## 2.5.35 Patch Focus
 

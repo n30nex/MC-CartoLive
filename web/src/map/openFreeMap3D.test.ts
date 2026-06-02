@@ -8,7 +8,9 @@ import {
   createOpenFreeMap3DController,
   nodeModelLOD,
   nodeModelKind,
+  openFreeMap3DCometBudget,
   openFreeMap3DNodeBudget,
+  openFreeMap3DObserverGlowBudget,
   openFreeMap3DRouteBudget,
   routeArcRadialSegments,
   routeArcTubularSegments,
@@ -53,7 +55,8 @@ describe('OpenFreeMap 3D layer helpers', () => {
   it('uses adaptive 3D node budgets and keeps focus nodes on full model LOD', () => {
     expect(openFreeMap3DNodeBudget(6.9)).toBe(0);
     expect(openFreeMap3DNodeBudget(7.2)).toBeLessThan(openFreeMap3DNodeBudget(10.5));
-    expect(openFreeMap3DNodeBudget(13)).toBeGreaterThanOrEqual(700);
+    expect(openFreeMap3DNodeBudget(13, 'balanced')).toBeLessThan(openFreeMap3DNodeBudget(13, 'high'));
+    expect(openFreeMap3DNodeBudget(13, 'high')).toBeGreaterThanOrEqual(630);
 
     const focus = { ...emptyNodeFocus(), selectedNodeID: 'selected', pathNodeIDs: new Set(['path']) };
 
@@ -66,7 +69,10 @@ describe('OpenFreeMap 3D layer helpers', () => {
   it('uses adaptive 3D route budgets so low zoom route arcs stay bounded', () => {
     expect(openFreeMap3DRouteBudget(5)).toBeLessThan(openFreeMap3DRouteBudget(9));
     expect(openFreeMap3DRouteBudget(9)).toBeLessThan(openFreeMap3DRouteBudget(12));
-    expect(openFreeMap3DRouteBudget(13)).toBeGreaterThanOrEqual(850);
+    expect(openFreeMap3DRouteBudget(13, 'smooth')).toBeLessThan(openFreeMap3DRouteBudget(13, 'balanced'));
+    expect(openFreeMap3DRouteBudget(13, 'high')).toBeGreaterThanOrEqual(760);
+    expect(openFreeMap3DCometBudget('smooth')).toBeLessThan(openFreeMap3DCometBudget('high'));
+    expect(openFreeMap3DObserverGlowBudget('smooth')).toBeLessThan(openFreeMap3DObserverGlowBudget('high'));
   });
 
   it('keeps fresh or focused 3D routes without including every offscreen route', () => {
@@ -88,10 +94,12 @@ describe('OpenFreeMap 3D layer helpers', () => {
 
   it('uses cheaper route arc geometry for ordinary arcs while preserving selected emphasis', () => {
     expect(routeArcRadialSegments(1)).toBe(3);
-    expect(routeArcRadialSegments(1.35)).toBe(4);
-    expect(routeArcRadialSegments(1.85)).toBe(5);
+    expect(routeArcRadialSegments(1.35)).toBe(3);
+    expect(routeArcRadialSegments(1.85)).toBe(4);
+    expect(routeArcRadialSegments(1.85, 'high')).toBe(5);
+    expect(routeArcTubularSegments(34, 1, 'smooth')).toBeLessThan(routeArcTubularSegments(34, 1, 'high'));
     expect(routeArcTubularSegments(34, 1)).toBeLessThan(routeArcTubularSegments(34, 1.85));
-    expect(routeArcTubularSegments(8, 1)).toBeGreaterThanOrEqual(5);
+    expect(routeArcTubularSegments(8, 1)).toBeGreaterThanOrEqual(4);
   });
 
   it('precomputes 3D comet arc vectors once per route segment', () => {

@@ -4,7 +4,8 @@ import {
   normalizeMapSettings,
   type MapLayerSettings,
   type MapSettings,
-  type PacketAnimationStyle
+  type PacketAnimationStyle,
+  type RenderQuality
 } from '../mapSettings';
 
 interface MapSettingsDrawerProps {
@@ -36,11 +37,17 @@ const ANIMATION_STYLES: readonly { value: PacketAnimationStyle; label: string }[
   { value: 'minimal', label: 'Minimal' }
 ];
 
+const RENDER_QUALITIES: readonly { value: RenderQuality; label: string }[] = [
+  { value: 'smooth', label: 'Smooth' },
+  { value: 'balanced', label: 'Balanced' },
+  { value: 'high', label: 'High' }
+];
+
 export default function MapSettingsDrawer({ settings, onChange, onClose }: MapSettingsDrawerProps) {
   const updateLayer = (key: keyof MapLayerSettings, value: boolean) => {
     onChange(normalizeMapSettings({ ...settings, layers: { ...settings.layers, [key]: value } }));
   };
-  const updatePacket = (key: keyof MapSettings['packets'], value: number | PacketAnimationStyle) => {
+  const updatePacket = (key: keyof MapSettings['packets'], value: number | PacketAnimationStyle | RenderQuality) => {
     onChange(normalizeMapSettings({ ...settings, packets: { ...settings.packets, [key]: value } }));
   };
   const updatePacketToggle = (key: keyof MapSettings['packets'], value: boolean) => {
@@ -91,6 +98,18 @@ export default function MapSettingsDrawer({ settings, onChange, onClose }: MapSe
               onClick={() => updatePacket('animationStyle', style.value)}
             >
               {style.label}
+            </button>
+          ))}
+        </div>
+        <div className="map-settings-segmented" role="group" aria-label="Render quality">
+          {RENDER_QUALITIES.map((quality) => (
+            <button
+              key={quality.value}
+              type="button"
+              className={settings.packets.renderQuality === quality.value ? 'active' : ''}
+              onClick={() => updatePacket('renderQuality', quality.value)}
+            >
+              {quality.label}
             </button>
           ))}
         </div>

@@ -1,6 +1,6 @@
 import maplibregl from 'maplibre-gl';
 import * as THREE from 'three';
-import type { MapLayerSettings, PacketAnimationStyle, PacketVisualSettings } from '../mapSettings';
+import type { MapLayerSettings, PacketAnimationStyle, PacketVisualSettings, RenderQuality } from '../mapSettings';
 import { DEFAULT_MAP_LAYER_SETTINGS, DEFAULT_PACKET_VISUAL_SETTINGS, normalizeLayerSettings, normalizePacketVisualSettings } from '../mapSettings';
 import { payloadVisual } from '../payloadVisuals';
 import type { PublicNode, PublicObserverBurst, PublicRoute, PublicRoutePulse } from '../types';
@@ -15,6 +15,8 @@ export const OPENFREEMAP_3D_LAYER_ID = 'meshcore-openfreemap-3d-live';
 
 export const MAX_NODE_MODELS = 720;
 export const MAX_ROUTE_ARCS = 900;
+export const MAX_3D_ACTIVE_COMETS = 180;
+export const MAX_3D_OBSERVER_GLOWS = 80;
 const ROUTE_FRESH_MS = 5 * 60_000;
 const OBSERVER_GLOW_MS = 5200;
 const PACKET_AFTERGLOW_MS = 900;
@@ -158,8 +160,8 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
       force: pulseOptions.force === true
     });
     this.activeComets.push(active);
-    this.activeComets = this.activeComets.slice(-180);
     this.cometRoot.add(active.root);
+    trimActiveComets(this.cometRoot, this.activeComets, openFreeMap3DCometBudget(this.packetVisualSettings.renderQuality));
     this.map?.triggerRepaint();
     return true;
   }
@@ -168,8 +170,8 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
     if (!this.scene || this.paused || !this.layerSettings.observerBursts || !Number.isFinite(burst.location.lat) || !Number.isFinite(burst.location.lng)) return false;
     const glow = createObserverGlow(burst);
     this.observerGlows.push(glow);
-    this.observerGlows = this.observerGlows.slice(-80);
     this.observerRoot.add(glow.root);
+    trimObserverGlows(this.observerRoot, this.observerGlows, openFreeMap3DObserverGlowBudget(this.packetVisualSettings.renderQuality));
     this.map?.triggerRepaint();
     return true;
   }
@@ -223,8 +225,9 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
     this.renderer = new THREE.WebGLRenderer({
       canvas: map.getCanvas(),
       context: gl,
-      antialias: true,
-      alpha: true
+      antialias: false,
+      alpha: true,
+      powerPreference: 'high-performance'
     });
     this.renderer.autoClear = false;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -321,7 +324,7 @@ function rebuildRouteArcs(map: maplibregl.Map, root: THREE.Group, input: OpenFre
 export function selectOpenFreeMap3DNodes(map: Map3DViewport, input: OpenFreeMap3DUpdate, maxNodes = MAX_NODE_MODELS): PublicNode[] {
   if (!input.layerSettings.nodes || !input.layerSettings.nodeModels3D || map.getZoom() < DETAIL_MIN_ZOOM) return [];
   const bounds = paddedBounds(map, 0.2);
-  const budget = Math.min(maxNodes, openFreeMap3DNodeBudget(map.getZoom()));
+  const budget = Math.min(maxNodes, openFreeMap3DNodeBudget(map.getZoom(), input.packetVisualSettings.renderQuality));
   return input.nodes
     .filter(isMappableNode)
     .filter((node) => boundsContains(bounds, node.longitude, node.latitude))
@@ -334,7 +337,7 @@ export function selectOpenFreeMap3DRoutes(map: Map3DViewport, input: OpenFreeMap
   const bounds = paddedBounds(map, 0.28);
   const zoom = map.getZoom();
   const detail = zoom >= DETAIL_MIN_ZOOM;
-  const budget = Math.min(maxRoutes, openFreeMap3DRouteBudget(zoom));
+  const budget = Math.min(maxRoutes, openFreeMap3DRouteBudget(zoom, input.packetVisualSettings.renderQuality));
   return input.routes
     .filter((route) => isMappableEndpoint(route.from) && isMappableEndpoint(route.to))
     .filter((route) => {
@@ -347,20 +350,22 @@ export function selectOpenFreeMap3DRoutes(map: Map3DViewport, input: OpenFreeMap
     .slice(0, budget);
 }
 
-export function openFreeMap3DNodeBudget(zoom: number): number {
+export function openFreeMap3DNodeBudget(zoom: number, quality: RenderQuality = 'balanced'): number {
   if (zoom < DETAIL_MIN_ZOOM) return 0;
-  if (zoom < 8.4) return 140;
-  if (zoom < 10) return 300;
-  if (zoom < 12) return 520;
-  return MAX_NODE_MODELS;
+  const scale = renderQualityScale(quality);
+  if (zoom < 8.4) return Math.round(90 * scale);
+  if (zoom < 10) return Math.round(200 * scale);
+  if (zoom < 12) return Math.round(360 * scale);
+  return Math.min(MAX_NODE_MODELS, Math.round(520 * scale));
 }
 
-export function openFreeMap3DRouteBudget(zoom: number): number {
-  if (zoom < 5.8) return 80;
-  if (zoom < 8.2) return 180;
-  if (zoom < 10) return 420;
-  if (zoom < 12) return 680;
-  return MAX_ROUTE_ARCS;
+export function openFreeMap3DRouteBudget(zoom: number, quality: RenderQuality = 'balanced'): number {
+  const scale = renderQualityScale(quality);
+  if (zoom < 5.8) return Math.round(42 * scale);
+  if (zoom < 8.2) return Math.round(110 * scale);
+  if (zoom < 10) return Math.round(260 * scale);
+  if (zoom < 12) return Math.round(460 * scale);
+  return Math.min(MAX_ROUTE_ARCS, Math.round(640 * scale));
 }
 
 export function nodeModelLOD(node: PublicNode, focus: NodeFocus, zoom: number): NodeModelLOD {
@@ -416,7 +421,7 @@ function createRouteArcMesh(route: PublicRoute, input: OpenFreeMap3DUpdate, now:
   const color = selected ? '#f8fafc' : path ? '#facc15' : connected ? '#67e8f9' : routeColors[Math.max(0, Math.min(4, route.frequencyBucket))];
   const opacity = selected ? 0.82 : path ? 0.72 : connected ? 0.58 : now - route.lastHeard <= ROUTE_FRESH_MS ? 0.5 : 0.28;
   const emphasis = selected || path ? 1.85 : connected ? 1.35 : 1;
-  return createSegmentArcMesh(route.id, { from: route.from, to: route.to, distanceKm: route.distanceKm, routeId: route.id }, color, opacity, emphasis);
+  return createSegmentArcMesh(route.id, { from: route.from, to: route.to, distanceKm: route.distanceKm, routeId: route.id }, color, opacity, emphasis, input.packetVisualSettings.renderQuality);
 }
 
 function createSegmentArcMesh(
@@ -424,7 +429,8 @@ function createSegmentArcMesh(
   segment: Pick<PublicRoutePulse['segments'][number], 'from' | 'to' | 'distanceKm' | 'routeId'>,
   color: string,
   opacity: number,
-  emphasis: number
+  emphasis: number,
+  quality: RenderQuality = 'balanced'
 ): THREE.Object3D {
   const samples = sampleRouteArc(segment.from, segment.to, { distanceKm: segment.distanceKm, heightScale: emphasis });
   const points = samples.map((sample) => mercatorVector(sample));
@@ -432,23 +438,28 @@ function createSegmentArcMesh(
   const midpoint = samples[Math.floor(samples.length / 2)] ?? samples[0];
   const scale = meterScale(midpoint.lng, midpoint.lat);
   const radius = scale * clamp(90 + Math.sqrt(Math.max(1, segment.distanceKm)) * 18 * emphasis, 80, 2200);
-  const geometry = new THREE.TubeGeometry(curve, routeArcTubularSegments(samples.length, emphasis), radius, routeArcRadialSegments(emphasis), false);
+  const geometry = new THREE.TubeGeometry(curve, routeArcTubularSegments(samples.length, emphasis, quality), radius, routeArcRadialSegments(emphasis, quality), false);
   const mesh = new THREE.Mesh(geometry, material(hexNumber(color), opacity, true));
   mesh.name = `route-arc:${name}`;
   return mesh;
 }
 
-export function routeArcTubularSegments(sampleCount: number, emphasis: number): number {
+export function routeArcTubularSegments(sampleCount: number, emphasis: number, quality: RenderQuality = 'balanced'): number {
   const base = Math.max(6, sampleCount - 1);
-  if (emphasis >= 1.6) return base;
-  if (emphasis >= 1.25) return Math.max(6, Math.round(base * 0.85));
-  return Math.max(5, Math.round(base * 0.68));
+  const qualityScale = quality === 'high' ? 1 : quality === 'smooth' ? 0.56 : 0.76;
+  if (emphasis >= 1.6) return Math.max(6, Math.round(base * qualityScale));
+  if (emphasis >= 1.25) return Math.max(5, Math.round(base * qualityScale * 0.84));
+  return Math.max(4, Math.round(base * qualityScale * 0.66));
 }
 
-export function routeArcRadialSegments(emphasis: number): number {
-  if (emphasis >= 1.6) return 5;
-  if (emphasis >= 1.25) return 4;
-  return 3;
+export function routeArcRadialSegments(emphasis: number, quality: RenderQuality = 'balanced'): number {
+  if (quality === 'smooth') return emphasis >= 1.6 ? 3 : 2;
+  if (quality === 'high') {
+    if (emphasis >= 1.6) return 5;
+    if (emphasis >= 1.25) return 4;
+    return 3;
+  }
+  return emphasis >= 1.6 ? 4 : 3;
 }
 
 function createComet(input: Omit<ActiveComet, 'root' | 'head' | 'halo' | 'cone' | 'trail' | 'trailGeometry' | 'trailPositions' | 'maxTrailPoints' | 'paths' | 'tailTarget'>): ActiveComet {
@@ -548,12 +559,31 @@ function updateObserverGlow(glow: ObserverGlow, elapsed: number) {
   if ('opacity' in mat) mat.opacity = (1 - progress) * 0.5;
 }
 
+function trimActiveComets(root: THREE.Group, comets: ActiveComet[], budget: number) {
+  while (comets.length > budget) {
+    const dropped = comets.shift();
+    if (!dropped) continue;
+    root.remove(dropped.root);
+    disposeObject(dropped.root);
+  }
+}
+
+function trimObserverGlows(root: THREE.Group, glows: ObserverGlow[], budget: number) {
+  while (glows.length > budget) {
+    const dropped = glows.shift();
+    if (!dropped) continue;
+    root.remove(dropped.root);
+    disposeObject(dropped.root);
+  }
+}
+
 function nodeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): string {
   const selectedNodes = selectOpenFreeMap3DNodes(map, input);
   const zoom = map.getZoom();
   return [
     input.layerSettings.nodes,
     input.layerSettings.nodeModels3D,
+    input.packetVisualSettings.renderQuality,
     input.themeMode,
     viewSignature(map),
     input.focus.selectedNodeID ?? '',
@@ -569,6 +599,7 @@ function routeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): s
     input.layerSettings.routes,
     input.layerSettings.routeArcs3D,
     input.layerSettings.analysisPaths,
+    input.packetVisualSettings.renderQuality,
     input.selectedRouteID ?? '',
     viewSignature(map),
     stableSetSignature(input.focus.connectedRouteIDs),
@@ -606,6 +637,24 @@ function nodePriority(node: PublicNode, focus: NodeFocus): number {
   if (focus.neighbourNodeIDs.has(node.id)) score += 2500;
   if (node.isObserver) score += 900;
   return score;
+}
+
+export function openFreeMap3DCometBudget(quality: RenderQuality = 'balanced'): number {
+  if (quality === 'smooth') return 72;
+  if (quality === 'high') return MAX_3D_ACTIVE_COMETS;
+  return 120;
+}
+
+export function openFreeMap3DObserverGlowBudget(quality: RenderQuality = 'balanced'): number {
+  if (quality === 'smooth') return 32;
+  if (quality === 'high') return MAX_3D_OBSERVER_GLOWS;
+  return 54;
+}
+
+function renderQualityScale(quality: RenderQuality): number {
+  if (quality === 'smooth') return 0.58;
+  if (quality === 'high') return 1.22;
+  return 1;
 }
 
 function paddedBounds(map: Map3DViewport, factor: number) {

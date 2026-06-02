@@ -7,7 +7,8 @@ import {
   normalizePacketVisualSettings,
   type MapLayerSettings,
   type PacketAnimationStyle,
-  type PacketVisualSettings
+  type PacketVisualSettings,
+  type RenderQuality
 } from '../mapSettings';
 import { payloadVisual } from '../payloadVisuals';
 import { recordPacketFrame, recordPacketSkippedFrame } from '../perfDiagnostics';
@@ -195,7 +196,7 @@ export class PacketAnimator {
 
   resize() {
     const rect = this.canvas.getBoundingClientRect();
-    const dpr = Math.min(CANVAS_MAX_DPR, window.devicePixelRatio || 1);
+    const dpr = Math.min(packetCanvasDpr(this.visualSettings.renderQuality), window.devicePixelRatio || 1);
     this.displayWidth = Math.max(1, rect.width);
     this.displayHeight = Math.max(1, rect.height);
     const backingWidth = Math.max(1, Math.floor(rect.width * dpr));
@@ -222,7 +223,14 @@ export class PacketAnimator {
   }
 
   setVisualSettings(settings: PacketVisualSettings) {
+    const previousQuality = this.visualSettings.renderQuality;
     this.visualSettings = normalizePacketVisualSettings(settings);
+    if (previousQuality !== this.visualSettings.renderQuality) {
+      this.nextMaskRefreshAt = 0;
+      this.traceAggregatesDirty = true;
+      this.observerAggregatesDirty = true;
+      this.resize();
+    }
     this.forceNextFrame = true;
     this.requestFrame();
   }
@@ -845,7 +853,7 @@ export class PacketAnimator {
   }
 
   private drawRouteResidueSparkles(x0: number, y0: number, x1: number, y1: number, color: string, count: number, ageMs: number, intensity: number, alpha: number) {
-    const sparkleCount = routeResidueSparkleCount(count, ageMs);
+    const sparkleCount = routeResidueSparkleCount(count, ageMs, this.visualSettings.renderQuality);
     const sparkleAlpha = routeResidueSparkleAlpha(ageMs, intensity, alpha);
     if (sparkleCount <= 0 || sparkleAlpha <= 0.01) return;
     const dx = x1 - x0;
@@ -886,7 +894,7 @@ export class PacketAnimator {
 
   private traceAggregatesForFrame(): TraceAggregate[] {
     if (this.traceAggregatesDirty) {
-      this.traceAggregates = rankTraceAggregates(aggregateTraceHits(this.traceHits)).slice(0, MAX_TRACE_AURA_ROUTES);
+      this.traceAggregates = rankTraceAggregates(aggregateTraceHits(this.traceHits)).slice(0, packetTraceAuraBudget(this.visualSettings.renderQuality));
       this.traceAggregatesDirty = false;
     }
     return this.traceAggregates;
@@ -894,7 +902,7 @@ export class PacketAnimator {
 
   private observerAggregatesForFrame(): ObserverBurstAggregate[] {
     if (this.observerAggregatesDirty) {
-      this.observerBurstAggregates = rankObserverBurstAggregates(aggregateObserverBurstHits(this.observerBurstHits)).slice(0, MAX_OBSERVER_AURA_LOCATIONS);
+      this.observerBurstAggregates = rankObserverBurstAggregates(aggregateObserverBurstHits(this.observerBurstHits)).slice(0, packetObserverAuraBudget(this.visualSettings.renderQuality));
       this.observerAggregatesDirty = false;
     }
     return this.observerBurstAggregates;
@@ -906,7 +914,7 @@ export class PacketAnimator {
 
     if (now >= this.nextMaskRefreshAt) {
       this.maskFeatures = this.map.queryRenderedFeatures(undefined, { layers: layerIDs }) as RenderedPointFeature[];
-      this.nextMaskRefreshAt = now + MASK_CACHE_INTERVAL_MS;
+      this.nextMaskRefreshAt = now + packetMaskCacheInterval(this.visualSettings.renderQuality);
     }
     const features = this.maskFeatures;
     if (features.length === 0) return;
@@ -981,9 +989,11 @@ export function routeResidueAlpha(count: number, fade = 1): number {
   return Math.min(ROUTE_RESIDUE_ALPHA_CAP, (0.022 + intensity * 0.118) * clamp01(fade));
 }
 
-export function routeResidueSparkleCount(count: number, ageMs: number): number {
+export function routeResidueSparkleCount(count: number, ageMs: number, quality: RenderQuality = 'balanced'): number {
   if (count <= 0 || ageMs < 0 || ageMs > ROUTE_SPARKLE_WINDOW_MS) return 0;
-  return Math.max(1, Math.min(MAX_ROUTE_SPARKLES_PER_TRACE, Math.ceil(Math.log1p(count))));
+  if (quality === 'smooth') return count >= 8 ? 1 : 0;
+  const maxSparkles = quality === 'high' ? MAX_ROUTE_SPARKLES_PER_TRACE : 3;
+  return Math.max(1, Math.min(maxSparkles, Math.ceil(Math.log1p(count))));
 }
 
 export function routeResidueSparkleAlpha(ageMs: number, intensity: number, alpha: number): number {
@@ -1076,6 +1086,30 @@ export function observerBurstAllowed(activeTotal: number, activeForLocation: num
   if (activeForLocation >= MAX_OBSERVER_BURSTS_PER_LOCATION) return false;
   if (lastLocationAt !== undefined && now - lastLocationAt < OBSERVER_BURST_LOCATION_INTERVAL_MS) return false;
   return true;
+}
+
+export function packetCanvasDpr(quality: RenderQuality = 'balanced'): number {
+  if (quality === 'smooth') return 1;
+  if (quality === 'high') return CANVAS_MAX_DPR;
+  return 1.25;
+}
+
+export function packetTraceAuraBudget(quality: RenderQuality = 'balanced'): number {
+  if (quality === 'smooth') return 90;
+  if (quality === 'high') return MAX_TRACE_AURA_ROUTES;
+  return 130;
+}
+
+export function packetObserverAuraBudget(quality: RenderQuality = 'balanced'): number {
+  if (quality === 'smooth') return 60;
+  if (quality === 'high') return MAX_OBSERVER_AURA_LOCATIONS;
+  return 86;
+}
+
+export function packetMaskCacheInterval(quality: RenderQuality = 'balanced'): number {
+  if (quality === 'smooth') return 260;
+  if (quality === 'high') return MASK_CACHE_INTERVAL_MS;
+  return 190;
 }
 
 function pointAlongSegment(x0: number, y0: number, x1: number, y1: number, progress: number) {

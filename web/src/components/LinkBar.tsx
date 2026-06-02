@@ -15,11 +15,12 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.35';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.36';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
+  '2.5.36 adds a render quality control and lowers default 3D/canvas render pressure for smoother OpenFreeMap and flat-map motion.',
   '2.5.35 simplifies Perf into live/not-live status, slows Live Follow, expands palette coverage, and aligns NetGraph visuals with map icons.',
   '2.5.34 adds repeatable desktop/mobile browser smoke coverage and fixes mobile Perf/Packets panel clipping.',
   '2.5.33 improves selected OpenFreeMap packet replay with a trailing chase camera, smoother cadence, and distance-aware pitch.',
@@ -50,7 +51,7 @@ const GUIDE_STEPS = [
   'Use the layer button to switch between the original flat map and OpenFreeMap 3D.',
   'Open Packets to inspect only real public paths, then Replay to pause live and animate one packet route.',
   'Open NetGraph to see the connected public network as a live node graph.',
-  'Use Map Settings for layers, 3D toggles, comet speed, brightness, trails, and animation style.',
+  'Use Map Settings for layers, 3D toggles, render quality, comet speed, brightness, trails, and animation style.',
   'Use Plot Routes and Select two for path analysis, or the VCR to replay public route history.'
 ];
 
