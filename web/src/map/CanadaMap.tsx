@@ -952,6 +952,10 @@ function customLayerProjectionReady(map: maplibregl.Map): boolean {
 }
 
 function supportsOpenFreeMapCustom3D(map: maplibregl.Map): boolean {
+  if (typeof window !== 'undefined') {
+    if (window.innerWidth < 700 || window.innerHeight < 520) return false;
+    if (window.matchMedia?.('(pointer: coarse)').matches) return false;
+  }
   const canvas = map.getCanvas();
   return canvas.clientWidth >= 700 && canvas.clientHeight >= 520;
 }
@@ -1211,6 +1215,7 @@ export default function CanadaMap({
         openFreeMap3DImportRef.current = null;
         const currentMap = mapRef.current;
         if (!currentMap || currentMap !== map || baseModeRef.current !== 'openfreemap' || !loadedRef.current) return;
+        if (!supportsOpenFreeMapCustom3D(currentMap)) return;
         ensureMercatorProjection(currentMap);
         if (!customLayerProjectionReady(currentMap)) {
           window.setTimeout(updateOpenFreeMap3D, 120);
@@ -1219,7 +1224,14 @@ export default function CanadaMap({
         const controller = createOpenFreeMap3DController();
         openFreeMap3DRef.current = controller;
         if (!currentMap.getLayer(OPENFREEMAP_3D_LAYER_ID)) {
-          currentMap.addLayer(controller.layer, currentMap.getLayer(NODE_HALO_LAYER) ? NODE_HALO_LAYER : undefined);
+          try {
+            currentMap.addLayer(controller.layer, currentMap.getLayer(NODE_HALO_LAYER) ? NODE_HALO_LAYER : undefined);
+          } catch (error) {
+            openFreeMap3DRef.current = null;
+            controller.destroy();
+            setMapInitError(`OpenFreeMap 3D warning: ${error instanceof Error ? error.message : String(error)}`);
+            return;
+          }
         }
         applyUpdate(controller);
       })
