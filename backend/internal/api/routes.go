@@ -534,6 +534,10 @@ func (s *Server) publicHistory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if s.publicHistoryFromProjection(w, ctx, now, from, to, limit, cursor) {
+		failed = false
+		return
+	}
 	events := make([]live.PublicHistoryEvent, 0, limit)
 	nextCursor := cursor
 	var observerLocations live.PublicObserverLocationIndex
@@ -598,6 +602,84 @@ func (s *Server) publicHistory(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	failed = false
+}
+
+func (s *Server) publicHistoryFromProjection(
+	w http.ResponseWriter,
+	ctx context.Context,
+	now int64,
+	from int64,
+	to int64,
+	limit int,
+	cursor *store.HistoryCursor,
+) bool {
+	events := make([]live.PublicHistoryEvent, 0, limit)
+	nextCursor := cursor
+	scanned := 0
+	exhausted := false
+	for len(events) < limit && scanned < publicPacketsMaxRawScan {
+		rawLimit := minInt(historyRawPageSize(limit-len(events)), publicPacketsMaxRawScan-scanned)
+		rawPackets, rawCursor, _, err := s.Store.PublicPacketPaths(ctx, store.PublicPacketPathQuery{
+			From:        from,
+			To:          to,
+			Limit:       rawLimit,
+			Cursor:      nextCursor,
+			NewestFirst: false,
+		})
+		if err != nil {
+			return false
+		}
+		scanned += len(rawPackets)
+		if len(rawPackets) == 0 {
+			if len(events) == 0 && cursor == nil {
+				return false
+			}
+			nextCursor = nil
+			exhausted = true
+			break
+		}
+		lastScannedCursor := nextCursor
+		for _, packet := range rawPackets {
+			if packetCursor := publicPacketProjectionCursor(packet); packetCursor != nil {
+				lastScannedCursor = packetCursor
+			}
+			if !s.allowsPublicIATA(packet.IATA) {
+				continue
+			}
+			pulse, ok := publicRoutePulseFromPacketPath(packet)
+			if !ok {
+				continue
+			}
+			events = append(events, live.PublicHistoryEvent{Type: "routePulse", At: packet.At, Data: pulse})
+			if len(events) >= limit {
+				nextCursor = lastScannedCursor
+				break
+			}
+		}
+		if len(events) >= limit {
+			break
+		}
+		nextCursor = rawCursor
+		if rawCursor == nil {
+			exhausted = true
+			break
+		}
+	}
+	nextCursorToken := ""
+	if nextCursor != nil && !exhausted && (len(events) >= limit || scanned >= publicPacketsMaxRawScan) {
+		nextCursorToken = encodeHistoryCursor(*nextCursor)
+	}
+	writeJSON(w, http.StatusOK, live.PublicHistoryResponse{
+		ServerTime: now,
+		Events:     events,
+		NextCursor: nextCursorToken,
+		Window: live.PublicHistoryWindow{
+			From:  from,
+			To:    to,
+			Count: len(events),
+		},
+	})
+	return true
 }
 
 func (s *Server) publicHistorySummary(w http.ResponseWriter, r *http.Request) {
@@ -919,19 +1001,6 @@ func (s *Server) publicPacketsFromProjection(
 	cursor *store.HistoryCursor,
 	filters publicPacketFilters,
 ) bool {
-	complete, err := s.Store.PublicPacketPathProjectionComplete(ctx, from, to)
-	if err != nil {
-		if s.Runtime != nil {
-			s.Runtime.RecordPublicPacketsProjection(false, false, true)
-		}
-		return false
-	}
-	if !complete {
-		if s.Runtime != nil {
-			s.Runtime.RecordPublicPacketsProjection(false, false, false)
-		}
-		return false
-	}
 	packets := make([]live.PublicPacketPath, 0, limit)
 	nextCursor := cursor
 	scanned := 0
@@ -944,6 +1013,7 @@ func (s *Server) publicPacketsFromProjection(
 			To:              to,
 			Limit:           rawLimit,
 			Cursor:          nextCursor,
+			NewestFirst:     true,
 			IATA:            filters.iata,
 			PayloadTypeName: filters.payload,
 			MinHops:         filters.minHops,
@@ -1388,6 +1458,26 @@ func publicPacketPath(edge live.EdgeEvent, pathHash3ByNodeID map[string]string) 
 		return live.PublicPacketPath{}, false
 	}
 	return live.PublicPacketPathFromPulse(pulse)
+}
+
+func publicRoutePulseFromPacketPath(packet live.PublicPacketPath) (live.PublicRoutePulse, bool) {
+	if len(packet.Segments) == 0 || packet.At <= 0 {
+		return live.PublicRoutePulse{}, false
+	}
+	region := strings.ToUpper(strings.TrimSpace(packet.Region))
+	if region == "" {
+		region = strings.ToUpper(strings.TrimSpace(packet.IATA))
+	}
+	return live.PublicRoutePulse{
+		ID:              strings.TrimSpace(packet.ID),
+		IATA:            strings.ToUpper(strings.TrimSpace(packet.IATA)),
+		Region:          region,
+		PayloadTypeName: strings.TrimSpace(packet.PayloadTypeName),
+		MessageSender:   strings.TrimSpace(packet.MessageSender),
+		MessageText:     strings.TrimSpace(packet.MessageText),
+		HeardAt:         packet.At,
+		Segments:        append([]live.PublicRouteSegment{}, packet.Segments...),
+	}, true
 }
 
 func publicHistoryWindow(r *http.Request, now int64) (int64, int64) {

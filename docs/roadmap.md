@@ -5,27 +5,14 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.5.51` is the active foundation patch toward the next production-ready
-`2.6.0` release.
+Version `2.6.0` is the current production-ready world operations release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current patch focus: expanded browser-control smoke coverage,
-  packaged-image release-gate smoke automation,
-  projected Packets search-path observability,
-  projected packet-path search-index upgrade catch-up,
-  public-safe projected packet-path FTS search indexing,
-  public-safe Packets projection-path observability, public-safe packet-path
-  projection backfill observability, bounded public packet-path projection
-  backfill, public packet-path projection groundwork,
-  release workflow Node 24 compatibility,
-  cacheless public-state fallback pressure reduction, ingest observer lookup
-  pressure reduction, runtime counter logging pressure reduction, NetGraph
-  hidden-tab animation pausing, render-quality controls, quality-aware animation
-  frame pacing, calmer Live Follow, smoother OpenFreeMap 3D and flat-map
-  animation budgets, backend scale, Packets/VCR data-path stability, light-mode
-  route contrast, and mobile/browser regression coverage.
+- Current release focus: public-safe Packets/VCR/Chat/Perf/NetGraph,
+  OpenFreeMap 3D, worldwide/private broker setup, large-database public history
+  and Packets responsiveness, browser smoke, package smoke, and live smoke.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -55,15 +42,14 @@ Version `2.5.51` is the active foundation patch toward the next production-ready
 - Keep docs concise enough that new operators can deploy, smoke test, diagnose,
   back up, restore, and upgrade without reading historical planning notes.
 
-## 2.5.51 Patch Focus
+## 2.6.0 Release Focus
 
-- Expand browser smoke beyond page-open checks so it exercises OpenFreeMap 3D,
-  palette selection, Map Settings, VCR open/scrub/close, and top-bar help
-  popovers.
-- Keep the smoke useful for both desktop and 390px mobile while avoiding flaky
-  WebGL pixel readback.
-- Fix the oversized top-bar changelog popover and keep in-app changelog copy
-  compact.
+- Ship the world-ready operations baseline for hosted Canada and packaged
+  worldwide/private broker installs.
+- Keep public history, Packets, Chat, VCR, Perf, and NetGraph public-safe,
+  schema-compatible, and responsive on production-sized SQLite databases.
+- Verify desktop and 390px mobile with browser smoke, package smoke, live smoke,
+  and privacy checks before publishing the release.
 
 ## 2.5.50 Patch Focus
 

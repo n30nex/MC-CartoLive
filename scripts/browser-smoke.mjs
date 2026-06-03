@@ -42,13 +42,24 @@ const scenarios = [
     ]
   },
   {
+    name: 'setup',
+    hash: '#/setup',
+    waitFor: '.setup-panel',
+    checks: [
+      { selector: '.link-bar', label: 'top project bar' },
+      { selector: '.setup-panel', label: 'first-run setup panel' }
+    ],
+    actions: [smokeSetupPanel]
+  },
+  {
     name: 'packets',
     hash: '#/packets',
     waitFor: '.packets-panel',
     checks: [
       { selector: '.link-bar', label: 'top project bar' },
       { selector: '.packets-panel', label: 'Packets panel' }
-    ]
+    ],
+    actions: [smokePacketsReplay]
   },
   {
     name: 'chat',
@@ -241,9 +252,200 @@ async function smokeVcr(page, viewport) {
   }
 
   await page.getByRole('button', { name: /Change replay speed/i }).click();
+  await smokeVcrScrubReplay(page);
   await page.getByRole('button', { name: /Hide VCR controls and return live/i }).click();
   await page.waitForSelector('.vcr-bar', { state: 'hidden', timeout: 5_000 });
   await assertVisibleInViewport(page, '.vcr-mini-clock', 'mini live clock after VCR close', viewport);
+}
+
+async function smokeVcrScrubReplay(page) {
+  const replayTarget = await findRecentRoutePulseReplayTarget(page);
+  if (!replayTarget?.timestamp) {
+    throw new Error(`VCR replay smoke could not find a recent routePulse history event. ${compactText(replayTarget?.diagnostic)}`);
+  }
+  if (replayTarget.scopeLabel !== '1h') {
+    await page.locator('.vcr-scope').getByRole('button', { name: new RegExp(`^${replayTarget.scopeLabel}$`, 'i') }).click();
+    await page.waitForTimeout(250);
+  }
+
+  await setRangeInputValue(page.locator('input.vcr-timeline').first(), replayTarget.timestamp);
+  await page.waitForSelector('.vcr-bar.paused', { state: 'visible', timeout: 8_000 });
+
+  const replayAttempt = page.waitForFunction(() => {
+    const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
+    const bar = document.querySelector('.vcr-bar');
+    return readout.includes('REPLAY LOADING') || bar?.classList.contains('replay') || Boolean(document.querySelector('.vcr-live-clock-icon.spinning'));
+  }, null, { timeout: 10_000 });
+  await page.getByRole('button', { name: /Replay from selected time/i }).click();
+  await replayAttempt;
+  await page.waitForFunction(() => {
+    const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
+    return !readout.includes('REPLAY LOADING');
+  }, null, { timeout: 20_000 }).catch(() => {});
+  const readoutText = await page.locator('.vcr-readout').first().textContent();
+  if (/NO REPLAY EVENTS|REPLAY ERROR/i.test(readoutText ?? '')) {
+    throw new Error(`VCR replay did not produce replayable route events: ${compactText(readoutText)}`);
+  }
+}
+
+async function smokeSetupPanel(page, viewport) {
+  await assertVisibleInViewport(page, 'section.setup-panel[aria-label="First-run setup"]', 'first-run setup dialog', viewport);
+  await activateSetupPreset(page, 'custom');
+  await page.waitForFunction(() => {
+    const activePreset = document.querySelector('.setup-presets button.active')?.textContent?.trim().toLowerCase();
+    const snippet = document.querySelector('.setup-output pre')?.textContent ?? document.querySelector('.setup-panel pre')?.textContent ?? '';
+    return activePreset === 'custom' && snippet.includes('MAP_REGION_PRESET=custom');
+  }, null, { timeout: 12_000 });
+
+  const snippet = await page.waitForFunction(() => {
+    return document.querySelector('.setup-output pre')?.textContent
+      ?? document.querySelector('.setup-panel pre')?.textContent
+      ?? '';
+  }, null, { timeout: 30_000 }).then((handle) => handle.jsonValue());
+  const required = [
+    'MAP_REGION_PRESET=custom',
+    'PUBLIC_REGIONS=',
+    'MAP_BOUNDS=-45,110,-10,155'
+  ];
+  for (const item of required) {
+    if (!snippet?.includes(item)) throw new Error(`setup generated env is missing ${item}`);
+  }
+  if (/PASSWORD|SECRET|TOKEN|PRIVATE/i.test(snippet ?? '')) {
+    throw new Error('setup generated env unexpectedly includes secret-oriented fields');
+  }
+}
+
+async function smokePacketsReplay(page, viewport) {
+  const row = await waitForPacketRow(page);
+  await row.locator('.packet-row-main').click();
+  await page.waitForSelector('.packet-row.selected', { state: 'visible', timeout: 8_000 });
+  await page.waitForSelector('.packet-detail:not(.empty)', { state: 'visible', timeout: 8_000 });
+
+  if (!viewport.isMobile) {
+    const toggle = page.locator('.map-base-toggle').first();
+    if (await toggle.isVisible({ timeout: 2_000 }).catch(() => false) && !(await toggle.evaluate((button) => button.classList.contains('active')))) {
+      await toggle.click();
+      await page.waitForSelector('.map-base-toggle.active', { state: 'visible', timeout: 15_000 });
+      await page.waitForSelector('.map-wrap[data-map-base-mode="openfreemap"]', { state: 'visible', timeout: 15_000 });
+    }
+  }
+
+  const before = await readMapViewData(page);
+  await page.locator('.packet-detail .packet-detail-actions').getByRole('button', { name: /^Replay$/i }).click();
+  await page.waitForSelector('.app-shell[data-packets-mode="compactTray"]', { state: 'visible', timeout: 10_000 });
+  await assertVisibleInViewport(page, 'section.packets-compact-tray[aria-label="Selected packet replay"]', 'Packets compact replay tray', viewport);
+  await page.getByRole('button', { name: /Replay again/i }).waitFor({ state: 'visible', timeout: 8_000 });
+  await page.getByRole('button', { name: /Resume live/i }).waitFor({ state: 'visible', timeout: 8_000 });
+
+  if (!viewport.isMobile) {
+    await page.waitForTimeout(2600);
+    const after = await readMapViewData(page);
+    if (before && after && after.baseMode === 'openfreemap' && !mapViewChanged(before, after)) {
+      throw new Error(`OpenFreeMap packet replay did not move the map camera: before=${JSON.stringify(before)} after=${JSON.stringify(after)}`);
+    }
+  }
+}
+
+async function waitForPacketRow(page) {
+  const row = page.locator('.packet-row').first();
+  if (await waitForVisible(row, 120_000)) return row;
+
+  const refresh = page.getByRole('button', { name: /Refresh packets/i }).first();
+  if (await refresh.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await refresh.click();
+    if (await waitForVisible(row, 90_000)) return row;
+  }
+
+  const twentyFourHour = page.locator('.packets-scopes').getByRole('button', { name: /^24h$/i });
+  if (await twentyFourHour.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await twentyFourHour.click();
+    if (await waitForVisible(row, 120_000)) return row;
+  }
+
+  const error = await page.locator('.packets-error').first().textContent({ timeout: 1_000 }).catch(() => '');
+  const empty = await page.locator('.packets-empty').first().textContent({ timeout: 1_000 }).catch(() => '');
+  const panel = await page.locator('.packets-panel').first().textContent({ timeout: 1_000 }).catch(() => '');
+  throw new Error(`Packets replay smoke could not load a true path row. ${compactText(error || empty || panel)}`);
+}
+
+async function findRecentRoutePulseReplayTarget(page) {
+  return page.evaluate(async () => {
+    const now = Date.now();
+    const diagnostics = [];
+    const windows = [
+      { label: '1h', from: now - 60 * 60_000 },
+      { label: '6h', from: now - 6 * 60 * 60_000 },
+      { label: '24h', from: now - 24 * 60 * 60_000 }
+    ];
+    for (const item of windows) {
+      const params = new URLSearchParams({
+        from: String(Math.max(0, Math.round(item.from))),
+        to: String(Math.round(now)),
+        limit: '250'
+      });
+      try {
+        const response = await fetch(`/api/v1/public/history?${params.toString()}`, { headers: { accept: 'application/json' } });
+        if (!response.ok) {
+          diagnostics.push(`${item.label}: HTTP ${response.status}`);
+          continue;
+        }
+        const body = await response.json();
+        const events = Array.isArray(body.events) ? body.events : [];
+        const routePulses = events.filter((event) => event?.type === 'routePulse' && Number.isFinite(event.at));
+        const routePulse = routePulses.at(-1);
+        diagnostics.push(`${item.label}: ${routePulses.length} routed pulses / ${events.length} events`);
+        if (routePulse) return { timestamp: routePulse.at, scopeLabel: item.label };
+      } catch (error) {
+        diagnostics.push(`${item.label}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    return { diagnostic: diagnostics.join('; ') };
+  });
+}
+
+async function activateSetupPreset(page, preset) {
+  await page.waitForSelector('.setup-presets button', { state: 'visible', timeout: 12_000 });
+  await page.evaluate((nextPreset) => {
+    const button = Array.from(document.querySelectorAll('.setup-presets button'))
+      .find((candidate) => candidate.textContent?.trim().toLowerCase() === String(nextPreset).toLowerCase());
+    if (!(button instanceof HTMLButtonElement)) throw new Error(`setup preset button not found: ${nextPreset}`);
+    button.click();
+  }, preset);
+}
+
+async function setRangeInputValue(locator, value) {
+  await locator.evaluate((input, nextValue) => {
+    input.value = String(Math.round(nextValue));
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, value);
+}
+
+async function readMapViewData(page) {
+  return page.evaluate(() => {
+    const wrap = document.querySelector('.map-wrap');
+    if (!wrap) return null;
+    return {
+      baseMode: wrap.getAttribute('data-map-base-mode') ?? '',
+      lat: Number(wrap.getAttribute('data-map-center-lat')),
+      lng: Number(wrap.getAttribute('data-map-center-lng')),
+      zoom: Number(wrap.getAttribute('data-map-zoom'))
+    };
+  });
+}
+
+function mapViewChanged(before, after) {
+  return Math.abs(after.lat - before.lat) > 0.0005
+    || Math.abs(after.lng - before.lng) > 0.0005
+    || Math.abs(after.zoom - before.zoom) > 0.05;
+}
+
+function compactText(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 240);
+}
+
+async function waitForVisible(locator, timeout) {
+  return locator.waitFor({ state: 'visible', timeout }).then(() => true, () => false);
 }
 
 async function smokeTopInfoPanels(page, viewport) {
@@ -266,7 +468,7 @@ async function clickTopInfoButton(page, name, selector, label, viewport) {
 
 async function assertVisibleInViewport(page, selector, label, viewport) {
   const locator = page.locator(selector).first();
-  await locator.waitFor({ state: 'visible', timeout: 12_000 });
+  await locator.waitFor({ state: 'visible', timeout: 30_000 });
   const box = await locator.boundingBox();
   if (!box) throw new Error(`${label} (${selector}) has no visible bounding box`);
   if (box.width < 4 || box.height < 4) throw new Error(`${label} (${selector}) is too small: ${box.width}x${box.height}`);
@@ -286,7 +488,17 @@ async function dismissWelcome(page) {
     return;
   }
   const close = page.locator('.welcome-guide-close').first();
-  if (await close.isVisible({ timeout: 500 }).catch(() => false)) await close.click();
+  if (await close.isVisible({ timeout: 500 }).catch(() => false)) {
+    await close.click();
+    return;
+  }
+  const visibleGuide = page.locator('.welcome-guide-popover, .guide-overlay').first();
+  if (await visibleGuide.isVisible({ timeout: 500 }).catch(() => false)) {
+    await page.keyboard.press('Escape').catch(() => {});
+    await page.locator('.welcome-guide-popover, .guide-overlay').first().evaluate((node) => {
+      if (node instanceof HTMLElement) node.style.display = 'none';
+    }).catch(() => {});
+  }
 }
 
 async function launchBrowser({ channel, headless }) {

@@ -16,6 +16,7 @@ type PublicPacketPathQuery struct {
 	To              int64
 	Limit           int
 	Cursor          *HistoryCursor
+	NewestFirst     bool
 	IATA            string
 	PayloadTypeName string
 	MinHops         int
@@ -99,13 +100,22 @@ WHERE mappable=1 AND heard_at_ms >= ? AND heard_at_ms <= ?`
 			searchMode = PublicPacketPathSearchSubstring
 		}
 	}
-	if query.Cursor != nil {
+	if query.Cursor != nil && query.NewestFirst {
 		sqlText += ` AND (heard_at_ms < ? OR (heard_at_ms = ? AND edge_id < ?))`
 		args = append(args, query.Cursor.At, query.Cursor.At, query.Cursor.ID)
+	} else if query.Cursor != nil {
+		sqlText += ` AND (heard_at_ms > ? OR (heard_at_ms = ? AND edge_id > ?))`
+		args = append(args, query.Cursor.At, query.Cursor.At, query.Cursor.ID)
 	}
-	sqlText += `
+	if query.NewestFirst {
+		sqlText += `
 ORDER BY heard_at_ms DESC, edge_id DESC
 LIMIT ?`
+	} else {
+		sqlText += `
+ORDER BY heard_at_ms ASC, edge_id ASC
+LIMIT ?`
+	}
 	args = append(args, limit+1)
 
 	rows, err := s.db.QueryContext(ctx, sqlText, args...)

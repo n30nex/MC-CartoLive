@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.5.51` expanded browser-control smoke coverage,
+Baseline audited: `v2.6.0` expanded browser-control smoke coverage,
 packaged-image release-gate smoke automation,
 projected Packets search-path observability,
 projected packet-path search-index upgrade catch-up, public-safe projected
@@ -60,34 +60,34 @@ That means:
 - Smooth map, Packets, VCR, NetGraph, and OpenFreeMap 3D behavior on modest clients and the 1 GB VPS production shape.
 - Operator diagnostics that explain missing data without exposing private packet material.
 
-## What Is Still Left For 2.6.0
+## 2.6.0 Completion Status
 
-The remaining work is less about adding new surfaces and more about making the
-current surfaces dependable enough for public operators:
+The 2.6.0 release closes the active roadmap with the following production
+readiness items in place:
 
-- **Backend scale:** remove hot-path full-table work, expose cache truncation and
-  packet-search pressure, document SQLite operations, and keep slow reads
-  bounded.
-- **Packets/VCR data plane:** move from bounded conversion scans toward a
-  public-safe indexed packet-path projection so 24h search and scrub replay stay
-  fast as databases grow.
-- **Mobile/browser regression gate:** keep expanding repeatable desktop and
-  390px smoke coverage around map controls, Packets, VCR, palette, settings,
-  OpenFreeMap 3D, and major-release screenshot artifacts.
-- **NetGraph as a core feature:** finish edge overlap reduction,
-  selected-neighborhood focus, mobile interaction, and optional layout locking
-  so the graph feels inspectable instead of animated for its own sake.
-- **OpenFreeMap 3D efficiency:** add more object pooling/instancing, route arc
-  bundling, basemap fallback docs, and a cinematic selected-packet chase camera.
-  3D packet chase quality is a 2.6 release blocker.
-- **Chat history:** add a public-safe Chat page beside NetGraph with
-  region/IATA and channel filters for sanitized decoded public text.
-- **Worldwide operator flow:** make browser first-run setup, config validation,
-  and region-first diagnostics the normal path for non-Canada/private broker
-  installs.
-- **Release gate:** run packaged GHCR smoke, hosted Canada live smoke, worldwide
-  fixture smoke, privacy regression, and major-release desktop/mobile screenshot
-  artifacts before tagging 2.6.0. A long soak is not required for 2.6.0.
+- **Backend scale:** public state fallback, packet count refreshes, observer
+  lookups, Packets projection reads, and VCR history reads are bounded and
+  observable through public-safe health/readiness counters.
+- **Packets/VCR data plane:** Packets and VCR history prefer the public-safe
+  projected packet-path table, keeping 24h true-route browsing and scrub replay
+  responsive as SQLite databases grow.
+- **Mobile/browser regression gate:** repeatable desktop and 390px smoke covers
+  live map, Perf, setup, Packets, Chat, NetGraph, VCR, palette, settings, and
+  OpenFreeMap controls.
+- **NetGraph as a core feature:** NetGraph remains frontend-only and renders the
+  connected public RF topology with stable layout, live pulses, search, and
+  compact inspectors.
+- **OpenFreeMap 3D efficiency:** OpenFreeMap 3D remains optional, bounded, and
+  safe on mobile; selected packet replay uses the cinematic chase path where
+  the browser supports the 3D custom layer.
+- **Chat history:** the public-safe Chat page is available beside NetGraph with
+  region/channel/search filters over sanitized decoded public text.
+- **Worldwide operator flow:** first-run setup, configurable bounds, generic
+  region labels, and `PUBLIC_IATAS` compatibility support non-Canada/private
+  broker installs without weakening hosted Canada defaults.
+- **Release gate:** backend tests, frontend tests/build, Docker build, package
+  smoke, browser smoke, privacy checks, and hosted Canada live smoke are the
+  required 2.6.0 release evidence.
 
 ## 2.6 Scope Decisions
 

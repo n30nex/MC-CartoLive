@@ -364,6 +364,7 @@ const NODE_CIRCLE_OPACITY: any = [
 
 export const originalMapStyle: maplibregl.StyleSpecification = {
   version: 8,
+  projection: { type: 'mercator' },
   glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
   sources: {
     [CARTO_DARK_SOURCE]: {
@@ -395,6 +396,7 @@ export const originalMapStyle: maplibregl.StyleSpecification = {
 
 export const lightOriginalMapStyle: maplibregl.StyleSpecification = {
   version: 8,
+  projection: { type: 'mercator' },
   glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
   sources: {
     [CARTO_LIGHT_SOURCE]: {
@@ -426,6 +428,7 @@ export const lightOriginalMapStyle: maplibregl.StyleSpecification = {
 
 export const mapOverlayStyle: maplibregl.StyleSpecification = {
   version: 8,
+  projection: { type: 'mercator' },
   glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
   sources: {
     [OPENFREEMAP_SOURCE]: {
@@ -935,6 +938,24 @@ function mapStyleForMode(mode: MapBaseMode, themeMode: MapThemeMode): string | m
   return themeMode === 'light' ? lightOriginalMapStyle : originalMapStyle;
 }
 
+function ensureMercatorProjection(map: maplibregl.Map) {
+  try {
+    map.setProjection({ type: 'mercator' });
+  } catch {
+    // Older or externally supplied styles may already be locked to Mercator.
+  }
+}
+
+function customLayerProjectionReady(map: maplibregl.Map): boolean {
+  const projection = (map as any).style?.projection;
+  return Boolean(projection?.shaderPreludeCode?.vertexSource);
+}
+
+function supportsOpenFreeMapCustom3D(map: maplibregl.Map): boolean {
+  const canvas = map.getCanvas();
+  return canvas.clientWidth >= 700 && canvas.clientHeight >= 520;
+}
+
 function lightOverlayLayer(layer: maplibregl.LayerSpecification): maplibregl.LayerSpecification {
   const next = { ...layer, paint: { ...((layer as any).paint ?? {}) } } as any;
   switch (layer.id) {
@@ -1161,6 +1182,7 @@ export default function CanadaMap({
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
     const enabled = baseModeRef.current === 'openfreemap'
+      && supportsOpenFreeMapCustom3D(map)
       && (layerSettingsRef.current.nodeModels3D || layerSettingsRef.current.routeArcs3D || layerSettingsRef.current.packetComets3D);
     if (!enabled) {
       destroyOpenFreeMap3D();
@@ -1189,6 +1211,11 @@ export default function CanadaMap({
         openFreeMap3DImportRef.current = null;
         const currentMap = mapRef.current;
         if (!currentMap || currentMap !== map || baseModeRef.current !== 'openfreemap' || !loadedRef.current) return;
+        ensureMercatorProjection(currentMap);
+        if (!customLayerProjectionReady(currentMap)) {
+          window.setTimeout(updateOpenFreeMap3D, 120);
+          return;
+        }
         const controller = createOpenFreeMap3DController();
         openFreeMap3DRef.current = controller;
         if (!currentMap.getLayer(OPENFREEMAP_3D_LAYER_ID)) {
@@ -1511,6 +1538,7 @@ export default function CanadaMap({
       let baseWarning = '';
       if (baseModeRef.current === 'openfreemap') {
         try {
+          ensureMercatorProjection(map);
           addOpenFreeMap3DBase(map, themeModeRef.current);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -1646,6 +1674,7 @@ export default function CanadaMap({
     const nextStyle = mapStyleForMode(baseMode, themeMode);
     (window as any).__meshcoreMapStyle = nextStyle;
     map.setStyle(nextStyle);
+    if (baseMode === 'openfreemap') ensureMercatorProjection(map);
     map.easeTo({
       pitch: defaultPitchForMode(baseMode),
       bearing: defaultBearingForMode(baseMode),

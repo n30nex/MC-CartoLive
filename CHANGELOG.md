@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 2.6.0 - 2026-06-02
+
+- Released the world-ready live network operations baseline: hosted Canada
+  remains Canada-scoped, while packaged installs support worldwide/private
+  brokers through configurable region labels, bounds, and first-run setup.
+- Hardened public live surfaces across the map, Packets, VCR, Chat, Perf, and
+  NetGraph with desktop and 390px mobile browser smoke coverage.
+- Improved OpenFreeMap 3D stability by forcing Mercator styles for custom
+  layers and disabling the Three.js overlay on narrow mobile canvases where the
+  shared MapLibre projection is not safe.
+- Reduced large-database pressure by serving public VCR history from the
+  sanitized projected packet-path table when available and by removing the
+  expensive full-window projection-completeness probe from Packets requests.
+- Kept `/api/v1/public/history` and `/api/v1/public/packets` response shapes
+  compatible while preserving true-route validation and public privacy
+  boundaries.
+- Updated release/package metadata, operator docs, production docs, roadmap,
+  in-app changelog, and feature guide for the 2.6.0 release.
+
 ## 2.5.51 - 2026-06-02
 
 - Expanded `scripts/browser-smoke.mjs` so the live-map scenario now exercises

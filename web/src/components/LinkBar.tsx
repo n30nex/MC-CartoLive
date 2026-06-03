@@ -15,12 +15,13 @@ import {
   type RepoStats
 } from '../releaseInfo';
 
-const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.5.51';
+const GUIDE_DISMISS_KEY = 'mc-cartolive-welcome-guide-dismissed-2.6.0';
 
 type InfoPanel = 'changelog' | 'features' | 'guide' | null;
 
 const LATEST_CHANGELOG = [
-  '2.5.51 expands desktop/mobile browser smoke to exercise VCR, palette, Map Settings, OpenFreeMap 3D, and top-bar guide popovers.',
+  '2.6.0 ships the world-ready live operations baseline for hosted Canada and packaged worldwide/private broker installs.',
+  'Public history and Packets now prefer sanitized projected packet paths so VCR scrub replay and Packets browsing stay responsive on large SQLite databases.',
   '2.5.50 verifies built and published GHCR images with synthetic and worldwide fixture modes plus public privacy scans.',
   'Packets now uses projected public-safe packet paths, FTS-backed search when indexed, and health counters for projection/search pressure.',
   'OpenFreeMap 3D has lower render pressure, adaptive budgets, route arcs, node models, and selected-packet chase replay polish.',

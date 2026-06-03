@@ -69,7 +69,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.5.51
+  ghcr.io/n30nex/mc-cartolive:2.6.0
 ```
 
 For production, keep private settings in an env file and mount persistent data:
@@ -79,7 +79,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.5.51
+  ghcr.io/n30nex/mc-cartolive:2.6.0
 ```
 
 The published image runs as non-root `appuser`, includes OCI source/version
@@ -132,13 +132,13 @@ docker compose up -d
 
 ## Runtime Notes
 
-- Version 2.5.51 exposes the app version/build in the top project bar. CI builds use
+- Version 2.6.0 exposes the app version/build in the top project bar. CI builds use
   the Git commit SHA when available; local Docker builds use a timestamp fallback
   plus a separate ISO build time for build-age display.
 - Runtime liveness and readiness are split: `/healthz` stays cheap for Docker
   liveness, while `/readyz` verifies DB ping, public cache readiness, static
   frontend availability, and public-safe runtime status.
-- Version 2.5.51 adds `scripts/package-smoke.mjs`, a reusable packaged-image
+- Version 2.6.0 adds `scripts/package-smoke.mjs`, a reusable packaged-image
   smoke that runs both the synthetic fixture and worldwide `r1` fixture, checks
   public APIs, and runs the public privacy scanner against each temporary
   container.
@@ -264,7 +264,7 @@ hints, and whether the position came from a node or observer record.
 - To test a published package directly, run:
 
 ```powershell
-node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.5.51 --pull
+node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.6.0 --pull
 ```
 
 ```powershell
