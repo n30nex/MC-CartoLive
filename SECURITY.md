@@ -42,3 +42,13 @@ privately first, then share only the minimum sanitized reproduction details.
 Public API responses are expected to omit public keys, packet hashes, raw packet
 summaries, path hex, observer public keys, and resolver debug reasons. Any
 change that touches public response shaping must keep the privacy tests passing.
+
+## Display-String Hardening
+
+MeshCore-controlled display strings, including node names, observer names,
+message senders, message text, anchors, and packet-path endpoint labels, are
+normalized before they leave the public API/WebSocket boundary. Public display
+fields are text only; HTML-significant characters are stripped so crafted node
+names cannot become markup in MC-CartoLive or downstream public consumers.
+
+Frontend code should continue to render public strings as text, not HTML.

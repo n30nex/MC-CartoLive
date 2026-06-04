@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"meshcore-canada-live-map/backend/internal/resolve"
 )
@@ -271,7 +272,7 @@ func PublicNodeFromNode(node Node) (PublicNode, bool) {
 		return PublicNode{}, false
 	}
 	return PublicNode{
-		ID:             node.NodeID,
+		ID:             publicNodeID(node.NodeID),
 		Label:          displayLabel(node.Name, node.Role),
 		Role:           normalizeRole(node.Role),
 		Latitude:       *node.Latitude,
@@ -805,12 +806,20 @@ func messageAnchorFromObserver(location *PublicObserverLocation) *PublicMessageA
 }
 
 func publicNodeID(id string) string {
-	if looksSensitiveHex(id, 32) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "n-empty"
+	}
+	if looksSensitiveHex(id, 32) || !publicSafeToken(id) {
 		h := fnv.New32a()
 		_, _ = h.Write([]byte(strings.ToUpper(id)))
 		return fmt.Sprintf("n-%08x", h.Sum32())
 	}
 	return id
+}
+
+func PublicSafeID(id string) string {
+	return publicNodeID(id)
 }
 
 func publicObserverNodeID(observer Observer) string {
@@ -860,7 +869,7 @@ func normalizeRole(role string) string {
 }
 
 func displayLabel(name string, role string) string {
-	name = strings.TrimSpace(name)
+	name = PublicDisplayText(name, 80)
 	if name != "" && !looksSensitiveHex(name, 8) {
 		return name
 	}
@@ -879,7 +888,7 @@ func displayLabel(name string, role string) string {
 }
 
 func publicObserverLabel(name string, iata string) string {
-	name = strings.TrimSpace(name)
+	name = PublicDisplayText(name, 80)
 	if name != "" && !looksSensitiveHex(name, 8) {
 		return name
 	}
@@ -948,11 +957,7 @@ func publicMessageText(value string) string {
 		return ""
 	}
 	value = redactPublicMessageText(value)
-	runes := []rune(value)
-	if len(runes) > 500 {
-		return string(runes[:500])
-	}
-	return value
+	return PublicDisplayText(value, 500)
 }
 
 func publicMessageSender(value string) string {
@@ -961,11 +966,7 @@ func publicMessageSender(value string) string {
 		return ""
 	}
 	value = redactPublicMessageText(value)
-	runes := []rune(value)
-	if len(runes) > 80 {
-		return string(runes[:80])
-	}
-	return value
+	return PublicDisplayText(value, 80)
 }
 
 func redactPublicMessageText(value string) string {
@@ -974,4 +975,53 @@ func redactPublicMessageText(value string) string {
 	value = publicLongHexRE.ReplaceAllString(value, "[redacted id]")
 	value = publicBase64RE.ReplaceAllString(value, "[redacted key]")
 	return strings.TrimSpace(value)
+}
+
+// PublicDisplayText normalizes MeshCore-controlled display strings before they
+// cross the public API/WebSocket boundary. React and MapLibre render these as
+// text, but stripping HTML delimiter characters here keeps older projections
+// and downstream public consumers from turning crafted node names into markup.
+func PublicDisplayText(value string, maxRunes int) string {
+	value = strings.TrimSpace(strings.TrimRight(value, "\x00"))
+	if value == "" {
+		return ""
+	}
+	value = strings.Map(func(r rune) rune {
+		switch r {
+		case '\n', '\r', '\t':
+			return ' '
+		case '<', '>', '&', '"', '\'', '`', '=':
+			return -1
+		}
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+			return -1
+		}
+		return r
+	}, value)
+	value = strings.Join(strings.Fields(value), " ")
+	if maxRunes <= 0 {
+		return value
+	}
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return string(runes[:maxRunes])
+}
+
+func publicSafeToken(value string) bool {
+	if len(value) > 96 {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		switch r {
+		case '-', '_', '.', ':':
+			continue
+		}
+		return false
+	}
+	return true
 }

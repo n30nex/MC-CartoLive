@@ -258,6 +258,104 @@ func TestPublicRouteAggregationUsesStableIDsCountsAndBuckets(t *testing.T) {
 	}
 }
 
+func TestPublicDisplayStringsStripMarkupSyntax(t *testing.T) {
+	lat := 43.65
+	lng := -79.38
+	craftedNode := `<iframe srcdoc="<script>alert(1)</script>">`
+	craftedMessage := `hello <img src=x onerror=alert(1)> "bad"='value'`
+	state := live.State{
+		ServerTime: 1747665456000,
+		Nodes: []live.Node{
+			{
+				NodeID:           `node-<svg onload=alert(1)>`,
+				Name:             craftedNode,
+				Role:             "repeater",
+				Latitude:         &lat,
+				Longitude:        &lng,
+				LastSeen:         1747665456000,
+				IATAsHeardIn:     []string{"YKF"},
+				ObservationCount: 5,
+			},
+		},
+		Observers: []live.Observer{
+			{
+				PublicKey:   "CC00000000000000000000000000000000000000000000000000000000000000",
+				IATA:        "YKF",
+				Name:        `observer"><iframe srcdoc=alert(1)>`,
+				Latitude:    &lat,
+				Longitude:   &lng,
+				LastSeen:    1747665456000,
+				PacketCount: 3,
+			},
+		},
+		RecentPackets: []live.PacketObservation{
+			{
+				ID:                12,
+				PacketHash:        "hash-xss-private",
+				PayloadTypeName:   "PLAIN_TEXT",
+				ObserverPublicKey: "CC00000000000000000000000000000000000000000000000000000000000000",
+				IATA:              "YKF",
+				HeardAt:           1747665456000,
+				MessageSender:     `sender" onmouseover=alert(1)`,
+				MessageText:       craftedMessage,
+				ResolutionStatus:  resolve.StatusNoPath,
+			},
+		},
+		RecentEdgeEvents: []live.EdgeEvent{
+			{
+				ID:              1,
+				PacketHash:      "hash-route-xss-private",
+				PayloadTypeName: "GROUP_TEXT",
+				HeardAt:         1747665456000,
+				MessageSender:   `route-sender"><script>alert(1)</script>`,
+				MessageText:     craftedMessage,
+				Segments: []live.EdgeSegment{
+					{
+						From:       live.EdgeEndpoint{NodeID: `node-<svg onload=alert(1)>`, Name: craftedNode, Lat: lat, Lng: lng},
+						To:         live.EdgeEndpoint{NodeID: "node-safe", Name: `safe"><img src=x>`, Lat: 43.7, Lng: -79.4},
+						DistanceKM: 7,
+					},
+				},
+			},
+		},
+	}
+
+	publicState := live.BuildPublicLiveState(state, live.PublicStats{Packets: 2, MQTTConnected: true})
+	if len(publicState.Nodes) == 0 || len(publicState.RecentActivity) == 0 || len(publicState.RecentPulses) == 0 {
+		t.Fatalf("public state missing expected sanitized items: %#v", publicState)
+	}
+	for _, node := range publicState.Nodes {
+		assertPublicDisplaySafe(t, "node label", node.Label)
+		assertPublicDisplaySafe(t, "node id", node.ID)
+	}
+	for _, route := range publicState.Routes {
+		assertPublicDisplaySafe(t, "route from label", route.From.Label)
+		assertPublicDisplaySafe(t, "route from node id", route.From.NodeID)
+		assertPublicDisplaySafe(t, "route to label", route.To.Label)
+		assertPublicDisplaySafe(t, "route to node id", route.To.NodeID)
+	}
+	for _, activity := range publicState.RecentActivity {
+		assertPublicDisplaySafe(t, "activity sender", activity.MessageSender)
+		assertPublicDisplaySafe(t, "activity text", activity.MessageText)
+		if activity.MessageAnchor != nil {
+			assertPublicDisplaySafe(t, "activity anchor label", activity.MessageAnchor.Label)
+		}
+	}
+	for _, pulse := range publicState.RecentPulses {
+		assertPublicDisplaySafe(t, "pulse sender", pulse.MessageSender)
+		assertPublicDisplaySafe(t, "pulse text", pulse.MessageText)
+		if pulse.MessageAnchor != nil {
+			assertPublicDisplaySafe(t, "pulse anchor label", pulse.MessageAnchor.Label)
+		}
+		for _, segment := range pulse.Segments {
+			assertPublicDisplaySafe(t, "pulse from label", segment.From.Label)
+			assertPublicDisplaySafe(t, "pulse from node id", segment.From.NodeID)
+			assertPublicDisplaySafe(t, "pulse to label", segment.To.Label)
+			assertPublicDisplaySafe(t, "pulse to node id", segment.To.NodeID)
+		}
+	}
+}
+
 func TestPublicMessageAnchorsChooseSourceThenObserverFallback(t *testing.T) {
 	edge := live.EdgeEvent{
 		ID:              77,
@@ -312,6 +410,13 @@ func TestPublicMessageAnchorsChooseSourceThenObserverFallback(t *testing.T) {
 		ResolutionStatus: resolve.StatusMissingCoords,
 	}, nil, nil).MessageAnchor != nil {
 		t.Fatalf("missing observer/source should not create message anchor")
+	}
+}
+
+func assertPublicDisplaySafe(t *testing.T, field string, value string) {
+	t.Helper()
+	if strings.ContainsAny(value, "<>&\"'`=") {
+		t.Fatalf("%s contains HTML-significant characters: %q", field, value)
 	}
 }
 

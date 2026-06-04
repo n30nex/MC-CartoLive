@@ -450,6 +450,7 @@ func scanPublicPacketPathProjection(rows *sql.Rows) (live.PublicPacketPath, int6
 	if err := json.Unmarshal([]byte(segmentsJSON), &packet.Segments); err != nil {
 		return live.PublicPacketPath{}, 0, err
 	}
+	packet = sanitizeProjectedPacketPath(packet)
 	return packet, edgeID, nil
 }
 
@@ -534,5 +535,20 @@ func publicPacketPathFTSQuery(search string) string {
 }
 
 func publicProjectionText(value string) string {
-	return strings.TrimSpace(value)
+	return live.PublicDisplayText(value, 500)
+}
+
+func sanitizeProjectedPacketPath(packet live.PublicPacketPath) live.PublicPacketPath {
+	packet.MessageSender = live.PublicDisplayText(packet.MessageSender, 80)
+	packet.MessageText = live.PublicDisplayText(packet.MessageText, 500)
+	for i := range packet.EndpointLabels {
+		packet.EndpointLabels[i] = live.PublicDisplayText(packet.EndpointLabels[i], 80)
+	}
+	for i := range packet.Segments {
+		packet.Segments[i].From.NodeID = live.PublicSafeID(packet.Segments[i].From.NodeID)
+		packet.Segments[i].From.Label = live.PublicDisplayText(packet.Segments[i].From.Label, 80)
+		packet.Segments[i].To.NodeID = live.PublicSafeID(packet.Segments[i].To.NodeID)
+		packet.Segments[i].To.Label = live.PublicDisplayText(packet.Segments[i].To.Label, 80)
+	}
+	return packet
 }

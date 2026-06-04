@@ -188,11 +188,103 @@ func TestPublicPacketPathSearchIndexFallbackKeepsResults(t *testing.T) {
 	}
 }
 
+func TestPublicPacketPathProjectionStripsMarkupSyntax(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := s.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+	})
+
+	now := time.Now().UnixMilli()
+	observationID := insertPacketPathBackfillObservation(t, ctx, s, "hash-xss-projection-private", "YKF", now-1_000)
+	insertPacketPathBackfillEdge(
+		t,
+		ctx,
+		s,
+		observationID,
+		"hash-xss-projection-private",
+		"GROUP_TEXT",
+		`sender" onmouseover=alert(1)`,
+		`hello <iframe srcdoc="<script>alert(1)</script>">`,
+		now-1_000,
+		[]live.EdgeSegment{
+			{
+				From:       live.EdgeEndpoint{NodeID: `node-<svg onload=alert(1)>`, Name: `<img src=x onerror=alert(1)>`, Lat: 43.65, Lng: -79.38},
+				To:         live.EdgeEndpoint{NodeID: "node-safe", Name: `safe"><script>alert(1)</script>`, Lat: 43.75, Lng: -79.48},
+				DistanceKM: 14,
+			},
+		},
+	)
+	if _, err := s.BackfillPublicPacketPaths(ctx, now-10_000, now, 10); err != nil {
+		t.Fatal(err)
+	}
+	unsafeLabels, err := json.Marshal([]string{`old"><script>alert(1)</script>`, `<img src=x onerror=alert(1)>`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unsafeSegments, err := json.Marshal([]live.PublicRouteSegment{
+		{
+			RouteID: "r-legacy",
+			From:    live.PublicRouteEndpoint{NodeID: `old-<svg onload=alert(1)>`, Label: `old"><script>alert(1)</script>`, Lat: 43.65, Lng: -79.38},
+			To:      live.PublicRouteEndpoint{NodeID: "node-safe", Label: `<img src=x onerror=alert(1)>`, Lat: 43.75, Lng: -79.48},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, `
+UPDATE public_packet_paths
+SET message_sender = ?, message_text = ?, endpoint_labels_json = ?, segments_json = ?
+WHERE edge_id IN (SELECT id FROM live_edge_events WHERE packet_hash = ?)`,
+		`sender" onmouseover=alert(1)`,
+		`hello <iframe srcdoc="<script>alert(1)</script>">`,
+		string(unsafeLabels),
+		string(unsafeSegments),
+		"hash-xss-projection-private",
+	); err != nil {
+		t.Fatal(err)
+	}
+	packets, _, _, err := s.PublicPacketPaths(ctx, PublicPacketPathQuery{
+		From:        now - 10_000,
+		To:          now,
+		Limit:       10,
+		MessageOnly: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packets) != 1 {
+		t.Fatalf("projected packets = %#v, want one", packets)
+	}
+	packet := packets[0]
+	for _, item := range append([]string{packet.MessageSender, packet.MessageText}, packet.EndpointLabels...) {
+		assertNoMarkupSyntax(t, item)
+	}
+	for _, segment := range packet.Segments {
+		assertNoMarkupSyntax(t, segment.From.Label)
+		assertNoMarkupSyntax(t, segment.From.NodeID)
+		assertNoMarkupSyntax(t, segment.To.Label)
+		assertNoMarkupSyntax(t, segment.To.NodeID)
+	}
+}
+
 func TestPublicPacketPathFTSQuerySanitizesFreeformSearch(t *testing.T) {
 	got := publicPacketPathFTSQuery(`Krabs / YKF-Corebot!!! hidden" OR route`)
 	want := "krabs* ykf* corebot* hidden* or* route*"
 	if got != want {
 		t.Fatalf("FTS query = %q, want %q", got, want)
+	}
+}
+
+func assertNoMarkupSyntax(t *testing.T, value string) {
+	t.Helper()
+	if strings.ContainsAny(value, "<>&\"'`=") {
+		t.Fatalf("public projection field contains HTML-significant characters: %q", value)
 	}
 }
 

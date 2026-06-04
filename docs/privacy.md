@@ -47,6 +47,13 @@ the operator. Public Chat must not expose channel secret material, raw channel
 hash bytes, raw payloads, full keys, packet hashes, broker metadata, or resolver
 debug output.
 
+Public labels and message fields are also normalized as plain display text at
+the backend boundary. MeshCore-controlled node names, observer names, message
+senders, message text, anchors, and packet-path endpoint labels must not carry
+HTML-significant characters into public JSON or WebSocket payloads. This
+normalization is applied when building live state and when reading projected
+packet-path rows so older local projections are hardened after upgrade.
+
 ## Region Allowlist
 
 The public map filters state and live events through `PUBLIC_REGIONS`.

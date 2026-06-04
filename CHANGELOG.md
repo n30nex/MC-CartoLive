@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Hardened public display strings against crafted MeshCore node names by
+  stripping HTML-significant characters from public labels, message text,
+  message senders, anchors, safe IDs, and projected packet-path rows.
+
 ## 2.6.0 - 2026-06-02
 
 - Released the world-ready live network operations baseline: hosted Canada
