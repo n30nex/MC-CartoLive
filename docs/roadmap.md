@@ -7,12 +7,12 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 Version `2.6.2` is the current production-ready world operations release.
 
-- Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
+- Detailed next-phase plan: [2.6.3 to 2.6.6](roadmap-2.6.3-to-2.6.6.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current release focus: public-safe Packets/VCR/Chat/NetGraph, Route GIF Export,
-  OpenFreeMap 3D, worldwide/private broker setup, large-database public history
-  and Packets responsiveness, browser smoke, package smoke, and live smoke.
+- Current release focus: UI/UX refinement, OpenFreeMap 3D performance,
+  elevation/topography line-of-sight context, and propagation-event research
+  on top of the stable public-safe 2.6.2 feature set.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -21,6 +21,15 @@ Version `2.6.2` is the current production-ready world operations release.
 
 ## Active Maintenance Focus
 
+- Make `2.6.3` a public-experience polish pass before adding deeper analysis
+  surfaces: less chrome clutter, clearer route/share flows, and safer mobile
+  ergonomics.
+- Make `2.6.4` the 3D performance pass for OpenFreeMap node models, route arcs,
+  comets, observer glows, and rebuild budgets.
+- Make `2.6.5` the elevation/topography/line-of-sight pass for verified public
+  pathways only.
+- Make `2.6.6` a research-first propagation-event pass for solar, geomagnetic,
+  tropospheric, time-of-day, and long-distance burst correlations.
 - Keep packet ingest, public cache, WebSocket fanout, public history, and public
   packet paths observable through public-safe health/readiness counters.
 - Keep the Packets page server-backed, cursor-stable, and bounded under rare
