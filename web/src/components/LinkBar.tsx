@@ -17,10 +17,22 @@ import {
 
 type InfoPanel = 'changelog' | null;
 
-const LATEST_CHANGELOG = [
-  '2.6.1 trims the public top bar, removes the Perf/Guide/Features buttons, and keeps Changelog as the single lightweight release note surface.',
-  'Packets now opens cleaner, focuses a selected route directly on the map, and closes when replaying one bright forced packet comet.',
-  'NetGraph is quieter on desktop and mobile with fewer controls, no empty inspector, and a hidden mobile legend.'
+export const LATEST_RELEASE_HIGHLIGHTS = [
+  {
+    label: '2.6.2',
+    title: 'Route GIF export',
+    body: 'Exports real map replay GIFs with route-fit framing and compact hop details for public sharing.'
+  },
+  {
+    label: '2.6.1',
+    title: 'Cleaner public chrome',
+    body: 'Removed top-bar noise, simplified Packets, and made NetGraph quieter on desktop and mobile.'
+  },
+  {
+    label: 'Next',
+    title: '2.6.3 UI refinement',
+    body: 'Focus is clearer map chrome, route/share flow polish, mobile sheets, and less repeated instructional copy.'
+  }
 ];
 
 interface LinkBarProps {
@@ -119,10 +131,16 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
       </div>
       {activeInfoPanel === 'changelog' && (
         <InfoPopover title="Latest Changelog" icon={<History size={14} />} onClose={() => setActiveInfoPanel(null)}>
-          <p>MC-CartoLive v{appVersion} keeps the public map focused on live routes, Packets, NetGraph, Chat, and a cleaner top bar.</p>
-          <ul>
-            {LATEST_CHANGELOG.map((item) => <li key={item}>{item}</li>)}
-          </ul>
+          <p>Current public map baseline plus the next UI polish focus.</p>
+          <div className="link-bar-release-list">
+            {LATEST_RELEASE_HIGHLIGHTS.map((item) => (
+              <article key={`${item.label}-${item.title}`} className="link-bar-release-note">
+                <span>{item.label}</span>
+                <strong>{item.title}</strong>
+                <p>{item.body}</p>
+              </article>
+            ))}
+          </div>
           <a href={releaseURL} target="_blank" rel="noreferrer">Open full release notes</a>
         </InfoPopover>
       )}

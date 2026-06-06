@@ -786,6 +786,46 @@ button {
   line-height: 1.4;
 }
 
+.link-bar-release-list {
+  display: grid;
+  gap: 7px;
+}
+
+.link-bar-release-note {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 8px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(8, 16, 28, 0.72)) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-accent, #38bdf8) 16%, transparent);
+  border-radius: 7px;
+}
+
+.link-bar-release-note span {
+  align-self: start;
+  padding: 2px 6px;
+  color: var(--mc-link, #7dd3fc);
+  background: color-mix(in srgb, var(--mc-link, #7dd3fc) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-link, #7dd3fc) 20%, transparent);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 880;
+  line-height: 1.1;
+}
+
+.link-bar-release-note strong {
+  align-self: center;
+  color: var(--mc-text, #f8fafc);
+  font-size: 12px;
+}
+
+.link-bar-release-note p {
+  grid-column: 2;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .link-bar-info-body a {
   justify-self: start;
   padding: 4px 7px;

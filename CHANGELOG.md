@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- No unreleased changes.
+- Started the 2.6.3 UI/UX refinement pass by compacting the top-bar changelog
+  popover into current release highlights and the next UI polish focus.
 
 ## 2.6.2 - 2026-06-06
 
