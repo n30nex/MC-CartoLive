@@ -58,6 +58,15 @@ import {
 } from './routeSource';
 import { easeLinear, easeOutCubic, fitToNodes, fitToRoute, fitToSegments, followTrafficPadding, isFollowPoint, mapViewFromMap, mapViewportSize } from './mapCamera';
 import { buildPacketReplayChasePath, replayChaseCameraFrame } from './packetReplayChase';
+import {
+  ROUTE_GIF_FPS,
+  ROUTE_GIF_FRAMES,
+  ROUTE_GIF_HEIGHT,
+  ROUTE_GIF_WIDTH,
+  createRouteMapGifBlob,
+  drawRouteMapGifOverlay,
+  type RouteMapGifExportRequest
+} from '../routeGifExport';
 import { setSourceData, type FeatureCollection } from './sourceDataQueue';
 import { DETAIL_MIN_ZOOM, NODE_CLUSTER_MAX_ZOOM, type MapVisualMode, isClusterZoom, isDetailZoom, visualModeForZoom } from './zoomMode';
 import {
@@ -94,6 +103,7 @@ interface Props {
   packetVisualSettings: PacketVisualSettings;
   plotMode: 'off' | 'node' | 'area';
   mapAction: MapAction;
+  routeGifExportRequest: RouteMapGifExportRequest | null;
   baseMode: MapBaseMode;
   themeMode: MapThemeMode;
   initialView: SharedViewState | null;
@@ -1084,6 +1094,7 @@ export default function CanadaMap({
   packetVisualSettings = DEFAULT_PACKET_VISUAL_SETTINGS,
   plotMode,
   mapAction,
+  routeGifExportRequest,
   baseMode,
   themeMode,
   initialView,
@@ -1159,6 +1170,7 @@ export default function CanadaMap({
   const replayActionTimerRef = useRef<number | null>(null);
   const replayChaseTimerRef = useRef<number | null>(null);
   const replayChaseCleanupRef = useRef<(() => void) | null>(null);
+  const routeGifExportCleanupRef = useRef<(() => void) | null>(null);
   const routeColorSignatureRef = useRef('');
   const positionedNodesRenderedRef = useRef(onPositionedNodesRendered);
   const viewChangeRef = useRef(onViewChange);
@@ -1468,7 +1480,7 @@ export default function CanadaMap({
       maxZoom: 18,
       maxPitch: 85,
       fadeDuration: 0,
-      canvasContextAttributes: { antialias: true },
+      canvasContextAttributes: { antialias: true, preserveDrawingBuffer: true },
       attributionControl: { compact: true }
     });
     map.dragRotate.enable();
@@ -1635,6 +1647,8 @@ export default function CanadaMap({
       if (pulseSchedulerTimerRef.current !== null) window.clearTimeout(pulseSchedulerTimerRef.current);
       if (observerSchedulerTimerRef.current !== null) window.clearTimeout(observerSchedulerTimerRef.current);
       if (replayActionTimerRef.current !== null) window.clearTimeout(replayActionTimerRef.current);
+      routeGifExportCleanupRef.current?.();
+      routeGifExportCleanupRef.current = null;
       stopReplayChaseCamera();
       pulseSchedulerTimerRef.current = null;
       observerSchedulerTimerRef.current = null;
@@ -1896,6 +1910,102 @@ export default function CanadaMap({
       if (node) map.easeTo({ center: [node.longitude, node.latitude], zoom: Math.max(map.getZoom(), 8), duration: 700 });
     }
   }, [mapAction]);
+
+  useEffect(() => {
+    const request = routeGifExportRequest;
+    if (!request) return;
+    const map = mapRef.current;
+    const overlayCanvas = canvasRef.current;
+    const animator = animatorRef.current;
+    if (!map || !overlayCanvas || !animator) {
+      request.onError(new Error('Map is not ready for GIF export'));
+      return;
+    }
+
+    routeGifExportCleanupRef.current?.();
+    let cancelled = false;
+    const cleanup = () => {
+      cancelled = true;
+    };
+    routeGifExportCleanupRef.current = cleanup;
+
+    const captureCanvas = document.createElement('canvas');
+    captureCanvas.width = ROUTE_GIF_WIDTH;
+    captureCanvas.height = ROUTE_GIF_HEIGHT;
+    const captureCtx = canvas2D(captureCanvas);
+    const frameDelayMs = Math.round(1000 / ROUTE_GIF_FPS);
+
+    const run = async () => {
+      try {
+        request.onProgress(0.03);
+        map.stop();
+        stopReplayChaseCamera();
+        animator.clear();
+        updateAnalysisRouteRendering(
+          map,
+          routesRef.current,
+          selectedRouteIDRef.current,
+          nodeFocusRef.current,
+          request.pulse.segments,
+          analysisRouteSignatureRef,
+          themeModeRef.current,
+          true
+        );
+        fitToSegments(map, request.pulse.segments, 900, true);
+        await waitForMapIdleOrTimeout(map, 900 + request.settleMs + 700);
+        if (cancelled) return;
+        request.onProgress(0.1);
+
+        const now = Date.now();
+        const pulse: PublicRoutePulse = {
+          ...request.pulse,
+          id: `${request.pulse.id}-gif-${request.token}`,
+          receivedAt: now,
+          displayAt: now,
+          replayOptions: {
+            ...request.pulse.replayOptions,
+            force: true,
+            travelDurationMs: request.travelDurationMs
+          }
+        };
+        const pulseOptions = {
+          force: true,
+          travelDurationMs: request.travelDurationMs,
+          brightness: pulse.replayOptions?.brightness,
+          trailScale: pulse.replayOptions?.trailScale,
+          animationStyle: pulse.replayOptions?.animationStyle
+        };
+        if (!addPulseTo3D(map, pulse, pulseOptions)) animator.add(pulse, pulseOptions);
+        await waitAnimationFrames(2);
+
+        const blob = await createRouteMapGifBlob(
+          request.packet,
+          async ({ frameIndex, progress, width, height }) => {
+            if (cancelled) throw new Error('GIF export cancelled');
+            if (frameIndex > 0) await waitMs(frameDelayMs);
+            map.triggerRepaint();
+            await waitAnimationFrames(2);
+            return captureActualMapGifFrame(map, overlayCanvas, captureCanvas, captureCtx, request.packet, progress, width, height);
+          },
+          {
+            width: ROUTE_GIF_WIDTH,
+            height: ROUTE_GIF_HEIGHT,
+            frames: ROUTE_GIF_FRAMES,
+            fps: ROUTE_GIF_FPS,
+            onProgress: (progress) => request.onProgress(0.1 + progress * 0.88)
+          }
+        );
+        if (!cancelled) request.onComplete(blob);
+      } catch (error) {
+        if (!cancelled) request.onError(error);
+      } finally {
+        if (routeGifExportCleanupRef.current === cleanup) routeGifExportCleanupRef.current = null;
+      }
+    };
+
+    void run();
+    return cleanup;
+  }, [routeGifExportRequest]);
 
   return (
     <div
@@ -3314,6 +3424,65 @@ function routePulsePoints(pulse: PublicRoutePulse): Array<[number, number]> {
     points.push([segment.from.lng, segment.from.lat], [segment.to.lng, segment.to.lat]);
   }
   return points;
+}
+
+function captureActualMapGifFrame(
+  map: maplibregl.Map,
+  overlayCanvas: HTMLCanvasElement,
+  captureCanvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  packet: RouteMapGifExportRequest['packet'],
+  progress: number,
+  width: number,
+  height: number
+): ImageData {
+  if (captureCanvas.width !== width) captureCanvas.width = width;
+  if (captureCanvas.height !== height) captureCanvas.height = height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#020617';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(map.getCanvas(), 0, 0, width, height);
+  ctx.drawImage(overlayCanvas, 0, 0, width, height);
+  drawRouteMapGifOverlay(ctx, packet, progress, width, height);
+  return ctx.getImageData(0, 0, width, height);
+}
+
+function canvas2D(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) throw new Error('GIF capture canvas unavailable');
+  return ctx;
+}
+
+function waitMs(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, Math.max(0, ms)));
+}
+
+function waitAnimationFrames(count: number): Promise<void> {
+  return new Promise((resolve) => {
+    let remaining = Math.max(1, count);
+    const step = () => {
+      remaining -= 1;
+      if (remaining <= 0) resolve();
+      else window.requestAnimationFrame(step);
+    };
+    window.requestAnimationFrame(step);
+  });
+}
+
+function waitForMapIdleOrTimeout(map: maplibregl.Map, timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    let timer: number | null = null;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      if (timer !== null) window.clearTimeout(timer);
+      map.off('idle', finish);
+      resolve();
+    };
+    timer = window.setTimeout(finish, Math.max(250, timeoutMs));
+    map.once('idle', finish);
+  });
 }
 
 function addGeneratedNodeIcons(map: maplibregl.Map) {

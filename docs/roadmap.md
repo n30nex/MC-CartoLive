@@ -45,9 +45,9 @@ Version `2.6.2` is the current production-ready world operations release.
 ## 2.6.2 Patch Focus
 
 - Add Route GIF Export after selecting a public-safe packet route from Packets.
-- Render a branded, high-quality animated GIF that keeps the full RF path in
-  view, labels key endpoints, includes payload/region/hop/distance details, and
-  animates a bright packet comet through the true route.
+- Capture the actual MapLibre/OpenFreeMap map viewport into a branded,
+  high-quality animated GIF while a forced packet replay moves across the
+  selected route, with a compact payload/region/hop/distance HUD.
 - Keep the exporter frontend-only and privacy-safe, lazy-loading the GIF encoder
   only when the user exports.
 

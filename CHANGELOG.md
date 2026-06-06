@@ -9,9 +9,9 @@
 - Added Route GIF Export for selected packet routes: after choosing a route
   from Packets, the map shows a glowing `Export as GIF` action that downloads a
   high-quality animated route replay for social sharing.
-- The GIF exporter uses only public-safe packet path data, renders the whole
-  route in view, includes endpoint labels, payload/region/hop/distance details,
-  and animates a bright packet comet through the true RF path.
+- The GIF exporter captures the actual MapLibre/OpenFreeMap map viewport while
+  a forced packet replay runs, keeping the whole route in view and adding only a
+  compact public-safe details HUD over the real map frames.
 - Split the GIF encoder into a lazy `gif-export` frontend chunk so the live map
   does not pay the encoder cost until a user exports a route.
 

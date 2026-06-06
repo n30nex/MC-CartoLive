@@ -57,7 +57,7 @@ import {
 } from './connectivity';
 import { boundsFromPoints, meshcorePathCopyText, messageHistoryForNode, routeNodeIDs, routesInBounds, type MapPoint } from './routeTools';
 import { packetNodeIDs, packetRouteIDs, packetToPulse } from './packets';
-import { downloadRouteGif } from './routeGifExport';
+import { downloadRouteGifBlob, routeGifAnimationDurationMs, type RouteMapGifExportRequest } from './routeGifExport';
 import {
   clearSelection as clearSelectionState,
   selectNodeSelection,
@@ -144,6 +144,7 @@ export default function App() {
   const [initialLoadGateOpen, setInitialLoadGateOpen] = useState(true);
   const [shareToast, setShareToast] = useState<string | null>(null);
   const [routeGifExport, setRouteGifExport] = useState<{ status: RouteGifExportStatus; progress: number }>({ status: 'idle', progress: 0 });
+  const [routeGifExportRequest, setRouteGifExportRequest] = useState<RouteMapGifExportRequest | null>(null);
   const [liveClock, setLiveClock] = useState(() => Date.now());
   const [initialNodesReceived, setInitialNodesReceived] = useState(false);
   const [positionedNodesRendered, setPositionedNodesRendered] = useState(false);
@@ -1003,22 +1004,43 @@ export default function App() {
 
   const exportSelectedPacketGif = useCallback(async () => {
     if (!selectedPacket || routeGifExport.status === 'rendering') return;
+    setFollowTraffic(false);
+    setPaused(true);
     setRouteGifExport({ status: 'rendering', progress: 0.02 });
-    try {
-      await downloadRouteGif(selectedPacket, {
-        onProgress: (progress) => setRouteGifExport({ status: 'rendering', progress })
-      });
-      setRouteGifExport({ status: 'done', progress: 1 });
-      window.setTimeout(() => {
-        setRouteGifExport((current) => (current.status === 'done' ? { status: 'idle', progress: 0 } : current));
-      }, 2600);
-    } catch {
-      setRouteGifExport({ status: 'error', progress: 0 });
-      window.setTimeout(() => {
-        setRouteGifExport((current) => (current.status === 'error' ? { status: 'idle', progress: 0 } : current));
-      }, 3600);
-    }
-  }, [routeGifExport.status, selectedPacket]);
+    const token = actionTokenRef.current + 1;
+    actionTokenRef.current = token;
+    const travelDurationMs = routeGifAnimationDurationMs();
+    const pulse = packetToPulse(selectedPacket, Date.now(), {
+      force: true,
+      travelDurationMs,
+      brightness: Math.max(1.35, mapSettings.packets.brightness),
+      trailScale: Math.max(1.2, mapSettings.packets.trail),
+      animationStyle: mapSettings.packets.animationStyle
+    });
+    setRouteGifExportRequest({
+      token,
+      packet: selectedPacket,
+      pulse,
+      settleMs: 650,
+      travelDurationMs,
+      onProgress: (progress) => setRouteGifExport({ status: 'rendering', progress }),
+      onComplete: (blob) => {
+        downloadRouteGifBlob(selectedPacket, blob);
+        setRouteGifExportRequest(null);
+        setRouteGifExport({ status: 'done', progress: 1 });
+        window.setTimeout(() => {
+          setRouteGifExport((current) => (current.status === 'done' ? { status: 'idle', progress: 0 } : current));
+        }, 2600);
+      },
+      onError: () => {
+        setRouteGifExportRequest(null);
+        setRouteGifExport({ status: 'error', progress: 0 });
+        window.setTimeout(() => {
+          setRouteGifExport((current) => (current.status === 'error' ? { status: 'idle', progress: 0 } : current));
+        }, 3600);
+      }
+    });
+  }, [mapSettings.packets, routeGifExport.status, selectedPacket]);
 
   const showRouteGifExport = Boolean(selectedPacket && !packetsOpen && !netGraphOpen && !chatOpen && !setupOpen && !vcrOpen);
 
@@ -1048,6 +1070,7 @@ export default function App() {
         packetVisualSettings={mapSettings.packets}
         plotMode={plotMode}
         mapAction={mapAction}
+        routeGifExportRequest={routeGifExportRequest}
         baseMode={mapBaseMode}
         themeMode={themeMode}
         initialView={sharedViewRef.current}

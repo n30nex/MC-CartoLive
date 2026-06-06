@@ -35,8 +35,9 @@ The 2.6.2 release keeps the public-safe Packets Explorer, VCR replay, Chat,
 NetGraph, OpenFreeMap 3D route arcs/models/comets, palette/theme controls, and
 browser smoke coverage for desktop and 390px mobile. Selecting a packet route
 from Packets closes back to the map, highlights the full public RF path, and now
-offers a glowing `Export as GIF` action for downloading a branded animated route
-replay with labels and route details.
+offers a glowing `Export as GIF` action for downloading an animated replay
+captured from the actual live map viewport, with the packet comet moving across
+the visible route and a compact public-safe details HUD.
 
 Version 2.5.50 hardened the package release gate: `scripts/package-smoke.mjs`
 now runs a built or published image through both the synthetic hosted-style

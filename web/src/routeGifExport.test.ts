@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { projectRouteForGif, routeGifFilename, routeGifFrameProgress, routeGifRoutePoints } from './routeGifExport';
+import {
+  createRouteMapGifBlob,
+  routeGifAnimationDurationMs,
+  routeGifFilename,
+  routeGifFrameProgress,
+  routeGifRoutePoints
+} from './routeGifExport';
 import type { PublicPacketPath } from './types';
 
 const packet = (): PublicPacketPath => ({
@@ -34,15 +40,8 @@ describe('route GIF export helpers', () => {
     expect(points.map((point) => point.label)).toEqual(['Alpha Node', 'Bravo Node', 'Charlie Node']);
   });
 
-  it('projects route points inside the GIF safe area', () => {
-    const projected = projectRouteForGif(routeGifRoutePoints(packet()), 1280, 720);
-    expect(projected).toHaveLength(3);
-    for (const point of projected) {
-      expect(point.x).toBeGreaterThanOrEqual(96);
-      expect(point.x).toBeLessThanOrEqual(1184);
-      expect(point.y).toBeGreaterThanOrEqual(142);
-      expect(point.y).toBeLessThanOrEqual(604);
-    }
+  it('uses a frame duration that matches the GIF cadence', () => {
+    expect(routeGifAnimationDurationMs(61, 12)).toBe(5000);
   });
 
   it('uses a monotonic eased packet progress', () => {
@@ -56,5 +55,28 @@ describe('route GIF export helpers', () => {
 
   it('builds a safe social filename from the route summary', () => {
     expect(routeGifFilename(packet())).toBe('mc-cartolive-yyz-alpha-node-charlie-node-2026-06-06.gif');
+  });
+
+  it('encodes captured map frames instead of drawing a synthetic route', async () => {
+    const calls: number[] = [];
+    const blob = await createRouteMapGifBlob(
+      packet(),
+      ({ frameIndex, progress, width, height }) => {
+        calls.push(progress);
+        const data = new Uint8ClampedArray(width * height * 4);
+        for (let index = 0; index < data.length; index += 4) {
+          data[index] = frameIndex % 2 === 0 ? 12 : 220;
+          data[index + 1] = 40;
+          data[index + 2] = 80;
+          data[index + 3] = 255;
+        }
+        return { data, width, height } as ImageData;
+      },
+      { width: 4, height: 4, frames: 8, fps: 4 }
+    );
+    expect(blob.type).toBe('image/gif');
+    expect(calls).toHaveLength(8);
+    expect(calls[0]).toBe(0);
+    expect(calls.at(-1)).toBe(1);
   });
 });
