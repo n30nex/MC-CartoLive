@@ -22,12 +22,6 @@
   backdrop-filter: blur(14px);
 }
 
-.netgraph-header h2 {
-  margin: 2px 0 3px;
-  font-size: 1.05rem;
-  line-height: 1.1;
-}
-
 .netgraph-header p {
   margin: 0;
   color: var(--mc-text-muted, #9fb1c9);
@@ -144,10 +138,10 @@
   position: absolute;
   top: 14px;
   left: calc(14px + var(--ui-safe-left, 0px));
-  width: min(324px, calc(100% - 28px));
+  width: min(260px, calc(100% - 28px));
   display: grid;
-  gap: 9px;
-  padding: 10px;
+  gap: 7px;
+  padding: 8px;
   border: 1px solid color-mix(in srgb, var(--mc-border, #38bdf8) 46%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--mc-surface-strong, #101827) 78%, transparent);
@@ -159,7 +153,7 @@
 
 .netgraph-legend-group {
   display: grid;
-  gap: 7px;
+  gap: 5px;
 }
 
 .netgraph-legend-group > span {
@@ -180,13 +174,13 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  min-height: 22px;
-  padding: 3px 6px;
+  min-height: 19px;
+  padding: 2px 5px;
   border: 1px solid color-mix(in srgb, var(--mc-border, #38bdf8) 42%, transparent);
   border-radius: 6px;
   background: color-mix(in srgb, var(--mc-control-bg, #101827) 72%, transparent);
   color: var(--mc-text-normal, #cbd5e1);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 850;
 }
 
@@ -325,7 +319,7 @@
   }
 
   .netgraph-toolbar button {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     justify-content: center;
     min-width: 0;
     padding: 0 8px;
@@ -354,10 +348,6 @@
   }
 
   .netgraph-legend {
-    top: 58px;
-    left: calc(10px + var(--ui-safe-left, 0px));
-    max-width: calc(100% - 20px);
-    max-height: 32vh;
-    overflow: hidden;
+    display: none;
   }
 }

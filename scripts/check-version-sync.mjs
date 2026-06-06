@@ -17,7 +17,6 @@ const checks = [
   ['Dockerfile APP_VERSION arg', 'Dockerfile', `ARG APP_VERSION=${version}`],
   ['docker-compose APP_VERSION default', 'docker-compose.yml', `APP_VERSION: \${APP_VERSION:-${version}}`],
   ['web index title', 'web/index.html', `MC-CartoLive v${version}`],
-  ['LinkBar guide dismiss key', 'web/src/components/LinkBar.tsx', `mc-cartolive-welcome-guide-dismissed-${version}`],
   ['README title', 'README.md', `# MeshCore MQTT Live Map v${version}`],
   ['README image tag', 'README.md', `ghcr.io/n30nex/mc-cartolive:${version}`],
   ['README release path', 'README.md', `v${version} release path`],

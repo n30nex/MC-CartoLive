@@ -2,9 +2,23 @@
 
 ## Unreleased
 
+- No unreleased changes.
+
+## 2.6.1 - 2026-06-06
+
 - Hardened public display strings against crafted MeshCore node names by
   stripping HTML-significant characters from public labels, message text,
   message senders, anchors, safe IDs, and projected packet-path rows.
+- Removed the public top-bar Perf, Features, and Guide buttons/popovers while
+  keeping Changelog, Packets, NetGraph, Chat, version/build links, and GitHub
+  stats.
+- Simplified Packets copy, removed the replay instruction strip, made scan
+  status compact, and changed packet selection/replay to close the panel and
+  show the route/replay directly on the map.
+- Removed visible snap-position dropdowns from Search/Legend chrome panels
+  while preserving drag-to-snap and hide behavior.
+- Cleaned up NetGraph by removing the title, empty inspector, and Fit/Reset/Pause
+  controls, hiding the legend on mobile, and reducing default label clutter.
 
 ## 2.6.0 - 2026-06-02
 

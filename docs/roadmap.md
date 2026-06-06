@@ -5,12 +5,12 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.6.0` is the current production-ready world operations release.
+Version `2.6.1` is the current production-ready world operations release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current release focus: public-safe Packets/VCR/Chat/Perf/NetGraph,
+- Current release focus: public-safe Packets/VCR/Chat/NetGraph,
   OpenFreeMap 3D, worldwide/private broker setup, large-database public history
   and Packets responsiveness, browser smoke, package smoke, and live smoke.
 - Public packet/path data remains sanitized and schema-compatible.
@@ -42,11 +42,21 @@ Version `2.6.0` is the current production-ready world operations release.
 - Keep docs concise enough that new operators can deploy, smoke test, diagnose,
   back up, restore, and upgrade without reading historical planning notes.
 
+## 2.6.1 Patch Focus
+
+- Clean up the public top bar by removing Perf, Features, and Guide buttons
+  while keeping Changelog, Packets, NetGraph, Chat, version/build links, and
+  GitHub stats.
+- Simplify Packets selection/replay so the page closes and the map shows the
+  selected route or bright replay directly.
+- Reduce NetGraph and panel chrome clutter on desktop and mobile without
+  changing public schemas or route validation.
+
 ## 2.6.0 Release Focus
 
 - Ship the world-ready operations baseline for hosted Canada and packaged
   worldwide/private broker installs.
-- Keep public history, Packets, Chat, VCR, Perf, and NetGraph public-safe,
+- Keep public history, Packets, Chat, VCR, and NetGraph public-safe,
   schema-compatible, and responsive on production-sized SQLite databases.
 - Verify desktop and 390px mobile with browser smoke, package smoke, live smoke,
   and privacy checks before publishing the release.
@@ -218,7 +228,7 @@ Version `2.6.0` is the current production-ready world operations release.
 
 ## 2.5.13 Patch Focus
 
-- Add a closeable browser Setup page beside Perf, Packets, and NetGraph.
+- Keep a closeable browser Setup page available by direct route for operators.
 - Generate public-safe starter `.env` snippets for world, hosted Canada, and
   custom private-broker deployments.
 - Keep the generated setup guidance free of MQTT credentials, channel secrets,
@@ -253,8 +263,8 @@ Version `2.6.0` is the current production-ready world operations release.
 
 - Collapse duplicate Chat rows from multi-edge routed packets so one decoded
   message appears once in the public Chat page.
-- Keep first-run Setup under the Guide overlay instead of the permanent top
-  navigation.
+- Keep first-run Setup out of the permanent top navigation while preserving the
+  direct setup route for operators.
 - Keep live Canada deploy metadata aligned with the deployed git SHA while
   preserving `MAP_REGION_PRESET=canada`.
 
@@ -506,8 +516,8 @@ Version `2.6.0` is the current production-ready world operations release.
 
 - Collapse repeated decoded Chat messages reported by multiple observers or
   repeated packet IDs while keeping later follow-up messages visible.
-- Keep Setup under Guide instead of the permanent top bar and keep release
-  metadata pinned to the deployed commit.
+- Keep Setup out of the permanent top bar and keep release metadata pinned to
+  the deployed commit.
 
 ## 2.5.17 Patch Focus
 

@@ -2,7 +2,6 @@ import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, typ
 import { GripHorizontal, X } from 'lucide-react';
 import {
   anchorPosition,
-  chromePanelSnapMenuItems,
   clampPanelPosition,
   nearestPanelAnchor,
   type ChromePanelAnchor,
@@ -34,7 +33,6 @@ export default function ChromePanel({ panel, title, anchor, hidden, className = 
   const [draftPosition, setDraftPosition] = useState<Point | null>(null);
   const [panelSize, setPanelSize] = useState<PanelSize>({ width: 0, height: 0 });
   const [viewportVersion, setViewportVersion] = useState(0);
-  const snapItems = chromePanelSnapMenuItems(anchor);
   const refreshViewport = useCallback(() => setViewportVersion((value) => value + 1), []);
 
   const measurePanel = useCallback(() => {
@@ -115,18 +113,6 @@ export default function ChromePanel({ panel, title, anchor, hidden, className = 
       <div className="chrome-panel-toolbar" onPointerDown={startDrag} onPointerMove={updateDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag}>
         <GripHorizontal size={14} aria-hidden="true" />
         <span>{title}</span>
-        <select
-          aria-label={`${title} snap position`}
-          value={anchor}
-          onChange={(event) => onAnchorChange(panel, event.currentTarget.value as ChromePanelAnchor)}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          {snapItems.map((option) => (
-            <option value={option.value} key={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
         <button type="button" aria-label={`Hide ${title}`} title={`Hide ${title}`} onPointerDown={(event) => event.stopPropagation()} onClick={() => onHide(panel)}>
           <X size={13} />
         </button>

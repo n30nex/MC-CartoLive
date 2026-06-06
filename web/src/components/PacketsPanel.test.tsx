@@ -16,9 +16,9 @@ describe('PacketsPanel', () => {
         onReplayPacket={() => undefined}
       />
     );
-    expect(html).toContain('True Path Packets');
-    expect(html).toContain('Select a packet to focus its public RF path');
-    expect(html).toContain('Map fits the full route');
+    expect(html).not.toContain('True Path Packets');
+    expect(html).toContain('Select route to view on map');
+    expect(html).not.toContain('Map fits the full route');
     expect(html).toContain('Search endpoint, region, route prefix, message');
     expect(html).toContain('Region');
     expect(html).toContain('Returned path');
@@ -59,13 +59,13 @@ describe('PacketsPanel', () => {
 
   it('explains bounded packet scans without private wording', () => {
     expect(formatPacketScanStatus({ eventsScanned: 2500, scanLimit: 2500, filtered: true, partial: true })).toBe(
-      'Searched 2,500 route events; older packet paths may still match.'
+      'Searched 2.5k routes'
     );
-    expect(packetFooterStatus(null, 'more', 'cursor', false, { eventsScanned: 5000, scanLimit: 5000, filtered: true, partial: true })).toContain(
-      'older packet paths may still match'
+    expect(packetFooterStatus(null, 'more', 'cursor', false, { eventsScanned: 5000, scanLimit: 5000, filtered: true, partial: true })).toBe(
+      'More packet paths available.'
     );
     expect(packetSearchStatus('more', 'cursor', false, { eventsScanned: 5000, scanLimit: 5000, filtered: true, partial: true })).toContain(
-      'Load older to continue'
+      'Load older for more'
     );
   });
 });

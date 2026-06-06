@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.6.0
+# MeshCore MQTT Live Map v2.6.1
 
 Also known as **MC-CartoLive**.
 
@@ -23,19 +23,19 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.6.0 Feature Gallery
+### v2.6.1 Feature Gallery
 
-Version 2.6.0 is the world-ready live network operations release. Hosted Canada
-stays Canada-scoped, while packaged installs support worldwide/private brokers
-through configurable map bounds, generic region labels, first-run setup, and
-region-first diagnostics.
+Version 2.6.1 is the world-ready live network operations release with the
+annotation cleanup pass applied. Hosted Canada stays Canada-scoped, while
+packaged installs support worldwide/private brokers through configurable map
+bounds, generic region labels, first-run setup, and region-first diagnostics.
 
-The 2.6 release includes the public-safe Packets Explorer, VCR replay, Chat,
-Perf, NetGraph, OpenFreeMap 3D route arcs/models/comets, palette/theme controls,
-and browser smoke coverage for desktop and 390px mobile. Large-database public
-history and Packets reads now prefer sanitized projected packet paths so VCR
-scrub replay and Packets browsing stay responsive on production-sized SQLite
-databases.
+The 2.6.1 release keeps the public-safe Packets Explorer, VCR replay, Chat,
+NetGraph, OpenFreeMap 3D route arcs/models/comets, palette/theme controls, and
+browser smoke coverage for desktop and 390px mobile. The top bar is quieter:
+Perf, Features, and Guide were removed from the public chrome, Packets now
+focuses/replays routes directly on the map, and NetGraph has fewer controls and
+less mobile clutter.
 
 Version 2.5.50 hardened the package release gate: `scripts/package-smoke.mjs`
 now runs a built or published image through both the synthetic hosted-style
@@ -164,8 +164,9 @@ high-frequency pathways get thicker, hue-shifted lines and stronger payload
 glow, then shrink and fade back as the path cools. Packet comet residue leaves
 deterministic short-lived sparkles so recent true packet movement is more
 obvious without adding random particles or exposing new public data. Setup is
-still available from the Guide overlay for new operators who need public-safe
-`.env` starter settings, but it is no longer a permanent top-bar page. The
+still available through the direct `#/setup` route for new operators who need
+public-safe `.env` starter settings, but it is no longer a permanent top-bar
+page. The
 release also keeps Chat duplicate hardening, NetGraph stability helpers,
 OpenFreeMap packet replay chase math on shared 3D route-arc samples, Docker
 Compose release metadata fallback fixes, and public JSON/WebSocket privacy
@@ -220,13 +221,13 @@ packing, Legend-aligned node visuals, and compact node/pathway inspectors.
   low-poly node models, elevated route arcs, and 3D packet comet trails while
   retaining the existing 2D layers for labels, clicks, and fallback rendering.
 - Provides hidden-by-default 24h VCR replay, a Packets tab for true-path packet
-  records, a Perf tab for public-safe runtime counters, a NetGraph tab for a
-  live connected-node graph, and a Chat tab for sanitized decoded public text
-  history using the same sanitized public routes and events.
+  records, a NetGraph tab for a live connected-node graph, and a Chat tab for
+  sanitized decoded public text history using the same sanitized public routes
+  and events.
 - Adds a browser first-run Setup tab that generates public-safe world, Canada,
   and custom deployment `.env` starters for packaged installs.
-- Adds top-bar quick help, latest changelog, and feature list popups. First-time
-  visitors see a dismissible welcome guide stored only in browser localStorage.
+- Keeps the top bar focused on live pages, version/build metadata, GitHub stats,
+  and a compact latest-changelog popup.
 - Includes operator tools for release checks, live droplet smoke checks, soak
   checks, performance counters, and local-only map-inclusion diagnostics.
 - Keeps public APIs sanitized: no broker credentials, channel secrets, live DB
@@ -305,7 +306,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.6.0
+  ghcr.io/n30nex/mc-cartolive:2.6.1
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -316,7 +317,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.6.0
+  ghcr.io/n30nex/mc-cartolive:2.6.1
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -445,13 +446,13 @@ node scripts/browser-smoke.mjs --base-url http://127.0.0.1:39476
 ```
 
 The smoke checks desktop `1920x1080` and mobile `390px` layouts for the live
-map, Perf, Packets, Chat, and NetGraph. Screenshots are written to
+map, Packets, Chat, and NetGraph. Screenshots are written to
 `artifacts/browser-smoke` by default.
 
 Packaged image smoke for the 2.6 release gate:
 
 ```powershell
-node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.6.0 --pull
+node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.6.1 --pull
 ```
 
 The package smoke runs the image in synthetic and worldwide `r1` fixture modes,
@@ -460,7 +461,7 @@ privacy scanner against both temporary containers.
 
 ## Production Hosting
 
-The recommended v2.6.0 release path is clone + Docker Compose on a VPS or local
+The recommended v2.6.1 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

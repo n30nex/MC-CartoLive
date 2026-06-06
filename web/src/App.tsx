@@ -21,7 +21,6 @@ import SelectionDrawer from './components/SelectionDrawer';
 import StatusBar from './components/StatusBar';
 import VcrBar, { MiniLiveClock } from './components/VcrBar';
 import ChromePanel from './components/ChromePanel';
-import PerfPanel from './components/PerfPanel';
 import PacketsPanel from './components/PacketsPanel';
 import NetGraphPanel from './components/NetGraphPanel';
 import ChatPanel from './components/ChatPanel';
@@ -135,7 +134,6 @@ export default function App() {
   const [panelsMenuOpen, setPanelsMenuOpen] = useState(false);
   const [mapSettingsOpen, setMapSettingsOpen] = useState(false);
   const [mapSettings, setMapSettings] = useState<MapSettings>(() => readStoredMapSettings());
-  const [perfOpen, setPerfOpen] = useState(() => window.location.hash === '#/perf');
   const [packetsOpen, setPacketsOpen] = useState(() => window.location.hash === '#/packets');
   const [netGraphOpen, setNetGraphOpen] = useState(() => window.location.hash === '#/netgraph');
   const [chatOpen, setChatOpen] = useState(() => window.location.hash === '#/chat');
@@ -177,18 +175,20 @@ export default function App() {
 
   useEffect(() => {
     const updateRoute = () => {
-      const hash = window.location.hash;
-      const nextPerfOpen = hash === '#/perf';
+      let hash = window.location.hash;
+      if (hash === '#/perf') {
+        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+        hash = '';
+      }
       const nextPacketsOpen = hash === '#/packets';
       const nextNetGraphOpen = hash === '#/netgraph';
       const nextChatOpen = hash === '#/chat';
       const nextSetupOpen = hash === '#/setup';
-      setPerfOpen(nextPerfOpen);
       setPacketsOpen(nextPacketsOpen);
       setNetGraphOpen(nextNetGraphOpen);
       setChatOpen(nextChatOpen);
       setSetupOpen(nextSetupOpen);
-      if (nextPerfOpen || nextPacketsOpen || nextNetGraphOpen || nextChatOpen || nextSetupOpen) {
+      if (nextPacketsOpen || nextNetGraphOpen || nextChatOpen || nextSetupOpen) {
         setPaletteMenuOpen(false);
         setPanelsMenuOpen(false);
         setMapSettingsOpen(false);
@@ -198,13 +198,6 @@ export default function App() {
     updateRoute();
     window.addEventListener('hashchange', updateRoute);
     return () => window.removeEventListener('hashchange', updateRoute);
-  }, []);
-
-  const closePerf = useCallback(() => {
-    if (window.location.hash === '#/perf') {
-      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
-    }
-    setPerfOpen(false);
   }, []);
 
   const closePackets = useCallback(() => {
@@ -837,6 +830,11 @@ export default function App() {
 
   const focusPacketPath = useCallback((packet: PublicPacketPath) => {
     setSelectedPacket(packet);
+    setPacketsOpen(false);
+    setPacketsPanelMode('expanded');
+    if (window.location.hash === '#/packets') {
+      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
+    }
     applySelection(clearSelectionState());
     const token = actionTokenRef.current + 1;
     actionTokenRef.current = token;
@@ -858,7 +856,11 @@ export default function App() {
     setFollowTraffic(false);
     setPaused(true);
     setSelectedPacket(packet);
-    setPacketsPanelMode('compactTray');
+    setPacketsOpen(false);
+    setPacketsPanelMode('expanded');
+    if (window.location.hash === '#/packets') {
+      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
+    }
     applySelection(clearSelectionState());
     const token = actionTokenRef.current + 1;
     actionTokenRef.current = token;
@@ -1031,7 +1033,7 @@ export default function App() {
         onClearSelection={clearSelection}
       />
       {loadingPositionedNodes && <NodeLoadingToast failed={nodeLoadFailed} drawing={initialNodesReceived} />}
-      <LinkBar perfOpen={perfOpen} packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} chatOpen={chatOpen} setupOpen={setupOpen} />
+      <LinkBar packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} chatOpen={chatOpen} />
       {!chromeHidden && (
         <StatusBar
           stats={state.stats}
@@ -1182,7 +1184,6 @@ export default function App() {
         </button>
       </div>
       {shareToast && <div className="share-toast" role="status">{shareToast}</div>}
-      {perfOpen && <PerfPanel onClose={closePerf} />}
       {setupOpen && <SetupPanel mapConfig={publicMapConfig} onClose={closeSetup} />}
       {mapSettingsOpen && (
         <MapSettingsDrawer

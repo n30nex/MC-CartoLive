@@ -206,12 +206,11 @@ export default function PacketsPanel({
   }
 
   return (
-    <section className="packets-panel" aria-label="True path packets">
+    <section className="packets-panel" aria-label="Packet routes">
       <header className="packets-panel-header">
         <div>
           <span className="panel-eyebrow">Packets</span>
-          <h2>True Path Packets</h2>
-          <p>Select a packet to focus its public RF path, or replay it as one paused comet on the map.</p>
+          <p>Select route to view on map</p>
         </div>
         <div className="packets-panel-actions">
           <button type="button" className="icon-button" title="Refresh true path packets" onClick={refresh}>
@@ -222,8 +221,6 @@ export default function PacketsPanel({
           </button>
         </div>
       </header>
-
-      <PacketReplayGuide />
 
       <div className="packets-summary-strip">
         <PacketSummary icon={<Route size={15} />} label="Loaded" value={packets.length.toLocaleString()} />
@@ -316,23 +313,11 @@ export default function PacketsPanel({
       </div>
 
       <footer className="packets-footer">
-        <span>{packetFooterStatus(activePacket, searchState, nextCursor, loadingMore, scanInfo)}</span>
         <button type="button" disabled={!nextCursor || loadingMore} onClick={loadOlder}>
           {loadingMore ? 'Searching...' : nextCursor ? 'Load older' : 'End of window'}
         </button>
       </footer>
     </section>
-  );
-}
-
-function PacketReplayGuide() {
-  return (
-    <div className="packets-replay-guide" aria-label="Packet replay flow">
-      <span><b>1</b> Select focuses the path</span>
-      <span><b>2</b> Replay pauses live</span>
-      <span><b>3</b> Map fits the full route</span>
-      <span><b>4</b> Comet plays at watch speed</span>
-    </div>
   );
 }
 
@@ -555,35 +540,41 @@ export function packetFooterStatus(
   loadingMore: boolean,
   scan: PublicPacketScan | null
 ): string {
-  if (loadingMore || state === 'searching') return 'Searching older packets across the selected window...';
-  const scanStatus = formatPacketScanStatus(scan);
-  if (packet) return scanStatus ? `Selected ${packetEndpointSummary(packet)}. ${scanStatus}` : `Selected ${packetEndpointSummary(packet)}`;
-  if (nextCursor || state === 'more') return scanStatus || 'More packet paths are available in this window.';
+  void scan;
+  if (loadingMore || state === 'searching') return 'Searching older packets...';
+  if (packet) return `Selected ${packetEndpointSummary(packet)}`;
+  if (nextCursor || state === 'more') return 'More packet paths available.';
   if (state === 'end') return 'End of the selected history window.';
   return 'Select a packet to focus its real path on the map.';
 }
 
 export function formatPacketScanStatus(scan: PublicPacketScan | null): string {
   if (!scan || !scan.eventsScanned) return '';
-  const scanned = scan.eventsScanned.toLocaleString();
+  const scanned = compactCount(scan.eventsScanned);
   if (scan.partial) {
-    return `Searched ${scanned} route events; older packet paths may still match.`;
+    return `Searched ${scanned} routes`;
   }
-  return `Searched ${scanned} route events through the selected window.`;
+  return `Searched ${scanned} routes`;
 }
 
 export function packetSearchStatus(state: 'idle' | 'searching' | 'more' | 'end', nextCursor: string, loading: boolean, scan: PublicPacketScan | null): string {
   const scanStatus = formatPacketScanStatus(scan);
   if (loading || state === 'searching') {
-    return scanStatus ? `Searching server history. ${scanStatus}` : 'Searching server history for true public packet paths.';
+    return scanStatus ? `Searching... ${scanStatus}` : 'Searching history';
   }
   if (nextCursor || state === 'more') {
-    return scanStatus ? `${scanStatus} Load older to continue through the selected window.` : 'More true packet paths are available in this window.';
+    return scanStatus ? `${scanStatus} · Load older for more` : 'More routes available';
   }
   if (state === 'end') {
-    return scanStatus || 'Finished the selected history window.';
+    return scanStatus || 'End of window';
   }
-  return 'Filters run against server history, not just the rows currently loaded.';
+  return 'Server-backed filters';
+}
+
+function compactCount(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}m`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}k`;
+  return value.toLocaleString();
 }
 
 function packetRequestErrorMessage(err: unknown): string {

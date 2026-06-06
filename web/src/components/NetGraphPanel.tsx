@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Activity, Maximize2, Pause, Play, RotateCcw, Search, X } from 'lucide-react';
+import { Activity, Search, X } from 'lucide-react';
 import {
   forceCenter,
   forceCollide,
@@ -165,7 +165,6 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<SelectedGraphItem>(null);
   const [hovered, setHovered] = useState<SelectedGraphItem>(null);
-  const [layoutPaused, setLayoutPaused] = useState(false);
   const [canvasReady, setCanvasReady] = useState(false);
   const layoutPausedRef = useRef(false);
 
@@ -209,11 +208,6 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
   }, [searchMatches, scheduleDraw]);
 
   useEffect(() => {
-    layoutPausedRef.current = layoutPaused;
-    if (layoutPaused) simulationRef.current?.stop();
-  }, [layoutPaused]);
-
-  useEffect(() => {
     if (typeof document === 'undefined') return undefined;
     const onVisibilityChange = () => {
       pageHiddenRef.current = document.hidden;
@@ -249,22 +243,6 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     };
     scheduleDraw();
   }, [scheduleDraw]);
-
-  const resetLayout = useCallback(() => {
-    const simNodes = simNodesRef.current;
-    for (const node of simNodes) {
-      node.x = node.seedX;
-      node.y = node.seedY;
-      node.vx = 0;
-      node.vy = 0;
-      node.fx = null;
-      node.fy = null;
-    }
-    simulationRef.current?.alpha(0.9);
-    if (!pageHiddenRef.current) simulationRef.current?.restart();
-    setLayoutPaused(false);
-    fitGraph();
-  }, [fitGraph]);
 
   useEffect(() => {
     graphRef.current = graph;
@@ -382,18 +360,6 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     if (rafRef.current !== 0) window.cancelAnimationFrame(rafRef.current);
     simulationRef.current?.stop();
   }, []);
-
-  const toggleLayoutPaused = () => {
-    setLayoutPaused((value) => {
-      const next = !value;
-      if (next) simulationRef.current?.stop();
-      else {
-        simulationRef.current?.alphaTarget(0.04);
-        if (!pageHiddenRef.current) simulationRef.current?.restart();
-      }
-      return next;
-    });
-  };
 
   const clearSelection = () => {
     setSelected(null);
@@ -670,8 +636,12 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
     for (const node of simNodesRef.current) {
-      const important = node.degree >= 4 || node.isObserver || selection.nodeIDs.has(node.id) || hoverSelection?.nodeIDs.has(node.id) || searchMatchesRef.current.has(node.id);
-      if (!important && (hasSearch || hasFocus || scale < 0.62 || node.degree < 8)) continue;
+      const matched = searchMatchesRef.current.has(node.id);
+      const focused = selection.nodeIDs.has(node.id) || Boolean(hoverSelection?.nodeIDs.has(node.id));
+      const important = node.degree >= 8 || node.isObserver || focused || matched;
+      if (hasSearch && !matched && !focused) continue;
+      if (hasFocus && !important) continue;
+      if (!important && (scale < 1.05 || node.degree < 14)) continue;
       const x = (node.x ?? 0) + node.radius + 6;
       const y = node.y ?? 0;
       ctx.lineWidth = 3.5;
@@ -719,7 +689,6 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       <header className="netgraph-header">
         <div>
           <span className="panel-eyebrow">NetGraph</span>
-          <h2>Live Network Graph</h2>
           <p>{graph.nodes.length.toLocaleString()} connected nodes / {graph.edges.length.toLocaleString()} public pathways</p>
         </div>
         <div className="netgraph-toolbar">
@@ -727,18 +696,6 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
             <Search size={15} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search nodes, routes, region" />
           </label>
-          <button type="button" onClick={fitGraph} title="Fit graph">
-            <Maximize2 size={16} />
-            <span>Fit</span>
-          </button>
-          <button type="button" onClick={resetLayout} title="Reset force layout">
-            <RotateCcw size={16} />
-            <span>Reset</span>
-          </button>
-          <button type="button" onClick={toggleLayoutPaused} title={layoutPaused ? 'Resume graph layout' : 'Pause graph layout'}>
-            {layoutPaused ? <Play size={16} /> : <Pause size={16} />}
-            <span>{layoutPaused ? 'Resume' : 'Pause'}</span>
-          </button>
           <button type="button" onClick={onClose} title="Close NetGraph">
             <X size={16} />
             <span>Close</span>
@@ -787,12 +744,7 @@ function NetGraphInspector({
 }) {
   const selectedNodeVisual = selectedNode ? selectedNode.isObserver ? OBSERVER_NODE_VISUAL : nodeRoleVisual(selectedNode.role) : null;
   if (!selectedNode && !selectedEdge) {
-    return (
-      <aside className="netgraph-inspector empty">
-        <strong>Select a node or pathway</strong>
-        <p>Click a graph node to inspect direct RF neighbors, or click a pathway to inspect public route activity.</p>
-      </aside>
-    );
+    return null;
   }
   return (
     <aside className="netgraph-inspector">

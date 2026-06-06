@@ -8,13 +8,17 @@ describe('NetGraphPanel', () => {
       <NetGraphPanel nodes={[]} routes={[]} pulses={[]} activity={[]} socketStatus="live" onClose={() => undefined} />
     );
     expect(html).toContain('NetGraph');
-    expect(html).toContain('Live Network Graph');
+    expect(html).not.toContain('Live Network Graph');
     expect(html).toContain('Search nodes, routes, region');
     expect(html).toContain('Devices');
     expect(html).toContain('Packets');
     expect(html).toContain('Repeater');
     expect(html).toContain('Observer');
     expect(html).toContain('Close');
+    expect(html).not.toContain('Fit');
+    expect(html).not.toContain('Reset');
+    expect(html).not.toContain('Pause');
+    expect(html).not.toContain('Select a node or pathway');
     expect(html).not.toContain('packet hash');
     expect(html).not.toContain('raw path');
     expect(html).not.toContain('resolver');

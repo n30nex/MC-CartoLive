@@ -69,7 +69,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.6.0
+  ghcr.io/n30nex/mc-cartolive:2.6.1
 ```
 
 For production, keep private settings in an env file and mount persistent data:
@@ -79,7 +79,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.6.0
+  ghcr.io/n30nex/mc-cartolive:2.6.1
 ```
 
 The published image runs as non-root `appuser`, includes OCI source/version
@@ -132,7 +132,7 @@ docker compose up -d
 
 ## Runtime Notes
 
-- Version 2.6.0 exposes the app version/build in the top project bar. CI builds use
+- Version 2.6.1 exposes the app version/build in the top project bar. CI builds use
   the Git commit SHA when available; local Docker builds use a timestamp fallback
   plus a separate ISO build time for build-age display.
 - Runtime liveness and readiness are split: `/healthz` stays cheap for Docker
@@ -167,7 +167,7 @@ docker compose up -d
   bounded startup batches. Tune `PUBLIC_PACKET_PATH_BACKFILL_ENABLED`,
   `PUBLIC_PACKET_PATH_BACKFILL_BATCH`, and `PUBLIC_PACKET_PATH_BACKFILL_HOURS`
   only if a host needs slower upgrade catch-up.
-- The Guide overlay links to the Setup page, which generates public-safe `.env` starter snippets for
+- The direct `#/setup` route generates public-safe `.env` starter snippets for
   world, Canada, and custom private-broker deployments. It is a convenience for
   first-run operators; MQTT credentials and channel secrets still belong only in
   private env files or host secret stores.
@@ -249,8 +249,8 @@ hints, and whether the position came from a node or observer record.
   hex payloads, full public keys, resolver debug fields, private MQTT payloads,
   and private operator config.
 - Browser-test the live container at desktop and narrow mobile widths after UI
-  changes. Use `scripts/browser-smoke.mjs` to check the live map, Perf,
-  Packets, Chat, and NetGraph at desktop `1920x1080` and mobile `390px`.
+  changes. Use `scripts/browser-smoke.mjs` to check the live map, Packets,
+  Chat, and NetGraph at desktop `1920x1080` and mobile `390px`.
 - Run `scripts/release-check.ps1` on Windows or `scripts/release-check.sh` on
   Linux/macOS before tagging or after deploying. Add `-RunPackageSmoke` on
   Windows or `RUN_PACKAGE_SMOKE=1` on Linux/macOS to smoke the built image in
@@ -264,7 +264,7 @@ hints, and whether the position came from a node or observer record.
 - To test a published package directly, run:
 
 ```powershell
-node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.6.0 --pull
+node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.6.1 --pull
 ```
 
 ```powershell

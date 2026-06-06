@@ -2,7 +2,8 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.6.0` expanded browser-control smoke coverage,
+Baseline audited: `v2.6.1` completed the browser-annotation UI cleanup,
+expanded browser-control smoke coverage,
 packaged-image release-gate smoke automation,
 projected Packets search-path observability,
 projected packet-path search-index upgrade catch-up, public-safe projected
@@ -714,7 +715,7 @@ counts in health/readiness.
 Goal: make packaged installs feel first-class outside Canada.
 
 Status: started with the browser first-run setup foundation. The current pass
-adds a closeable Setup page beside Perf, Packets, and NetGraph, generates
+adds a closeable Setup page available by direct route, generates
 public-safe `.env` starter snippets for world/Canada/custom deployments, and
 keeps secrets and private packet material out of the browser guidance.
 
@@ -835,8 +836,8 @@ Status: active patch.
 
 - Collapse routed Chat rows by packet observation so repeated route-edge rows do
   not duplicate the same decoded public message.
-- Keep first-run Setup available from Guide, but remove it from the permanent
-  top navigation beside Perf, Packets, NetGraph, and Chat.
+- Keep first-run Setup available by direct route, but remove it from the
+  permanent top navigation beside Packets, NetGraph, and Chat.
 - Verify hosted Canada still runs with `MAP_REGION_PRESET=canada` after deploy.
 
 ## 2.5.42 - Release Workflow Node 24 Compatibility
@@ -1080,7 +1081,8 @@ Scope:
   spacing so normal live traffic does not whip the map around.
 - Parse compact UTC and ISO-like build timestamps strictly so top-bar build age
   never displays a misleading normalized date.
-- Keep Setup under Guide and keep all status fields public-safe.
+- Keep Setup out of the permanent top bar and keep all status fields
+  public-safe.
 
 ## 2.5.27 - Flat Map Live Pathway Polish
 
@@ -1200,7 +1202,8 @@ Scope:
 - Keep later repeated messages visible so real follow-up chat is not hidden.
 - Preserve packet-identity dedupe as a fallback and never expose packet hashes
   publicly.
-- Keep Setup under Guide and keep deployed metadata pinned to the running commit.
+- Keep Setup out of the permanent top bar and keep deployed metadata pinned to
+  the running commit.
 
 Verification:
 
