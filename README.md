@@ -37,7 +37,8 @@ browser smoke coverage for desktop and 390px mobile. Selecting a packet route
 from Packets closes back to the map, highlights the full public RF path, and now
 offers a glowing `Export as GIF` action for downloading an animated replay
 captured from the actual live map viewport, with the packet comet moving across
-the visible route and a compact public-safe details HUD.
+the fitted visible route and a compact public-safe details HUD that lists each
+hop with distance.
 
 Version 2.5.50 hardened the package release gate: `scripts/package-smoke.mjs`
 now runs a built or published image through both the synthetic hosted-style

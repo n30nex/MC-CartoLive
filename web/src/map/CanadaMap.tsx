@@ -1951,7 +1951,7 @@ export default function CanadaMap({
           themeModeRef.current,
           true
         );
-        fitToSegments(map, request.pulse.segments, 900, true);
+        fitToSegmentsForRouteGif(map, request.pulse.segments, 900);
         await waitForMapIdleOrTimeout(map, 900 + request.settleMs + 700);
         if (cancelled) return;
         request.onProgress(0.1);
@@ -3424,6 +3424,34 @@ function routePulsePoints(pulse: PublicRoutePulse): Array<[number, number]> {
     points.push([segment.from.lng, segment.from.lat], [segment.to.lng, segment.to.lat]);
   }
   return points;
+}
+
+function fitToSegmentsForRouteGif(map: maplibregl.Map, segments: PublicRoutePulse['segments'], duration: number): void {
+  const points = segments.flatMap((segment) => [
+    [segment.from.lng, segment.from.lat] as [number, number],
+    [segment.to.lng, segment.to.lat] as [number, number]
+  ]).filter(isFollowPoint);
+  if (points.length === 0) return;
+  const { width, height } = mapViewportSize(map);
+  const compact = width < 760 || height < 560;
+  const padding: maplibregl.PaddingOptions = compact
+    ? { top: 120, right: 42, bottom: 206, left: 42 }
+    : { top: 132, right: 126, bottom: 238, left: 126 };
+  const maxZoom = compact ? 8.2 : 9.6;
+
+  map.stop();
+  if (points.length === 1) {
+    map.easeTo({ center: points[0], zoom: Math.max(map.getZoom(), 8), pitch: 0, bearing: 0, duration, easing: easeOutCubic });
+    return;
+  }
+
+  const bounds = points.reduce((acc, point) => acc.extend(point), new maplibregl.LngLatBounds(points[0], points[0]));
+  const camera = map.cameraForBounds(bounds, { padding, maxZoom });
+  if (camera) {
+    map.easeTo({ ...camera, pitch: 0, bearing: 0, duration, easing: easeOutCubic });
+    return;
+  }
+  map.fitBounds(bounds, { padding, maxZoom, duration, easing: easeOutCubic });
 }
 
 function captureActualMapGifFrame(

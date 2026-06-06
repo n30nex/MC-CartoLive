@@ -15,6 +15,13 @@ export interface RouteGifPoint {
   nodeId?: string;
 }
 
+export interface RouteGifHopDetail {
+  index: number;
+  from: string;
+  to: string;
+  distance: string;
+}
+
 export interface RouteGifCaptureFrameRequest {
   frameIndex: number;
   frameCount: number;
@@ -51,6 +58,15 @@ export function routeGifRoutePoints(packet: Pick<PublicPacketPath, 'segments'>):
     appendEndpoint(points, segment.to);
   }
   return points;
+}
+
+export function routeGifHopDetails(packet: Pick<PublicPacketPath, 'segments'>): RouteGifHopDetail[] {
+  return packet.segments.map((segment, index) => ({
+    index: index + 1,
+    from: segment.from.label || segment.from.pathHash3 || 'Node',
+    to: segment.to.label || segment.to.pathHash3 || 'Node',
+    distance: `${segment.distanceKm.toFixed(segment.distanceKm >= 100 ? 0 : 1)} km`
+  }));
 }
 
 export function routeGifFrameProgress(frameIndex: number, frameCount = ROUTE_GIF_FRAMES): number {
@@ -145,6 +161,7 @@ export function drawRouteMapGifOverlay(
   const visual = payloadVisual(packet.payloadTypeName);
   const accent = visual.color || '#22d3ee';
   const title = packetEndpointSummary(packet);
+  const hops = routeGifHopDetails(packet);
   ctx.save();
   ctx.textBaseline = 'middle';
   ctx.shadowColor = hexToRgba(accent, 0.45);
@@ -178,32 +195,89 @@ export function drawRouteMapGifOverlay(
     chipX -= 8;
   }
 
-  const footerY = height - 62;
-  roundedRect(ctx, 20, footerY, width - 40, 42, 16, 'rgba(3, 7, 18, 0.68)', 'rgba(148, 163, 184, 0.22)');
+  const hopPanelHeight = hops.length > Math.max(4, Math.floor((width - 96) / 104)) ? 136 : 92;
+  const hopPanelY = height - hopPanelHeight - 22;
+  roundedRect(ctx, 20, hopPanelY, width - 40, hopPanelHeight, 16, 'rgba(3, 7, 18, 0.72)', 'rgba(148, 163, 184, 0.24)');
   ctx.fillStyle = '#bfdbfe';
   ctx.font = '800 14px Inter, system-ui, sans-serif';
-  ctx.fillText(`Heard ${new Date(packet.at).toLocaleString()}`, 42, footerY + 22);
+  ctx.fillText(`Heard ${new Date(packet.at).toLocaleString()}`, 42, hopPanelY + 22);
   ctx.fillStyle = accent;
   ctx.textAlign = 'right';
-  ctx.fillText('True public RF path', width - 42, footerY + 22);
+  ctx.fillText('True public RF path', width - 42, hopPanelY + 22);
   ctx.textAlign = 'left';
 
   const barWidth = Math.min(360, width - 80);
   const barX = Math.max(40, width - barWidth - 40);
-  const barY = height - 100;
+  const barY = hopPanelY + 36;
   roundedRect(ctx, barX, barY, barWidth, 18, 9, 'rgba(2, 6, 23, 0.7)', 'rgba(255, 255, 255, 0.18)');
   ctx.fillStyle = hexToRgba(accent, 0.9);
   roundedRect(ctx, barX + 4, barY + 4, Math.max(8, (barWidth - 8) * progress), 10, 5, hexToRgba(accent, 0.95));
 
+  drawRouteHopStrip(ctx, hops, 42, hopPanelY + 52, width - 84, hopPanelHeight - 64, accent);
+
   if (packet.messageText) {
     const message = `${packet.messageSender ? `${packet.messageSender}: ` : ''}${packet.messageText}`;
     const messageWidth = Math.min(width - 80, ctx.measureText(message).width + 34);
-    roundedRect(ctx, 40, height - 116, messageWidth, 34, 12, 'rgba(2, 6, 23, 0.72)', hexToRgba(accent, 0.34));
+    const messageY = Math.max(118, hopPanelY - 44);
+    roundedRect(ctx, 40, messageY, messageWidth, 34, 12, 'rgba(2, 6, 23, 0.72)', hexToRgba(accent, 0.34));
     ctx.fillStyle = '#f8fafc';
     ctx.font = '800 14px Inter, system-ui, sans-serif';
-    ctx.fillText(truncateText(message, 96), 58, height - 99);
+    ctx.fillText(truncateText(message, 96), 58, messageY + 17);
   }
 
+  ctx.restore();
+}
+
+function drawRouteHopStrip(
+  ctx: CanvasRenderingContext2D,
+  hops: RouteGifHopDetail[],
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  accent: string
+): void {
+  if (hops.length === 0 || width <= 0 || height <= 0) return;
+  const maxPerRow = Math.max(4, Math.min(14, Math.floor(width / 104)));
+  const rows = hops.length > maxPerRow ? 2 : 1;
+  const capacity = maxPerRow * rows;
+  const visible = hops.length > capacity ? [...hops.slice(0, capacity - 1), hops[hops.length - 1]] : hops;
+  const perRow = Math.ceil(visible.length / rows);
+  const cellWidth = width / perRow;
+  const cellHeight = rows === 1 ? Math.min(42, height) : Math.min(38, height / 2 - 4);
+
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  ctx.font = '800 10px Inter, system-ui, sans-serif';
+  for (let itemIndex = 0; itemIndex < visible.length; itemIndex += 1) {
+    const hop = visible[itemIndex];
+    const row = Math.floor(itemIndex / perRow);
+    const column = itemIndex % perRow;
+    const cellX = x + column * cellWidth;
+    const cellY = y + row * (cellHeight + 8);
+    const innerWidth = Math.max(76, cellWidth - 8);
+    const skipped = hops.length > capacity && itemIndex === visible.length - 1;
+    const skippedCount = skipped ? Math.max(1, hop.index - (visible[itemIndex - 1]?.index ?? 0) - 1) : 0;
+    const label = skipped ? `... ${skippedCount} hops to ${hop.to}` : `${hop.from} -> ${hop.to}`;
+
+    roundedRect(ctx, cellX, cellY, innerWidth, cellHeight, 10, 'rgba(15, 23, 42, 0.72)', hexToRgba(accent, 0.26));
+    ctx.fillStyle = hexToRgba(accent, 0.95);
+    ctx.beginPath();
+    ctx.arc(cellX + 16, cellY + cellHeight / 2, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#020617';
+    ctx.font = '900 10px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(String(hop.index), cellX + 16, cellY + cellHeight / 2 + 0.5);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '900 10px Inter, system-ui, sans-serif';
+    ctx.fillText(truncateText(label, Math.max(14, Math.floor(innerWidth / 7.8))), cellX + 34, cellY + cellHeight / 2 - 6);
+    ctx.fillStyle = '#93c5fd';
+    ctx.font = '800 9px Inter, system-ui, sans-serif';
+    ctx.fillText(hop.distance, cellX + 34, cellY + cellHeight / 2 + 9);
+  }
   ctx.restore();
 }
 
@@ -262,7 +336,7 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 function truncateText(value: string, max: number): string {
-  return value.length <= max ? value : `${value.slice(0, Math.max(0, max - 1))}…`;
+  return value.length <= max ? value : `${value.slice(0, Math.max(0, max - 3))}...`;
 }
 
 function clamp(value: number, min: number, max: number): number {

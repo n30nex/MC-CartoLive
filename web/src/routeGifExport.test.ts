@@ -4,6 +4,7 @@ import {
   routeGifAnimationDurationMs,
   routeGifFilename,
   routeGifFrameProgress,
+  routeGifHopDetails,
   routeGifRoutePoints
 } from './routeGifExport';
 import type { PublicPacketPath } from './types';
@@ -42,6 +43,13 @@ describe('route GIF export helpers', () => {
 
   it('uses a frame duration that matches the GIF cadence', () => {
     expect(routeGifAnimationDurationMs(61, 12)).toBe(5000);
+  });
+
+  it('builds compact hop details for the export overlay', () => {
+    expect(routeGifHopDetails(packet())).toEqual([
+      { index: 1, from: 'Alpha Node', to: 'Bravo Node', distance: '20.0 km' },
+      { index: 2, from: 'Bravo Node', to: 'Charlie Node', distance: '22.5 km' }
+    ]);
   });
 
   it('uses a monotonic eased packet progress', () => {
