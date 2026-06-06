@@ -4,6 +4,17 @@
 
 - No unreleased changes.
 
+## 2.6.2 - 2026-06-06
+
+- Added Route GIF Export for selected packet routes: after choosing a route
+  from Packets, the map shows a glowing `Export as GIF` action that downloads a
+  high-quality animated route replay for social sharing.
+- The GIF exporter uses only public-safe packet path data, renders the whole
+  route in view, includes endpoint labels, payload/region/hop/distance details,
+  and animates a bright packet comet through the true RF path.
+- Split the GIF encoder into a lazy `gif-export` frontend chunk so the live map
+  does not pay the encoder cost until a user exports a route.
+
 ## 2.6.1 - 2026-06-06
 
 - Hardened public display strings against crafted MeshCore node names by

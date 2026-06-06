@@ -5,12 +5,12 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.6.1` is the current production-ready world operations release.
+Version `2.6.2` is the current production-ready world operations release.
 
 - Detailed next-phase plan: [2.5.2 to 2.6.0](roadmap-2.5.2-to-2.6.0.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current release focus: public-safe Packets/VCR/Chat/NetGraph,
+- Current release focus: public-safe Packets/VCR/Chat/NetGraph, Route GIF Export,
   OpenFreeMap 3D, worldwide/private broker setup, large-database public history
   and Packets responsiveness, browser smoke, package smoke, and live smoke.
 - Public packet/path data remains sanitized and schema-compatible.
@@ -42,14 +42,23 @@ Version `2.6.1` is the current production-ready world operations release.
 - Keep docs concise enough that new operators can deploy, smoke test, diagnose,
   back up, restore, and upgrade without reading historical planning notes.
 
+## 2.6.2 Patch Focus
+
+- Add Route GIF Export after selecting a public-safe packet route from Packets.
+- Render a branded, high-quality animated GIF that keeps the full RF path in
+  view, labels key endpoints, includes payload/region/hop/distance details, and
+  animates a bright packet comet through the true route.
+- Keep the exporter frontend-only and privacy-safe, lazy-loading the GIF encoder
+  only when the user exports.
+
 ## 2.6.1 Patch Focus
 
-- Clean up the public top bar by removing Perf, Features, and Guide buttons
+- Cleaned up the public top bar by removing Perf, Features, and Guide buttons
   while keeping Changelog, Packets, NetGraph, Chat, version/build links, and
   GitHub stats.
-- Simplify Packets selection/replay so the page closes and the map shows the
+- Simplified Packets selection/replay so the page closes and the map shows the
   selected route or bright replay directly.
-- Reduce NetGraph and panel chrome clutter on desktop and mobile without
+- Reduced NetGraph and panel chrome clutter on desktop and mobile without
   changing public schemas or route validation.
 
 ## 2.6.0 Release Focus

@@ -45,6 +45,7 @@ export default defineConfig({
           if (id.includes('/maplibre-gl/')) return 'maplibre';
           if (id.includes('/three/')) return 'three';
           if (id.includes('/d3-force/') || id.includes('/d3-dispatch/') || id.includes('/d3-quadtree/') || id.includes('/d3-timer/')) return 'd3-force';
+          if (id.includes('/gifenc/')) return 'gif-export';
           if (id.includes('/lucide-react/')) return 'icons';
           return 'vendor';
         }

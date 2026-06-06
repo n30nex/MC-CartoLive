@@ -16,7 +16,7 @@ describe('LinkBar', () => {
     expect(html).not.toContain('Perf');
     expect(html).not.toContain('Features');
     expect(html).not.toContain('Guide');
-    expect(html).toContain('link-bar-perf active');
+    expect(html).toContain('class="link-bar-page active" href="#/netgraph"');
     expect(html).toContain('Open MC-CartoLive');
     expect(html).toContain('Changelog');
   });

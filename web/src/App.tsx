@@ -26,6 +26,7 @@ import NetGraphPanel from './components/NetGraphPanel';
 import ChatPanel from './components/ChatPanel';
 import SetupPanel from './components/SetupPanel';
 import MapSettingsDrawer from './components/MapSettingsDrawer';
+import RouteGifExportButton, { type RouteGifExportStatus } from './components/RouteGifExportButton';
 import {
   DEFAULT_CHROME_PANEL_ANCHORS,
   INITIAL_CHROME_PANEL_VISIBILITY,
@@ -56,6 +57,7 @@ import {
 } from './connectivity';
 import { boundsFromPoints, meshcorePathCopyText, messageHistoryForNode, routeNodeIDs, routesInBounds, type MapPoint } from './routeTools';
 import { packetNodeIDs, packetRouteIDs, packetToPulse } from './packets';
+import { downloadRouteGif } from './routeGifExport';
 import {
   clearSelection as clearSelectionState,
   selectNodeSelection,
@@ -141,6 +143,7 @@ export default function App() {
   const [packetsPanelMode, setPacketsPanelMode] = useState<'expanded' | 'compactTray'>('expanded');
   const [initialLoadGateOpen, setInitialLoadGateOpen] = useState(true);
   const [shareToast, setShareToast] = useState<string | null>(null);
+  const [routeGifExport, setRouteGifExport] = useState<{ status: RouteGifExportStatus; progress: number }>({ status: 'idle', progress: 0 });
   const [liveClock, setLiveClock] = useState(() => Date.now());
   const [initialNodesReceived, setInitialNodesReceived] = useState(false);
   const [positionedNodesRendered, setPositionedNodesRendered] = useState(false);
@@ -238,6 +241,10 @@ export default function App() {
     vcrModeRef.current = vcr.mode;
     vcrSpeedRef.current = vcr.speed;
   }, [vcr.mode, vcr.speed]);
+
+  useEffect(() => {
+    setRouteGifExport((current) => (current.status === 'rendering' ? current : { status: 'idle', progress: 0 }));
+  }, [selectedPacket?.id]);
 
   const clearPendingLiveFlush = useCallback(() => {
     if (flushMessagesTimerRef.current !== null) {
@@ -994,6 +1001,27 @@ export default function App() {
     window.setTimeout(() => setShareToast(null), 2200);
   }, [mapView, query, selectedNodeID, selectedRouteID]);
 
+  const exportSelectedPacketGif = useCallback(async () => {
+    if (!selectedPacket || routeGifExport.status === 'rendering') return;
+    setRouteGifExport({ status: 'rendering', progress: 0.02 });
+    try {
+      await downloadRouteGif(selectedPacket, {
+        onProgress: (progress) => setRouteGifExport({ status: 'rendering', progress })
+      });
+      setRouteGifExport({ status: 'done', progress: 1 });
+      window.setTimeout(() => {
+        setRouteGifExport((current) => (current.status === 'done' ? { status: 'idle', progress: 0 } : current));
+      }, 2600);
+    } catch {
+      setRouteGifExport({ status: 'error', progress: 0 });
+      window.setTimeout(() => {
+        setRouteGifExport((current) => (current.status === 'error' ? { status: 'idle', progress: 0 } : current));
+      }, 3600);
+    }
+  }, [routeGifExport.status, selectedPacket]);
+
+  const showRouteGifExport = Boolean(selectedPacket && !packetsOpen && !netGraphOpen && !chatOpen && !setupOpen && !vcrOpen);
+
   return (
     <div
       className="app-shell public-dashboard"
@@ -1184,6 +1212,14 @@ export default function App() {
         </button>
       </div>
       {shareToast && <div className="share-toast" role="status">{shareToast}</div>}
+      {showRouteGifExport && (
+        <RouteGifExportButton
+          packet={selectedPacket}
+          status={routeGifExport.status}
+          progress={routeGifExport.progress}
+          onExport={exportSelectedPacketGif}
+        />
+      )}
       {setupOpen && <SetupPanel mapConfig={publicMapConfig} onClose={closeSetup} />}
       {mapSettingsOpen && (
         <MapSettingsDrawer

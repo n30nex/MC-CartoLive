@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.6.1` completed the browser-annotation UI cleanup,
+Baseline audited: `v2.6.2` added Route GIF Export on top of the browser-annotation UI cleanup,
 expanded browser-control smoke coverage,
 packaged-image release-gate smoke automation,
 projected Packets search-path observability,

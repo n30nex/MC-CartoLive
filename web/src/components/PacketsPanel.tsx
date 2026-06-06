@@ -18,7 +18,7 @@ interface PacketsPanelProps {
   onReplayPacket: (packet: PublicPacketPath) => void;
 }
 
-const PACKETS_PAGE_LIMIT = 1000;
+const PACKETS_PAGE_LIMIT = 500;
 const PACKETS_RETAINED_LIMIT = 5000;
 const PACKETS_FILTER_SCAN_PAGES = 3;
 const PACKET_ROW_HEIGHT = 112;

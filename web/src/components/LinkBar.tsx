@@ -85,15 +85,15 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
           build {buildID}
         </a>
         <span title={buildDate}>{buildAge}</span>
-        <a className={`link-bar-perf ${packetsOpen ? 'active' : ''}`} href="#/packets" title="Open true path packets">
+        <a className={`link-bar-page ${packetsOpen ? 'active' : ''}`} href="#/packets" title="Open true path packets">
           <List size={13} />
           <span>Packets</span>
         </a>
-        <a className={`link-bar-perf ${netGraphOpen ? 'active' : ''}`} href="#/netgraph" title="Open live network graph">
+        <a className={`link-bar-page ${netGraphOpen ? 'active' : ''}`} href="#/netgraph" title="Open live network graph">
           <Network size={13} />
           <span>NetGraph</span>
         </a>
-        <a className={`link-bar-perf ${chatOpen ? 'active' : ''}`} href="#/chat" title="Open public chat history">
+        <a className={`link-bar-page ${chatOpen ? 'active' : ''}`} href="#/chat" title="Open public chat history">
           <MessageSquareText size={13} />
           <span>Chat</span>
         </a>
