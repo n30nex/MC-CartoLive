@@ -7,6 +7,8 @@ describe('ChatPanel', () => {
     const html = renderToStaticMarkup(
       <ChatPanel
         autoRefresh={false}
+        presentation="side"
+        onPresentationChange={() => undefined}
         onClose={() => undefined}
         initialMessages={[
           {
@@ -24,7 +26,9 @@ describe('ChatPanel', () => {
       />
     );
 
-    expect(html).toContain('Public Chat');
+    expect(html).toContain('Public messages from map-safe packet fields');
+    expect(html).toContain('workspace-side');
+    expect(html).toContain('Expand to full screen');
     expect(html).toContain('Search sender, message, region, channel');
     expect(html).toContain('hello mesh');
     expect(html).toContain('Close chat');
@@ -87,8 +91,8 @@ describe('ChatPanel', () => {
   });
 
   it('describes footer states', () => {
-    expect(chatFooterStatus(2, 'cursor', false)).toBe('2 loaded; older public messages are available.');
-    expect(chatFooterStatus(1, '', false)).toBe('1 public message loaded.');
-    expect(chatFooterStatus(0, '', true)).toBe('Loading older public messages...');
+    expect(chatFooterStatus(2, 'cursor', false)).toBe('2 loaded - older available');
+    expect(chatFooterStatus(1, '', false)).toBe('1 loaded');
+    expect(chatFooterStatus(0, '', true)).toBe('Loading older messages...');
   });
 });

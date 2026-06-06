@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Clock3, MessageSquareText, RefreshCw, Search, X } from 'lucide-react';
+import { Clock3, Maximize2, MessageSquareText, Minimize2, RefreshCw, Search, X } from 'lucide-react';
 import { fetchPublicChat } from '../api';
 import {
   CHAT_SCOPE_OPTIONS,
@@ -13,11 +13,14 @@ import {
   type ChatFilters
 } from '../chat';
 import type { PublicChatMessage, PublicHistoryWindow } from '../types';
+import { toggleWorkspacePresentation, workspacePresentationTitle, type WorkspacePresentation } from './workspacePanel';
 
 interface ChatPanelProps {
   initialMessages?: PublicChatMessage[];
   initialError?: string | null;
   autoRefresh?: boolean;
+  presentation?: WorkspacePresentation;
+  onPresentationChange?: (presentation: WorkspacePresentation) => void;
   onClose: () => void;
 }
 
@@ -25,7 +28,14 @@ const CHAT_PAGE_LIMIT = 200;
 const CHAT_RETAINED_LIMIT = 1000;
 const CHAT_FILTER_DEBOUNCE_MS = 250;
 
-export default function ChatPanel({ initialMessages = [], initialError = null, autoRefresh = true, onClose }: ChatPanelProps) {
+export default function ChatPanel({
+  initialMessages = [],
+  initialError = null,
+  autoRefresh = true,
+  presentation = 'side',
+  onPresentationChange,
+  onClose
+}: ChatPanelProps) {
   const [scopeMs, setScopeMs] = useState(CHAT_SCOPE_OPTIONS[0].value);
   const [filters, setFilters] = useState<ChatFilters>(DEFAULT_CHAT_FILTERS);
   const [messages, setMessages] = useState<PublicChatMessage[]>(() => dedupeChatMessages(initialMessages));
@@ -135,14 +145,24 @@ export default function ChatPanel({ initialMessages = [], initialError = null, a
   const channelOptions = useMemo(() => chatChannelOptions(visibleMessages), [visibleMessages]);
 
   return (
-    <section className="chat-panel" aria-label="Public chat">
+    <section className={`chat-panel workspace-panel workspace-${presentation}`} aria-label="Public chat">
       <header className="chat-panel-header">
         <div>
           <span className="panel-eyebrow">Chat</span>
-          <h2>Public Chat</h2>
-          <p>Recent public messages from map-safe packet fields.</p>
+          <p>Public messages from map-safe packet fields</p>
         </div>
         <div className="chat-panel-actions">
+          {onPresentationChange && (
+            <button
+              type="button"
+              className="icon-button"
+              title={workspacePresentationTitle(presentation)}
+              aria-label={workspacePresentationTitle(presentation)}
+              onClick={() => onPresentationChange(toggleWorkspacePresentation(presentation))}
+            >
+              {presentation === 'fullscreen' ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+            </button>
+          )}
           <button type="button" className="icon-button" title="Refresh public chat" onClick={refresh}>
             <RefreshCw size={17} />
           </button>
@@ -262,10 +282,10 @@ function hasActiveChatFilters(filters: ChatFilters): boolean {
 }
 
 export function chatFooterStatus(count: number, nextCursor: string, loadingMore: boolean): string {
-  if (loadingMore) return 'Loading older public messages...';
-  if (nextCursor) return `${count.toLocaleString()} loaded; older public messages are available.`;
-  if (count > 0) return `${count.toLocaleString()} public ${count === 1 ? 'message' : 'messages'} loaded.`;
-  return 'No public messages loaded.';
+  if (loadingMore) return 'Loading older messages...';
+  if (nextCursor) return `${count.toLocaleString()} loaded - older available`;
+  if (count > 0) return `${count.toLocaleString()} loaded`;
+  return 'No messages loaded';
 }
 
 function endpointSummary(labels: string[]): string {

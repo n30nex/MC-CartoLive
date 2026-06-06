@@ -19,19 +19,19 @@ type InfoPanel = 'changelog' | null;
 
 export const LATEST_RELEASE_HIGHLIGHTS = [
   {
+    label: '2.6.3',
+    title: 'Workspace side panels',
+    body: 'Packets and Chat now open as docked map workspaces with one-click fullscreen mode.'
+  },
+  {
     label: '2.6.2',
     title: 'Route GIF export',
     body: 'Exports real map replay GIFs with route-fit framing and compact hop details for public sharing.'
   },
   {
-    label: '2.6.1',
-    title: 'Cleaner public chrome',
-    body: 'Removed top-bar noise, simplified Packets, and made NetGraph quieter on desktop and mobile.'
-  },
-  {
     label: 'Next',
-    title: '2.6.3 UI refinement',
-    body: 'Focus is clearer map chrome, route/share flow polish, mobile sheets, and less repeated instructional copy.'
+    title: '2.6.4 3D performance',
+    body: 'Focus moves to OpenFreeMap/Three.js frame cost, object churn, and 3D route/comet budgets.'
   }
 ];
 
@@ -131,7 +131,7 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
       </div>
       {activeInfoPanel === 'changelog' && (
         <InfoPopover title="Latest Changelog" icon={<History size={14} />} onClose={() => setActiveInfoPanel(null)}>
-          <p>Current public map baseline plus the next UI polish focus.</p>
+          <p>Current public map baseline plus the next 3D performance focus.</p>
           <div className="link-bar-release-list">
             {LATEST_RELEASE_HIGHLIGHTS.map((item) => (
               <article key={`${item.label}-${item.title}`} className="link-bar-release-note">

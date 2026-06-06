@@ -5,14 +5,15 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.6.2` is the current production-ready world operations release.
+Version `2.6.3` is the current production-ready world operations release.
 
 - Detailed next-phase plan: [2.6.3 to 2.6.6](roadmap-2.6.3-to-2.6.6.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current release focus: UI/UX refinement, OpenFreeMap 3D performance,
-  elevation/topography line-of-sight context, and propagation-event research
-  on top of the stable public-safe 2.6.2 feature set.
+- Current release focus: 2.6.3 workspace UI polish is complete; the next
+  patches move through OpenFreeMap 3D performance, elevation/topography
+  line-of-sight context, and propagation-event research on top of the stable
+  public-safe 2.6.3 feature set.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -21,9 +22,9 @@ Version `2.6.2` is the current production-ready world operations release.
 
 ## Active Maintenance Focus
 
-- Make `2.6.3` a public-experience polish pass before adding deeper analysis
-  surfaces: less chrome clutter, clearer route/share flows, and safer mobile
-  ergonomics.
+- Treat `2.6.3` as the completed public-experience polish pass: less chrome
+  clutter, clearer route/share flows, docked Packets/Chat workspaces, and safer
+  mobile ergonomics.
 - Make `2.6.4` the 3D performance pass for OpenFreeMap node models, route arcs,
   comets, observer glows, and rebuild budgets.
 - Make `2.6.5` the elevation/topography/line-of-sight pass for verified public
@@ -51,15 +52,25 @@ Version `2.6.2` is the current production-ready world operations release.
 - Keep docs concise enough that new operators can deploy, smoke test, diagnose,
   back up, restore, and upgrade without reading historical planning notes.
 
+## 2.6.3 Patch Focus
+
+- Compacted the top-bar changelog into current release highlights plus the next
+  3D performance focus.
+- Added Google Maps-style Packets and Chat workspaces on desktop: docked side
+  panels by default, one-click fullscreen, and clean close back to the map.
+- Preserved mobile-safe sheet behavior for Packets and Chat so vertical screens
+  keep controls inside safe-area bounds.
+
 ## 2.6.2 Patch Focus
 
-- Add Route GIF Export after selecting a public-safe packet route from Packets.
-- Capture the actual MapLibre/OpenFreeMap map viewport into a branded,
+- Added Route GIF Export after selecting a public-safe packet route from
+  Packets.
+- Captures the actual MapLibre/OpenFreeMap map viewport into a branded,
   high-quality animated GIF while a forced packet replay moves across the
   selected route, with GIF-specific route-fit padding plus a compact
   payload/region/hop/distance HUD and numbered hop strip.
-- Keep the exporter frontend-only and privacy-safe, lazy-loading the GIF encoder
-  only when the user exports.
+- Keeps the exporter frontend-only and privacy-safe, lazy-loading the GIF
+  encoder only when the user exports.
 
 ## 2.6.1 Patch Focus
 

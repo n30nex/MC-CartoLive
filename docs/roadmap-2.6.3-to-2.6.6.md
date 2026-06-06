@@ -1,6 +1,6 @@
 # MC-CartoLive 2.6.3 to 2.6.6 Roadmap
 
-This roadmap keeps `2.6.2` as the current stable world-ready baseline and
+This roadmap keeps `2.6.3` as the current stable world-ready baseline and
 moves the next patch train toward a stronger public experience. The priority is
 public-facing polish first, then 3D performance, then RF terrain analysis, then
 deeper propagation-event research.
@@ -23,6 +23,9 @@ deeper propagation-event research.
 Goal: make the existing 2.6 public experience feel cleaner, easier to explain,
 and easier to use on desktop and mobile without adding new backend schemas.
 
+- Released 2026-06-06 with compact top-bar changelog highlights and
+  Google Maps-style Packets/Chat workspaces that dock to the left on desktop and
+  expand to fullscreen when needed.
 - Tighten the default map chrome so first-load view emphasizes live map motion,
   route clarity, and the bottom live clock over panels and secondary controls.
 - Refine Packets, Chat, NetGraph, VCR, route plotting, and Route GIF entry
@@ -140,7 +143,7 @@ Acceptance:
 
 ## Assumptions
 
-- `2.6.2` remains the stable baseline until the next patch is implemented.
+- `2.6.3` is the stable baseline until the next patch is implemented.
 - Hosted Canada remains Canada-scoped; packaged installs remain worldwide by
   default.
 - The 2.6.x line keeps public API compatibility unless a future major release

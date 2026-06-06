@@ -27,6 +27,7 @@ import ChatPanel from './components/ChatPanel';
 import SetupPanel from './components/SetupPanel';
 import MapSettingsDrawer from './components/MapSettingsDrawer';
 import RouteGifExportButton, { type RouteGifExportStatus } from './components/RouteGifExportButton';
+import type { WorkspacePresentation } from './components/workspacePanel';
 import {
   DEFAULT_CHROME_PANEL_ANCHORS,
   INITIAL_CHROME_PANEL_VISIBILITY,
@@ -141,6 +142,7 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(() => window.location.hash === '#/chat');
   const [setupOpen, setSetupOpen] = useState(() => window.location.hash === '#/setup');
   const [packetsPanelMode, setPacketsPanelMode] = useState<'expanded' | 'compactTray'>('expanded');
+  const [workspacePresentation, setWorkspacePresentation] = useState<WorkspacePresentation>('side');
   const [initialLoadGateOpen, setInitialLoadGateOpen] = useState(true);
   const [shareToast, setShareToast] = useState<string | null>(null);
   const [routeGifExport, setRouteGifExport] = useState<{ status: RouteGifExportStatus; progress: number }>({ status: 'idle', progress: 0 });
@@ -192,6 +194,9 @@ export default function App() {
       setNetGraphOpen(nextNetGraphOpen);
       setChatOpen(nextChatOpen);
       setSetupOpen(nextSetupOpen);
+      if (nextPacketsOpen || nextChatOpen) {
+        setWorkspacePresentation('side');
+      }
       if (nextPacketsOpen || nextNetGraphOpen || nextChatOpen || nextSetupOpen) {
         setPaletteMenuOpen(false);
         setPanelsMenuOpen(false);
@@ -1256,8 +1261,10 @@ export default function App() {
           mode={packetsPanelMode}
           selectedPacketID={selectedPacket?.id ?? null}
           selectedPacket={selectedPacket}
+          presentation={workspacePresentation}
           onClose={closePackets}
           onExpand={() => setPacketsPanelMode('expanded')}
+          onPresentationChange={setWorkspacePresentation}
           onResumeLive={resumeLiveFromPacketTray}
           onSelectPacket={focusPacketPath}
           onReplayPacket={replayPacketPath}
@@ -1273,7 +1280,7 @@ export default function App() {
           onClose={closeNetGraph}
         />
       )}
-      {chatOpen && <ChatPanel onClose={closeChat} />}
+      {chatOpen && <ChatPanel presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onClose={closeChat} />}
 
       {!vcrOpen && packetsPanelMode !== 'compactTray' && !netGraphOpen && !chatOpen && !setupOpen && (
         <>

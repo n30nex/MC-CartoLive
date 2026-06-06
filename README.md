@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.6.2
+# MeshCore MQTT Live Map v2.6.3
 
 Also known as **MC-CartoLive**.
 
@@ -23,22 +23,24 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.6.2 Feature Gallery
+### v2.6.3 Feature Gallery
 
-Version 2.6.2 is the world-ready live network operations release with Route GIF
-Export added for shareable packet route replays. Hosted Canada stays
+Version 2.6.3 is the world-ready live network operations release with Route GIF
+Export plus docked Packets and Chat workspaces. Hosted Canada stays
 Canada-scoped, while packaged installs support worldwide/private brokers
 through configurable map bounds, generic region labels, first-run setup, and
 region-first diagnostics.
 
-The 2.6.2 release keeps the public-safe Packets Explorer, VCR replay, Chat,
+The 2.6.3 release keeps the public-safe Packets Explorer, VCR replay, Chat,
 NetGraph, OpenFreeMap 3D route arcs/models/comets, palette/theme controls, and
-browser smoke coverage for desktop and 390px mobile. Selecting a packet route
-from Packets closes back to the map, highlights the full public RF path, and now
-offers a glowing `Export as GIF` action for downloading an animated replay
-captured from the actual live map viewport, with the packet comet moving across
-the fitted visible route and a compact public-safe details HUD that lists each
-hop with distance.
+browser smoke coverage for desktop and 390px mobile. Packets and Chat open as
+Google Maps-style side panels on desktop, can expand to fullscreen, and still
+return cleanly to the full map. Selecting a packet route from Packets closes
+back to the map, highlights the full public RF path, and offers a glowing
+`Export as GIF` action for downloading an animated replay captured from the
+actual live map viewport, with the packet comet moving across the fitted
+visible route and a compact public-safe details HUD that lists each hop with
+distance.
 
 Version 2.5.50 hardened the package release gate: `scripts/package-smoke.mjs`
 now runs a built or published image through both the synthetic hosted-style
@@ -309,7 +311,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.6.2
+  ghcr.io/n30nex/mc-cartolive:2.6.3
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -320,7 +322,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.6.2
+  ghcr.io/n30nex/mc-cartolive:2.6.3
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -455,7 +457,7 @@ map, Packets, Chat, and NetGraph. Screenshots are written to
 Packaged image smoke for the 2.6 release gate:
 
 ```powershell
-node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.6.2 --pull
+node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.6.3 --pull
 ```
 
 The package smoke runs the image in synthetic and worldwide `r1` fixture modes,
@@ -464,7 +466,7 @@ privacy scanner against both temporary containers.
 
 ## Production Hosting
 
-The recommended v2.6.2 release path is clone + Docker Compose on a VPS or local
+The recommended v2.6.3 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

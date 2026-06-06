@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Clock3, Copy, Filter, MessageSquareText, Play, RefreshCw, Route, Search, X } from 'lucide-react';
+import { Clock3, Copy, Filter, Maximize2, MessageSquareText, Minimize2, Play, RefreshCw, Route, Search, X } from 'lucide-react';
 import { fetchPublicPackets } from '../api';
 import { DEFAULT_PACKET_FILTERS, packetEndpointSummary, PACKETS_SCOPE_OPTIONS, packetRegion, packetWindowForScope, type PacketFilters } from '../packets';
 import { payloadLegendVisuals, payloadVisual } from '../payloadVisuals';
 import type { PublicHistoryWindow, PublicPacketPath, PublicPacketScan } from '../types';
+import { toggleWorkspacePresentation, workspacePresentationTitle, type WorkspacePresentation } from './workspacePanel';
 
 export type PacketsPanelMode = 'expanded' | 'compactTray';
 
@@ -11,8 +12,10 @@ interface PacketsPanelProps {
   mode: PacketsPanelMode;
   selectedPacketID: string | null;
   selectedPacket: PublicPacketPath | null;
+  presentation?: WorkspacePresentation;
   onClose: () => void;
   onExpand: () => void;
+  onPresentationChange?: (presentation: WorkspacePresentation) => void;
   onResumeLive: () => void;
   onSelectPacket: (packet: PublicPacketPath) => void;
   onReplayPacket: (packet: PublicPacketPath) => void;
@@ -29,8 +32,10 @@ export default function PacketsPanel({
   mode,
   selectedPacketID,
   selectedPacket,
+  presentation = 'side',
   onClose,
   onExpand,
+  onPresentationChange,
   onResumeLive,
   onSelectPacket,
   onReplayPacket
@@ -206,13 +211,24 @@ export default function PacketsPanel({
   }
 
   return (
-    <section className="packets-panel" aria-label="Packet routes">
+    <section className={`packets-panel workspace-panel workspace-${presentation}`} aria-label="Packet routes">
       <header className="packets-panel-header">
         <div>
           <span className="panel-eyebrow">Packets</span>
           <p>Select route to view on map</p>
         </div>
         <div className="packets-panel-actions">
+          {onPresentationChange && (
+            <button
+              type="button"
+              className="icon-button"
+              title={workspacePresentationTitle(presentation)}
+              aria-label={workspacePresentationTitle(presentation)}
+              onClick={() => onPresentationChange(toggleWorkspacePresentation(presentation))}
+            >
+              {presentation === 'fullscreen' ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+            </button>
+          )}
           <button type="button" className="icon-button" title="Refresh true path packets" onClick={refresh}>
             <RefreshCw size={17} />
           </button>

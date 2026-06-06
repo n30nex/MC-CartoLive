@@ -9,8 +9,10 @@ describe('PacketsPanel', () => {
         mode="expanded"
         selectedPacketID={null}
         selectedPacket={null}
+        presentation="side"
         onClose={() => undefined}
         onExpand={() => undefined}
+        onPresentationChange={() => undefined}
         onResumeLive={() => undefined}
         onSelectPacket={() => undefined}
         onReplayPacket={() => undefined}
@@ -18,6 +20,8 @@ describe('PacketsPanel', () => {
     );
     expect(html).not.toContain('True Path Packets');
     expect(html).toContain('Select route to view on map');
+    expect(html).toContain('workspace-side');
+    expect(html).toContain('Expand to full screen');
     expect(html).not.toContain('Map fits the full route');
     expect(html).toContain('Search endpoint, region, route prefix, message');
     expect(html).toContain('Region');

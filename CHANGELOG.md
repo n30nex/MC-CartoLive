@@ -2,8 +2,17 @@
 
 ## Unreleased
 
-- Started the 2.6.3 UI/UX refinement pass by compacting the top-bar changelog
-  popover into current release highlights and the next UI polish focus.
+- No unreleased changes.
+
+## 2.6.3 - 2026-06-06
+
+- Compacted the top-bar changelog popover into current release highlights and
+  the next 3D performance focus.
+- Added a Google Maps-style workspace presentation for Packets and Chat:
+  desktop opens them as left-side docked panels, each can expand to fullscreen,
+  and closing returns to the full map.
+- Kept Packets and Chat mobile sheet behavior inside safe-area bounds while
+  preserving full-screen mode for focused browsing.
 
 ## 2.6.2 - 2026-06-06
 

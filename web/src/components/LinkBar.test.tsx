@@ -22,9 +22,10 @@ describe('LinkBar', () => {
   });
 
   it('keeps the compact changelog focused on the current release train', () => {
-    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.label)).toEqual(['2.6.2', '2.6.1', 'Next']);
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.label)).toEqual(['2.6.3', '2.6.2', 'Next']);
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Workspace side panels');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Route GIF export');
-    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('2.6.3 UI refinement');
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('2.6.4 3D performance');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.body).join(' ')).not.toContain('Perf/Guide/Features');
   });
 });
