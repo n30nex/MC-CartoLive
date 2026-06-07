@@ -10,6 +10,7 @@ import { arcTrailSamples, sampleRouteArc, type ArcSample } from './routeArcs';
 import { routeColors } from './routeSource';
 import { DETAIL_MIN_ZOOM } from './zoomMode';
 import { packetTravelDuration, sequentialSegmentProgress, type PacketAnimationOptions } from './packetAnimator';
+import { computeLineOfSight, routeLOSColor, type LOSResult } from './terrainProfile';
 
 export const OPENFREEMAP_3D_LAYER_ID = 'meshcore-openfreemap-3d-live';
 
@@ -129,6 +130,7 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
   private lastAnimationFrameAt = 0;
   private paused = false;
   private disposed = false;
+  private losCache = new Map<string, LOSResult>();
   private readonly handleMoveEnd = () => {
     if (this.rebuildIfNeeded(false)) {
       this.map?.triggerRepaint();
@@ -147,8 +149,10 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
 
   update(input: OpenFreeMap3DUpdate) {
     this.latest = input;
+    const prev = this.layerSettings;
     this.layerSettings = normalizeLayerSettings(input.layerSettings);
     this.packetVisualSettings = normalizePacketVisualSettings(input.packetVisualSettings);
+    if (!this.layerSettings.terrainLOS && prev.terrainLOS) this.losCache.clear();
     if (this.rebuildIfNeeded(false) || this.hasActiveAnimations()) {
       this.map?.triggerRepaint();
     }
@@ -324,7 +328,7 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
     const nextRouteSignature = routeSceneSignature(this.map, this.latest);
     if (force || nextRouteSignature !== this.routeSignature) {
       this.routeSignature = nextRouteSignature;
-      rebuildRouteArcs(this.map, this.routeRoot, this.latest);
+      rebuildRouteArcs(this.map, this.routeRoot, this.latest, this.losCache);
       changed = true;
     }
     return changed;
@@ -345,11 +349,19 @@ function rebuildNodeModels(map: maplibregl.Map, root: THREE.Group, input: OpenFr
   }
 }
 
-function rebuildRouteArcs(map: maplibregl.Map, root: THREE.Group, input: OpenFreeMap3DUpdate) {
+function rebuildRouteArcs(map: maplibregl.Map, root: THREE.Group, input: OpenFreeMap3DUpdate, losCache: Map<string, LOSResult>) {
   clearGroup(root);
   const now = Date.now();
   for (const route of selectOpenFreeMap3DRoutes(map, input, now)) {
-    root.add(createRouteArcMesh(route, input, now));
+    let los: LOSResult | undefined;
+    if (input.layerSettings.terrainLOS) {
+      los = losCache.get(route.id);
+      if (!los) {
+        los = computeLineOfSight({ from: route.from, to: route.to, distanceKm: route.distanceKm }, map);
+        if (los.fresnelRadiusMeters > 0) losCache.set(route.id, los);
+      }
+    }
+    root.add(createRouteArcMesh(route, input, now, los));
   }
   if (input.layerSettings.analysisPaths) {
     for (const [index, segment] of input.analysisSegments.entries()) {
@@ -458,12 +470,19 @@ function createNodeModel(node: PublicNode, themeMode: 'dark' | 'light', lod: Nod
   return group;
 }
 
-function createRouteArcMesh(route: PublicRoute, input: OpenFreeMap3DUpdate, now: number): THREE.Object3D {
+function createRouteArcMesh(route: PublicRoute, input: OpenFreeMap3DUpdate, now: number, los?: LOSResult): THREE.Object3D {
   const selected = route.id === input.selectedRouteID;
   const path = input.focus.pathRouteIDs.has(route.id);
   const connected = input.focus.connectedRouteIDs.has(route.id);
-  const color = selected ? '#f8fafc' : path ? '#facc15' : connected ? '#67e8f9' : routeColors[Math.max(0, Math.min(4, route.frequencyBucket))];
-  const opacity = selected ? 0.82 : path ? 0.72 : connected ? 0.58 : now - route.lastHeard <= ROUTE_FRESH_MS ? 0.5 : 0.28;
+  let color: string; let opacity: number;
+  if (los && input.layerSettings.terrainLOS) {
+    const s = routeLOSColor(los);
+    color = s.color; opacity = s.opacity;
+    if (selected || path) opacity = Math.min(1, opacity + 0.22);
+  } else {
+    color = selected ? '#f8fafc' : path ? '#facc15' : connected ? '#67e8f9' : routeColors[Math.max(0, Math.min(4, route.frequencyBucket))];
+    opacity = selected ? 0.82 : path ? 0.72 : connected ? 0.58 : now - route.lastHeard <= ROUTE_FRESH_MS ? 0.5 : 0.28;
+  }
   const emphasis = selected || path ? 1.85 : connected ? 1.35 : 1;
   return createSegmentArcMesh(route.id, { from: route.from, to: route.to, distanceKm: route.distanceKm, routeId: route.id }, color, opacity, emphasis, input.packetVisualSettings.renderQuality);
 }
@@ -643,6 +662,7 @@ function routeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): s
     input.layerSettings.routes,
     input.layerSettings.routeArcs3D,
     input.layerSettings.analysisPaths,
+    input.layerSettings.terrainLOS,
     input.packetVisualSettings.renderQuality,
     input.selectedRouteID ?? '',
     viewSignature(map),

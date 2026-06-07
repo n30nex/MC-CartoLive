@@ -16,6 +16,7 @@ export interface MapLayerSettings {
   routeArcs3D: boolean;
   packetComets3D: boolean;
   buildingExtrusions: boolean;
+  terrainLOS: boolean;
 }
 
 export interface PacketVisualSettings {
@@ -48,7 +49,8 @@ export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   nodeModels3D: true,
   routeArcs3D: true,
   packetComets3D: true,
-  buildingExtrusions: true
+  buildingExtrusions: true,
+  terrainLOS: false
 };
 
 export const DEFAULT_PACKET_VISUAL_SETTINGS: PacketVisualSettings = {
@@ -89,7 +91,8 @@ export function normalizeLayerSettings(input: unknown): MapLayerSettings {
     nodeModels3D: boolOrDefault(raw.nodeModels3D, DEFAULT_MAP_LAYER_SETTINGS.nodeModels3D),
     routeArcs3D: boolOrDefault(raw.routeArcs3D, DEFAULT_MAP_LAYER_SETTINGS.routeArcs3D),
     packetComets3D: boolOrDefault(raw.packetComets3D, DEFAULT_MAP_LAYER_SETTINGS.packetComets3D),
-    buildingExtrusions: boolOrDefault(raw.buildingExtrusions, DEFAULT_MAP_LAYER_SETTINGS.buildingExtrusions)
+    buildingExtrusions: boolOrDefault(raw.buildingExtrusions, DEFAULT_MAP_LAYER_SETTINGS.buildingExtrusions),
+    terrainLOS: boolOrDefault(raw.terrainLOS, DEFAULT_MAP_LAYER_SETTINGS.terrainLOS)
   };
 }
 
