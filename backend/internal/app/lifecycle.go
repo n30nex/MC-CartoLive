@@ -667,7 +667,10 @@ func (a *Application) refreshPacketCountOnce(ctx context.Context) {
 func (a *Application) solarFetchLoop(ctx context.Context) {
 	seedFromDB := func() {
 		snap, err := a.Store.LatestSolarSnapshot(ctx)
-		if err != nil { return }
+		if err != nil {
+			a.Log.Debug("solar cache seed skipped, no prior snapshot in database", "error", err)
+			return
+		}
 		cond := solar.Conditions{
 			ServerTime:     snap.FetchedAtMs,
 			KpIndex:        snap.KpIndex,

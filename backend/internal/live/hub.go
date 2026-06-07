@@ -14,8 +14,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var jsonBufPool = sync.Pool{New: func() any { buf := make([]byte, 0, 4096); return &buf }}
-
 type Hub struct {
 	log           *slog.Logger
 	queueSize     int

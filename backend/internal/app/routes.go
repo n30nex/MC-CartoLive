@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"meshcore-canada-live-map/backend/internal/api"
+	"meshcore-canada-live-map/backend/internal/solar"
 )
 
 func (a *Application) Routes() http.Handler {
@@ -37,6 +38,6 @@ func (a *Application) Routes() http.Handler {
 		PublicState:       a.PublicCache.Snapshot,
 		PublicCacheStatus: a.PublicCache.Status,
 		PublicAllowsIATA:  a.PublicCache.AllowsIATA,
-		SolarConditions:   func() any { if p := a.solarSnapshot.Load(); p != nil { return *p }; return struct{}{} },
+		SolarConditions:   func() *solar.Conditions { return a.solarSnapshot.Load() },
 	}).Routes()
 }

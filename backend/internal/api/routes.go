@@ -18,6 +18,7 @@ import (
 
 	"meshcore-canada-live-map/backend/internal/live"
 	imqtt "meshcore-canada-live-map/backend/internal/mqtt"
+	"meshcore-canada-live-map/backend/internal/solar"
 	"meshcore-canada-live-map/backend/internal/store"
 )
 
@@ -55,7 +56,7 @@ type Server struct {
 	PublicState       func() (live.PublicLiveState, bool)
 	PublicCacheStatus func(time.Time) live.PublicCacheStatus
 	PublicAllowsIATA  func(string) bool
-	SolarConditions   func() any
+	SolarConditions   func() *solar.Conditions
 
 	historyLocations *historyLocationCache
 	summaryCache     *historySummaryCache
@@ -772,8 +773,16 @@ func (s *Server) publicHistorySummary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) publicSolar(w http.ResponseWriter, r *http.Request) {
-	if s.SolarConditions == nil { writeError(w, http.StatusServiceUnavailable, errors.New("solar conditions unavailable")); return }
-	writeJSON(w, http.StatusOK, s.SolarConditions())
+	if s.SolarConditions == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("solar conditions unavailable"))
+		return
+	}
+	cond := s.SolarConditions()
+	if cond == nil {
+		writeJSON(w, http.StatusOK, solar.Conditions{})
+		return
+	}
+	writeJSON(w, http.StatusOK, *cond)
 }
 
 func (s *Server) publicChat(w http.ResponseWriter, r *http.Request) {
