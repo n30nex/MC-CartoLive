@@ -19,6 +19,11 @@ type InfoPanel = 'changelog' | null;
 
 export const LATEST_RELEASE_HIGHLIGHTS = [
   {
+    label: '2.7.0',
+    title: 'ETag caching & performance',
+    body: 'ETag-based state caching reduces network load. AWS terrain tiles, solar weather integration, transaction safety fixes, and render performance tuning.'
+  },
+  {
     label: '2.6.3',
     title: 'Workspace side panels',
     body: 'Packets and Chat now open as docked map workspaces with one-click fullscreen mode.'
@@ -27,11 +32,6 @@ export const LATEST_RELEASE_HIGHLIGHTS = [
     label: '2.6.2',
     title: 'Route GIF export',
     body: 'Exports real map replay GIFs with route-fit framing and compact hop details for public sharing.'
-  },
-  {
-    label: 'Next',
-    title: '2.6.4 3D performance',
-    body: 'Focus moves to OpenFreeMap/Three.js frame cost, object churn, and 3D route/comet budgets.'
   }
 ];
 

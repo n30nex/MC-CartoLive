@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -98,17 +99,18 @@ ON CONFLICT(public_key, iata) DO UPDATE SET
 		return err
 	}
 	if msg.TopicInfo.Subtopic == "status" {
-		if _, obsErr := tx.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 INSERT INTO observer_status (public_key, iata, status_json, received_at_ms)
 VALUES (?, ?, ?, ?)`,
-			msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA, msg.RawJSON, msg.HeardAtMs); obsErr != nil {
-			return obsErr
+			msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA, msg.RawJSON, msg.HeardAtMs)
+		if err != nil {
+			return err
 		}
-		if err := s.upsertStatusNode(ctx, tx, msg, name, lat, lng); err != nil {
+		if err = s.upsertStatusNode(ctx, tx, msg, name, lat, lng); err != nil {
 			return err
 		}
 	}
-	if err := tx.Commit(); err != nil {
+	if err = tx.Commit(); err != nil {
 		return err
 	}
 	return nil
@@ -508,22 +510,36 @@ func observerRole(m map[string]any, name string) (string, int) {
 		firstPayloadString(m, "client_version") + " " +
 		firstPayloadString(m, "firmware_version"))
 	switch {
-	case strings.Contains(text, "room server") || strings.Contains(text, "room_server") || strings.Contains(text, "room-server"):
-		return "room_server", 3
-	case strings.Contains(text, "repeater") || strings.Contains(text, "pymc_repeater") || strings.Contains(text, "pymc-repeater"):
+	case roleWordMatch(text, "repeater", "pymc_repeater", "pymc-repeater"):
 		return "repeater", 2
-	case strings.Contains(text, "sensor"):
-		return "sensor", 4
-	case strings.Contains(text, "companion") || strings.Contains(text, "chat node"):
+	case roleWordMatch(text, "room_server", "room-server", "room server"):
+		return "room_server", 3
+	case roleWordMatch(text, "companion", "chat node"):
 		return "companion", 1
+	case roleWordMatch(text, "sensor"):
+		return "sensor", 4
 	default:
 		return "unknown", 0
 	}
 }
 
+func roleWordMatch(text string, words ...string) bool {
+	for _, word := range words {
+		if idx := strings.Index(text, word); idx >= 0 {
+			end := idx + len(word)
+			before := idx == 0 || text[idx-1] == ' ' || text[idx-1] == '_' || text[idx-1] == '-'
+			after := end >= len(text) || text[end] == ' ' || text[end] == '_' || text[end] == '-'
+			if before && after {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *Store) ApplyManualNode(ctx context.Context, publicKey, name string, lat, lng float64, source string) error {
 	if !s.validMapCoords(lat, lng) {
-		return nil
+		return fmt.Errorf("manual node coordinates outside valid map bounds")
 	}
 	now := time.Now().UnixMilli()
 	role := "repeater"

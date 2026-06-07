@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -97,7 +98,9 @@ LIMIT ?`, maxHeardAt, limit)
 		if err := rows.Scan(&item.ID, &item.PacketHash, &item.ObservationID, &item.IATA, &item.PayloadType, &item.PayloadTypeName, &item.MessageSender, &item.MessageText, &messageAnchorJSON, &item.HeardAt, &segmentsJSON, &item.RenderReason); err != nil {
 			return nil, err
 		}
-		_ = json.Unmarshal([]byte(segmentsJSON), &item.Segments)
+		if err := json.Unmarshal([]byte(segmentsJSON), &item.Segments); err != nil {
+			slog.Default().Warn("edge segments unmarshal failed", "error", err)
+		}
 		if messageAnchorJSON != "" {
 			var anchor live.MessageAnchor
 			if err := json.Unmarshal([]byte(messageAnchorJSON), &anchor); err == nil {

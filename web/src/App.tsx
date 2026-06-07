@@ -8,11 +8,13 @@ import {
   filterNodes,
   filterRoutes,
   initialAppState,
+  isPacketActivity,
   liveCoverageStats,
   summarizeRouteActivity,
   type AppState
 } from './state';
 import CanadaMap, { type MapAction, type MapBaseMode } from './map/CanadaMap';
+import ErrorBoundary from './components/ErrorBoundary';
 import HotRoutes from './components/HotRoutes';
 import Legend from './components/Legend';
 import LinkBar from './components/LinkBar';
@@ -60,6 +62,7 @@ import {
 } from './connectivity';
 import { boundsFromPoints, meshcorePathCopyText, messageHistoryForNode, routeNodeIDs, routesInBounds, type MapPoint } from './routeTools';
 import { dedupePackets } from './lib/dedupePackets';
+import { useDebouncedValue } from './lib/useDebouncedValue';
 import { packetNodeIDs, packetRouteIDs, packetToPulse } from './packets';
 import { downloadRouteGifBlob, routeGifAnimationDurationMs, type RouteMapGifExportRequest } from './routeGifExport';
 import {
@@ -148,6 +151,7 @@ export default function App() {
   const [workspacePresentation, setWorkspacePresentation] = useState<WorkspacePresentation>('side');
   const [initialLoadGateOpen, setInitialLoadGateOpen] = useState(true);
   const [shareToast, setShareToast] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
   const [routeGifExport, setRouteGifExport] = useState<{ status: RouteGifExportStatus; progress: number }>({ status: 'idle', progress: 0 });
   const [routeGifExportRequest, setRouteGifExportRequest] = useState<RouteMapGifExportRequest | null>(null);
   const [liveClock, setLiveClock] = useState(() => Date.now());
@@ -304,7 +308,9 @@ export default function App() {
       window.clearTimeout(vcrReplayTimerRef.current);
       vcrReplayTimerRef.current = null;
     }
-    recordVcrReplayQueueSize(vcrBufferedMessagesRef.current.length);
+    pendingMessagesRef.current = [];
+    vcrBufferedMessagesRef.current = [];
+    recordVcrReplayQueueSize(0);
   }, []);
 
   const refreshLiveSnapshot = useCallback(() => {
@@ -327,19 +333,16 @@ export default function App() {
   const returnToLive = useCallback(() => {
     stopReplay();
     clearPendingLiveFlush();
-    pendingMessagesRef.current = [];
-    vcrBufferedMessagesRef.current = [];
-    recordVcrReplayQueueSize(0);
     setVcr((current) => ({ ...current, mode: 'live', missedCount: 0, scrubAt: null, clock: null, status: 'idle' }));
     refreshLiveSnapshot();
   }, [clearPendingLiveFlush, refreshLiveSnapshot, stopReplay]);
 
   const pausePlayback = useCallback(() => {
     const now = Date.now();
-    stopReplay();
     if (vcrModeRef.current === 'live') {
       movePendingLiveToVcrBuffer();
     }
+    stopReplay();
     setVcr((current) => ({
       ...current,
       mode: 'paused',
@@ -441,9 +444,6 @@ export default function App() {
   const startLaserShow = useCallback(() => {
     stopReplay();
     clearPendingLiveFlush();
-    pendingMessagesRef.current = [];
-    vcrBufferedMessagesRef.current = [];
-    recordVcrReplayQueueSize(0);
     setPaused(false);
     setClearToken((value) => value + 1);
     const generation = vcrGenerationRef.current + 1;
@@ -753,9 +753,11 @@ export default function App() {
     };
   }, [vcr.scopeMs]);
 
-  const visibleNodes = useMemo(() => filterNodes(state.nodes, query), [state.nodes, query]);
+  const debouncedQuery = useDebouncedValue(query, 200);
+
+  const visibleNodes = useMemo(() => filterNodes(state.nodes, debouncedQuery), [state.nodes, debouncedQuery]);
   const visibleNodeIDs = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
-  const visibleRoutes = useMemo(() => filterRoutes(state.routes, visibleNodeIDs, query), [state.routes, visibleNodeIDs, query]);
+  const visibleRoutes = useMemo(() => filterRoutes(state.routes, visibleNodeIDs, debouncedQuery), [state.routes, visibleNodeIDs, debouncedQuery]);
   const selectedNode = useMemo(() => state.nodes.find((node) => node.id === selectedNodeID) ?? null, [state.nodes, selectedNodeID]);
   const selectedRoute = useMemo(() => state.routes.find((route) => route.id === selectedRouteID) ?? null, [state.routes, selectedRouteID]);
   const connectivityGraph = useMemo(() => buildConnectivityGraph(visibleNodes, visibleRoutes), [visibleNodes, visibleRoutes]);
@@ -982,10 +984,28 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         clearSelection();
         clearPlotRoutes();
+      }
+      if (event.code === 'Space') {
+        event.preventDefault();
+        setPaused((value) => !value);
+      }
+      if (event.code === 'KeyL') {
+        setFollowTraffic((value) => !value);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -1064,7 +1084,9 @@ export default function App() {
       data-packets-mode={packetsOpen ? packetsPanelMode : 'closed'}
       style={appThemeStyle}
     >
-      <CanadaMap
+      {isOffline && <div className="offline-banner">You are offline — reconnecting...</div>}
+      <ErrorBoundary>
+        <CanadaMap
         nodes={visibleNodes}
         routes={visibleRoutes}
         pulses={state.pulses}
@@ -1092,8 +1114,9 @@ export default function App() {
         onSelectNode={selectNode}
         onPlotNodePick={handlePlotNodePick}
         onPlotMapPoint={handlePlotMapPoint}
-        onClearSelection={clearSelection}
-      />
+          onClearSelection={clearSelection}
+        />
+      </ErrorBoundary>
       {loadingPositionedNodes && <NodeLoadingToast failed={nodeLoadFailed} drawing={initialNodesReceived} />}
       <LinkBar packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} chatOpen={chatOpen} />
       {!chromeHidden && (
@@ -1445,10 +1468,6 @@ async function copyTextToClipboard(text: string): Promise<void> {
       selection.addRange(selectedRange);
     }
   }
-}
-
-function isPacketActivity(item: PublicActivity): boolean {
-  return item.kind === 'packet' || item.kind === 'route';
 }
 
 function replayEnvelopeClockAt(message: PublicLiveEnvelope): number {

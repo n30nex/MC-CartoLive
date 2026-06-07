@@ -37,6 +37,7 @@ type Client struct {
 	lastMessageAt        atomic.Int64
 	lastConnectedAt      atomic.Int64
 	lastConnectionLostAt atomic.Int64
+	lastForceDisconnect  atomic.Int64
 	client               paho.Client
 }
 
@@ -89,6 +90,7 @@ func (c *Client) Start(ctx context.Context) error {
 		token := client.Subscribe(c.cfg.Topic, 0, c.onMessage(ctx))
 		token.Wait()
 		if err := token.Error(); err != nil {
+			c.connected.Store(false)
 			c.log.Error("mqtt subscribe failed", "error", err)
 			return
 		}
@@ -133,7 +135,14 @@ func (c *Client) watchdog(ctx context.Context) {
 			if c.Connected() {
 				lastMsg := c.lastMessageAt.Load()
 				if lastMsg > 0 && time.Now().UnixMilli()-lastMsg > 120_000 {
+					lastDisconnect := c.lastForceDisconnect.Load()
+					now := time.Now().UnixMilli()
+					if lastDisconnect > 0 && now-lastDisconnect < 60_000 {
+						c.log.Warn("mqtt watchdog: skipping force disconnect; last disconnect <60s ago")
+						continue
+					}
 					c.log.Warn("mqtt watchdog: connected but no messages for >120s; forcing reconnect")
+					c.lastForceDisconnect.Store(now)
 					c.client.Disconnect(0)
 				}
 			}

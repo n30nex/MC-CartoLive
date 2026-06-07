@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { memo, useState, type CSSProperties } from 'react';
 import { hiddenPayloadCount, payloadVisualsFor } from '../payloadVisuals';
 import type { RouteActivitySummary } from '../state';
 import type { PublicRoute } from '../types';
@@ -12,7 +12,7 @@ interface Props {
 
 const INITIAL_VISIBLE = 10;
 
-export default function HotRoutes({ routes, selectedRouteID, routeActivityByID, onSelect }: Props) {
+export default memo(function HotRoutes({ routes, selectedRouteID, routeActivityByID, onSelect }: Props) {
   const [showAll, setShowAll] = useState(false);
   const visible = showAll ? routes : routes.slice(0, INITIAL_VISIBLE);
   const hasMore = routes.length > INITIAL_VISIBLE;
@@ -60,7 +60,7 @@ export default function HotRoutes({ routes, selectedRouteID, routeActivityByID, 
       </div>
     </section>
   );
-}
+});
 
 export function recentPacketCountText(count: number): string {
   return Math.max(0, Math.floor(count)).toLocaleString();

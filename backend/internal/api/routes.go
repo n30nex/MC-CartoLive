@@ -41,6 +41,7 @@ type Config struct {
 	BuildTime              string
 	PublicIATARestricted   bool
 	PublicRegionRestricted bool
+	PublicIATAs            []string
 }
 
 type Server struct {
@@ -384,6 +385,9 @@ func (s *Server) publicState(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	if s.Config.PublicIATARestricted {
+		state, _ = live.NewPublicIATAFilter(s.Config.PublicIATAs).FilterState(state)
 	}
 	packetCount, err := s.Store.PacketCount(ctx)
 	if err != nil {

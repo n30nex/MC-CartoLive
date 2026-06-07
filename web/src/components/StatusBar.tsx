@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Database, MapPin, Route, Shield, Sparkles, Sun, Zap } from 'lucide-react';
 import { fetchSolarConditions } from '../api';
 import { isAbortError } from '../lib/isAbortError';
@@ -18,7 +18,7 @@ interface Props {
   latestPacketID: string | null;
 }
 
-export default function StatusBar({ stats, socketStatus, nodeCount, routeCount, coverage, latestPayloadTypeName, latestPacketID }: Props) {
+export default memo(function StatusBar({ stats, socketStatus, nodeCount, routeCount, coverage, latestPayloadTypeName, latestPacketID }: Props) {
   const status = serverStatus(stats, socketStatus, coverage);
   const latestPayload = payloadVisual(latestPayloadTypeName);
   const perMinuteMax = Math.max(1, coverage.receivedPerMinute, coverage.routeAnimatedPerMinute, coverage.observerBurstPerMinute, coverage.unmappedPerMinute);
@@ -55,7 +55,7 @@ export default function StatusBar({ stats, socketStatus, nodeCount, routeCount, 
       <SolarIndicator />
     </header>
   );
-}
+});
 
 function SolarIndicator() {
   const [solar, setSolar] = useState<SolarConditions | null>(null);
@@ -65,6 +65,7 @@ function SolarIndicator() {
   const abortRef = useRef<AbortController | null>(null);
 
   const fetchSolar = useCallback(() => {
+    if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;

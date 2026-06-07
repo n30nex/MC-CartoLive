@@ -216,9 +216,12 @@ export function useViewportBounds(): ViewportBounds {
     }
     const observer = new ResizeObserver(measure);
     observer.observe(shell);
+    const mutationObserver = new MutationObserver(measure);
+    mutationObserver.observe(shell, { attributes: true, attributeFilter: ['data-vcr-layout'] });
     window.addEventListener('resize', measure);
     return () => {
       observer.disconnect();
+      mutationObserver.disconnect();
       window.removeEventListener('resize', measure);
     };
   }, [measure]);

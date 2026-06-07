@@ -59,7 +59,9 @@ type Config struct {
 }
 
 func LoadConfig() (Config, error) {
-	_ = loadDotEnv(".env")
+	if err := loadDotEnv(".env"); err != nil {
+		slog.Debug("loadDotEnv failed", "path", ".env", "error", err)
+	}
 	mapPreset := configuredMapRegionPreset()
 	mapBounds := mapBoundsForPreset(mapPreset)
 	if parsed, ok := envMapBounds("MAP_BOUNDS"); ok {
@@ -70,7 +72,7 @@ func LoadConfig() (Config, error) {
 	publicRegions := configuredPublicRegions(mapPreset)
 	cfg := Config{
 		ListenAddr:                      envString("LISTEN_ADDR", ":8080"),
-		AppVersion:                      envString("APP_VERSION", "2.6.3"),
+		AppVersion:                      envString("APP_VERSION", "2.7.2"),
 		GitSHA:                          envString("GIT_SHA", envString("VITE_GIT_SHA", "")),
 		BuildTime:                       envString("BUILD_TIME", envString("VITE_BUILD_TIME", "")),
 		PublicBaseURL:                   envString("PUBLIC_BASE_URL", "http://localhost:8080"),

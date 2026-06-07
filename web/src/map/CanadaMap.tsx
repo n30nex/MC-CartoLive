@@ -2024,6 +2024,17 @@ export default function CanadaMap({
       data-map-init-error={mapInitError}
     >
       <div ref={containerRef} className="map-container" />
+      {mapInitError && !loading && (
+        <div className="map-error-fallback">
+          <div className="map-error-message">
+            <strong>Map failed to load</strong>
+            <p>{mapInitError}</p>
+          </div>
+          <button type="button" className="map-error-reload" onClick={() => window.location.reload()}>
+            Reload
+          </button>
+        </div>
+      )}
       <div className="map-vignette" />
       <canvas ref={canvasRef} className="rf-canvas" />
       <div className="node-label-overlay" aria-hidden="true">
@@ -2546,7 +2557,6 @@ function projectNodeLabels(
 
   const projected = nodes
     .filter(isMappableNode)
-    .filter((node) => node.isObserver === true)
     .map((node) => {
       const point = projectLngLat(map, node.longitude, node.latitude);
       const activityAt = meshActivityAtByNodeID.get(node.id);
@@ -2664,6 +2674,7 @@ function mercatorPoint(lng: number, lat: number, scale: number): { x: number; y:
 }
 
 function messageBubbleFromPulse(map: maplibregl.Map, pulse: PublicRoutePulse): MessageBubble | null {
+  if (!pulse.segments || pulse.segments.length === 0) return null;
   const first = pulse.segments[0];
   const anchor = pulse.messageAnchor ?? (first ? routeEndpointAnchor(first.from) : null);
   if (!anchor) return null;

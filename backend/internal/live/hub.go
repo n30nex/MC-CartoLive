@@ -26,7 +26,6 @@ type Hub struct {
 	pingFailures  atomic.Int64
 	displayMu     sync.Mutex
 	nextDisplayAt int64
-	clientBuffer  []*client
 }
 
 type client struct {
@@ -78,16 +77,13 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *Hub) Broadcast(event string, data any) {
 	env := h.eventEnvelope(event, data)
-	h.mu.RLock()
-	if h.clientBuffer == nil || len(h.clientBuffer) < len(h.clients) {
-		h.clientBuffer = make([]*client, 0, len(h.clients))
-	}
-	h.clientBuffer = h.clientBuffer[:0]
+	h.mu.Lock()
+	clients := make([]*client, 0, len(h.clients))
 	for c := range h.clients {
-		h.clientBuffer = append(h.clientBuffer, c)
+		clients = append(clients, c)
 	}
-	h.mu.RUnlock()
-	for _, c := range h.clientBuffer {
+	h.mu.Unlock()
+	for _, c := range clients {
 		h.observeQueueDepth(len(c.send))
 		select {
 		case c.send <- env:

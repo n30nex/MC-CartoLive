@@ -311,7 +311,7 @@ export function pruneObserverBursts(observerBursts: PublicObserverBurst[], now: 
   return observerBursts.filter((burst) => burst.heardAt >= cutoff);
 }
 
-function isPacketActivity(item: PublicActivity): boolean {
+export function isPacketActivity(item: PublicActivity): boolean {
   return item.kind === 'packet' || item.kind === 'route';
 }
 

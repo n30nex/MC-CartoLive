@@ -26,6 +26,7 @@ func (a *Application) Routes() http.Handler {
 			BuildTime:              a.Config.BuildTime,
 			PublicIATARestricted:   a.PublicCache.RestrictsIATA(),
 			PublicRegionRestricted: a.PublicCache.RestrictsIATA(),
+			PublicIATAs:            a.Config.PublicIATAs,
 		},
 		Store:             a.Store,
 		Hub:               a.Hub,

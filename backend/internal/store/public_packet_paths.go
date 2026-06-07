@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"time"
 	"unicode"
@@ -480,7 +481,9 @@ func scanPublicPacketPathBackfillEdge(rows *sql.Rows) (live.EdgeEvent, error) {
 			edge.MessageAnchor = &anchor
 		}
 	}
-	_ = json.Unmarshal([]byte(segmentsJSON), &edge.Segments)
+	if err := json.Unmarshal([]byte(segmentsJSON), &edge.Segments); err != nil {
+		slog.Default().Warn("public packet path backfill edge segments unmarshal failed", "error", err)
+	}
 	return edge, nil
 }
 

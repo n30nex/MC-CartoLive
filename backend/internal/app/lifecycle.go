@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"log/slog"
 	"os"
 	"strings"
@@ -889,10 +888,6 @@ func redactedURL(in string) string {
 	return in
 }
 
-func compactJSON(v any) string {
-	b, _ := json.Marshal(v)
-	return string(b)
-}
 
 func (a *Application) pruneLoop(ctx context.Context) {
 	retentionDays := a.Config.DataRetentionDays

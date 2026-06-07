@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -172,7 +173,9 @@ LIMIT ?`
 		); err != nil {
 			return nil, err
 		}
-		_ = json.Unmarshal([]byte(segmentsJSON), &edge.Segments)
+		if err := json.Unmarshal([]byte(segmentsJSON), &edge.Segments); err != nil {
+			slog.Default().Warn("public history edge segments unmarshal failed", "error", err)
+		}
 		if messageAnchorJSON != "" {
 			var anchor live.MessageAnchor
 			if err := json.Unmarshal([]byte(messageAnchorJSON), &anchor); err == nil {
@@ -319,7 +322,9 @@ LIMIT ?`
 			event.Packet = &packet
 		}
 		if edge.ID > 0 {
-			_ = json.Unmarshal([]byte(edgeSegmentsJSON), &edge.Segments)
+			if err := json.Unmarshal([]byte(edgeSegmentsJSON), &edge.Segments); err != nil {
+				slog.Default().Warn("public history event edge segments unmarshal failed", "error", err)
+			}
 			if edgeMessageAnchorJSON != "" {
 				var anchor live.MessageAnchor
 				if err := json.Unmarshal([]byte(edgeMessageAnchorJSON), &anchor); err == nil {
@@ -444,7 +449,9 @@ func scanHistoryEvents(rows *sql.Rows) ([]HistoryEvent, error) {
 			event.Packet = &packet
 		}
 		if edge.ID > 0 {
-			_ = json.Unmarshal([]byte(edgeSegmentsJSON), &edge.Segments)
+			if err := json.Unmarshal([]byte(edgeSegmentsJSON), &edge.Segments); err != nil {
+				slog.Default().Warn("public packet edge segments unmarshal failed", "error", err)
+			}
 			if edgeMessageAnchorJSON != "" {
 				var anchor live.MessageAnchor
 				if err := json.Unmarshal([]byte(edgeMessageAnchorJSON), &anchor); err == nil {
