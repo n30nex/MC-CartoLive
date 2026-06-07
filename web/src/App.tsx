@@ -152,7 +152,7 @@ export default function App() {
   const [initialLoadGateOpen, setInitialLoadGateOpen] = useState(true);
   const [shareToast, setShareToast] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
-  const [routeGifExport, setRouteGifExport] = useState<{ status: RouteGifExportStatus; progress: number }>({ status: 'idle', progress: 0 });
+  const [routeGifExport, setRouteGifExport] = useState<{ status: RouteGifExportStatus; progress: number; remainingExports: number; cooldownUntil: number }>({ status: 'idle', progress: 0, remainingExports: 5, cooldownUntil: 0 });
   const [routeGifExportRequest, setRouteGifExportRequest] = useState<RouteMapGifExportRequest | null>(null);
   const [liveClock, setLiveClock] = useState(() => Date.now());
   const [initialNodesReceived, setInitialNodesReceived] = useState(false);
@@ -177,6 +177,11 @@ export default function App() {
     summary: []
   });
   const actionTokenRef = useRef(0);
+  const gifExportTimestampsRef = useRef<number[]>([]);
+  const gifCooldownUntilRef = useRef(0);
+  const GIF_EXPORT_MAX_PER_WINDOW = 5;
+  const GIF_EXPORT_WINDOW_MS = 10 * 60_000;
+  const GIF_EXPORT_COOLDOWN_MS = 30_000;
   const pendingMessagesRef = useRef<PublicLiveEnvelope[]>([]);
   const vcrBufferedMessagesRef = useRef<PublicLiveEnvelope[]>([]);
   const vcrModeRef = useRef<VcrMode>('live');
@@ -259,7 +264,7 @@ export default function App() {
   }, [vcr.mode, vcr.speed]);
 
   useEffect(() => {
-    setRouteGifExport((current) => (current.status === 'rendering' ? current : { status: 'idle', progress: 0 }));
+    setRouteGifExport((current) => (current.status === 'rendering' ? current : { ...current, status: 'idle', progress: 0 }));
   }, [selectedPacket?.id]);
 
   const clearPendingLiveFlush = useCallback(() => {
@@ -1035,9 +1040,23 @@ export default function App() {
 
   const exportSelectedPacketGif = useCallback(async () => {
     if (!selectedPacket || routeGifExport.status === 'rendering') return;
+    const now = Date.now();
+    if (now < gifCooldownUntilRef.current) return;
+    const windowStart = now - GIF_EXPORT_WINDOW_MS;
+    gifExportTimestampsRef.current = gifExportTimestampsRef.current.filter(t => t > windowStart);
+    if (gifExportTimestampsRef.current.length >= GIF_EXPORT_MAX_PER_WINDOW) {
+      setRouteGifExport(s => ({ ...s, status: 'error', progress: 0 }));
+      window.setTimeout(() => {
+        setRouteGifExport((current) => (current.status === 'error' ? { ...current, status: 'idle', progress: 0 } : current));
+      }, 3600);
+      return;
+    }
+    gifExportTimestampsRef.current.push(now);
+    gifCooldownUntilRef.current = now + GIF_EXPORT_COOLDOWN_MS;
+    const remaining = GIF_EXPORT_MAX_PER_WINDOW - gifExportTimestampsRef.current.filter(t => t > now - GIF_EXPORT_WINDOW_MS).length;
     setFollowTraffic(false);
     setPaused(true);
-    setRouteGifExport({ status: 'rendering', progress: 0.02 });
+    setRouteGifExport({ status: 'rendering', progress: 0.02, remainingExports: remaining, cooldownUntil: gifCooldownUntilRef.current });
     const token = actionTokenRef.current + 1;
     actionTokenRef.current = token;
     const travelDurationMs = routeGifAnimationDurationMs();
@@ -1054,20 +1073,22 @@ export default function App() {
       pulse,
       settleMs: 650,
       travelDurationMs,
-      onProgress: (progress) => setRouteGifExport({ status: 'rendering', progress }),
+      onProgress: (progress) => setRouteGifExport(s => ({ ...s, progress })),
       onComplete: (blob) => {
         downloadRouteGifBlob(selectedPacket, blob);
         setRouteGifExportRequest(null);
-        setRouteGifExport({ status: 'done', progress: 1 });
+        setRouteGifExport(s => ({ ...s, status: 'done', progress: 1 }));
         window.setTimeout(() => {
-          setRouteGifExport((current) => (current.status === 'done' ? { status: 'idle', progress: 0 } : current));
+          setRouteGifExport((current) => (current.status === 'done' ? { ...current, status: 'idle', progress: 0 } : current));
         }, 2600);
       },
       onError: () => {
+        gifExportTimestampsRef.current.pop();
+        const rem = GIF_EXPORT_MAX_PER_WINDOW - gifExportTimestampsRef.current.filter(t => t > Date.now() - GIF_EXPORT_WINDOW_MS).length;
         setRouteGifExportRequest(null);
-        setRouteGifExport({ status: 'error', progress: 0 });
+        setRouteGifExport(s => ({ ...s, status: 'error', progress: 0, remainingExports: rem }));
         window.setTimeout(() => {
-          setRouteGifExport((current) => (current.status === 'error' ? { status: 'idle', progress: 0 } : current));
+          setRouteGifExport((current) => (current.status === 'error' ? { ...current, status: 'idle', progress: 0 } : current));
         }, 3600);
       }
     });
@@ -1274,6 +1295,8 @@ export default function App() {
           packet={selectedPacket}
           status={routeGifExport.status}
           progress={routeGifExport.progress}
+          cooldownUntil={routeGifExport.cooldownUntil}
+          remainingExports={routeGifExport.remainingExports}
           onExport={exportSelectedPacketGif}
         />
       )}
