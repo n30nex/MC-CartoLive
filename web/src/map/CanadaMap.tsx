@@ -1569,7 +1569,7 @@ export default function CanadaMap({
           baseWarning = `OpenFreeMap base warning: ${message}`;
         }
       } else {
-        clearMapTerrain(map);
+        ensureTerrainSources(map, themeModeRef.current);
       }
       try {
         addPublicLayers(map);
@@ -2065,36 +2065,7 @@ function addOpenFreeMap3DBase(map: maplibregl.Map, themeMode: MapThemeMode) {
       url: OPENFREEMAP_TILEJSON_URL
     });
   }
-  if (!map.getSource(TERRAIN_SOURCE)) {
-    map.addSource(TERRAIN_SOURCE, {
-      type: 'raster-dem',
-      url: TERRAIN_TILEJSON_URL,
-      tileSize: 256
-    });
-  }
-  if (!map.getSource(HILLSHADE_SOURCE)) {
-    map.addSource(HILLSHADE_SOURCE, {
-      type: 'raster-dem',
-      url: TERRAIN_TILEJSON_URL,
-      tileSize: 256
-    });
-  }
-
-  const labelLayerID = firstTextSymbolLayerID(map);
-  addLayerIfMissing(map, {
-    id: HILLSHADE_LAYER,
-      type: 'hillshade',
-      source: HILLSHADE_SOURCE,
-      paint: {
-        'hillshade-method': 'multidirectional',
-        'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#1e293b', '#334155', '#475569', '#64748b'],
-        'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#020617', '#08111f', '#0f172a', '#1e293b'],
-        'hillshade-illumination-direction': [270, 315, 0, 45],
-        'hillshade-illumination-altitude': [24, 32, 36, 28],
-        'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 0.54
-      } as any
-    }, labelLayerID);
-
+  ensureTerrainSources(map, themeMode);
   addLayerIfMissing(map, {
     id: BUILDINGS_3D_LAYER,
     type: 'fill-extrusion',
@@ -2136,8 +2107,30 @@ function addOpenFreeMap3DBase(map: maplibregl.Map, themeMode: MapThemeMode) {
       ],
       'fill-extrusion-opacity': ['interpolate', ['linear'], ['zoom'], 14.2, 0.16, 15.5, themeMode === 'light' ? 0.56 : 0.62]
     }
-  }, labelLayerID);
+  }, firstTextSymbolLayerID(map));
+}
 
+function ensureTerrainSources(map: maplibregl.Map, themeMode: MapThemeMode) {
+  if (!map.getSource(TERRAIN_SOURCE)) {
+    map.addSource(TERRAIN_SOURCE, { type: 'raster-dem', url: TERRAIN_TILEJSON_URL, tileSize: 256 });
+  }
+  if (!map.getSource(HILLSHADE_SOURCE)) {
+    map.addSource(HILLSHADE_SOURCE, { type: 'raster-dem', url: TERRAIN_TILEJSON_URL, tileSize: 256 });
+  }
+  const labelLayerID = firstTextSymbolLayerID(map);
+  addLayerIfMissing(map, {
+    id: HILLSHADE_LAYER,
+    type: 'hillshade',
+    source: HILLSHADE_SOURCE,
+    paint: {
+      'hillshade-method': 'multidirectional',
+      'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#1e293b', '#334155', '#475569', '#64748b'],
+      'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#020617', '#08111f', '#0f172a', '#1e293b'],
+      'hillshade-illumination-direction': [270, 315, 0, 45],
+      'hillshade-illumination-altitude': [24, 32, 36, 28],
+      'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 0.54
+    } as any
+  }, labelLayerID);
   map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: TERRAIN_EXAGGERATION });
   map.setSky({
     'sky-color': themeMode === 'light' ? '#dbeafe' : '#0f172a',

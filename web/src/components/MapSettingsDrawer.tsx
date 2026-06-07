@@ -29,7 +29,8 @@ const LAYER_CONTROLS: readonly { key: keyof MapLayerSettings; label: string; hin
   { key: 'routeArcs3D', label: '3D route arcs', hint: 'Elevated OpenFreeMap route/pathway arcs' },
   { key: 'packetComets3D', label: '3D packet comets', hint: 'OpenFreeMap mesh comets and trails' },
   { key: 'buildingExtrusions', label: '3D buildings', hint: 'OpenFreeMap building extrusion layer' },
-  { key: 'terrainLOS', label: 'Terrain line-of-sight', hint: 'Color routes by RF terrain clearance (915 MHz Fresnel)' }
+  { key: 'terrainLOS', label: 'Terrain line-of-sight', hint: 'Color routes by RF terrain clearance (915 MHz Fresnel)' },
+  { key: 'terrainHeightmap', label: 'Terrain heightmap', hint: 'DEM elevation hillshade and 3D terrain on base map' }
 ];
 
 const ANIMATION_STYLES: readonly { value: PacketAnimationStyle; label: string }[] = [
