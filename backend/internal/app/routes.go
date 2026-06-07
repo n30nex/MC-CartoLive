@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"net/http"
 
 	"meshcore-canada-live-map/backend/internal/api"
@@ -37,5 +38,6 @@ func (a *Application) Routes() http.Handler {
 		PublicState:       a.PublicCache.Snapshot,
 		PublicCacheStatus: a.PublicCache.Status,
 		PublicAllowsIATA:  a.PublicCache.AllowsIATA,
+		SolarConditions:   func() any { c, _ := a.Solar.Fetch(context.Background()); return c },
 	}).Routes()
 }

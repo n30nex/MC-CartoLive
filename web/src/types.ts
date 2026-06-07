@@ -297,3 +297,13 @@ export type PublicLiveEnvelope =
   | { v: 1; type: 'event'; event: 'nodeUpdate'; seq?: number; serverTime?: number; receivedAt?: number; displayAt?: number; data: PublicNode }
   | { v: 1; type: 'event'; event: 'activity'; seq?: number; serverTime?: number; receivedAt?: number; displayAt?: number; data: PublicActivity }
   | { v: 1; type: 'event'; event: 'routePulse'; seq?: number; serverTime?: number; receivedAt?: number; displayAt?: number; data: PublicRoutePulse };
+
+export interface SolarConditions {
+  serverTime: number;
+  kpIndex: number;
+  kpLabel: string;
+  solarFluxSfu: number;
+  solarFluxLabel: string;
+  geomagActivity: string;
+  fetchedAt: number;
+}

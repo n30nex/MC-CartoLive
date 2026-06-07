@@ -197,3 +197,12 @@ END;
 CREATE TRIGGER IF NOT EXISTS public_packet_paths_ad AFTER DELETE ON public_packet_paths BEGIN
   DELETE FROM public_packet_paths_fts WHERE rowid=old.edge_id;
 END;
+
+CREATE TABLE IF NOT EXISTS solar_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fetched_at_ms INTEGER NOT NULL,
+  kp_index REAL NOT NULL DEFAULT 0,
+  solar_flux_sfu REAL NOT NULL DEFAULT 0,
+  geomag_activity TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_solar_snapshots_recent ON solar_snapshots(fetched_at_ms DESC);

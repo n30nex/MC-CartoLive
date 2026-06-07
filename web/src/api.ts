@@ -1,4 +1,4 @@
-import type { PublicChatResponse, PublicHistoryResponse, PublicHistorySummaryResponse, PublicLiveState, PublicPacketsResponse, RuntimeHealth } from './types';
+import type { PublicChatResponse, PublicHistoryResponse, PublicHistorySummaryResponse, PublicLiveState, PublicPacketsResponse, RuntimeHealth, SolarConditions } from './types';
 
 async function getJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { headers: { Accept: 'application/json' }, signal });
@@ -97,4 +97,8 @@ export function fetchPublicHistorySummary({ from, to, bucketMs, signal }: Public
   });
   if (bucketMs !== undefined) params.set('bucketMs', Math.round(bucketMs).toString());
   return getJSON<PublicHistorySummaryResponse>(`/api/v1/public/history/summary?${params.toString()}`, signal);
+}
+
+export function fetchSolarConditions(): Promise<SolarConditions> {
+  return getJSON<SolarConditions>('/api/v1/public/solar');
 }
