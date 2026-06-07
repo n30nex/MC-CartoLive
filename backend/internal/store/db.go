@@ -31,8 +31,8 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(4)
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(8)
 	s := &Store{db: db, path: path, coordinatePolicy: live.CurrentCoordinatePolicy()}
 	if err := s.Migrate(ctx); err != nil {
 		_ = db.Close()

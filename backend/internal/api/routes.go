@@ -361,6 +361,18 @@ func (s *Server) publicState(w http.ResponseWriter, r *http.Request) {
 			state.Stats.MQTTMessages = s.mqttTotal()
 			state.Stats.WSClients = s.wsClientCount()
 			state.Map = s.publicMapConfig()
+			var cacheStatus live.PublicCacheStatus
+			if s.PublicCacheStatus != nil {
+				cacheStatus = s.PublicCacheStatus(time.Now())
+			}
+			etag := `"` + strconv.FormatInt(cacheStatus.UpdatedAt, 10) + `"`
+			w.Header().Set("ETag", etag)
+			w.Header().Set("Cache-Control", "public, max-age=5")
+			if match := r.Header.Get("If-None-Match"); match == etag {
+				w.WriteHeader(http.StatusNotModified)
+				failed = false
+				return
+			}
 			writeJSON(w, http.StatusOK, state)
 			failed = false
 			return
