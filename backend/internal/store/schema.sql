@@ -52,7 +52,6 @@ CREATE TABLE IF NOT EXISTS packet_observations (
   FOREIGN KEY(packet_hash) REFERENCES packets(packet_hash)
 );
 
-CREATE INDEX IF NOT EXISTS idx_observations_recent ON packet_observations(heard_at_ms DESC);
 CREATE INDEX IF NOT EXISTS idx_observations_recent_id ON packet_observations(heard_at_ms DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_observations_resolution ON packet_observations(resolution_status, heard_at_ms DESC);
 CREATE INDEX IF NOT EXISTS idx_observations_iata ON packet_observations(iata, heard_at_ms DESC);

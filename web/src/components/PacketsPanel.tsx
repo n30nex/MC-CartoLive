@@ -6,6 +6,7 @@ import { isAbortError } from '../lib/isAbortError';
 import { useDebouncedValue } from '../lib/useDebouncedValue';
 import { DEFAULT_PACKET_FILTERS, packetEndpointSummary, PACKETS_SCOPE_OPTIONS, packetRegion, packetWindowForScope, type PacketFilters } from '../packets';
 import { payloadLegendVisuals, payloadVisual } from '../payloadVisuals';
+import { dedupePackets } from '../lib/dedupePackets';
 import type { PublicHistoryWindow, PublicPacketPath, PublicPacketScan } from '../types';
 import { toggleWorkspacePresentation, workspacePresentationTitle, type WorkspacePresentation } from './workspacePanel';
 
@@ -62,6 +63,7 @@ export default function PacketsPanel({
   const requestGenerationRef = useRef(0);
   const requestAbortRef = useRef<AbortController | null>(null);
   const filterGenerationRef = useRef(0);
+  const initialLoadRef = useRef(true);
   const debouncedFilters = useDebouncedValue(filters, PACKET_FILTER_DEBOUNCE_MS);
   const selectedFromList = useMemo(() => packets.find((packet) => packet.id === selectedPacketID) ?? null, [packets, selectedPacketID]);
   const activePacket = selectedPacket ?? selectedFromList;
@@ -73,10 +75,6 @@ export default function PacketsPanel({
     };
   }, []);
 
-  useEffect(() => {
-    filterGenerationRef.current += 1;
-  }, [debouncedFilters, scopeMs]);
-
   const refresh = useCallback(() => {
     let active = true;
     requestAbortRef.current?.abort();
@@ -84,6 +82,7 @@ export default function PacketsPanel({
     requestAbortRef.current = controller;
     const generation = requestGenerationRef.current + 1;
     requestGenerationRef.current = generation;
+    filterGenerationRef.current += 1;
     setLoading(true);
     setError(null);
     setSearchState(hasActivePacketFilters(debouncedFilters) ? 'searching' : 'idle');
@@ -97,6 +96,7 @@ export default function PacketsPanel({
         setNextCursor(response.nextCursor ?? '');
         setSearchState(response.nextCursor ? 'more' : 'end');
         setLastCheckedAt(Date.now());
+        initialLoadRef.current = false;
         setScrollTop(0);
         if (listRef.current) listRef.current.scrollTop = 0;
       })
@@ -149,6 +149,8 @@ export default function PacketsPanel({
       })
       .finally(() => {
         if (!mountedRef.current) return;
+        if (generation !== requestGenerationRef.current) return;
+        if (filterGeneration !== filterGenerationRef.current) return;
         if (requestAbortRef.current === controller) requestAbortRef.current = null;
         setLoadingMore(false);
       });
@@ -303,7 +305,7 @@ export default function PacketsPanel({
 
       <PacketSearchStatus state={searchState} nextCursor={nextCursor} loading={loading || loadingMore} scan={scanInfo} />
       {error && <div className="packets-error" role="alert">{error}</div>}
-      {loading && <div className="packets-loading-bar" />}
+      {loading && initialLoadRef.current && <div className="packets-loading-bar" />}
 
       <div className="packets-content">
         <div
@@ -533,17 +535,6 @@ async function fetchPacketPages({
       partial: Boolean(nextCursor)
     }
   };
-}
-
-function dedupePackets(items: PublicPacketPath[]): PublicPacketPath[] {
-  const seen = new Set<string>();
-  const out: PublicPacketPath[] = [];
-  for (const item of items) {
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
-    out.push(item);
-  }
-  return out;
 }
 
 function capPackets(items: PublicPacketPath[]): PublicPacketPath[] {

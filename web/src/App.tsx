@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Check, Columns3, Eye, EyeOff, Layers, LocateFixed, Moon, Palette, Pause, Play, RadioTower, RotateCcw, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
 import { fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicState } from './api';
 import { connectPublicSocket } from './ws';
@@ -34,9 +34,11 @@ import {
   chromePanelVisible,
   normalizePanelAnchor,
   reduceChromeVisibility,
+  useViewportBounds,
   type ChromePanelAnchor,
   type ChromePanelID,
-  type ChromeVisibilityState
+  type ChromeVisibilityState,
+  type ViewportBounds
 } from './components/panelChrome';
 import { capLiveEnvelopeQueue, liveEnvelopeDisplayAt, nextLiveEnvelopeDelayMs, sortLiveEnvelopes, takeDueLiveEnvelopes } from './livePacing';
 import {
@@ -57,6 +59,7 @@ import {
   shortestPathBetween
 } from './connectivity';
 import { boundsFromPoints, meshcorePathCopyText, messageHistoryForNode, routeNodeIDs, routesInBounds, type MapPoint } from './routeTools';
+import { dedupePackets } from './lib/dedupePackets';
 import { packetNodeIDs, packetRouteIDs, packetToPulse } from './packets';
 import { downloadRouteGifBlob, routeGifAnimationDurationMs, type RouteMapGifExportRequest } from './routeGifExport';
 import {
@@ -157,6 +160,7 @@ export default function App() {
     chromeHidden: false,
     panels: { ...INITIAL_CHROME_PANEL_VISIBILITY }
   });
+  const viewportBounds = useViewportBounds();
   const [panelAnchors, setPanelAnchors] = useState<Record<ChromePanelID, ChromePanelAnchor>>({ ...DEFAULT_CHROME_PANEL_ANCHORS });
   const [vcr, setVcr] = useState<VcrUiState>({
     mode: 'live',
@@ -202,7 +206,9 @@ export default function App() {
         setPanelsMenuOpen(false);
         setMapSettingsOpen(false);
       }
-      setPacketsPanelMode('expanded');
+      if (nextPacketsOpen) {
+        setPacketsPanelMode('expanded');
+      }
     };
     updateRoute();
     window.addEventListener('hashchange', updateRoute);
@@ -243,7 +249,7 @@ export default function App() {
     writeStoredMapSettings(mapSettings);
   }, [mapSettings]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     vcrModeRef.current = vcr.mode;
     vcrSpeedRef.current = vcr.speed;
   }, [vcr.mode, vcr.speed]);
@@ -655,7 +661,7 @@ export default function App() {
       recordLivePendingQueueSize(0);
       socket.close();
     };
-  }, [bufferVcrMessage]);
+  }, [bufferVcrMessage, initialNodesReceived]);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -1350,6 +1356,7 @@ export default function App() {
             title="Search"
             anchor={panelAnchors.search}
             hidden={!chromeVisibility.panels.search}
+            viewportBounds={viewportBounds}
             onAnchorChange={setChromePanelAnchor}
             onHide={hideChromePanel}
           >
@@ -1368,6 +1375,7 @@ export default function App() {
             title="Legend"
             anchor={panelAnchors.legend}
             hidden={!chromeVisibility.panels.legend}
+            viewportBounds={viewportBounds}
             onAnchorChange={setChromePanelAnchor}
             onHide={hideChromePanel}
           >
@@ -1378,6 +1386,7 @@ export default function App() {
             title="Busy Pathways"
             anchor={panelAnchors.hotRoutes}
             hidden={!chromeVisibility.panels.hotRoutes}
+            viewportBounds={viewportBounds}
             onAnchorChange={setChromePanelAnchor}
             onHide={hideChromePanel}
           >
@@ -1453,18 +1462,6 @@ function cinematicPacketReplayDuration(segmentCount: number, speed: number): num
   const safeSpeed = Number.isFinite(speed) ? Math.max(0.5, Math.min(3, speed)) : 1;
   const hopBonus = Math.min(3000, Math.max(0, segmentCount - 4) * 420);
   return Math.round((6000 + hopBonus) / safeSpeed);
-}
-
-function dedupePackets(packets: PublicPacketPath[]): PublicPacketPath[] {
-  const seen = new Set<string>();
-  const output: PublicPacketPath[] = [];
-  for (const packet of packets) {
-    const key = `${packet.at}:${packet.routeIds.join('|')}:${packet.endpointLabels.join('|')}:${packet.segmentCount}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    output.push(packet);
-  }
-  return output;
 }
 
 function paletteSwatchStyle(palette: ThemePalette): CSSProperties {

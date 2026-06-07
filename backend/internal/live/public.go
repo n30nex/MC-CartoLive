@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"meshcore-canada-live-map/backend/internal/resolve"
@@ -265,6 +266,7 @@ func BuildPublicLiveState(state State, stats PublicStats) PublicLiveState {
 		Routes:         routes,
 		RecentPulses:   recentPulses,
 		RecentActivity: activity,
+		UpdatedAt:      time.Now().UnixMilli(),
 	}
 }
 

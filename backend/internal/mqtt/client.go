@@ -134,8 +134,7 @@ func (c *Client) watchdog(ctx context.Context) {
 				lastMsg := c.lastMessageAt.Load()
 				if lastMsg > 0 && time.Now().UnixMilli()-lastMsg > 120_000 {
 					c.log.Warn("mqtt watchdog: connected but no messages for >120s; forcing reconnect")
-					c.client.Disconnect(250)
-					c.connected.Store(false)
+					c.client.Disconnect(0)
 				}
 			}
 		}
@@ -181,7 +180,14 @@ func (c *Client) dispatch(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case msg := <-c.queue:
-			c.handler(ctx, msg)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						c.log.Error("mqtt dispatch panic", "panic", r)
+					}
+				}()
+				c.handler(ctx, msg)
+			}()
 		}
 	}
 }

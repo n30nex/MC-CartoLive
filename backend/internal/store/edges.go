@@ -53,10 +53,14 @@ INSERT INTO live_edge_events (
 	if err != nil {
 		return event, err
 	}
-	event.ID, _ = result.LastInsertId()
+	if id, err := result.LastInsertId(); err == nil {
+		event.ID = id
+	}
 	region := event.IATA
 	if strings.TrimSpace(region) == "" {
-		_ = tx.QueryRowContext(ctx, `SELECT COALESCE(iata, '') FROM packet_observations WHERE id=?`, event.ObservationID).Scan(&region)
+		if rowErr := tx.QueryRowContext(ctx, `SELECT COALESCE(iata, '') FROM packet_observations WHERE id=?`, event.ObservationID).Scan(&region); rowErr != nil {
+			region = ""
+		}
 	}
 	if _, err := insertPublicPacketPathTx(ctx, tx, event, region); err != nil {
 		return event, err

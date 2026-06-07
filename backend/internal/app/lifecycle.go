@@ -139,7 +139,8 @@ func (a *Application) Start(ctx context.Context) error {
 		"busyTimeoutMs", dbInfo.BusyTimeout,
 		"maxOpenConns", dbInfo.MaxOpenConns,
 	)
-	go a.refreshPacketCountOnce(ctx)
+	a.wg.Add(1)
+	go func() { defer a.wg.Done(); a.refreshPacketCountOnce(ctx) }()
 	a.wg.Add(1)
 	go func() { defer a.wg.Done(); a.refreshPacketCountLoop(ctx) }()
 	a.wg.Add(1)
@@ -343,9 +344,8 @@ func (a *Application) buildEdgeEvent(ctx context.Context, msg imqtt.NormalizedMe
 	if a.Config.RequireRSSIOrSNRForEdge && msg.RSSI == nil && msg.SNR == nil {
 		return live.EdgeEvent{}, false
 	}
-	endpoints, status, reason := a.routeEndpoints(ctx, msg, parsed, resolution, advertNode)
+	endpoints, status, _ := a.routeEndpoints(ctx, msg, parsed, resolution, advertNode)
 	if status != resolve.StatusHigh {
-		_ = a.Store.UpdateObservationResolution(ctx, observationID, status, reason)
 		return live.EdgeEvent{}, false
 	}
 	segments := make([]live.EdgeSegment, 0, len(endpoints)-1)
@@ -666,17 +666,8 @@ func (a *Application) refreshPacketCountOnce(ctx context.Context) {
 	defer func() {
 		a.Runtime.RecordPacketCountRefresh(time.Since(start), failed)
 	}()
-	countCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	countCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	done := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			cancel()
-		case <-done:
-		}
-	}()
-	defer close(done)
 	count, err := a.Store.PacketCount(countCtx)
 	if err != nil {
 		a.Log.Warn("packet count refresh failed", "error", err)
@@ -706,7 +697,13 @@ func (a *Application) solarFetchLoop(ctx context.Context) {
 		a.solarSnapshot.Store(&cond)
 		a.Log.Info("solar cache seeded from database", "kp", cond.KpIndex, "flux", cond.SolarFluxSFU)
 	}
+	if ctx.Err() != nil {
+		return
+	}
 	seedFromDB()
+	if ctx.Err() != nil {
+		return
+	}
 	fetch := func() {
 		cond, err := a.Solar.Fetch(ctx)
 		if err != nil { a.Log.Warn("solar fetch failed", "error", err); return }
@@ -899,7 +896,10 @@ func compactJSON(v any) string {
 
 func (a *Application) pruneLoop(ctx context.Context) {
 	retentionDays := a.Config.DataRetentionDays
-	if retentionDays <= 0 {
+	if retentionDays < 0 {
+		return
+	}
+	if retentionDays == 0 {
 		retentionDays = 30
 	}
 	ticker := time.NewTicker(6 * time.Hour)

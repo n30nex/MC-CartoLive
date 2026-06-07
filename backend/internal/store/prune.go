@@ -27,6 +27,9 @@ func (s *Store) PruneOldData(ctx context.Context, beforeMs int64) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM observer_status WHERE received_at_ms < ?`, beforeMs); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM packets WHERE packet_hash NOT IN (SELECT DISTINCT packet_hash FROM packet_observations)`); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}

@@ -60,13 +60,22 @@ ON CONFLICT(public_key) DO UPDATE SET
 }
 
 func (s *Store) UpsertObserver(ctx context.Context, msg mq.NormalizedMessage) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
 	lat, lng := mq.StatusLatLng(msg.Payload)
 	dbLat, dbLng := s.nullableMapLatLng(lat, lng)
 	name := msg.ObserverName
 	if name == "" {
 		name = firstPayloadString(msg.Payload, "origin", "name", "node_name")
 	}
-	_, err := s.db.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 INSERT INTO observers (public_key, iata, name, latitude, longitude, last_seen_ms, packet_count, status_json)
 VALUES (?, ?, ?, ?, ?, ?, 1, ?)
 ON CONFLICT(public_key, iata) DO UPDATE SET
@@ -89,27 +98,30 @@ ON CONFLICT(public_key, iata) DO UPDATE SET
 		return err
 	}
 	if msg.TopicInfo.Subtopic == "status" {
-		if _, obsErr := s.db.ExecContext(ctx, `
+		if _, obsErr := tx.ExecContext(ctx, `
 INSERT INTO observer_status (public_key, iata, status_json, received_at_ms)
 VALUES (?, ?, ?, ?)`,
 			msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA, msg.RawJSON, msg.HeardAtMs); obsErr != nil {
 			return obsErr
 		}
-		if err := s.upsertStatusNode(ctx, msg, name, lat, lng); err != nil {
+		if err := s.upsertStatusNode(ctx, tx, msg, name, lat, lng); err != nil {
 			return err
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (s *Store) upsertStatusNode(ctx context.Context, msg mq.NormalizedMessage, name string, lat, lng *float64) error {
+func (s *Store) upsertStatusNode(ctx context.Context, tx *sql.Tx, msg mq.NormalizedMessage, name string, lat, lng *float64) error {
 	role, nodeType := observerRole(msg.Payload, name)
 	locationSource := ""
 	dbLat, dbLng := s.nullableMapLatLng(lat, lng)
 	if dbLat.Valid && dbLng.Valid {
 		locationSource = "status"
 	}
-	_, err := s.db.ExecContext(ctx, `
+	_, err := tx.ExecContext(ctx, `
 INSERT INTO nodes (
   node_id, public_key, name, node_type, role, latitude, longitude, location_source,
   first_seen_ms, last_seen_ms, observation_count, supports_multibyte
@@ -138,10 +150,10 @@ ON CONFLICT(public_key) DO UPDATE SET
 	if err != nil {
 		return err
 	}
-	if err := s.upsertNodeIATA(ctx, msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA, msg.HeardAtMs); err != nil {
+	if err := s.upsertNodeIATAWithTx(ctx, tx, msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA, msg.HeardAtMs); err != nil {
 		return err
 	}
-	return s.upsertShortIDs(ctx, msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA, role, msg.HeardAtMs)
+	return s.upsertShortIDsWithTx(ctx, tx, msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA, role, msg.HeardAtMs)
 }
 
 func (s *Store) IncrementObserverPacket(ctx context.Context, msg mq.NormalizedMessage) error {
@@ -395,6 +407,37 @@ func (s *Store) upsertShortIDs(ctx context.Context, publicKey, iata, role string
 		}
 		prefix := pk[:size*2]
 		if _, err := s.db.ExecContext(ctx, `
+INSERT INTO node_short_ids (public_key, iata, hash_size, prefix_hex, role, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(public_key, iata, hash_size, prefix_hex) DO UPDATE SET
+  role=excluded.role,
+  updated_at_ms=excluded.updated_at_ms`,
+			pk, strings.ToUpper(iata), size, prefix, role, seenAt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) upsertNodeIATAWithTx(ctx context.Context, tx *sql.Tx, publicKey, iata string, seenAt int64) error {
+	_, err := tx.ExecContext(ctx, `
+INSERT INTO node_iatas (public_key, iata, first_seen_ms, last_seen_ms, observation_count)
+VALUES (?, ?, ?, ?, 1)
+ON CONFLICT(public_key, iata) DO UPDATE SET
+  last_seen_ms=excluded.last_seen_ms,
+  observation_count=node_iatas.observation_count + 1`,
+		publicKey, strings.ToUpper(iata), seenAt, seenAt)
+	return err
+}
+
+func (s *Store) upsertShortIDsWithTx(ctx context.Context, tx *sql.Tx, publicKey, iata, role string, seenAt int64) error {
+	pk := strings.ToUpper(publicKey)
+	for size := 1; size <= 3; size++ {
+		if len(pk) < size*2 {
+			continue
+		}
+		prefix := pk[:size*2]
+		if _, err := tx.ExecContext(ctx, `
 INSERT INTO node_short_ids (public_key, iata, hash_size, prefix_hex, role, updated_at_ms)
 VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(public_key, iata, hash_size, prefix_hex) DO UPDATE SET

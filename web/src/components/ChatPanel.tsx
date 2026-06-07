@@ -7,7 +7,6 @@ import { useDebouncedValue } from '../lib/useDebouncedValue';
 import {
   CHAT_SCOPE_OPTIONS,
   DEFAULT_CHAT_FILTERS,
-  chatChannelOptions,
   chatRegion,
   chatWindowForScope,
   dedupeChatMessages,
@@ -54,6 +53,7 @@ export default function ChatPanel({
   const requestAbortRef = useRef<AbortController | null>(null);
   const requestGenerationRef = useRef(0);
   const filterGenerationRef = useRef(0);
+  const initialLoadRef = useRef(true);
   const debouncedFilters = useDebouncedValue(filters, CHAT_FILTER_DEBOUNCE_MS);
   const visibleMessages = useMemo(() => capChatMessages(messages), [messages]);
 
@@ -71,16 +71,13 @@ export default function ChatPanel({
     prevInitialLenRef.current = initialMessages.length;
   }, [initialMessages]);
 
-  useEffect(() => {
-    filterGenerationRef.current += 1;
-  }, [debouncedFilters, scopeMs]);
-
   const refresh = useCallback(() => {
     requestAbortRef.current?.abort();
     const controller = new AbortController();
     requestAbortRef.current = controller;
     const generation = requestGenerationRef.current + 1;
     requestGenerationRef.current = generation;
+    filterGenerationRef.current += 1;
     setLoading(true);
     setError(null);
     const window = chatWindowForScope(Date.now(), scopeMs);
@@ -100,6 +97,7 @@ export default function ChatPanel({
         setNextCursor(response.nextCursor ?? '');
         setServerTime(response.serverTime);
         setLastCheckedAt(Date.now());
+        initialLoadRef.current = false;
       })
       .catch((err: unknown) => {
         if (isAbortError(err)) return;
@@ -144,6 +142,8 @@ export default function ChatPanel({
       })
       .finally(() => {
         if (!mountedRef.current) return;
+        if (generation !== requestGenerationRef.current) return;
+        if (filterGeneration !== filterGenerationRef.current) return;
         if (requestAbortRef.current === controller) requestAbortRef.current = null;
         setLoadingMore(false);
       });
@@ -159,7 +159,11 @@ export default function ChatPanel({
     };
   }, [autoRefresh, refresh]);
 
-  const channelOptions = useMemo(() => chatChannelOptions(visibleMessages), [visibleMessages]);
+  const channelOptions = useMemo(() => {
+    const channelLabels = new Set(visibleMessages.map((m) => m.channelLabel).filter(Boolean));
+    if (filters.channel) channelLabels.add(filters.channel);
+    return [...channelLabels].sort();
+  }, [visibleMessages, filters.channel]);
 
   return (
     <section className={`chat-panel workspace-panel workspace-${presentation}`} aria-label="Public chat">
@@ -234,7 +238,7 @@ export default function ChatPanel({
       </div>
 
       {error && <div className="chat-error" role="alert">{error}</div>}
-      {loading && <div className="chat-loading-bar" />}
+      {loading && initialLoadRef.current && <div className="chat-loading-bar" />}
 
       <div className="chat-list" role="list" aria-label="Public chat messages">
         {visibleMessages.map((message) => <ChatRow key={message.id} message={message} />)}

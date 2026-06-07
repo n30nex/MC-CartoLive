@@ -55,7 +55,7 @@ type Config struct {
 	ConfigYAML                      string
 	FixtureReplayPath               string
 	FixtureRecordEnabled            bool
-	DataRetentionDays               int
+	DataRetentionDays               int // 0 = default 30 days, negative = disable pruning
 }
 
 func LoadConfig() (Config, error) {

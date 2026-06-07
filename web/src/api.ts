@@ -99,6 +99,6 @@ export function fetchPublicHistorySummary({ from, to, bucketMs, signal }: Public
   return getJSON<PublicHistorySummaryResponse>(`/api/v1/public/history/summary?${params.toString()}`, signal);
 }
 
-export function fetchSolarConditions(): Promise<SolarConditions> {
-  return getJSON<SolarConditions>('/api/v1/public/solar');
+export function fetchSolarConditions(signal?: AbortSignal): Promise<SolarConditions> {
+  return getJSON<SolarConditions>('/api/v1/public/solar', signal);
 }

@@ -4,11 +4,11 @@ import {
   anchorPosition,
   clampPanelPosition,
   nearestPanelAnchor,
-  useViewportBounds,
   type ChromePanelAnchor,
   type ChromePanelID,
   type PanelSize,
-  type Point
+  type Point,
+  type ViewportBounds
 } from './panelChrome';
 
 interface Props {
@@ -16,6 +16,7 @@ interface Props {
   title: string;
   anchor: ChromePanelAnchor;
   hidden: boolean;
+  viewportBounds: ViewportBounds;
   className?: string;
   children: ReactNode;
   onAnchorChange: (panel: ChromePanelID, anchor: ChromePanelAnchor) => void;
@@ -28,12 +29,11 @@ interface DragState {
   panel: PanelSize;
 }
 
-export default function ChromePanel({ panel, title, anchor, hidden, className = '', children, onAnchorChange, onHide }: Props) {
+export default function ChromePanel({ panel, title, anchor, hidden, viewportBounds, className = '', children, onAnchorChange, onHide }: Props) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const [draftPosition, setDraftPosition] = useState<Point | null>(null);
   const [panelSize, setPanelSize] = useState<PanelSize>({ width: 0, height: 0 });
-  const viewportBounds = useViewportBounds();
 
   const measurePanel = useCallback(() => {
     const frame = frameRef.current;

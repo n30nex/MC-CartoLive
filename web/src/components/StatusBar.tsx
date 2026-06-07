@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Database, MapPin, Route, Shield, Sparkles, Sun, Zap } from 'lucide-react';
 import { fetchSolarConditions } from '../api';
+import { isAbortError } from '../lib/isAbortError';
 import { payloadVisual } from '../payloadVisuals';
 import type { LiveCoverageStats } from '../state';
 import type { PublicStats, SolarConditions } from '../types';
@@ -61,20 +62,31 @@ function SolarIndicator() {
   const [error, setError] = useState(false);
   const failCountRef = useRef(0);
   const retryTimerRef = useRef<number | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const fetchSolar = useCallback(() => {
-    let active = true;
-    fetchSolarConditions()
-      .then((s) => { if (active) { setSolar(s); setError(false); failCountRef.current = 0; } })
-      .catch(() => {
-        if (!active) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    fetchSolarConditions(controller.signal)
+      .then((s) => {
+        if (controller.signal.aborted) return;
+        setSolar(s);
+        setError(false);
+        failCountRef.current = 0;
+      })
+      .catch((err) => {
+        if (isAbortError(err)) return;
+        if (controller.signal.aborted) return;
         setError(true);
         failCountRef.current += 1;
         const backoff = Math.min(60_000 * Math.pow(2, failCountRef.current - 1), 300_000);
         if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
         retryTimerRef.current = window.setTimeout(fetchSolar, backoff);
       });
-    return () => { active = false; };
+    return () => {
+      controller.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -83,6 +95,7 @@ function SolarIndicator() {
     return () => {
       cancel();
       clearInterval(interval);
+      abortRef.current?.abort();
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     };
   }, [fetchSolar]);
