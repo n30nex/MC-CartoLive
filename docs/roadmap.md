@@ -5,15 +5,15 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.7.4` is the current production-ready world operations release.
+Version `2.7.5` is the current production-ready world operations release.
 
-- Detailed next-phase plan: [2.7.4 to 2.7.7](roadmap-2.7.4-to-2.7.7.md).
+- Detailed next-phase plan: [2.7.5 to 2.7.7](roadmap-2.7.5-to-2.7.7.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current release focus: 2.7.4 workspace UI polish is complete; the next
+- Current release focus: 2.7.5 workspace UI polish is complete; the next
   patches move through OpenFreeMap 3D performance, elevation/topography
   line-of-sight context, and propagation-event research on top of the stable
-  public-safe 2.7.4 feature set.
+  public-safe 2.7.5 feature set.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -22,7 +22,7 @@ Version `2.7.4` is the current production-ready world operations release.
 
 ## Active Maintenance Focus
 
-- Treat `2.7.4` as the completed public-experience polish pass: less chrome
+- Treat `2.7.5` as the completed public-experience polish pass: less chrome
   clutter, clearer route/share flows, docked Packets/Chat workspaces, and safer
   mobile ergonomics.
 - Make `2.7.5` the 3D performance pass for OpenFreeMap node models, route arcs,
@@ -52,7 +52,7 @@ Version `2.7.4` is the current production-ready world operations release.
 - Keep docs concise enough that new operators can deploy, smoke test, diagnose,
   back up, restore, and upgrade without reading historical planning notes.
 
-## 2.7.4 Patch Focus
+## 2.7.5 Patch Focus
 
 - Full sweep — rate limiting, security headers, Docker hardening, React.lazy code splitting, React.memo on CanadaMap, parallel LiveState queries, virtual chat scroll, /metrics endpoint, node list panel, keyboard help, panel transitions, loading skeletons, prefers-reduced-motion, ARIA roles, mobile StatusBar collapse, App.tsx decomposition, utility consolidation, dead code removal, version sync.
 

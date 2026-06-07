@@ -4,6 +4,12 @@
 
 - No unreleased changes.
 
+## 2.7.5 - 2026-06-07
+
+- Reduced OpenFreeMap 3D scene churn by reusing selected node/route sets for
+  scene signatures and rebuilds, eliminating redundant selection and signature
+  sorting work.
+
 ## 2.7.4 - 2026-06-07
 
 - Full sweep: rate limiting, security headers, Docker hardening, React.lazy code

@@ -319,16 +319,19 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
   private rebuildIfNeeded(force: boolean): boolean {
     if (!this.map || !this.scene || !this.latest || this.disposed) return false;
     let changed = false;
-    const nextNodeSignature = nodeSceneSignature(this.map, this.latest);
+    const now = Date.now();
+    const selectedNodes = selectOpenFreeMap3DNodes(this.map, this.latest);
+    const nextNodeSignature = nodeSceneSignature(this.map, this.latest, selectedNodes);
     if (force || nextNodeSignature !== this.nodeSignature) {
       this.nodeSignature = nextNodeSignature;
-      rebuildNodeModels(this.map, this.nodeRoot, this.latest);
+      rebuildNodeModels(this.map, this.nodeRoot, this.latest, selectedNodes);
       changed = true;
     }
-    const nextRouteSignature = routeSceneSignature(this.map, this.latest);
+    const selectedRoutes = selectOpenFreeMap3DRoutes(this.map, this.latest, now);
+    const nextRouteSignature = routeSceneSignature(this.map, this.latest, now, selectedRoutes);
     if (force || nextRouteSignature !== this.routeSignature) {
       this.routeSignature = nextRouteSignature;
-      rebuildRouteArcs(this.map, this.routeRoot, this.latest, this.losCache);
+      rebuildRouteArcs(this.map, this.routeRoot, this.latest, this.losCache, selectedRoutes, now);
       changed = true;
     }
     return changed;
@@ -339,20 +342,26 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
   }
 }
 
-function rebuildNodeModels(map: maplibregl.Map, root: THREE.Group, input: OpenFreeMap3DUpdate) {
+function rebuildNodeModels(map: maplibregl.Map, root: THREE.Group, input: OpenFreeMap3DUpdate, selectedNodes: PublicNode[]) {
   clearGroup(root);
   const zoom = map.getZoom();
-  for (const node of selectOpenFreeMap3DNodes(map, input)) {
+  for (const node of selectedNodes) {
     const model = createNodeModel(node, input.themeMode, nodeModelLOD(node, input.focus, zoom));
     positionAtLngLat(model, node.longitude, node.latitude, 8);
     root.add(model);
   }
 }
 
-function rebuildRouteArcs(map: maplibregl.Map, root: THREE.Group, input: OpenFreeMap3DUpdate, losCache: Map<string, LOSResult>) {
+function rebuildRouteArcs(
+  map: maplibregl.Map,
+  root: THREE.Group,
+  input: OpenFreeMap3DUpdate,
+  losCache: Map<string, LOSResult>,
+  selectedRoutes: PublicRoute[],
+  now: number
+) {
   clearGroup(root);
-  const now = Date.now();
-  for (const route of selectOpenFreeMap3DRoutes(map, input, now)) {
+  for (const route of selectedRoutes) {
     let los: LOSResult | undefined;
     if (input.layerSettings.terrainLOS) {
       los = losCache.get(route.id);
@@ -640,8 +649,7 @@ function trimObserverGlows(root: THREE.Group, glows: ObserverGlow[], budget: num
   }
 }
 
-function nodeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): string {
-  const selectedNodes = selectOpenFreeMap3DNodes(map, input);
+function nodeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate, selectedNodes: PublicNode[] = selectOpenFreeMap3DNodes(map, input)): string {
   const zoom = map.getZoom();
   return [
     input.layerSettings.nodes,
@@ -652,12 +660,16 @@ function nodeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): st
     input.focus.selectedNodeID ?? '',
     stableSetSignature(input.focus.pathNodeIDs),
     stableSetSignature(input.focus.neighbourNodeIDs),
-    selectedNodes.map((node) => `${node.id}:${nodeModelLOD(node, input.focus, zoom)}:${node.role}:${node.isObserver ? 1 : 0}:${node.latitude.toFixed(4)}:${node.longitude.toFixed(4)}`).sort().join('|')
+    selectedNodes.map((node) => `${node.id}:${nodeModelLOD(node, input.focus, zoom)}:${node.role}:${node.isObserver ? 1 : 0}:${node.latitude.toFixed(4)}:${node.longitude.toFixed(4)}`).join('|')
   ].join('~');
 }
 
-function routeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): string {
-  const selectedRoutes = selectOpenFreeMap3DRoutes(map, input);
+function routeSceneSignature(
+  map: maplibregl.Map,
+  input: OpenFreeMap3DUpdate,
+  now = Date.now(),
+  selectedRoutes: PublicRoute[] = selectOpenFreeMap3DRoutes(map, input, now)
+): string {
   return [
     input.layerSettings.routes,
     input.layerSettings.routeArcs3D,
@@ -669,7 +681,7 @@ function routeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): s
     stableSetSignature(input.focus.connectedRouteIDs),
     stableSetSignature(input.focus.pathRouteIDs),
     input.analysisSegments.map((segment) => `${segment.routeId}:${segment.from.lat.toFixed(4)}:${segment.from.lng.toFixed(4)}:${segment.to.lat.toFixed(4)}:${segment.to.lng.toFixed(4)}`).join('|'),
-    selectedRoutes.map((route) => `${route.id}:${route.frequencyBucket}:${Math.floor(route.lastHeard / ROUTE_FRESH_MS)}:${route.from.lat.toFixed(4)}:${route.from.lng.toFixed(4)}:${route.to.lat.toFixed(4)}:${route.to.lng.toFixed(4)}`).sort().join('|')
+    selectedRoutes.map((route) => `${route.id}:${route.frequencyBucket}:${Math.floor(route.lastHeard / ROUTE_FRESH_MS)}:${route.from.lat.toFixed(4)}:${route.from.lng.toFixed(4)}:${route.to.lat.toFixed(4)}:${route.to.lng.toFixed(4)}`).join('|')
   ].join('~');
 }
 
