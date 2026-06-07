@@ -181,6 +181,7 @@ type PublicLiveState struct {
 	Routes         []PublicRoute      `json:"routes"`
 	RecentPulses   []PublicRoutePulse `json:"recentPulses,omitempty"`
 	RecentActivity []PublicActivity   `json:"recentActivity"`
+	UpdatedAt      int64              `json:"-"`
 }
 
 type PublicMapConfig struct {
