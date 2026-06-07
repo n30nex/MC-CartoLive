@@ -210,11 +210,11 @@ const DEFAULT_OPENFREEMAP_MAP_PITCH = 46;
 const DEFAULT_OPENFREEMAP_MAP_BEARING = -11;
 const DEFAULT_OPENFREEMAP_STYLE_URL = '';
 const DEFAULT_OPENFREEMAP_TILEJSON_URL = 'https://tiles.openfreemap.org/planet';
-const DEFAULT_TERRAIN_TILEJSON_URL = 'https://demotiles.maplibre.org/terrain-tiles/tiles.json';
+const DEFAULT_TERRAIN_TILE_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
 const DEFAULT_WORLD_CENTER = { lat: 20, lng: 0, z: 1.8 };
 const OPENFREEMAP_STYLE_URL = envURL('VITE_OPENFREEMAP_STYLE_URL', DEFAULT_OPENFREEMAP_STYLE_URL);
 const OPENFREEMAP_TILEJSON_URL = envURL('VITE_OPENFREEMAP_TILEJSON_URL', DEFAULT_OPENFREEMAP_TILEJSON_URL);
-const TERRAIN_TILEJSON_URL = envURL('VITE_TERRAIN_TILEJSON_URL', DEFAULT_TERRAIN_TILEJSON_URL);
+const TERRAIN_TILE_URL = envURL('VITE_TERRAIN_TILE_URL', DEFAULT_TERRAIN_TILE_URL);
 const TERRAIN_EXAGGERATION = envFloat('VITE_TERRAIN_EXAGGERATION', 1.25);
 
 export type MapBaseMode = 'original' | 'openfreemap';
@@ -447,13 +447,17 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
     },
     [TERRAIN_SOURCE]: {
       type: 'raster-dem',
-      url: TERRAIN_TILEJSON_URL,
-      tileSize: 256
+      tiles: [TERRAIN_TILE_URL],
+      encoding: 'terrarium',
+      tileSize: 256,
+      maxzoom: 15
     },
     [HILLSHADE_SOURCE]: {
       type: 'raster-dem',
-      url: TERRAIN_TILEJSON_URL,
+      tiles: [TERRAIN_TILE_URL],
+      encoding: 'terrarium',
       tileSize: 256,
+      maxzoom: 15
     },
     [NODE_SOURCE]: {
       type: 'geojson',
@@ -2112,10 +2116,10 @@ function addOpenFreeMap3DBase(map: maplibregl.Map, themeMode: MapThemeMode) {
 
 function ensureTerrainSources(map: maplibregl.Map, themeMode: MapThemeMode) {
   if (!map.getSource(TERRAIN_SOURCE)) {
-    map.addSource(TERRAIN_SOURCE, { type: 'raster-dem', url: TERRAIN_TILEJSON_URL, tileSize: 256 });
+    map.addSource(TERRAIN_SOURCE, { type: 'raster-dem', tiles: [TERRAIN_TILE_URL], encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
   }
   if (!map.getSource(HILLSHADE_SOURCE)) {
-    map.addSource(HILLSHADE_SOURCE, { type: 'raster-dem', url: TERRAIN_TILEJSON_URL, tileSize: 256 });
+    map.addSource(HILLSHADE_SOURCE, { type: 'raster-dem', tiles: [TERRAIN_TILE_URL], encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
   }
   const labelLayerID = firstTextSymbolLayerID(map);
   addLayerIfMissing(map, {
