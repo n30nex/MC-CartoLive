@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Database, MapPin, Route, Shield, Sparkles, Sun, Zap } from 'lucide-react';
 import { fetchSolarConditions } from '../api';
 import { payloadVisual } from '../payloadVisuals';
@@ -21,6 +21,15 @@ export default function StatusBar({ stats, socketStatus, nodeCount, routeCount, 
   const status = serverStatus(stats, socketStatus, coverage);
   const latestPayload = payloadVisual(latestPayloadTypeName);
   const perMinuteMax = Math.max(1, coverage.receivedPerMinute, coverage.routeAnimatedPerMinute, coverage.observerBurstPerMinute, coverage.unmappedPerMinute);
+  const pulseRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    const el = pulseRef.current;
+    if (!el || !latestPacketID) return;
+    el.setAttribute('data-pulse', 'active');
+    const timer = window.setTimeout(() => el.removeAttribute('data-pulse'), 400);
+    return () => window.clearTimeout(timer);
+  }, [latestPacketID]);
   return (
     <header className="status-bar">
       <div className={`status-pill server-status ${status.live ? 'good' : 'warn'}`}>
@@ -32,7 +41,7 @@ export default function StatusBar({ stats, socketStatus, nodeCount, routeCount, 
         style={{ '--payload-color': latestPayload.color } as CSSProperties}
         title={`Last packet type: ${latestPayload.label}`}
       >
-        <span className="packet-type-signal" key={latestPacketID ?? latestPayloadTypeName ?? 'none'} />
+        <span className="packet-type-signal" ref={pulseRef} />
         <span>{latestPayload.shortLabel}</span>
       </div>
       <StatusMetric className="count-pill packets-total" title={`${(stats?.packets ?? 0).toLocaleString()} packets total`} icon={<Database size={14} />} value={formatPacketsTotal(stats?.packets)} label="total" />
@@ -50,18 +59,47 @@ export default function StatusBar({ stats, socketStatus, nodeCount, routeCount, 
 function SolarIndicator() {
   const [solar, setSolar] = useState<SolarConditions | null>(null);
   const [error, setError] = useState(false);
-  useEffect(() => {
+  const failCountRef = useRef(0);
+  const retryTimerRef = useRef<number | null>(null);
+
+  const fetchSolar = useCallback(() => {
     let active = true;
-    const fetch = () => {
-      fetchSolarConditions()
-        .then(s => { if (active) { setSolar(s); setError(false); } })
-        .catch(() => { if (active) setError(true); });
-    };
-    fetch(); const iv = setInterval(fetch, 300_000);
-    return () => { active = false; clearInterval(iv); };
+    fetchSolarConditions()
+      .then((s) => { if (active) { setSolar(s); setError(false); failCountRef.current = 0; } })
+      .catch(() => {
+        if (!active) return;
+        setError(true);
+        failCountRef.current += 1;
+        const backoff = Math.min(60_000 * Math.pow(2, failCountRef.current - 1), 300_000);
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = window.setTimeout(fetchSolar, backoff);
+      });
+    return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    const cancel = fetchSolar();
+    const interval = setInterval(fetchSolar, 300_000);
+    return () => {
+      cancel();
+      clearInterval(interval);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, [fetchSolar]);
+
+  const manualRetry = useCallback(() => {
+    setError(false);
+    failCountRef.current = 0;
+    fetchSolar();
+  }, [fetchSolar]);
+
   if (!solar && !error) return <div className="status-pill status-metric solar-indicator" title="Loading solar conditions..."><Sun size={14} style={{ marginRight: 4, opacity: 0.4 }} /><span style={{ opacity: 0.5 }}>···</span></div>;
-  if (error && !solar) return <div className="status-pill status-metric solar-indicator warn" title="Solar data unavailable"><Sun size={14} style={{ marginRight: 4, opacity: 0.5 }} /><span style={{ color: '#f97316' }}>N/A</span></div>;
+  if (error && !solar) return (
+    <div className="status-pill status-metric solar-indicator warn" title="Solar data unavailable — click to retry">
+      <Sun size={14} style={{ marginRight: 4, opacity: 0.5 }} />
+      <button type="button" className="solar-retry" onClick={manualRetry} style={{ color: '#f97316', cursor: 'pointer', background: 'none', border: 'none', padding: 0, font: 'inherit' }}>N/A</button>
+    </div>
+  );
   if (!solar) return null;
   const kp = solar.kpIndex;
   const kpColor = kp >= 5 ? '#ef4444' : kp >= 4 ? '#f97316' : '#22c55e';
@@ -99,5 +137,5 @@ export function formatStatusNumber(value: number): string {
 
 export function metricMeterLevel(value: number, maxValue: number): number {
   if (!Number.isFinite(value) || !Number.isFinite(maxValue) || value <= 0 || maxValue <= 0) return 0;
-  return Math.max(0.08, Math.min(1, Math.round((value / maxValue) * 100) / 100));
+  return Math.min(1, Math.round((value / maxValue) * 100) / 100);
 }

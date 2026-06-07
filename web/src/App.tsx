@@ -896,9 +896,9 @@ export default function App() {
   }, [applySelection, clearPendingLiveFlush, mapSettings.packets, stopReplay]);
 
   const resumeLiveFromPacketTray = useCallback(() => {
-    setPaused(false);
+    returnToLive();
     setPacketsPanelMode('expanded');
-  }, []);
+  }, [returnToLive]);
 
   const startNodePlot = useCallback(() => {
     setPlotMode('node');

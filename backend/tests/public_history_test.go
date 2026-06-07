@@ -218,7 +218,7 @@ func insertHistoryEdge(t *testing.T, ctx context.Context, st *store.Store, obser
 			},
 		},
 		RenderReason: "resolved_path_high_confidence",
-	}); err != nil {
+	}, "high", "test"); err != nil {
 		t.Fatal(err)
 	}
 }

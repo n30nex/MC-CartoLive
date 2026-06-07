@@ -65,6 +65,8 @@ func (c *Client) Start(ctx context.Context) error {
 	opts.SetConnectRetry(true)
 	opts.SetKeepAlive(60 * time.Second)
 	opts.SetPingTimeout(10 * time.Second)
+	opts.SetMaxReconnectInterval(5 * time.Minute)
+	opts.SetConnectRetryInterval(5 * time.Second)
 	opts.SetTLSConfig(&tls.Config{MinVersion: tls.VersionTLS12})
 	if c.cfg.Auth.Mode == "subscriber" {
 		opts.SetUsername(c.cfg.Auth.Username)
@@ -98,7 +100,10 @@ func (c *Client) Start(ctx context.Context) error {
 	go func() {
 		if !token.WaitTimeout(10 * time.Second) {
 			c.log.Warn("mqtt initial connect still pending; continuing startup")
-			token.Wait()
+			if !token.WaitTimeout(20 * time.Second) {
+				c.log.Error("mqtt connect timed out after 30s total")
+				return
+			}
 		}
 		if err := token.Error(); err != nil {
 			c.connected.Store(false)
@@ -112,7 +117,29 @@ func (c *Client) Start(ctx context.Context) error {
 		c.connected.Store(false)
 	}()
 
+	go c.watchdog(ctx)
+
 	return nil
+}
+
+func (c *Client) watchdog(ctx context.Context) {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if c.Connected() {
+				lastMsg := c.lastMessageAt.Load()
+				if lastMsg > 0 && time.Now().UnixMilli()-lastMsg > 120_000 {
+					c.log.Warn("mqtt watchdog: connected but no messages for >120s; forcing reconnect")
+					c.client.Disconnect(250)
+					c.connected.Store(false)
+				}
+			}
+		}
+	}
 }
 
 func (c *Client) onMessage(ctx context.Context) paho.MessageHandler {
@@ -218,8 +245,12 @@ func (c *Client) Status(now time.Time) Status {
 }
 
 func redactBroker(in string) string {
-	if at := strings.LastIndex(in, "@"); at >= 0 {
-		return in[:strings.Index(in, "://")+3] + "redacted@" + in[at+1:]
+	protoEnd := strings.Index(in, "://")
+	if protoEnd < 0 {
+		protoEnd = -3
+	}
+	if at := strings.LastIndex(in, "@"); at >= 0 && protoEnd < at {
+		return in[:protoEnd+3] + "redacted@" + in[at+1:]
 	}
 	return in
 }

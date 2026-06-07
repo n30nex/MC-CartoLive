@@ -87,6 +87,8 @@ CREATE TABLE IF NOT EXISTS node_iatas (
 
 CREATE INDEX IF NOT EXISTS idx_node_iatas_iata_recent ON node_iatas(iata, last_seen_ms DESC);
 
+CREATE INDEX IF NOT EXISTS idx_nodes_last_seen ON nodes(last_seen_ms DESC);
+
 CREATE TABLE IF NOT EXISTS node_short_ids (
   public_key TEXT NOT NULL,
   iata TEXT NOT NULL,
@@ -113,6 +115,7 @@ CREATE TABLE IF NOT EXISTS observers (
 );
 
 CREATE INDEX IF NOT EXISTS idx_observers_iata_recent ON observers(iata, last_seen_ms DESC);
+CREATE INDEX IF NOT EXISTS idx_observers_last_seen ON observers(last_seen_ms DESC);
 
 CREATE TABLE IF NOT EXISTS observer_status (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -133,6 +136,8 @@ CREATE TABLE IF NOT EXISTS path_resolution_cache (
   candidate_count INTEGER NOT NULL,
   updated_at_ms INTEGER NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_path_resolution_lookup ON path_resolution_cache(iata, hash_size, prefix_hex);
 
 CREATE TABLE IF NOT EXISTS live_edge_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

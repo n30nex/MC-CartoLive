@@ -4,6 +4,7 @@ import {
   anchorPosition,
   clampPanelPosition,
   nearestPanelAnchor,
+  useViewportBounds,
   type ChromePanelAnchor,
   type ChromePanelID,
   type PanelSize,
@@ -32,8 +33,7 @@ export default function ChromePanel({ panel, title, anchor, hidden, className = 
   const dragRef = useRef<DragState | null>(null);
   const [draftPosition, setDraftPosition] = useState<Point | null>(null);
   const [panelSize, setPanelSize] = useState<PanelSize>({ width: 0, height: 0 });
-  const [viewportVersion, setViewportVersion] = useState(0);
-  const refreshViewport = useCallback(() => setViewportVersion((value) => value + 1), []);
+  const viewportBounds = useViewportBounds();
 
   const measurePanel = useCallback(() => {
     const frame = frameRef.current;
@@ -48,23 +48,21 @@ export default function ChromePanel({ panel, title, anchor, hidden, className = 
   useLayoutEffect(() => {
     if (hidden) return undefined;
     measurePanel();
-    window.addEventListener('resize', measurePanel);
-    window.addEventListener('resize', refreshViewport);
+    const onResize = () => {
+      measurePanel();
+    };
+    window.addEventListener('resize', onResize);
     const frame = frameRef.current;
     if (!frame || typeof ResizeObserver === 'undefined') {
-      return () => {
-        window.removeEventListener('resize', measurePanel);
-        window.removeEventListener('resize', refreshViewport);
-      };
+      return () => window.removeEventListener('resize', onResize);
     }
     const observer = new ResizeObserver(measurePanel);
     observer.observe(frame);
     return () => {
       observer.disconnect();
-      window.removeEventListener('resize', measurePanel);
-      window.removeEventListener('resize', refreshViewport);
+      window.removeEventListener('resize', onResize);
     };
-  }, [hidden, measurePanel, refreshViewport]);
+  }, [hidden, measurePanel]);
 
   if (hidden) return null;
 
@@ -84,7 +82,7 @@ export default function ChromePanel({ panel, title, anchor, hidden, className = 
   const updateDrag = (event: PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    setDraftPosition(clampPanelPosition({ x: event.clientX - drag.offset.x, y: event.clientY - drag.offset.y }, drag.panel, viewportBounds()));
+    setDraftPosition(clampPanelPosition({ x: event.clientX - drag.offset.x, y: event.clientY - drag.offset.y }, drag.panel, viewportBounds));
   };
 
   const finishDrag = (event: PointerEvent<HTMLDivElement>) => {
@@ -94,12 +92,12 @@ export default function ChromePanel({ panel, title, anchor, hidden, className = 
     const rect = frame?.getBoundingClientRect();
     const panelSize = rect ? { width: rect.width, height: rect.height } : drag.panel;
     const center = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : { x: event.clientX, y: event.clientY };
-    onAnchorChange(panel, nearestPanelAnchor(center, panelSize, viewportBounds()));
+    onAnchorChange(panel, nearestPanelAnchor(center, panelSize, viewportBounds));
     dragRef.current = null;
     setDraftPosition(null);
   };
 
-  const anchoredPosition = draftPosition ?? anchorPosition(anchor, panelSize, viewportBounds(viewportVersion));
+  const anchoredPosition = draftPosition ?? anchorPosition(anchor, panelSize, viewportBounds);
   const style = {
     left: anchoredPosition.x,
     top: anchoredPosition.y,
@@ -120,21 +118,4 @@ export default function ChromePanel({ panel, title, anchor, hidden, className = 
       {children}
     </div>
   );
-}
-
-function viewportBounds(_version = 0) {
-  if (typeof window === 'undefined') {
-    return { width: 0, height: 0, margin: 10, topInset: 92, bottomInset: 110 };
-  }
-  const shell = document.querySelector<HTMLElement>('.app-shell');
-  const styles = shell ? getComputedStyle(shell) : null;
-  const vcrHeight = styles ? Number.parseFloat(styles.getPropertyValue('--vcr-bar-height')) || 92 : 92;
-  return {
-    width: window.innerWidth,
-    height: window.innerHeight,
-    margin: 10,
-    topInset: window.innerWidth <= 760 ? 48 : 92,
-    topStackOffset: window.innerWidth <= 760 ? 58 : 76,
-    bottomInset: vcrHeight + 18
-  };
 }

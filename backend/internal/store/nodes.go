@@ -89,10 +89,12 @@ ON CONFLICT(public_key, iata) DO UPDATE SET
 		return err
 	}
 	if msg.TopicInfo.Subtopic == "status" {
-		_, _ = s.db.ExecContext(ctx, `
+		if _, obsErr := s.db.ExecContext(ctx, `
 INSERT INTO observer_status (public_key, iata, status_json, received_at_ms)
 VALUES (?, ?, ?, ?)`,
-			msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA, msg.RawJSON, msg.HeardAtMs)
+			msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA, msg.RawJSON, msg.HeardAtMs); obsErr != nil {
+			return obsErr
+		}
 		if err := s.upsertStatusNode(ctx, msg, name, lat, lng); err != nil {
 			return err
 		}
@@ -403,23 +405,6 @@ ON CONFLICT(public_key, iata, hash_size, prefix_hex) DO UPDATE SET
 		}
 	}
 	return nil
-}
-
-func (s *Store) nodeIATAs(ctx context.Context, publicKey string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT iata FROM node_iatas WHERE public_key=? ORDER BY iata`, publicKey)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []string{}
-	for rows.Next() {
-		var iata string
-		if err := rows.Scan(&iata); err != nil {
-			return nil, err
-		}
-		out = append(out, iata)
-	}
-	return out, rows.Err()
 }
 
 func (s *Store) nodeIATAsForPublicKeys(ctx context.Context, publicKeys []string) (map[string][]string, error) {

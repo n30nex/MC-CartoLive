@@ -40,6 +40,91 @@ ON CONFLICT(packet_hash) DO UPDATE SET
 	return err
 }
 
+func (s *Store) UpsertPacketAndObservation(ctx context.Context, parsed meshcore.ParsedPacket, seenAt int64, in ObservationInsert) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	_, err = tx.ExecContext(ctx, `
+INSERT INTO packets (
+  packet_hash, raw_hex, route_type, route_type_name, payload_type, payload_type_name,
+  payload_version, hash_size, hop_count, path_hex, payload_hex, invalid_for_map,
+  invalid_reason, first_seen_ms, last_seen_ms, seen_count
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+ON CONFLICT(packet_hash) DO UPDATE SET
+  last_seen_ms=excluded.last_seen_ms,
+  seen_count=packets.seen_count + 1
+`,
+		parsed.PacketHash,
+		parsed.RawHex,
+		parsed.RouteType,
+		parsed.RouteTypeName,
+		parsed.PayloadType,
+		parsed.PayloadTypeName,
+		parsed.PayloadVersion,
+		parsed.HashSize,
+		parsed.HopCount,
+		strings.ToUpper(hex.EncodeToString(parsed.PathBytes)),
+		strings.ToUpper(hex.EncodeToString(parsed.Payload)),
+		boolInt(parsed.InvalidForMap),
+		parsed.InvalidReason,
+		seenAt,
+		seenAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	now := time.Now().UnixMilli()
+	result, err := tx.ExecContext(ctx, `
+INSERT INTO packet_observations (
+  packet_hash, topic, iata, observer_public_key, observer_name, raw_json, heard_at_ms,
+  rssi, snr, score, route_type, route_type_name, payload_type, payload_type_name,
+  payload_version, hash_size, hop_count, path_hex, payload_hex, resolution_status,
+  resolution_reason, invalid_for_map, summary, message_sender, message_text, created_at_ms
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.Parsed.PacketHash,
+		in.Message.Topic,
+		in.Message.TopicInfo.IATA,
+		in.Message.TopicInfo.PublisherPK,
+		in.Message.ObserverName,
+		in.Message.RawJSON,
+		in.Message.HeardAtMs,
+		nullableFloat(in.Message.RSSI),
+		nullableFloat(in.Message.SNR),
+		nullableFloat(in.Message.Score),
+		in.Parsed.RouteType,
+		in.Parsed.RouteTypeName,
+		in.Parsed.PayloadType,
+		in.Parsed.PayloadTypeName,
+		in.Parsed.PayloadVersion,
+		in.Parsed.HashSize,
+		in.Parsed.HopCount,
+		strings.ToUpper(hex.EncodeToString(in.Parsed.PathBytes)),
+		strings.ToUpper(hex.EncodeToString(in.Parsed.Payload)),
+		"unresolved",
+		"",
+		boolInt(in.Parsed.InvalidForMap),
+		in.Summary,
+		in.MessageSender,
+		in.MessageText,
+		now,
+	)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	committed = true
+	return result.LastInsertId()
+}
+
 func (s *Store) RecentPackets(ctx context.Context, limit int) ([]live.PacketObservation, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 100

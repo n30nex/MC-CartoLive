@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Clock3, Copy, Filter, Maximize2, MessageSquareText, Minimize2, Play, RefreshCw, Route, Search, X } from 'lucide-react';
 import { fetchPublicPackets } from '../api';
+import { formatRelative } from '../lib/formatRelative';
+import { isAbortError } from '../lib/isAbortError';
+import { useDebouncedValue } from '../lib/useDebouncedValue';
 import { DEFAULT_PACKET_FILTERS, packetEndpointSummary, PACKETS_SCOPE_OPTIONS, packetRegion, packetWindowForScope, type PacketFilters } from '../packets';
 import { payloadLegendVisuals, payloadVisual } from '../payloadVisuals';
 import type { PublicHistoryWindow, PublicPacketPath, PublicPacketScan } from '../types';
@@ -58,6 +61,7 @@ export default function PacketsPanel({
   const listRef = useRef<HTMLDivElement | null>(null);
   const requestGenerationRef = useRef(0);
   const requestAbortRef = useRef<AbortController | null>(null);
+  const filterGenerationRef = useRef(0);
   const debouncedFilters = useDebouncedValue(filters, PACKET_FILTER_DEBOUNCE_MS);
   const selectedFromList = useMemo(() => packets.find((packet) => packet.id === selectedPacketID) ?? null, [packets, selectedPacketID]);
   const activePacket = selectedPacket ?? selectedFromList;
@@ -68,6 +72,10 @@ export default function PacketsPanel({
       requestAbortRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    filterGenerationRef.current += 1;
+  }, [debouncedFilters, scopeMs]);
 
   const refresh = useCallback(() => {
     let active = true;
@@ -116,6 +124,7 @@ export default function PacketsPanel({
     const controller = new AbortController();
     requestAbortRef.current = controller;
     const generation = requestGenerationRef.current;
+    const filterGeneration = filterGenerationRef.current;
     setLoadingMore(true);
     setError(null);
     setSearchState(hasActivePacketFilters(debouncedFilters) ? 'searching' : 'idle');
@@ -127,7 +136,7 @@ export default function PacketsPanel({
       signal: controller.signal
     })
       .then((response) => {
-        if (controller.signal.aborted || !mountedRef.current || generation !== requestGenerationRef.current) return;
+        if (controller.signal.aborted || !mountedRef.current || generation !== requestGenerationRef.current || filterGeneration !== filterGenerationRef.current) return;
         setPackets((current) => capPackets([...current, ...response.packets]));
         setNextCursor(response.nextCursor ?? '');
         setWindowInfo(response.window);
@@ -136,7 +145,7 @@ export default function PacketsPanel({
       })
       .catch((err: unknown) => {
         if (isAbortError(err)) return;
-        if (mountedRef.current && generation === requestGenerationRef.current) setError(packetRequestErrorMessage(err));
+        if (mountedRef.current && generation === requestGenerationRef.current && filterGeneration === filterGenerationRef.current) setError(packetRequestErrorMessage(err));
       })
       .finally(() => {
         if (!mountedRef.current) return;
@@ -294,7 +303,7 @@ export default function PacketsPanel({
 
       <PacketSearchStatus state={searchState} nextCursor={nextCursor} loading={loading || loadingMore} scan={scanInfo} />
       {error && <div className="packets-error" role="alert">{error}</div>}
-      {loading && packets.length === 0 && <div className="packets-loading">Loading true path packets...</div>}
+      {loading && <div className="packets-loading-bar" />}
 
       <div className="packets-content">
         <div
@@ -526,10 +535,6 @@ async function fetchPacketPages({
   };
 }
 
-function isAbortError(err: unknown): boolean {
-  return Boolean(err && typeof err === 'object' && 'name' in err && (err as { name?: unknown }).name === 'AbortError');
-}
-
 function dedupePackets(items: PublicPacketPath[]): PublicPacketPath[] {
   const seen = new Set<string>();
   const out: PublicPacketPath[] = [];
@@ -621,26 +626,10 @@ function virtualPacketRows(packets: PublicPacketPath[], scrollTop: number, heigh
   return { offset: start * PACKET_ROW_HEIGHT, items: packets.slice(start, end) };
 }
 
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => window.clearTimeout(timer);
-  }, [delayMs, value]);
-  return debounced;
-}
-
 function formatWindow(window: PublicHistoryWindow | null): string {
   if (!window) return 'loading';
   const span = Math.max(0, window.to - window.from);
   if (span >= 23 * 60 * 60_000) return '24h';
   if (span >= 5 * 60 * 60_000) return '6h';
   return '1h';
-}
-
-function formatRelative(at: number, now = Date.now()): string {
-  const age = Math.max(0, now - at);
-  if (age < 60_000) return `${Math.max(1, Math.round(age / 1000))}s ago`;
-  if (age < 3_600_000) return `${Math.round(age / 60_000)}m ago`;
-  return `${Math.round(age / 3_600_000)}h ago`;
 }

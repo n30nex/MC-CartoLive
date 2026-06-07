@@ -13,7 +13,7 @@ import (
 
 const maxFutureEdgeSkew = 5 * time.Minute
 
-func (s *Store) InsertEdgeEvent(ctx context.Context, event live.EdgeEvent) (live.EdgeEvent, error) {
+func (s *Store) InsertEdgeEvent(ctx context.Context, event live.EdgeEvent, resolutionStatus, resolutionReason string) (live.EdgeEvent, error) {
 	now := time.Now().UnixMilli()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -25,6 +25,14 @@ func (s *Store) InsertEdgeEvent(ctx context.Context, event live.EdgeEvent) (live
 			_ = tx.Rollback()
 		}
 	}()
+	if resolutionStatus != "" {
+		if _, err := tx.ExecContext(ctx, `
+UPDATE packet_observations
+SET resolution_status=?, resolution_reason=?
+WHERE id=?`, resolutionStatus, resolutionReason, event.ObservationID); err != nil {
+			return event, err
+		}
+	}
 	result, err := tx.ExecContext(ctx, `
 INSERT INTO live_edge_events (
   packet_hash, observation_id, payload_type, payload_type_name, message_sender, message_text, message_anchor_json,

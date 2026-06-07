@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Clock3, Maximize2, MessageSquareText, Minimize2, RefreshCw, Search, X } from 'lucide-react';
 import { fetchPublicChat } from '../api';
+import { formatRelative } from '../lib/formatRelative';
+import { isAbortError } from '../lib/isAbortError';
+import { useDebouncedValue } from '../lib/useDebouncedValue';
 import {
   CHAT_SCOPE_OPTIONS,
   DEFAULT_CHAT_FILTERS,
@@ -39,6 +42,7 @@ export default function ChatPanel({
   const [scopeMs, setScopeMs] = useState(CHAT_SCOPE_OPTIONS[0].value);
   const [filters, setFilters] = useState<ChatFilters>(DEFAULT_CHAT_FILTERS);
   const [messages, setMessages] = useState<PublicChatMessage[]>(() => dedupeChatMessages(initialMessages));
+  const prevInitialLenRef = useRef(initialMessages.length);
   const [windowInfo, setWindowInfo] = useState<PublicHistoryWindow | null>(null);
   const [nextCursor, setNextCursor] = useState('');
   const [serverTime, setServerTime] = useState(0);
@@ -49,6 +53,7 @@ export default function ChatPanel({
   const mountedRef = useRef(true);
   const requestAbortRef = useRef<AbortController | null>(null);
   const requestGenerationRef = useRef(0);
+  const filterGenerationRef = useRef(0);
   const debouncedFilters = useDebouncedValue(filters, CHAT_FILTER_DEBOUNCE_MS);
   const visibleMessages = useMemo(() => capChatMessages(messages), [messages]);
 
@@ -58,6 +63,17 @@ export default function ChatPanel({
       requestAbortRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (initialMessages.length > 0 && prevInitialLenRef.current === 0) {
+      setMessages(dedupeChatMessages(initialMessages));
+    }
+    prevInitialLenRef.current = initialMessages.length;
+  }, [initialMessages]);
+
+  useEffect(() => {
+    filterGenerationRef.current += 1;
+  }, [debouncedFilters, scopeMs]);
 
   const refresh = useCallback(() => {
     requestAbortRef.current?.abort();
@@ -102,6 +118,7 @@ export default function ChatPanel({
     const controller = new AbortController();
     requestAbortRef.current = controller;
     const generation = requestGenerationRef.current;
+    const filterGeneration = filterGenerationRef.current;
     setLoadingMore(true);
     setError(null);
     fetchPublicChat({
@@ -115,7 +132,7 @@ export default function ChatPanel({
       signal: controller.signal
     })
       .then((response) => {
-        if (controller.signal.aborted || !mountedRef.current || generation !== requestGenerationRef.current) return;
+        if (controller.signal.aborted || !mountedRef.current || generation !== requestGenerationRef.current || filterGeneration !== filterGenerationRef.current) return;
         setMessages((current) => capChatMessages([...current, ...response.messages]));
         setWindowInfo(response.window);
         setNextCursor(response.nextCursor ?? '');
@@ -123,7 +140,7 @@ export default function ChatPanel({
       })
       .catch((err: unknown) => {
         if (isAbortError(err)) return;
-        if (mountedRef.current && generation === requestGenerationRef.current) setError(chatRequestErrorMessage(err));
+        if (mountedRef.current && generation === requestGenerationRef.current && filterGeneration === filterGenerationRef.current) setError(chatRequestErrorMessage(err));
       })
       .finally(() => {
         if (!mountedRef.current) return;
@@ -217,7 +234,7 @@ export default function ChatPanel({
       </div>
 
       {error && <div className="chat-error" role="alert">{error}</div>}
-      {loading && messages.length === 0 && <div className="chat-loading">Loading public chat...</div>}
+      {loading && <div className="chat-loading-bar" />}
 
       <div className="chat-list" role="list" aria-label="Public chat messages">
         {visibleMessages.map((message) => <ChatRow key={message.id} message={message} />)}
@@ -301,27 +318,7 @@ function formatWindow(window: PublicHistoryWindow | null, scopeMs: number): stri
   return '1h';
 }
 
-function formatRelative(at: number, now = Date.now()): string {
-  const age = Math.max(0, now - at);
-  if (age < 60_000) return `${Math.max(1, Math.round(age / 1000))}s ago`;
-  if (age < 3_600_000) return `${Math.round(age / 60_000)}m ago`;
-  return `${Math.round(age / 3_600_000)}h ago`;
-}
-
-function isAbortError(err: unknown): boolean {
-  return Boolean(err && typeof err === 'object' && 'name' in err && (err as { name?: unknown }).name === 'AbortError');
-}
-
 function chatRequestErrorMessage(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err || '');
   return message || 'Unable to load public chat';
-}
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => window.clearTimeout(timer);
-  }, [delayMs, value]);
-  return debounced;
 }

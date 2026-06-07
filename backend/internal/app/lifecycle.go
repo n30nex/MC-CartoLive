@@ -19,6 +19,8 @@ import (
 	"meshcore-canada-live-map/backend/internal/resolve"
 	"meshcore-canada-live-map/backend/internal/solar"
 	"meshcore-canada-live-map/backend/internal/store"
+
+	"meshcore-canada-live-map/backend/internal/api"
 )
 
 type Application struct {
@@ -36,6 +38,7 @@ type Application struct {
 
 	cacheRefreshMu sync.Mutex
 	packetCount    atomic.Int64
+	wg             sync.WaitGroup
 }
 
 type runtimeCounterLogSnapshot struct {
@@ -126,6 +129,9 @@ func (a *Application) Start(ctx context.Context) error {
 		"mapRegionPreset", a.Config.MapRegionPreset,
 		"mapBounds", a.Config.MapBounds,
 	)
+	if warn := api.StaticWarn(); warn != "" {
+		a.Log.Warn(warn)
+	}
 	dbInfo := a.Store.RuntimeInfo(ctx)
 	a.Log.Info("sqlite runtime",
 		"path", dbInfo.Path,
@@ -134,22 +140,41 @@ func (a *Application) Start(ctx context.Context) error {
 		"maxOpenConns", dbInfo.MaxOpenConns,
 	)
 	go a.refreshPacketCountOnce(ctx)
-	go a.refreshPacketCountLoop(ctx)
-	go a.refreshPublicStateCacheOnce(ctx, "warm")
-	go a.refreshPublicStateCacheLoop(ctx)
-	go a.backfillPublicPacketPathsLoop(ctx)
+	a.wg.Add(1)
+	go func() { defer a.wg.Done(); a.refreshPacketCountLoop(ctx) }()
+	a.wg.Add(1)
+	go func() { defer a.wg.Done(); a.refreshPublicStateCacheOnce(ctx, "warm") }()
+	a.wg.Add(1)
+	go func() { defer a.wg.Done(); a.refreshPublicStateCacheLoop(ctx) }()
+	a.wg.Add(1)
+	go func() { defer a.wg.Done(); a.backfillPublicPacketPathsLoop(ctx) }()
 	if err := a.MQTT.Start(ctx); err != nil {
 		a.Log.Error("mqtt start failed", "error", err)
 	}
-	go a.logCounters(ctx)
-	go a.solarFetchLoop(ctx)
+	a.wg.Add(1)
+	go func() { defer a.wg.Done(); a.logCounters(ctx) }()
+	a.wg.Add(1)
+	go func() { defer a.wg.Done(); a.solarFetchLoop(ctx) }()
+	a.wg.Add(1)
+	go func() { defer a.wg.Done(); a.pruneLoop(ctx) }()
 	if a.Config.FixtureReplayPath != "" {
-		go a.replayFixture(ctx, a.Config.FixtureReplayPath)
+		a.wg.Add(1)
+		go func() { defer a.wg.Done(); a.replayFixture(ctx, a.Config.FixtureReplayPath) }()
 	}
 	return a.StartHTTP(ctx)
 }
 
 func (a *Application) Close() error {
+	done := make(chan struct{})
+	go func() {
+		a.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		a.Log.Warn("shutdown: goroutines did not exit within 10s timeout")
+	}
 	return a.Store.Close()
 }
 
@@ -193,13 +218,9 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 	}
 	summary := meshcore.Summary(parsed, advert)
 	decodedMessage := meshcore.DecodePublicMessage(parsed.PayloadType, parsed.Payload, msg.RawJSON, a.Config.MeshcoreChannelSecrets)
-	if err := a.Store.UpsertPacket(ctx, parsed, msg.HeardAtMs); err != nil {
-		a.Log.Warn("packet upsert failed", "error", err)
-		return
-	}
-	observationID, err := a.Store.InsertObservation(ctx, store.ObservationInsert{Message: msg, Parsed: parsed, Summary: summary, MessageSender: decodedMessage.Sender, MessageText: decodedMessage.Text})
+	observationID, err := a.Store.UpsertPacketAndObservation(ctx, parsed, msg.HeardAtMs, store.ObservationInsert{Message: msg, Parsed: parsed, Summary: summary, MessageSender: decodedMessage.Sender, MessageText: decodedMessage.Text})
 	if err != nil {
-		a.Log.Warn("observation insert failed", "error", err)
+		a.Log.Warn("packet/observation upsert failed", "error", err)
 		return
 	}
 
@@ -220,8 +241,10 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 		return
 	}
 	status, reason := a.edgeDecision(ctx, msg, parsed, resolution, advertNode)
-	if err := a.Store.UpdateObservationResolution(ctx, observationID, status, reason); err != nil {
-		a.Log.Warn("observation resolution update failed", "error", err)
+	if status != resolve.StatusHigh {
+		if err := a.Store.UpdateObservationResolution(ctx, observationID, status, reason); err != nil {
+			a.Log.Warn("observation resolution update failed", "error", err)
+		}
 	}
 	observation, err := a.Store.ObservationByID(ctx, observationID)
 	if err == nil {
@@ -237,7 +260,7 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 		a.PublicCache.RecordExcludedIATA(msg.TopicInfo.IATA)
 	}
 	if ok {
-		stored, err := a.Store.InsertEdgeEvent(ctx, edge)
+		stored, err := a.Store.InsertEdgeEvent(ctx, edge, status, reason)
 		if err != nil {
 			a.Log.Warn("edge insert failed", "error", err)
 		} else {
@@ -872,4 +895,26 @@ func redactedURL(in string) string {
 func compactJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+func (a *Application) pruneLoop(ctx context.Context) {
+	retentionDays := a.Config.DataRetentionDays
+	if retentionDays <= 0 {
+		retentionDays = 30
+	}
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			beforeMs := time.Now().AddDate(0, 0, -retentionDays).UnixMilli()
+			if err := a.Store.PruneOldData(ctx, beforeMs); err != nil {
+				a.Log.Warn("data prune failed", "error", err)
+			} else {
+				a.Log.Debug("data pruned", "beforeMs", beforeMs)
+			}
+		}
+	}
 }

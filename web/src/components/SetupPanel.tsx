@@ -18,10 +18,42 @@ interface SetupForm {
   brandURL: string;
 }
 
+interface Validity {
+  valid: boolean;
+  message: string;
+}
+
+function validateBounds(value: string): Validity {
+  const trimmed = value.trim();
+  if (!trimmed) return { valid: false, message: '' };
+  const parts = trimmed.split(',').map((s) => s.trim());
+  if (parts.length !== 4) return { valid: false, message: 'Expected 4 comma-separated numbers' };
+  const nums = parts.map(Number);
+  if (nums.some((n) => !Number.isFinite(n))) return { valid: false, message: 'All values must be numbers' };
+  const [minLat, minLng, maxLat, maxLng] = nums;
+  if (minLat < -90 || minLat > 90 || maxLat < -90 || maxLat > 90) return { valid: false, message: 'Latitude must be between -90 and 90' };
+  if (minLng < -180 || minLng > 180 || maxLng < -180 || maxLng > 180) return { valid: false, message: 'Longitude must be between -180 and 180' };
+  if (minLat >= maxLat) return { valid: false, message: 'minLat must be less than maxLat' };
+  if (minLng >= maxLng) return { valid: false, message: 'minLng must be less than maxLng' };
+  return { valid: true, message: 'Valid bounds' };
+}
+
+function validateURL(value: string): Validity {
+  const trimmed = value.trim();
+  if (!trimmed) return { valid: false, message: '' };
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return { valid: false, message: 'URL must start with http:// or https://' };
+    return { valid: true, message: 'Valid URL' };
+  } catch {
+    return { valid: false, message: 'Invalid URL format' };
+  }
+}
+
 const DEFAULT_BOUNDS = {
   world: '-85,-180,85,180',
   canada: '41,-142,84,-52',
-  custom: '-45,110,-10,155'
+  custom: '-85,-180,85,180'
 } as const;
 
 export default function SetupPanel({ mapConfig, onClose }: SetupPanelProps) {
@@ -35,6 +67,8 @@ export default function SetupPanel({ mapConfig, onClose }: SetupPanelProps) {
     brandURL: 'https://github.com/n30nex/MC-CartoLive'
   }));
   const envSnippet = useMemo(() => buildSetupEnvSnippet(form), [form]);
+  const boundsValidity = useMemo(() => validateBounds(form.bounds), [form.bounds]);
+  const urlValidity = useMemo(() => validateURL(form.publicBaseURL), [form.publicBaseURL]);
 
   const updatePreset = (preset: SetupPreset) => {
     setForm((current) => ({
@@ -90,6 +124,11 @@ export default function SetupPanel({ mapConfig, onClose }: SetupPanelProps) {
               onChange={(event) => setForm((current) => ({ ...current, publicBaseURL: event.currentTarget.value }))}
               placeholder="https://your-hostname.example"
             />
+            {form.publicBaseURL && urlValidity.message && (
+              <span className={`setup-validation ${urlValidity.valid ? 'valid' : 'invalid'}`}>
+                {urlValidity.valid ? <>&#10003;</> : <>&#10007;</>} {urlValidity.message}
+              </span>
+            )}
           </label>
           <label>
             <span>Public regions</span>
@@ -106,6 +145,11 @@ export default function SetupPanel({ mapConfig, onClose }: SetupPanelProps) {
               onChange={(event) => setForm((current) => ({ ...current, bounds: event.currentTarget.value }))}
               placeholder="minLat,minLng,maxLat,maxLng"
             />
+            {form.bounds && boundsValidity.message && (
+              <span className={`setup-validation ${boundsValidity.valid ? 'valid' : 'invalid'}`}>
+                {boundsValidity.valid ? <>&#10003;</> : <>&#10007;</>} {boundsValidity.message}
+              </span>
+            )}
           </label>
           <div className="setup-note">
             <strong>True routes stay resolver-backed.</strong>

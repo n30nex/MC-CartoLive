@@ -41,7 +41,7 @@ describe('StatusBar', () => {
 
   it('normalizes compact VU levels against the busiest per-minute metric', () => {
     expect(metricMeterLevel(0, 240)).toBe(0);
-    expect(metricMeterLevel(12, 240)).toBe(0.08);
+    expect(metricMeterLevel(12, 240)).toBe(0.05);
     expect(metricMeterLevel(240, 240)).toBe(1);
   });
 });

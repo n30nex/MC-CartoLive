@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+
 export type ChromePanelID = 'search' | 'legend' | 'hotRoutes';
 
 export type ChromePanelAnchor = 'top-left' | 'top-left-stack' | 'top-right' | 'bottom-left' | 'bottom-right' | 'left' | 'right';
@@ -124,22 +126,25 @@ export function nearestPanelAnchor(point: Point, panel: PanelSize, viewport: Vie
   return nearest;
 }
 
+const SNAP_MENU_TEMPLATES: Omit<ChromePanelSnapMenuItem, 'checked' | 'tabIndex'>[] = CHROME_PANEL_ANCHORS.map((option) => {
+  const key = CHROME_PANEL_SNAP_KEYS[option.value];
+  return {
+    id: `chrome-panel-snap-${option.value}`,
+    value: option.value,
+    label: option.label,
+    ariaLabel: `Snap panel to ${option.label.toLowerCase()}`,
+    role: 'menuitemradio',
+    key,
+    ariaKeyShortcuts: `Alt+${key}`
+  };
+});
+
 export function chromePanelSnapMenuItems(currentAnchor: ChromePanelAnchor): ChromePanelSnapMenuItem[] {
-  return CHROME_PANEL_ANCHORS.map((option) => {
-    const checked = option.value === currentAnchor;
-    const key = CHROME_PANEL_SNAP_KEYS[option.value];
-    return {
-      id: `chrome-panel-snap-${option.value}`,
-      value: option.value,
-      label: option.label,
-      ariaLabel: `Snap panel to ${option.label.toLowerCase()}`,
-      role: 'menuitemradio',
-      checked,
-      tabIndex: checked ? 0 : -1,
-      key,
-      ariaKeyShortcuts: `Alt+${key}`
-    };
-  });
+  return SNAP_MENU_TEMPLATES.map((template) => ({
+    ...template,
+    checked: template.value === currentAnchor,
+    tabIndex: template.value === currentAnchor ? 0 : -1
+  }));
 }
 
 export interface ChromeVisibilityState {
@@ -181,4 +186,42 @@ export function chromePanelVisible(state: ChromeVisibilityState, panel: ChromePa
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+export function useViewportBounds(): ViewportBounds {
+  const [bounds, setBounds] = useState<ViewportBounds>({ width: 0, height: 0, margin: 10, topInset: 92, bottomInset: 110 });
+  const shellRef = useRef<HTMLElement | null>(null);
+
+  const measure = useCallback(() => {
+    const shell = shellRef.current;
+    const vcrHeight = shell ? Number.parseFloat(getComputedStyle(shell).getPropertyValue('--vcr-bar-height')) || 92 : 92;
+    const small = window.innerWidth <= 760;
+    setBounds({
+      width: window.innerWidth,
+      height: window.innerHeight,
+      margin: 10,
+      topInset: small ? 48 : 92,
+      topStackOffset: small ? 58 : 76,
+      bottomInset: vcrHeight + 18
+    });
+  }, []);
+
+  useEffect(() => {
+    const shell = document.querySelector<HTMLElement>('.app-shell');
+    shellRef.current = shell;
+    measure();
+    if (!shell || typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(shell);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [measure]);
+
+  return bounds;
 }

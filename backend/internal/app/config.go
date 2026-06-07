@@ -55,6 +55,7 @@ type Config struct {
 	ConfigYAML                      string
 	FixtureReplayPath               string
 	FixtureRecordEnabled            bool
+	DataRetentionDays               int
 }
 
 func LoadConfig() (Config, error) {
@@ -111,6 +112,7 @@ func LoadConfig() (Config, error) {
 		ConfigYAML:                      envString("CONFIG_YAML", "./data/config.yaml"),
 		FixtureReplayPath:               os.Getenv("FIXTURE_REPLAY_PATH"),
 		FixtureRecordEnabled:            envBool("FIXTURE_RECORD_ENABLED", false),
+		DataRetentionDays:               envInt("DATA_RETENTION_DAYS", 30),
 	}
 	if cfg.AuthMode == "subscriber" && cfg.MQTTEnabled && (cfg.MQTTUsername == "" || cfg.MQTTPassword == "") {
 		return cfg, fmt.Errorf("MQTT subscriber auth requires MQTT_USERNAME and MQTT_PASSWORD or MQTT_ENABLED=false")

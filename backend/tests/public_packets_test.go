@@ -391,7 +391,7 @@ func insertHistoryEdgeWithOptions(t *testing.T, ctx context.Context, st *store.S
 		HeardAt:         heardAt,
 		Segments:        segments,
 		RenderReason:    "resolved_path_high_confidence",
-	}); err != nil {
+	}, "high", "test"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -412,7 +412,7 @@ func insertInvalidHistoryEdge(t *testing.T, ctx context.Context, st *store.Store
 			},
 		},
 		RenderReason: "resolved_path_high_confidence",
-	}); err != nil {
+	}, "high", "test"); err != nil {
 		t.Fatal(err)
 	}
 }

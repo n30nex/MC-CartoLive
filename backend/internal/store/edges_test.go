@@ -25,11 +25,11 @@ func TestRecentEdgeEventsSkipsFarFutureRows(t *testing.T) {
 	}
 
 	now := time.Now().UnixMilli()
-	current, err := s.InsertEdgeEvent(ctx, edgeEventForTest("current", now))
+	current, err := s.InsertEdgeEvent(ctx, edgeEventForTest("current", now), "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.InsertEdgeEvent(ctx, edgeEventForTest("future", time.Now().Add(24*time.Hour).UnixMilli())); err != nil {
+	if _, err := s.InsertEdgeEvent(ctx, edgeEventForTest("future", time.Now().Add(24*time.Hour).UnixMilli()), "", ""); err != nil {
 		t.Fatal(err)
 	}
 
