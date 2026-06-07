@@ -17,6 +17,7 @@ import (
 	"meshcore-canada-live-map/backend/internal/meshcore"
 	imqtt "meshcore-canada-live-map/backend/internal/mqtt"
 	"meshcore-canada-live-map/backend/internal/resolve"
+	"meshcore-canada-live-map/backend/internal/solar"
 	"meshcore-canada-live-map/backend/internal/store"
 )
 
@@ -29,7 +30,8 @@ type Application struct {
 	PublicCache *live.PublicStateCache
 	Runtime     *live.RuntimeStats
 	MQTT        *imqtt.Client
-	Resolver    *resolve.Resolver
+	Resolver     *resolve.Resolver
+	Solar        *solar.Fetcher
 
 	cacheRefreshMu sync.Mutex
 	packetCount    atomic.Int64
@@ -93,7 +95,7 @@ func NewApplication(ctx context.Context, cfg Config, log *slog.Logger) (*Applica
 	publicHub := live.NewHub(log, cfg.WSClientQueueSize, cfg.PublicBaseURL)
 	publicCache := live.NewPublicStateCache(live.NewPublicIATAFilter(publicIATAs(cfg.PublicRegions, yc)))
 	resolver := resolve.New(st, yc.ForwarderRoles)
-	app := &Application{Config: cfg, Log: log, Store: st, Hub: hub, PublicHub: publicHub, PublicCache: publicCache, Runtime: live.NewRuntimeStats(), Resolver: resolver}
+	app := &Application{Config: cfg, Log: log, Store: st, Hub: hub, PublicHub: publicHub, PublicCache: publicCache, Runtime: live.NewRuntimeStats(), Resolver: resolver, Solar: solar.NewFetcher(log)}
 	app.MQTT = imqtt.NewClient(imqtt.ClientConfig{
 		Enabled:   cfg.MQTTEnabled,
 		BrokerURL: cfg.MQTTBrokerURL,
@@ -139,6 +141,7 @@ func (a *Application) Start(ctx context.Context) error {
 		a.Log.Error("mqtt start failed", "error", err)
 	}
 	go a.logCounters(ctx)
+	go a.solarFetchLoop(ctx)
 	if a.Config.FixtureReplayPath != "" {
 		go a.replayFixture(ctx, a.Config.FixtureReplayPath)
 	}
@@ -658,6 +661,36 @@ func (a *Application) refreshPacketCountOnce(ctx context.Context) {
 	a.packetCount.Store(count)
 	a.PublicCache.SetPacketCount(count)
 	failed = false
+}
+
+func (a *Application) solarFetchLoop(ctx context.Context) {
+	fetch := func() {
+		cond, err := a.Solar.Fetch(ctx)
+		if err != nil {
+			a.Log.Warn("solar fetch failed", "error", err)
+			return
+		}
+		if _, err := a.Store.InsertSolarSnapshot(ctx, store.SolarSnapshot{
+			FetchedAtMs:  cond.FetchedAt,
+			KpIndex:      cond.KpIndex,
+			SolarFluxSfu: cond.SolarFluxSFU,
+			GeomagActivity: cond.GeomagActivity,
+		}); err != nil {
+			a.Log.Warn("solar snapshot insert failed", "error", err)
+		}
+		_ = a.Store.TrimSolarSnapshots(ctx, 288)
+	}
+	fetch()
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			fetch()
+		}
+	}
 }
 
 func (a *Application) backfillPublicPacketPathsLoop(ctx context.Context) {
