@@ -31,7 +31,8 @@ type Application struct {
 	Runtime     *live.RuntimeStats
 	MQTT        *imqtt.Client
 	Resolver    *resolve.Resolver
-	Solar       *solar.Fetcher
+	Solar         *solar.Fetcher
+	solarSnapshot atomic.Pointer[solar.Conditions]
 
 	cacheRefreshMu sync.Mutex
 	packetCount    atomic.Int64
@@ -667,6 +668,7 @@ func (a *Application) solarFetchLoop(ctx context.Context) {
 	fetch := func() {
 		cond, err := a.Solar.Fetch(ctx)
 		if err != nil { a.Log.Warn("solar fetch failed", "error", err); return }
+		a.solarSnapshot.Store(&cond)
 		if _, err := a.Store.InsertSolarSnapshot(ctx, store.SolarSnapshot{
 			FetchedAtMs: cond.FetchedAt, KpIndex: cond.KpIndex, SolarFluxSfu: cond.SolarFluxSFU, GeomagActivity: cond.GeomagActivity,
 		}); err != nil { a.Log.Warn("solar insert failed", "error", err) }
