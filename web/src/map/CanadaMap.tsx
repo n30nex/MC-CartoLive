@@ -2505,6 +2505,7 @@ function applyLayerSettings(map: maplibregl.Map, settings: MapLayerSettings) {
   for (const layerID of analysisLayers) setLayerVisibility(map, layerID, settings.analysisPaths);
   for (const layerID of observerBurstLayers) setLayerVisibility(map, layerID, settings.observerBursts);
   setLayerVisibility(map, BUILDINGS_3D_LAYER, settings.buildingExtrusions);
+  setLayerVisibility(map, HILLSHADE_LAYER, settings.terrainHeightmap);
 }
 
 function setLayerVisibility(map: maplibregl.Map, layerID: string, visible: boolean) {
