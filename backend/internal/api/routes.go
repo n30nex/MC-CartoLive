@@ -53,6 +53,7 @@ type Server struct {
 	PublicState       func() (live.PublicLiveState, bool)
 	PublicCacheStatus func(time.Time) live.PublicCacheStatus
 	PublicAllowsIATA  func(string) bool
+	SolarConditions   func() any
 
 	historyLocations *historyLocationCache
 	summaryCache     *historySummaryCache
@@ -73,6 +74,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/public/history/summary", s.publicHistorySummary)
 	mux.HandleFunc("GET /api/v1/public/packets", s.publicPackets)
 	mux.HandleFunc("GET /api/v1/public/chat", s.publicChat)
+	mux.HandleFunc("GET /api/v1/public/solar", s.publicSolar)
 	mux.Handle("GET /ws/public", s.PublicHub)
 	if !s.Config.PublicMode {
 		mux.HandleFunc("GET /api/v1/live/state", s.liveState)
@@ -757,6 +759,14 @@ func (s *Server) publicHistorySummary(w http.ResponseWriter, r *http.Request) {
 	s.summaryCache.Set(from, to, bucketMs, response)
 	writeJSON(w, http.StatusOK, response)
 	failed = false
+}
+
+func (s *Server) publicSolar(w http.ResponseWriter, r *http.Request) {
+	if s.SolarConditions == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("solar conditions unavailable"))
+		return
+	}
+	writeJSON(w, http.StatusOK, s.SolarConditions())
 }
 
 func (s *Server) publicChat(w http.ResponseWriter, r *http.Request) {
