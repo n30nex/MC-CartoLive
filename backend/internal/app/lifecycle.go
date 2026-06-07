@@ -157,6 +157,8 @@ func (a *Application) Start(ctx context.Context) error {
 	go func() { defer a.wg.Done(); a.solarFetchLoop(ctx) }()
 	a.wg.Add(1)
 	go func() { defer a.wg.Done(); a.pruneLoop(ctx) }()
+	a.wg.Add(1)
+	go func() { defer a.wg.Done(); a.maintenanceLoop(ctx) }()
 	if a.Config.FixtureReplayPath != "" {
 		a.wg.Add(1)
 		go func() { defer a.wg.Done(); a.replayFixture(ctx, a.Config.FixtureReplayPath) }()
@@ -703,19 +705,42 @@ func (a *Application) solarFetchLoop(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
-	fetch := func() {
-		cond, err := a.Solar.Fetch(ctx)
-		if err != nil { a.Log.Warn("solar fetch failed", "error", err); return }
-		a.solarSnapshot.Store(&cond)
-		if _, err := a.Store.InsertSolarSnapshot(ctx, store.SolarSnapshot{
-			FetchedAtMs: cond.FetchedAt, KpIndex: cond.KpIndex, SolarFluxSfu: cond.SolarFluxSFU, GeomagActivity: cond.GeomagActivity,
-		}); err != nil { a.Log.Warn("solar insert failed", "error", err) }
-		_ = a.Store.TrimSolarSnapshots(ctx, 288)
+	fetchWithRetry := func() {
+		backoffs := []time.Duration{0, 30 * time.Second, 60 * time.Second, 120 * time.Second}
+		for i, backoff := range backoffs {
+			if backoff > 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(backoff):
+				}
+			}
+			cond, err := a.Solar.Fetch(ctx)
+			if err != nil {
+				a.Log.Warn("solar fetch failed", "attempt", i+1, "error", err)
+				continue
+			}
+			a.solarSnapshot.Store(&cond)
+			if _, err := a.Store.InsertSolarSnapshot(ctx, store.SolarSnapshot{
+				FetchedAtMs: cond.FetchedAt, KpIndex: cond.KpIndex, SolarFluxSfu: cond.SolarFluxSFU, GeomagActivity: cond.GeomagActivity,
+			}); err != nil {
+				a.Log.Warn("solar insert failed", "error", err)
+			}
+			_ = a.Store.TrimSolarSnapshots(ctx, 288)
+			return
+		}
 	}
-	fetch()
+	fetchWithRetry()
 	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
-	for { select { case <-ctx.Done(): return; case <-ticker.C: fetch() } }
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			fetchWithRetry()
+		}
+	}
 }
 
 func (a *Application) backfillPublicPacketPathsLoop(ctx context.Context) {
@@ -909,6 +934,23 @@ func (a *Application) pruneLoop(ctx context.Context) {
 				a.Log.Warn("data prune failed", "error", err)
 			} else {
 				a.Log.Debug("data pruned", "beforeMs", beforeMs)
+			}
+		}
+	}
+}
+
+func (a *Application) maintenanceLoop(ctx context.Context) {
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := a.Store.VacuumAndAnalyze(ctx); err != nil {
+				a.Log.Warn("database maintenance failed", "error", err)
+			} else {
+				a.Log.Info("database maintenance complete")
 			}
 		}
 	}

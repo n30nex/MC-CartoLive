@@ -5,15 +5,15 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.6.3` is the current production-ready world operations release.
+Version `2.7.4` is the current production-ready world operations release.
 
-- Detailed next-phase plan: [2.6.3 to 2.6.6](roadmap-2.6.3-to-2.6.6.md).
+- Detailed next-phase plan: [2.7.4 to 2.7.7](roadmap-2.7.4-to-2.7.7.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current release focus: 2.6.3 workspace UI polish is complete; the next
+- Current release focus: 2.7.4 workspace UI polish is complete; the next
   patches move through OpenFreeMap 3D performance, elevation/topography
   line-of-sight context, and propagation-event research on top of the stable
-  public-safe 2.6.3 feature set.
+  public-safe 2.7.4 feature set.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -22,14 +22,14 @@ Version `2.6.3` is the current production-ready world operations release.
 
 ## Active Maintenance Focus
 
-- Treat `2.6.3` as the completed public-experience polish pass: less chrome
+- Treat `2.7.4` as the completed public-experience polish pass: less chrome
   clutter, clearer route/share flows, docked Packets/Chat workspaces, and safer
   mobile ergonomics.
-- Make `2.6.4` the 3D performance pass for OpenFreeMap node models, route arcs,
+- Make `2.7.5` the 3D performance pass for OpenFreeMap node models, route arcs,
   comets, observer glows, and rebuild budgets.
-- Make `2.6.5` the elevation/topography/line-of-sight pass for verified public
+- Make `2.7.6` the elevation/topography/line-of-sight pass for verified public
   pathways only.
-- Make `2.6.6` a research-first propagation-event pass for solar, geomagnetic,
+- Make `2.7.7` a research-first propagation-event pass for solar, geomagnetic,
   tropospheric, time-of-day, and long-distance burst correlations.
 - Keep packet ingest, public cache, WebSocket fanout, public history, and public
   packet paths observable through public-safe health/readiness counters.
@@ -51,6 +51,26 @@ Version `2.6.3` is the current production-ready world operations release.
   screenshot artifacts, and operator diagnostic scripts.
 - Keep docs concise enough that new operators can deploy, smoke test, diagnose,
   back up, restore, and upgrade without reading historical planning notes.
+
+## 2.7.4 Patch Focus
+
+- Full sweep — rate limiting, security headers, Docker hardening, React.lazy code splitting, React.memo on CanadaMap, parallel LiveState queries, virtual chat scroll, /metrics endpoint, node list panel, keyboard help, panel transitions, loading skeletons, prefers-reduced-motion, ARIA roles, mobile StatusBar collapse, App.tsx decomposition, utility consolidation, dead code removal, version sync.
+
+## 2.7.3 Patch Focus
+
+- GIF export rate limiting (30s cooldown, 5 per 10min window).
+
+## 2.7.2 Patch Focus
+
+- Comprehensive polish/stability pass — 30 fixes (Hub data race, UpsertObserver tx, useDebouncedValue hook fix, empty segments crash guard, ErrorBoundary, solar timer leak, search debounce, keyboard shortcuts, offline banner, React.memo, WS keep-alive).
+
+## 2.7.1 Patch Focus
+
+- Production audit fixes — WaitGroup tracking, MQTT panic recovery, UpsertObserver transaction, UpdatedAt serialization, packet pruning, schema cleanup, resolution dedup, error handling, retention config, context guards, stale closure fix, singleton ResizeObserver, loadOlder generation guard, AbortController, loading bar fade-in, shared utilities.
+
+## 2.7.0 Patch Focus
+
+- P0-P3 fixes — transactional packet upsert, MQTT connect timeout, VCR mode exit fix, loadOlder race guards, UpdatedAt serialization, resolution-in-edge-transaction, COUNT(*), missing DB indexes, MQTT watchdog/backoff, 30-day retention, graceful shutdown WaitGroup, ResizeObserver, SetupPanel validation, StatusBar DOM remount fix.
 
 ## 2.6.3 Patch Focus
 

@@ -29,6 +29,8 @@ interface ChatPanelProps {
 const CHAT_PAGE_LIMIT = 200;
 const CHAT_RETAINED_LIMIT = 1000;
 const CHAT_FILTER_DEBOUNCE_MS = 250;
+const CHAT_ROW_HEIGHT = 96;
+const CHAT_LIST_OVERSCAN = 5;
 
 export default function ChatPanel({
   initialMessages = [],
@@ -49,13 +51,27 @@ export default function ChatPanel({
   const [loading, setLoading] = useState(autoRefresh && initialMessages.length === 0 && !initialError);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [listHeight, setListHeight] = useState(460);
   const mountedRef = useRef(true);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
   const requestGenerationRef = useRef(0);
   const filterGenerationRef = useRef(0);
   const initialLoadRef = useRef(true);
   const debouncedFilters = useDebouncedValue(filters, CHAT_FILTER_DEBOUNCE_MS);
   const visibleMessages = useMemo(() => capChatMessages(messages), [messages]);
+  const virtualRows = useMemo(() => virtualChatRows(visibleMessages, scrollTop, listHeight), [visibleMessages, scrollTop, listHeight]);
+
+  useEffect(() => {
+    const updateHeight = () => {
+      const element = listRef.current;
+      if (element) setListHeight(Math.max(220, element.clientHeight || 460));
+    };
+    updateHeight();
+    window.addEventListener('resize', updateHeight);
+    return () => window.removeEventListener('resize', updateHeight);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -240,8 +256,18 @@ export default function ChatPanel({
       {error && <div className="chat-error" role="alert">{error}</div>}
       {loading && initialLoadRef.current && <div className="chat-loading-bar" />}
 
-      <div className="chat-list" role="list" aria-label="Public chat messages">
-        {visibleMessages.map((message) => <ChatRow key={message.id} message={message} />)}
+      <div
+        ref={listRef}
+        className="chat-list"
+        role="list"
+        aria-label="Public chat messages"
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      >
+        <div style={{ height: visibleMessages.length * CHAT_ROW_HEIGHT, position: 'relative' }}>
+          <div style={{ transform: `translateY(${virtualRows.offset}px)` }}>
+            {virtualRows.items.map((message) => <ChatRow key={message.id} message={message} />)}
+          </div>
+        </div>
         {!loading && visibleMessages.length === 0 && (
           <div className="chat-empty">
             {hasActiveChatFilters(debouncedFilters) ? 'No public chat messages match the current filters.' : 'No public chat messages in this window.'}
@@ -325,4 +351,10 @@ function formatWindow(window: PublicHistoryWindow | null, scopeMs: number): stri
 function chatRequestErrorMessage(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err || '');
   return message || 'Unable to load public chat';
+}
+
+function virtualChatRows(messages: PublicChatMessage[], scrollTop: number, height: number): { offset: number; items: PublicChatMessage[] } {
+  const start = Math.max(0, Math.floor(scrollTop / CHAT_ROW_HEIGHT) - CHAT_LIST_OVERSCAN);
+  const end = Math.min(messages.length, Math.ceil((scrollTop + height) / CHAT_ROW_HEIGHT) + CHAT_LIST_OVERSCAN);
+  return { offset: start * CHAT_ROW_HEIGHT, items: messages.slice(start, end) };
 }

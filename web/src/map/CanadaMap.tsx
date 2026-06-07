@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import maplibregl from 'maplibre-gl';
 import type { PublicMapConfig, PublicMessageAnchor, PublicNode, PublicObserverBurst, PublicRoute, PublicRoutePulse } from '../types';
 import { parseSharedView, type MapViewState, type SharedViewState } from '../shareView';
@@ -1081,7 +1081,7 @@ function defaultMapViewFromConfig(config?: PublicMapConfig | null): MapViewState
   return { lat, lng, z };
 }
 
-export default function CanadaMap({
+function CanadaMap({
   nodes,
   routes,
   pulses,
@@ -2023,7 +2023,13 @@ export default function CanadaMap({
       data-label-count={screenNodeLabels.length}
       data-map-init-error={mapInitError}
     >
-      <div ref={containerRef} className="map-container" />
+      <div
+        ref={containerRef}
+        className="map-container"
+        role="application"
+        aria-label="Live MeshCore Canada network map"
+        aria-description={`${nodes.length} nodes, ${routes.length} routes visible`}
+      />
       {mapInitError && !loading && (
         <div className="map-error-fallback">
           <div className="map-error-message">
@@ -2072,6 +2078,8 @@ export default function CanadaMap({
     </div>
   );
 }
+
+export default memo(CanadaMap);
 
 function addOpenFreeMap3DBase(map: maplibregl.Map, themeMode: MapThemeMode) {
   if (!map.getSource(OPENFREEMAP_SOURCE)) {

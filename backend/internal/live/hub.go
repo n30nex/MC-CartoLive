@@ -187,6 +187,9 @@ func (h *Hub) remove(c *client) {
 		close(c.send)
 	}
 	h.mu.Unlock()
+	c.conn.WriteControl(websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"),
+		time.Now().Add(2*time.Second))
 	_ = c.conn.Close()
 }
 
@@ -256,7 +259,7 @@ func allowedOriginHosts(baseURLs []string) map[string]struct{} {
 func websocketOriginAllowed(r *http.Request, allowedHosts map[string]struct{}) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
-		return true
+		return false
 	}
 	parsed, err := url.Parse(origin)
 	if err != nil || parsed.Host == "" {

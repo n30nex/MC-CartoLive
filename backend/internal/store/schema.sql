@@ -126,18 +126,6 @@ CREATE TABLE IF NOT EXISTS observer_status (
 
 CREATE INDEX IF NOT EXISTS idx_observer_status_recent ON observer_status(received_at_ms DESC);
 
-CREATE TABLE IF NOT EXISTS path_resolution_cache (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  iata TEXT NOT NULL,
-  hash_size INTEGER NOT NULL,
-  prefix_hex TEXT NOT NULL,
-  status TEXT NOT NULL,
-  candidate_count INTEGER NOT NULL,
-  updated_at_ms INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_path_resolution_lookup ON path_resolution_cache(iata, hash_size, prefix_hex);
-
 CREATE TABLE IF NOT EXISTS live_edge_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   packet_hash TEXT NOT NULL,

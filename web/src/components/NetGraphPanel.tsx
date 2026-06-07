@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Activity, Search, X } from 'lucide-react';
+import { clamp } from '../lib/clamp';
+import { fnv1a } from '../lib/hash';
+import { formatRelative } from '../lib/formatRelative';
+import { hexToRgba } from '../lib/color';
 import {
   forceCenter,
   forceCollide,
@@ -936,14 +940,6 @@ function tintColor(color: string, alpha: number): string {
   return trimmed;
 }
 
-function hexToRgba(hex: string, alpha: number): string {
-  const normalized = hex.slice(1);
-  const red = Number.parseInt(normalized.slice(0, 2), 16);
-  const green = Number.parseInt(normalized.slice(2, 4), 16);
-  const blue = Number.parseInt(normalized.slice(4, 6), 16);
-  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
-}
-
 function drawBackground(ctx: CanvasRenderingContext2D, width: number, height: number, theme: NetGraphThemeTokens): void {
   const gradient = ctx.createRadialGradient(width * 0.52, height * 0.46, 0, width * 0.52, height * 0.46, Math.max(width, height));
   gradient.addColorStop(0, theme.backgroundInner);
@@ -1077,22 +1073,10 @@ function stableNodeAngle(value: string): number {
 }
 
 function stableNodeHash(value: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index++) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
+  return fnv1a(value);
 }
 
 function formatAge(ageMs: number): string {
   if (!Number.isFinite(ageMs) || ageMs < 0) return 'unknown';
-  if (ageMs < 60_000) return `${Math.max(1, Math.round(ageMs / 1000))}s ago`;
-  if (ageMs < 3_600_000) return `${Math.round(ageMs / 60_000)}m ago`;
-  if (ageMs < 86_400_000) return `${Math.round(ageMs / 3_600_000)}h ago`;
-  return `${Math.round(ageMs / 86_400_000)}d ago`;
+  return formatRelative(Date.now() - ageMs);
 }

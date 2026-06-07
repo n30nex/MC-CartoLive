@@ -3,7 +3,7 @@ services:
     build:
       context: .
       args:
-        APP_VERSION: ${APP_VERSION:-2.6.3}
+        APP_VERSION: ${APP_VERSION:-2.7.4}
         VITE_OPENFREEMAP_STYLE_URL: ${VITE_OPENFREEMAP_STYLE_URL:-}
         VITE_OPENFREEMAP_TILEJSON_URL: ${VITE_OPENFREEMAP_TILEJSON_URL:-https://tiles.openfreemap.org/planet}
         VITE_TERRAIN_TILE_URL: ${VITE_TERRAIN_TILE_URL:-https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png}
@@ -21,7 +21,7 @@ services:
     env_file:
       - .env
     environment:
-      APP_VERSION: ${APP_VERSION:-2.6.3}
+      APP_VERSION: ${APP_VERSION:-2.7.4}
       GIT_SHA: ${GIT_SHA:-${VITE_GIT_SHA:-}}
       BUILD_TIME: ${BUILD_TIME:-${VITE_BUILD_TIME:-}}
     volumes:
@@ -29,6 +29,17 @@ services:
       - ./examples:/app/examples:ro
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     stop_grace_period: 30s
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]

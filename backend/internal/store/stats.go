@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"meshcore-canada-live-map/backend/internal/live"
 )
 
@@ -54,27 +56,44 @@ func (s *Store) PacketCount(ctx context.Context) (int64, error) {
 }
 
 func (s *Store) LiveState(ctx context.Context, packetLimit int, edgeLimit int) (live.State, error) {
-	nodes, err := s.Nodes(ctx, true, "")
-	if err != nil {
+	var state live.State
+	state.ServerTime = time.Now().UnixMilli()
+
+	g, gCtx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		nodes, err := s.Nodes(gCtx, true, "")
+		if err != nil {
+			return err
+		}
+		state.Nodes = nodes
+		return nil
+	})
+	g.Go(func() error {
+		observers, err := s.Observers(gCtx)
+		if err != nil {
+			return err
+		}
+		state.Observers = observers
+		return nil
+	})
+	g.Go(func() error {
+		packets, err := s.RecentPackets(gCtx, packetLimit)
+		if err != nil {
+			return err
+		}
+		state.RecentPackets = packets
+		return nil
+	})
+	g.Go(func() error {
+		edges, err := s.RecentEdgeEvents(gCtx, edgeLimit)
+		if err != nil {
+			return err
+		}
+		state.RecentEdgeEvents = edges
+		return nil
+	})
+	if err := g.Wait(); err != nil {
 		return live.State{}, err
 	}
-	observers, err := s.Observers(ctx)
-	if err != nil {
-		return live.State{}, err
-	}
-	packets, err := s.RecentPackets(ctx, packetLimit)
-	if err != nil {
-		return live.State{}, err
-	}
-	edges, err := s.RecentEdgeEvents(ctx, edgeLimit)
-	if err != nil {
-		return live.State{}, err
-	}
-	return live.State{
-		ServerTime:       time.Now().UnixMilli(),
-		Nodes:            nodes,
-		Observers:        observers,
-		RecentPackets:    packets,
-		RecentEdgeEvents: edges,
-	}, nil
+	return state, nil
 }

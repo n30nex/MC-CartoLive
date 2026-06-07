@@ -194,6 +194,27 @@ FROM nodes WHERE public_key=?`, strings.ToUpper(publicKey))
 	return nodes[0], nil
 }
 
+func (s *Store) NodeByID(ctx context.Context, nodeID string) (live.Node, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT n.node_id, n.public_key, n.name, n.node_type, n.role, n.latitude, n.longitude,
+       n.location_source, n.first_seen_ms, n.last_seen_ms, n.observation_count, n.supports_multibyte
+FROM nodes n
+WHERE n.node_id = ? OR n.public_key = UPPER(?)
+LIMIT 1`, nodeID, nodeID)
+	if err != nil {
+		return live.Node{}, err
+	}
+	defer rows.Close()
+	nodes, err := s.scanNodes(ctx, rows)
+	if err != nil {
+		return live.Node{}, err
+	}
+	if len(nodes) == 0 {
+		return live.Node{}, sql.ErrNoRows
+	}
+	return nodes[0], nil
+}
+
 func (s *Store) Nodes(ctx context.Context, positioned bool, iata string) ([]live.Node, error) {
 	query := `
 SELECT DISTINCT n.node_id, n.public_key, n.name, n.node_type, n.role, n.latitude, n.longitude,

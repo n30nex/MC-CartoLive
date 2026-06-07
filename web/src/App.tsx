@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Check, Columns3, Eye, EyeOff, Layers, LocateFixed, Moon, Palette, Pause, Play, RadioTower, RotateCcw, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
 import { fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicState } from './api';
 import { connectPublicSocket } from './ws';
@@ -15,6 +15,7 @@ import {
 } from './state';
 import CanadaMap, { type MapAction, type MapBaseMode } from './map/CanadaMap';
 import ErrorBoundary from './components/ErrorBoundary';
+import PanelSkeleton from './components/PanelSkeleton';
 import HotRoutes from './components/HotRoutes';
 import Legend from './components/Legend';
 import LinkBar from './components/LinkBar';
@@ -23,10 +24,10 @@ import SelectionDrawer from './components/SelectionDrawer';
 import StatusBar from './components/StatusBar';
 import VcrBar, { MiniLiveClock } from './components/VcrBar';
 import ChromePanel from './components/ChromePanel';
-import PacketsPanel from './components/PacketsPanel';
-import NetGraphPanel from './components/NetGraphPanel';
-import ChatPanel from './components/ChatPanel';
-import SetupPanel from './components/SetupPanel';
+const PacketsPanel = lazy(() => import('./components/PacketsPanel'));
+const NetGraphPanel = lazy(() => import('./components/NetGraphPanel'));
+const ChatPanel = lazy(() => import('./components/ChatPanel'));
+const SetupPanel = lazy(() => import('./components/SetupPanel'));
 import MapSettingsDrawer from './components/MapSettingsDrawer';
 import RouteGifExportButton, { type RouteGifExportStatus } from './components/RouteGifExportButton';
 import type { WorkspacePresentation } from './components/workspacePanel';
@@ -88,6 +89,9 @@ import {
   type ThemePalette
 } from './theme';
 import type { PublicActivity, PublicHistorySummaryBucket, PublicLiveEnvelope, PublicMapConfig, PublicPacketPath } from './types';
+
+const NodeListPanel = lazy(() => import('./components/NodeListPanel'));
+const ShortcutHelp = lazy(() => import('./components/ShortcutHelp'));
 
 interface VcrUiState {
   mode: VcrMode;
@@ -160,6 +164,8 @@ export default function App() {
   const [nodeLoadFailed, setNodeLoadFailed] = useState(false);
   const [vcrOpen, setVcrOpen] = useState(false);
   const [laserShowActive, setLaserShowActive] = useState(false);
+  const [nodeListOpen, setNodeListOpen] = useState(false);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [chromeVisibility, setChromeVisibility] = useState<ChromeVisibilityState>({
     chromeHidden: false,
     panels: { ...INITIAL_CHROME_PANEL_VISIBILITY }
@@ -1012,6 +1018,10 @@ export default function App() {
       if (event.code === 'KeyL') {
         setFollowTraffic((value) => !value);
       }
+      if (event.key === '?' && !event.ctrlKey && !event.metaKey) {
+        setShortcutHelpOpen(true);
+        return;
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -1285,6 +1295,9 @@ export default function App() {
         <button className="icon-button" type="button" title="Share this view" onClick={shareView}>
           <Share2 size={18} />
         </button>
+        <button className="icon-button" type="button" title="Open node list" onClick={() => setNodeListOpen(true)}>
+          <RadioTower size={18} />
+        </button>
         <button className="icon-button" type="button" title="Reset map" onClick={() => dispatchMapAction('reset')}>
           <X size={18} />
         </button>
@@ -1300,7 +1313,7 @@ export default function App() {
           onExport={exportSelectedPacketGif}
         />
       )}
-      {setupOpen && <SetupPanel mapConfig={publicMapConfig} onClose={closeSetup} />}
+      {setupOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><SetupPanel mapConfig={publicMapConfig} onClose={closeSetup} /></Suspense></ErrorBoundary>}
       {mapSettingsOpen && (
         <MapSettingsDrawer
           settings={mapSettings}
@@ -1309,30 +1322,40 @@ export default function App() {
         />
       )}
       {packetsOpen && (
-        <PacketsPanel
-          mode={packetsPanelMode}
-          selectedPacketID={selectedPacket?.id ?? null}
-          selectedPacket={selectedPacket}
-          presentation={workspacePresentation}
-          onClose={closePackets}
-          onExpand={() => setPacketsPanelMode('expanded')}
-          onPresentationChange={setWorkspacePresentation}
-          onResumeLive={resumeLiveFromPacketTray}
-          onSelectPacket={focusPacketPath}
-          onReplayPacket={replayPacketPath}
-        />
+        <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}>
+          <Suspense fallback={<PanelSkeleton />}>
+            <PacketsPanel
+              mode={packetsPanelMode}
+              selectedPacketID={selectedPacket?.id ?? null}
+              selectedPacket={selectedPacket}
+              presentation={workspacePresentation}
+              onClose={closePackets}
+              onExpand={() => setPacketsPanelMode('expanded')}
+              onPresentationChange={setWorkspacePresentation}
+              onResumeLive={resumeLiveFromPacketTray}
+              onSelectPacket={focusPacketPath}
+              onReplayPacket={replayPacketPath}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
       {netGraphOpen && (
-        <NetGraphPanel
-          nodes={state.nodes}
-          routes={state.routes}
-          pulses={state.pulses}
-          activity={state.activity}
-          socketStatus={socketStatus}
-          onClose={closeNetGraph}
-        />
+        <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}>
+          <Suspense fallback={<PanelSkeleton />}>
+            <NetGraphPanel
+              nodes={state.nodes}
+              routes={state.routes}
+              pulses={state.pulses}
+              activity={state.activity}
+              socketStatus={socketStatus}
+              onClose={closeNetGraph}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
-      {chatOpen && <ChatPanel presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onClose={closeChat} />}
+      {chatOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><ChatPanel presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onClose={closeChat} /></Suspense></ErrorBoundary>}
+      {nodeListOpen && <Suspense fallback={<PanelSkeleton />}><NodeListPanel nodes={visibleNodes} selectedNodeID={selectedNodeID} onSelectNode={(id) => { selectNode(id); setNodeListOpen(false); }} onClose={() => setNodeListOpen(false)} /></Suspense>}
+      {shortcutHelpOpen && <Suspense fallback={<PanelSkeleton />}><ShortcutHelp onClose={() => setShortcutHelpOpen(false)} /></Suspense>}
 
       {!vcrOpen && packetsPanelMode !== 'compactTray' && !netGraphOpen && !chatOpen && !setupOpen && (
         <>

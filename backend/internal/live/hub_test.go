@@ -18,7 +18,7 @@ func TestWebsocketOriginAllowed(t *testing.T) {
 		{name: "configured public origin through localhost proxy", host: "localhost:39476", origin: "http://routes.canadaverse.org", want: true},
 		{name: "same local host", host: "localhost:39476", origin: "http://localhost:39476", want: true},
 		{name: "local hostnames may differ", host: "127.0.0.1:39476", origin: "http://localhost:39476", want: true},
-		{name: "missing origin", host: "localhost:39476", origin: "", want: true},
+		{name: "missing origin", host: "localhost:39476", origin: "", want: false},
 		{name: "foreign origin rejected", host: "localhost:39476", origin: "https://example.com", want: false},
 		{name: "bad origin rejected", host: "localhost:39476", origin: "://bad", want: false},
 	}

@@ -1,4 +1,6 @@
 import type { NetGraphData, NetGraphEdge, NetGraphNode } from './netgraph';
+import { clamp } from './lib/clamp';
+import { fnv1a } from './lib/hash';
 
 export interface VisibleGraphLimits {
   maxNodes: number;
@@ -251,12 +253,7 @@ function radialSeed(index: number, count: number, spread: number): { x: number; 
 }
 
 function stableHash(value: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index++) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
+  return fnv1a(value);
 }
 
 function distanceToSegment(point: { x: number; y: number }, source: Point, target: Point): number {
@@ -270,8 +267,4 @@ function distanceToSegment(point: { x: number; y: number }, source: Point, targe
   if (length === 0) return Math.hypot(point.x - x1, point.y - y1);
   const t = clamp(((point.x - x1) * dx + (point.y - y1) * dy) / length, 0, 1);
   return Math.hypot(point.x - (x1 + t * dx), point.y - (y1 + t * dy));
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
 }

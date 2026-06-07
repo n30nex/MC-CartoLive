@@ -114,6 +114,16 @@ func (s *Store) Ping(ctx context.Context) error {
 	return s.db.PingContext(ctx)
 }
 
+func (s *Store) VacuumAndAnalyze(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, "ANALYZE"); err != nil {
+		return fmt.Errorf("analyze: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, "VACUUM"); err != nil {
+		return fmt.Errorf("vacuum: %w", err)
+	}
+	return nil
+}
+
 type RuntimeInfo struct {
 	Path         string `json:"path"`
 	JournalMode  string `json:"journalMode"`

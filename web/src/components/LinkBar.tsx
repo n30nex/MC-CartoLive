@@ -24,7 +24,7 @@ export const LATEST_RELEASE_HIGHLIGHTS = [
     body: 'ETag-based state caching reduces network load. AWS terrain tiles, solar weather integration, transaction safety fixes, and render performance tuning.'
   },
   {
-    label: '2.6.3',
+    label: '2.7.4',
     title: 'Workspace side panels',
     body: 'Packets and Chat now open as docked map workspaces with one-click fullscreen mode.'
   },

@@ -49,9 +49,11 @@ export default memo(function StatusBar({ stats, socketStatus, nodeCount, routeCo
       <StatusMetric className="pulse-rate" title={`${coverage.receivedPerMinute} packets received per minute`} icon={<Zap size={14} />} value={formatStatusNumber(coverage.receivedPerMinute)} label="rx/min" meterLevel={metricMeterLevel(coverage.receivedPerMinute, perMinuteMax)} />
       <StatusMetric className="route routed-rate" title={`${coverage.routeAnimatedPerMinute} routed packet comets per minute`} icon={<Route size={14} />} value={formatStatusNumber(coverage.routeAnimatedPerMinute)} label="route/min" meterLevel={metricMeterLevel(coverage.routeAnimatedPerMinute, perMinuteMax)} />
       <StatusMetric className="observer" title={`${coverage.observerBurstPerMinute} observer bursts per minute`} icon={<Sparkles size={14} />} value={formatStatusNumber(coverage.observerBurstPerMinute)} label="bursts/min" meterLevel={metricMeterLevel(coverage.observerBurstPerMinute, perMinuteMax)} />
-      <StatusMetric className="unmapped" title={`${coverage.unmappedPerMinute} unresolved packets per minute`} icon={<MapPin size={14} />} value={formatStatusNumber(coverage.unmappedPerMinute)} label="unmapped/min" meterLevel={metricMeterLevel(coverage.unmappedPerMinute, perMinuteMax)} />
-      <StatusMetric className="count-pill node-count" title={`${nodeCount.toLocaleString()} positioned public nodes`} icon={<Shield size={14} />} value={formatStatusNumber(nodeCount)} label="nodes" />
-      <StatusMetric className="route count-pill route-count" title={`${routeCount.toLocaleString()} public routes`} icon={<Route size={14} />} value={formatStatusNumber(routeCount)} label="routes" />
+      <span className="status-secondary">
+        <StatusMetric className="unmapped" title={`${coverage.unmappedPerMinute} unresolved packets per minute`} icon={<MapPin size={14} />} value={formatStatusNumber(coverage.unmappedPerMinute)} label="unmapped/min" meterLevel={metricMeterLevel(coverage.unmappedPerMinute, perMinuteMax)} />
+        <StatusMetric className="count-pill node-count" title={`${nodeCount.toLocaleString()} positioned public nodes`} icon={<Shield size={14} />} value={formatStatusNumber(nodeCount)} label="nodes" />
+        <StatusMetric className="route count-pill route-count" title={`${routeCount.toLocaleString()} public routes`} icon={<Route size={14} />} value={formatStatusNumber(routeCount)} label="routes" />
+      </span>
       <SolarIndicator />
     </header>
   );

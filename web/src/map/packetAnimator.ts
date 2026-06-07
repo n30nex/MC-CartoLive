@@ -160,6 +160,7 @@ export class PacketAnimator {
   private observerBurstLastAtByLocation = new Map<string, number>();
   private layerSettings = DEFAULT_MAP_LAYER_SETTINGS;
   private visualSettings = DEFAULT_PACKET_VISUAL_SETTINGS;
+  private reducedMotion = false;
   private handleMapMotion = () => {
     this.forceNextFrame = true;
     this.requestFrame();
@@ -173,6 +174,7 @@ export class PacketAnimator {
     this.maskLayerIDs = options.maskLayerIDs ?? [];
     this.layerSettings = normalizeLayerSettings(options.layerSettings);
     this.visualSettings = normalizePacketVisualSettings(options.visualSettings);
+    this.reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.frame = this.frame.bind(this);
     this.resize();
     this.map.on('move', this.handleMapMotion);
@@ -374,8 +376,10 @@ export class PacketAnimator {
     this.lastRenderedAt = now;
     this.forceNextFrame = false;
     this.ctx.clearRect(0, 0, this.displayWidth, this.displayHeight);
-    this.drawTraceAura(now);
-    this.drawObserverAura(now);
+    if (!this.reducedMotion) {
+      this.drawTraceAura(now);
+      this.drawObserverAura(now);
+    }
     const relayOverlays: RelayOverlay[] = [];
     const observerOverlays: ObserverOverlay[] = [];
     for (const active of this.pulses) {
@@ -386,8 +390,10 @@ export class PacketAnimator {
     }
     if (this.pulses.length > 0 || this.observerBursts.length > 0) {
       this.maskRenderedMapLayers(now);
-      this.drawRelayOverlays(relayOverlays);
-      this.drawObserverOverlays(observerOverlays);
+      if (!this.reducedMotion) {
+        this.drawRelayOverlays(relayOverlays);
+        this.drawObserverOverlays(observerOverlays);
+      }
     }
     this.canvasHasContent = true;
     if (this.pulses.length > 0 || this.observerBursts.length > 0) {

@@ -2,37 +2,40 @@ package store
 
 import (
 	"context"
+	"fmt"
 )
 
 func (s *Store) PruneOldData(ctx context.Context, beforeMs int64) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
+	tables := []struct{ name, column string }{
+		{"public_packet_paths", "heard_at_ms"},
+		{"live_edge_events", "heard_at_ms"},
+		{"packet_observations", "heard_at_ms"},
+		{"observer_status", "received_at_ms"},
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
+	for _, t := range tables {
+		for {
+			result, err := s.db.ExecContext(ctx,
+				fmt.Sprintf("DELETE FROM %s WHERE rowid IN (SELECT rowid FROM %s WHERE %s < ? LIMIT 1000)", t.name, t.name, t.column),
+				beforeMs)
+			if err != nil {
+				return fmt.Errorf("prune %s: %w", t.name, err)
+			}
+			affected, _ := result.RowsAffected()
+			if affected == 0 {
+				break
+			}
 		}
-	}()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM public_packet_paths WHERE heard_at_ms < ?`, beforeMs); err != nil {
-		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM live_edge_events WHERE heard_at_ms < ?`, beforeMs); err != nil {
-		return err
+	for {
+		result, err := s.db.ExecContext(ctx,
+			"DELETE FROM packets WHERE rowid IN (SELECT rowid FROM packets WHERE packet_hash NOT IN (SELECT DISTINCT packet_hash FROM packet_observations) LIMIT 1000)")
+		if err != nil {
+			return fmt.Errorf("prune packets: %w", err)
+		}
+		affected, _ := result.RowsAffected()
+		if affected == 0 {
+			break
+		}
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM packet_observations WHERE heard_at_ms < ?`, beforeMs); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM observer_status WHERE received_at_ms < ?`, beforeMs); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM packets WHERE packet_hash NOT IN (SELECT DISTINCT packet_hash FROM packet_observations)`); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	committed = true
 	return nil
 }

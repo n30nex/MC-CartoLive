@@ -9,7 +9,9 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +25,79 @@ import (
 )
 
 var gzipWriterPool = sync.Pool{New: func() any { return gzip.NewWriter(io.Discard) }}
+
+type rateLimiter struct {
+	mu      sync.Mutex
+	clients map[string]*rateBucket
+	rate    int
+	burst   int
+	cleanup time.Duration
+}
+
+type rateBucket struct {
+	tokens   int
+	lastSeen time.Time
+}
+
+func newRateLimiter(ratePerMinute, burst int) *rateLimiter {
+	rl := &rateLimiter{
+		clients: make(map[string]*rateBucket),
+		rate:    ratePerMinute,
+		burst:   burst,
+		cleanup: 5 * time.Minute,
+	}
+	go rl.cleanupLoop()
+	return rl
+}
+
+func (rl *rateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(rl.cleanup)
+	defer ticker.Stop()
+	for range ticker.C {
+		rl.mu.Lock()
+		cutoff := time.Now().Add(-rl.cleanup)
+		for ip, bucket := range rl.clients {
+			if bucket.lastSeen.Before(cutoff) {
+				delete(rl.clients, ip)
+			}
+		}
+		rl.mu.Unlock()
+	}
+}
+
+func (rl *rateLimiter) allow(ip string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	now := time.Now()
+	bucket, ok := rl.clients[ip]
+	if !ok {
+		bucket = &rateBucket{tokens: rl.burst, lastSeen: now}
+		rl.clients[ip] = bucket
+	}
+	elapsed := now.Sub(bucket.lastSeen)
+	bucket.lastSeen = now
+	bucket.tokens += int(elapsed.Minutes() * float64(rl.rate))
+	if bucket.tokens > rl.burst {
+		bucket.tokens = rl.burst
+	}
+	if bucket.tokens <= 0 {
+		return false
+	}
+	bucket.tokens--
+	return true
+}
+
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.SplitN(xff, ",", 2)
+		return strings.TrimSpace(parts[0])
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	return host
+}
 
 type Config struct {
 	RecentPacketLimit      int
@@ -61,24 +136,31 @@ type Server struct {
 
 	historyLocations *historyLocationCache
 	summaryCache     *historySummaryCache
+	rateLimiter      *rateLimiter
+	startTime        time.Time
 }
 
 func (s *Server) Routes() http.Handler {
+	s.startTime = time.Now()
 	if s.historyLocations == nil {
 		s.historyLocations = &historyLocationCache{}
 	}
 	if s.summaryCache == nil {
 		s.summaryCache = newHistorySummaryCache(20 * time.Second)
 	}
+	if s.rateLimiter == nil {
+		s.rateLimiter = newRateLimiter(60, 30)
+	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /metrics", s.metrics)
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /readyz", s.readyz)
-	mux.HandleFunc("GET /api/v1/public/state", s.publicState)
-	mux.HandleFunc("GET /api/v1/public/history", s.publicHistory)
-	mux.HandleFunc("GET /api/v1/public/history/summary", s.publicHistorySummary)
-	mux.HandleFunc("GET /api/v1/public/packets", s.publicPackets)
-	mux.HandleFunc("GET /api/v1/public/chat", s.publicChat)
-	mux.HandleFunc("GET /api/v1/public/solar", s.publicSolar)
+	mux.HandleFunc("GET /api/v1/public/state", s.rateLimited(s.publicState))
+	mux.HandleFunc("GET /api/v1/public/history", s.rateLimited(s.publicHistory))
+	mux.HandleFunc("GET /api/v1/public/history/summary", s.rateLimited(s.publicHistorySummary))
+	mux.HandleFunc("GET /api/v1/public/packets", s.rateLimited(s.publicPackets))
+	mux.HandleFunc("GET /api/v1/public/chat", s.rateLimited(s.publicChat))
+	mux.HandleFunc("GET /api/v1/public/solar", s.rateLimited(s.publicSolar))
 	mux.Handle("GET /ws/public", s.PublicHub)
 	if !s.Config.PublicMode {
 		mux.HandleFunc("GET /api/v1/live/state", s.liveState)
@@ -93,6 +175,17 @@ func (s *Server) Routes() http.Handler {
 	}
 	mux.HandleFunc("/", StaticHandler)
 	return withSecurityHeaders(mux)
+}
+
+func (s *Server) rateLimited(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.rateLimiter.allow(clientIP(r)) {
+			w.Header().Set("Retry-After", "60")
+			writeError(w, http.StatusTooManyRequests, errors.New("rate limit exceeded"))
+			return
+		}
+		next(w, r)
+	}
 }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
@@ -127,15 +220,20 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 	}
 	publicHubStats := s.publicHubStats()
 	staticReady := StaticReady()
-	runtime := live.RuntimeStatsSnapshot{}
+	runtimeStats := live.RuntimeStatsSnapshot{}
 	if s.Runtime != nil {
-		runtime = s.Runtime.Snapshot()
+		runtimeStats = s.Runtime.Snapshot()
 	}
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
 	payload := map[string]any{
 		"ok":                              true,
 		"ready":                           true,
 		"dbReady":                         dbReady,
 		"staticReady":                     staticReady,
+		"uptimeMs":                        time.Since(s.startTime).Milliseconds(),
+		"goroutineCount":                  runtime.NumGoroutine(),
+		"memAllocBytes":                   memStats.Alloc,
 		"publicStateReady":                cacheStatus.Ready,
 		"cacheAgeMs":                      cacheStatus.CacheAgeMs,
 		"cacheUpdatedAt":                  cacheStatus.UpdatedAt,
@@ -162,40 +260,40 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 		"defaultCenter":                   []float64{s.Config.DefaultCenterLng, s.Config.DefaultCenterLat},
 		"defaultZoom":                     s.Config.DefaultZoom,
 		"publicRegionRestricted":          s.Config.PublicRegionRestricted || s.Config.PublicIATARestricted,
-		"publicStateRequests":             runtime.PublicStateRequests,
-		"publicStateErrors":               runtime.PublicStateErrors,
-		"publicHistoryRequests":           runtime.PublicHistoryRequests,
-		"publicHistoryErrors":             runtime.PublicHistoryErrors,
-		"publicHistoryLatencyMs":          runtime.PublicHistoryLastLatencyMs,
-		"publicSummaryRequests":           runtime.PublicSummaryRequests,
-		"publicSummaryErrors":             runtime.PublicSummaryErrors,
-		"publicPacketsRequests":           runtime.PublicPacketsRequests,
-		"publicPacketsErrors":             runtime.PublicPacketsErrors,
-		"publicPacketsLatencyMs":          runtime.PublicPacketsLastLatencyMs,
-		"publicPacketsLastScan":           runtime.PublicPacketsLastScan,
-		"publicPacketsScanCapped":         runtime.PublicPacketsScanCapped,
-		"publicPacketsProjectionServed":   runtime.PublicPacketsProjectionServed,
-		"publicPacketsProjectionFallback": runtime.PublicPacketsProjectionFallback,
-		"publicPacketsProjectionErrors":   runtime.PublicPacketsProjectionErrors,
-		"publicPacketsProjectionLastAt":   runtime.PublicPacketsProjectionLastAtMs,
-		"publicPacketsProjectionComplete": runtime.PublicPacketsProjectionComplete,
-		"publicPacketsSearchFTS":          runtime.PublicPacketsSearchFTS,
-		"publicPacketsSearchSubstring":    runtime.PublicPacketsSearchSubstring,
-		"publicPacketsSearchNoQuery":      runtime.PublicPacketsSearchNoQuery,
-		"packetPathBackfillFailures":      runtime.PacketPathBackfillFailures,
-		"packetPathBackfillLatencyMs":     runtime.PacketPathBackfillLastLatencyMs,
-		"packetPathBackfillLastAt":        runtime.PacketPathBackfillLastAtMs,
-		"packetPathBackfillLastScan":      runtime.PacketPathBackfillLastScanned,
-		"packetPathBackfillProjected":     runtime.PacketPathBackfillLastProjected,
-		"packetPathBackfillMappable":      runtime.PacketPathBackfillLastMappable,
-		"packetPathBackfillInvalid":       runtime.PacketPathBackfillLastInvalid,
-		"packetPathSearchIndexSynced":     runtime.PacketPathSearchIndexLastSync,
-		"packetPathSearchIndexRemaining":  runtime.PacketPathSearchIndexRemaining,
-		"packetPathBackfillRemaining":     runtime.PacketPathBackfillRemaining,
-		"cacheRefreshFailures":            runtime.CacheRefreshFailures,
-		"packetCountRefreshFailures":      runtime.PacketCountRefreshFailures,
-		"packetCountRefreshLatencyMs":     runtime.PacketCountRefreshLastLatencyMs,
-		"packetCountRefreshLastAt":        runtime.PacketCountRefreshLastAtMs,
+		"publicStateRequests":             runtimeStats.PublicStateRequests,
+		"publicStateErrors":               runtimeStats.PublicStateErrors,
+		"publicHistoryRequests":           runtimeStats.PublicHistoryRequests,
+		"publicHistoryErrors":             runtimeStats.PublicHistoryErrors,
+		"publicHistoryLatencyMs":          runtimeStats.PublicHistoryLastLatencyMs,
+		"publicSummaryRequests":           runtimeStats.PublicSummaryRequests,
+		"publicSummaryErrors":             runtimeStats.PublicSummaryErrors,
+		"publicPacketsRequests":           runtimeStats.PublicPacketsRequests,
+		"publicPacketsErrors":             runtimeStats.PublicPacketsErrors,
+		"publicPacketsLatencyMs":          runtimeStats.PublicPacketsLastLatencyMs,
+		"publicPacketsLastScan":           runtimeStats.PublicPacketsLastScan,
+		"publicPacketsScanCapped":         runtimeStats.PublicPacketsScanCapped,
+		"publicPacketsProjectionServed":   runtimeStats.PublicPacketsProjectionServed,
+		"publicPacketsProjectionFallback": runtimeStats.PublicPacketsProjectionFallback,
+		"publicPacketsProjectionErrors":   runtimeStats.PublicPacketsProjectionErrors,
+		"publicPacketsProjectionLastAt":   runtimeStats.PublicPacketsProjectionLastAtMs,
+		"publicPacketsProjectionComplete": runtimeStats.PublicPacketsProjectionComplete,
+		"publicPacketsSearchFTS":          runtimeStats.PublicPacketsSearchFTS,
+		"publicPacketsSearchSubstring":    runtimeStats.PublicPacketsSearchSubstring,
+		"publicPacketsSearchNoQuery":      runtimeStats.PublicPacketsSearchNoQuery,
+		"packetPathBackfillFailures":      runtimeStats.PacketPathBackfillFailures,
+		"packetPathBackfillLatencyMs":     runtimeStats.PacketPathBackfillLastLatencyMs,
+		"packetPathBackfillLastAt":        runtimeStats.PacketPathBackfillLastAtMs,
+		"packetPathBackfillLastScan":      runtimeStats.PacketPathBackfillLastScanned,
+		"packetPathBackfillProjected":     runtimeStats.PacketPathBackfillLastProjected,
+		"packetPathBackfillMappable":      runtimeStats.PacketPathBackfillLastMappable,
+		"packetPathBackfillInvalid":       runtimeStats.PacketPathBackfillLastInvalid,
+		"packetPathSearchIndexSynced":     runtimeStats.PacketPathSearchIndexLastSync,
+		"packetPathSearchIndexRemaining":  runtimeStats.PacketPathSearchIndexRemaining,
+		"packetPathBackfillRemaining":     runtimeStats.PacketPathBackfillRemaining,
+		"cacheRefreshFailures":            runtimeStats.CacheRefreshFailures,
+		"packetCountRefreshFailures":      runtimeStats.PacketCountRefreshFailures,
+		"packetCountRefreshLatencyMs":     runtimeStats.PacketCountRefreshLastLatencyMs,
+		"packetCountRefreshLastAt":        runtimeStats.PacketCountRefreshLastAtMs,
 		"cached":                          cacheStatus.Ready,
 	}
 	if s.PublicState != nil {
@@ -635,7 +733,7 @@ func (s *Server) publicHistoryFromProjection(
 	scanned := 0
 	exhausted := false
 	for len(events) < limit && scanned < publicPacketsMaxRawScan {
-		rawLimit := minInt(historyRawPageSize(limit-len(events)), publicPacketsMaxRawScan-scanned)
+		rawLimit := min(historyRawPageSize(limit-len(events)), publicPacketsMaxRawScan-scanned)
 		rawPackets, rawCursor, _, err := s.Store.PublicPacketPaths(ctx, store.PublicPacketPathQuery{
 			From:        from,
 			To:          to,
@@ -828,7 +926,7 @@ func (s *Server) publicChat(w http.ResponseWriter, r *http.Request) {
 	var pathHash3ByNodeID map[string]string
 	locationsReady := false
 	for len(messages) < limit && scannedRaw < publicChatMaxRawScan {
-		rawLimit := minInt(publicChatRawPageSize(limit-len(messages), filters), publicChatMaxRawScan-scannedRaw)
+		rawLimit := min(publicChatRawPageSize(limit-len(messages), filters), publicChatMaxRawScan-scannedRaw)
 		rawEvents, err := s.Store.PublicChatEvents(ctx, store.HistoryQuery{
 			From:   from,
 			To:     to,
@@ -947,7 +1045,7 @@ func (s *Server) publicPackets(w http.ResponseWriter, r *http.Request) {
 	var pathHash3ByNodeID map[string]string
 	locationsReady := false
 	for len(packets) < limit && scannedRaw < publicPacketsMaxRawScan {
-		rawLimit := minInt(publicPacketsRawPageSize(limit-len(packets), filters), publicPacketsMaxRawScan-scannedRaw)
+		rawLimit := min(publicPacketsRawPageSize(limit-len(packets), filters), publicPacketsMaxRawScan-scannedRaw)
 		rawEvents, err := s.Store.PublicPacketEdgeEvents(ctx, store.HistoryQuery{
 			From:            from,
 			To:              to,
@@ -1037,7 +1135,7 @@ func (s *Server) publicPacketsFromProjection(
 	exhausted := false
 	searchMode := store.PublicPacketPathSearchNone
 	for len(packets) < limit && scanned < publicPacketsMaxRawScan {
-		rawLimit := minInt(publicPacketsRawPageSize(limit-len(packets), filters), publicPacketsMaxRawScan-scanned)
+		rawLimit := min(publicPacketsRawPageSize(limit-len(packets), filters), publicPacketsMaxRawScan-scanned)
 		rawPackets, rawCursor, rawSearchMode, err := s.Store.PublicPacketPaths(ctx, store.PublicPacketPathQuery{
 			From:            from,
 			To:              to,
@@ -1139,7 +1237,7 @@ func publicPacketFiltersFromRequest(r *http.Request) publicPacketFilters {
 	return publicPacketFilters{
 		iata:        firstUpperQuery(query, "region", "iata"),
 		payload:     strings.ToUpper(strings.TrimSpace(query.Get("payload"))),
-		minHops:     maxInt(0, queryInt(r, "minHops", 0)),
+		minHops:     max(0, queryInt(r, "minHops", 0)),
 		messageOnly: queryBool(query.Get("messageOnly")),
 		query:       strings.ToLower(trimBounded(query.Get("q"), 120)),
 	}
@@ -1544,9 +1642,9 @@ func publicChatRawPageSize(remaining int, filters publicChatFilters) int {
 		return 0
 	}
 	if filters.channel == "" && filters.query == "" {
-		return minInt(maxInt(remaining, 200), 1000)
+		return min(max(remaining, 200), 1000)
 	}
-	return minInt(maxInt(remaining*2, 400), 1200)
+	return min(max(remaining*2, 400), 1200)
 }
 
 func publicPacketsRawPageSize(remaining int, filters publicPacketFilters) int {
@@ -1555,9 +1653,9 @@ func publicPacketsRawPageSize(remaining int, filters publicPacketFilters) int {
 	}
 	hasLateFilters := filters.minHops > 0 || filters.messageOnly || filters.query != ""
 	if !hasLateFilters {
-		return minInt(maxInt(remaining, 200), 1000)
+		return min(max(remaining, 200), 1000)
 	}
-	return minInt(maxInt(remaining*2, 400), 1200)
+	return min(max(remaining*2, 400), 1200)
 }
 
 func publicChatNextCursorToken(cursor *store.HistoryCursor, exhausted bool, matched int, limit int, scannedRaw int) string {
@@ -1659,18 +1757,16 @@ func (s *Server) nodes(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) nodeByID(w http.ResponseWriter, r *http.Request) {
 	nodeID := r.PathValue("nodeID")
-	nodes, err := s.Store.Nodes(r.Context(), false, "")
+	node, err := s.Store.NodeByID(r.Context(), nodeID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		status := http.StatusInternalServerError
+		if errors.Is(err, sql.ErrNoRows) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err)
 		return
 	}
-	for _, node := range nodes {
-		if node.NodeID == nodeID || node.PublicKey == strings.ToUpper(nodeID) {
-			writeJSON(w, http.StatusOK, node)
-			return
-		}
-	}
-	writeError(w, http.StatusNotFound, sql.ErrNoRows)
+	writeJSON(w, http.StatusOK, node)
 }
 
 func (s *Server) recentPackets(w http.ResponseWriter, r *http.Request) {
@@ -1860,20 +1956,6 @@ func trimBounded(value string, maxLen int) string {
 	return value
 }
 
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -1883,13 +1965,21 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
-	writeJSON(w, status, map[string]any{"error": err.Error()})
+	msg := err.Error()
+	if status >= 500 {
+		msg = "internal server error"
+	}
+	writeJSON(w, status, map[string]any{"error": msg})
 }
 
 func withSecurityHeaders(next http.Handler) http.Handler {
 	return withCompression(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.maplibre.org https://*.openfreemap.org https://tiles.openfreemap.org https://s3.amazonaws.com; connect-src 'self' wss: https://services.swpc.noaa.gov https://tiles.openfreemap.org https://s3.amazonaws.com; font-src 'self' https://tiles.openfreemap.org")
+		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 		next.ServeHTTP(w, r)
 	}))
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clamp } from '../lib/clamp';
 
 export type ChromePanelID = 'search' | 'legend' | 'hotRoutes';
 
@@ -182,10 +183,6 @@ export function allChromeVisible(state: ChromeVisibilityState): boolean {
 
 export function chromePanelVisible(state: ChromeVisibilityState, panel: ChromePanelID): boolean {
   return !state.chromeHidden && state.panels[panel];
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
 }
 
 export function useViewportBounds(): ViewportBounds {

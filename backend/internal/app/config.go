@@ -72,7 +72,7 @@ func LoadConfig() (Config, error) {
 	publicRegions := configuredPublicRegions(mapPreset)
 	cfg := Config{
 		ListenAddr:                      envString("LISTEN_ADDR", ":8080"),
-		AppVersion:                      envString("APP_VERSION", "2.7.3"),
+		AppVersion:                      envString("APP_VERSION", "2.7.4"),
 		GitSHA:                          envString("GIT_SHA", envString("VITE_GIT_SHA", "")),
 		BuildTime:                       envString("BUILD_TIME", envString("VITE_BUILD_TIME", "")),
 		PublicBaseURL:                   envString("PUBLIC_BASE_URL", "http://localhost:8080"),
@@ -182,14 +182,6 @@ func envList(key string) []string {
 		if item := strings.TrimSpace(field); item != "" {
 			out = append(out, item)
 		}
-	}
-	return out
-}
-
-func envListFallback(key string, fallback []string) []string {
-	out := envList(key)
-	if len(out) == 0 {
-		return append([]string{}, fallback...)
 	}
 	return out
 }

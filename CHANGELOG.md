@@ -4,6 +4,42 @@
 
 - No unreleased changes.
 
+## 2.7.4 - 2026-06-07
+
+- Full sweep: rate limiting, security headers, Docker hardening, React.lazy code
+  splitting, React.memo on CanadaMap, parallel LiveState queries, virtual chat
+  scroll, /metrics endpoint, node list panel, keyboard help, panel transitions,
+  loading skeletons, prefers-reduced-motion, ARIA roles, mobile StatusBar
+  collapse, App.tsx decomposition, utility consolidation, dead code removal,
+  version sync.
+
+## 2.7.3 - 2026-06-07
+
+- GIF export rate limiting (30s cooldown, 5 per 10min window).
+
+## 2.7.2 - 2026-06-07
+
+- Comprehensive polish/stability pass — 30 fixes: Hub data race, UpsertObserver
+  tx, useDebouncedValue hook fix, empty segments crash guard, ErrorBoundary,
+  solar timer leak, search debounce, keyboard shortcuts, offline banner,
+  React.memo, WS keep-alive.
+
+## 2.7.1 - 2026-06-07
+
+- Production audit fixes: WaitGroup tracking, MQTT panic recovery,
+  UpsertObserver transaction, UpdatedAt serialization, packet pruning, schema
+  cleanup, resolution dedup, error handling, retention config, context guards,
+  stale closure fix, singleton ResizeObserver, loadOlder generation guard,
+  AbortController, loading bar fade-in, shared utilities.
+
+## 2.7.0 - 2026-06-07
+
+- P0-P3 fixes: transactional packet upsert, MQTT connect timeout, VCR mode exit
+  fix, loadOlder race guards, UpdatedAt serialization,
+  resolution-in-edge-transaction, COUNT(*), missing DB indexes, MQTT
+  watchdog/backoff, 30-day retention, graceful shutdown WaitGroup,
+  ResizeObserver, SetupPanel validation, StatusBar DOM remount fix.
+
 ## 2.6.3 - 2026-06-06
 
 - Compacted the top-bar changelog popover into current release highlights and
