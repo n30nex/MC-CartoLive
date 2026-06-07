@@ -66,14 +66,20 @@ func (f *Fetcher) fetchKp(ctx context.Context) (float64, error) {
 	if err != nil { return 0, err }
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	var rows [][]any
-	if err := json.Unmarshal(body, &rows); err != nil { return 0, fmt.Errorf("kp parse: %w", err) }
-	if len(rows) < 2 { return 0, fmt.Errorf("kp empty: %d rows", len(rows)) }
-	for i := len(rows) - 1; i >= 1; i-- {
-		if len(rows[i]) < 3 { continue }
-		if v := toFloat(rows[i][1]); v > 0 { return math.Round(v*10) / 10, nil }
+	var arr []struct{ Kp float64 `json:"Kp"` }
+	if err := json.Unmarshal(body, &arr); err == nil && len(arr) > 0 {
+		var kp float64
+		for i := len(arr) - 1; i >= 0; i-- { if arr[i].Kp > 0 { kp = arr[i].Kp; break } }
+		if kp > 0 { return math.Round(kp*10) / 10, nil }
 	}
-	return 0, fmt.Errorf("kp no value in %d data rows", len(rows)-1)
+	var rows [][]any
+	if err := json.Unmarshal(body, &rows); err == nil && len(rows) >= 2 {
+		for i := len(rows) - 1; i >= 1; i-- {
+			if len(rows[i]) < 3 { continue }
+			if v := toFloat(rows[i][1]); v > 0 { return math.Round(v*10) / 10, nil }
+		}
+	}
+	return 0, fmt.Errorf("kp: no value")
 }
 
 func (f *Fetcher) fetchFlux(ctx context.Context) (float64, error) {
