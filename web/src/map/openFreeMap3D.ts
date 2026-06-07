@@ -87,6 +87,15 @@ type ObserverGlow = {
 
 type NodeModelLOD = 'marker' | 'full';
 
+const geomPool = new Map<string, THREE.BufferGeometry>();
+const pooledSet = new WeakSet<THREE.BufferGeometry>();
+const arcCache = new Map<string, THREE.BufferGeometry>();
+
+function poolK(p: string, ...a: (number|string)[]): string { return p+':'+a.map(v=>typeof v==='number'?v.toFixed(1):v).join(','); }
+function poolG(k: string, f: ()=>THREE.BufferGeometry): THREE.BufferGeometry { const e=geomPool.get(k); if(e)return e; const g=f(); geomPool.set(k,g); pooledSet.add(g); return g; }
+function isPooled(g: THREE.BufferGeometry|undefined): boolean { return g!==undefined && pooledSet.has(g); }
+function disposeGK(o: THREE.Object3D) { o.traverse(c=>{if(!(c instanceof THREE.Mesh))return;if(c.geometry&&isPooled(c.geometry))c.geometry=undefined as unknown as THREE.BufferGeometry;const m=c.material as THREE.Material|THREE.Material[]|undefined;if(Array.isArray(m))m.forEach(x=>x.dispose());else m?.dispose?.();}); }
+
 export function createOpenFreeMap3DController(): OpenFreeMap3DController {
   return new OpenFreeMap3DLayer();
 }
@@ -726,83 +735,37 @@ function meterScale(lng: number, lat: number): number {
 }
 
 function addBox(group: THREE.Group, width: number, depth: number, height: number, color: number, opacity: number, z: number) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, depth, height), material(color, opacity));
-  mesh.position.z = z;
-  group.add(mesh);
+  const g = poolG(poolK('box', width, depth, height), () => new THREE.BoxGeometry(width, depth, height));
+  const m = new THREE.Mesh(g, material(color, opacity)); m.position.z = z; group.add(m);
 }
-
 function addCylinder(group: THREE.Group, radiusTop: number, radiusBottom: number, height: number, color: number, opacity: number, z: number, x = 0, y = 0) {
-  const geometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, 12);
-  geometry.rotateX(Math.PI / 2);
-  const mesh = new THREE.Mesh(geometry, material(color, opacity));
-  mesh.position.set(x, y, z);
-  group.add(mesh);
+  const g = poolG(poolK('cyl', radiusTop, radiusBottom, height), () => { const c = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, 12); c.rotateX(Math.PI / 2); return c; });
+  const m = new THREE.Mesh(g, material(color, opacity)); m.position.set(x, y, z); group.add(m);
 }
-
 function addCone(group: THREE.Group, radius: number, height: number, color: number, opacity: number, z: number, x = 0, y = 0) {
-  const geometry = new THREE.ConeGeometry(radius, height, 16);
-  geometry.rotateX(Math.PI / 2);
-  const mesh = new THREE.Mesh(geometry, material(color, opacity, true));
-  mesh.position.set(x, y, z);
-  group.add(mesh);
+  const g = poolG(poolK('cone', radius, height), () => { const c = new THREE.ConeGeometry(radius, height, 16); c.rotateX(Math.PI / 2); return c; });
+  const m = new THREE.Mesh(g, material(color, opacity, true)); m.position.set(x, y, z); group.add(m);
 }
-
 function addSphere(group: THREE.Group, radius: number, color: number, opacity: number, z: number) {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 10), material(color, opacity, true));
-  mesh.position.z = z;
-  group.add(mesh);
+  const g = poolG(poolK('sphere', radius), () => new THREE.SphereGeometry(radius, 16, 10));
+  const m = new THREE.Mesh(g, material(color, opacity, true)); m.position.z = z; group.add(m);
 }
-
 function addTorus(group: THREE.Group, radius: number, tube: number, color: number, opacity: number, z: number) {
-  const mesh = new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 8, 32), material(color, opacity, true));
-  mesh.rotation.x = Math.PI / 2;
-  mesh.position.z = z;
-  group.add(mesh);
+  const g = poolG(poolK('torus', radius, tube), () => new THREE.TorusGeometry(radius, tube, 8, 32));
+  const m = new THREE.Mesh(g, material(color, opacity, true)); m.rotation.x = Math.PI / 2; m.position.z = z; group.add(m);
 }
 
 function material(color: number, opacity: number, additive = false): THREE.MeshBasicMaterial {
-  return new THREE.MeshBasicMaterial({
-    color,
-    transparent: opacity < 1 || additive,
-    opacity,
-    blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
-    depthWrite: !additive,
-    toneMapped: false
-  });
+  return new THREE.MeshBasicMaterial({ color, transparent: opacity < 1 || additive, opacity, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: !additive, toneMapped: false });
 }
-
-function nodeColor(node: PublicNode): string {
-  if (node.isObserver) return '#f59e0b';
-  if (node.role === 'repeater') return '#22c55e';
-  if (node.role === 'companion') return '#3b82f6';
-  if (node.role === 'room_server') return '#a855f7';
-  if (node.role === 'sensor') return '#65a30d';
-  return '#94a3b8';
-}
-
-function hexNumber(color: string): number {
-  if (/^#[0-9a-fA-F]{6}$/.test(color)) return parseInt(color.slice(1), 16);
-  return 0x67e8f9;
-}
+function nodeColor(node: PublicNode): string { if(node.isObserver)return'#f59e0b';if(node.role==='repeater')return'#22c55e';if(node.role==='companion')return'#3b82f6';if(node.role==='room_server')return'#a855f7';if(node.role==='sensor')return'#65a30d';return'#94a3b8'; }
+function hexNumber(color: string): number { return /^#[0-9a-fA-F]{6}$/.test(color) ? parseInt(color.slice(1), 16) : 0x67e8f9; }
 
 function clearGroup(group: THREE.Group) {
-  for (const child of [...group.children]) {
-    group.remove(child);
-    disposeObject(child);
-  }
+  for (const c of [...group.children]) { group.remove(c); disposeGK(c); }
 }
-
 function disposeObject(object: THREE.Object3D) {
-  object.traverse((child: THREE.Object3D) => {
-    const mesh = child as THREE.Mesh;
-    mesh.geometry?.dispose?.();
-    const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
-    if (Array.isArray(mat)) {
-      mat.forEach((item) => item.dispose());
-    } else {
-      mat?.dispose?.();
-    }
-  });
+  object.traverse((c) => { if (!(c instanceof THREE.Mesh)) return; if (!isPooled(c.geometry)) c.geometry?.dispose?.(); const m = c.material as THREE.Material|THREE.Material[]|undefined; if (Array.isArray(m)) m.forEach(x => x.dispose()); else m?.dispose?.(); });
 }
 
 function stableSetSignature(values: Set<string>): string {
