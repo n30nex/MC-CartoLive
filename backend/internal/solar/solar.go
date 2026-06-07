@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -40,20 +41,33 @@ func (f *Fetcher) Fetch(ctx context.Context) (Conditions, error) {
 	now := time.Now().UnixMilli()
 	c := Conditions{ServerTime: now, FetchedAt: now}
 
-	if kp, err := f.fetchKp(ctx); err == nil {
-		c.KpIndex = kp
-		c.KpLabel = kpLabel(kp)
-		c.GeomagActivity = geomagLabel(kp)
-	} else {
-		f.log.Warn("solar kp failed", "error", err)
-	}
-
-	if flux, err := f.fetchFlux(ctx); err == nil {
-		c.SolarFluxSFU = flux
-		c.SolarFluxLabel = fluxLabel(flux)
-	} else {
-		f.log.Warn("solar flux failed", "error", err)
-	}
+	var wg sync.WaitGroup
+	var kpMu, fluxMu sync.Mutex
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		if kp, err := f.fetchKp(ctx); err == nil {
+			kpMu.Lock()
+			c.KpIndex = kp
+			c.KpLabel = kpLabel(kp)
+			c.GeomagActivity = geomagLabel(kp)
+			kpMu.Unlock()
+		} else {
+			f.log.Warn("solar kp failed", "error", err)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if flux, err := f.fetchFlux(ctx); err == nil {
+			fluxMu.Lock()
+			c.SolarFluxSFU = flux
+			c.SolarFluxLabel = fluxLabel(flux)
+			fluxMu.Unlock()
+		} else {
+			f.log.Warn("solar flux failed", "error", err)
+		}
+	}()
+	wg.Wait()
 
 	f.log.Info("solar fetch", "kp", c.KpIndex, "flux", c.SolarFluxSFU)
 

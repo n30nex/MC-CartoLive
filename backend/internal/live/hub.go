@@ -14,6 +14,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+var jsonBufPool = sync.Pool{New: func() any { buf := make([]byte, 0, 4096); return &buf }}
+
 type Hub struct {
 	log           *slog.Logger
 	queueSize     int
@@ -26,6 +28,7 @@ type Hub struct {
 	pingFailures  atomic.Int64
 	displayMu     sync.Mutex
 	nextDisplayAt int64
+	clientBuffer  []*client
 }
 
 type client struct {
@@ -78,8 +81,15 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *Hub) Broadcast(event string, data any) {
 	env := h.eventEnvelope(event, data)
 	h.mu.RLock()
-	defer h.mu.RUnlock()
+	if h.clientBuffer == nil || len(h.clientBuffer) < len(h.clients) {
+		h.clientBuffer = make([]*client, 0, len(h.clients))
+	}
+	h.clientBuffer = h.clientBuffer[:0]
 	for c := range h.clients {
+		h.clientBuffer = append(h.clientBuffer, c)
+	}
+	h.mu.RUnlock()
+	for _, c := range h.clientBuffer {
 		h.observeQueueDepth(len(c.send))
 		select {
 		case c.send <- env:
@@ -198,8 +208,12 @@ func (h *Hub) writePump(c *client) {
 			if !ok {
 				return
 			}
+			data, err := json.Marshal(msg)
+			if err != nil {
+				return
+			}
 			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := c.conn.WriteJSON(msg); err != nil {
+			if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
 				return
 			}
 		case <-ticker.C:

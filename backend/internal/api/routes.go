@@ -21,6 +21,8 @@ import (
 	"meshcore-canada-live-map/backend/internal/store"
 )
 
+var gzipWriterPool = sync.Pool{New: func() any { return gzip.NewWriter(io.Discard) }}
+
 type Config struct {
 	RecentPacketLimit      int
 	RecentEdgeEventLimit   int
@@ -1877,8 +1879,12 @@ func withCompression(next http.Handler) http.Handler {
 		}
 		w.Header().Set("Content-Encoding", "gzip")
 		w.Header().Add("Vary", "Accept-Encoding")
-		gz := gzip.NewWriter(w)
-		defer gz.Close()
+		gz := gzipWriterPool.Get().(*gzip.Writer)
+		gz.Reset(w)
+		defer func() {
+			gz.Close()
+			gzipWriterPool.Put(gz)
+		}()
 		next.ServeHTTP(gzipResponseWriter{ResponseWriter: w, Writer: gz}, r)
 	})
 }

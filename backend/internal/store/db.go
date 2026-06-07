@@ -82,6 +82,10 @@ func sqliteDSN(path string) string {
 		"_pragma=busy_timeout%3d5000",
 		"_pragma=foreign_keys%3dON",
 		"_pragma=journal_mode%3dWAL",
+		"_pragma=synchronous%3dNORMAL",
+		"_pragma=cache_size%3d-64000",
+		"_pragma=temp_store%3dMEMORY",
+		"_pragma=mmap_size%3d268435456",
 	}, "&")
 }
 
