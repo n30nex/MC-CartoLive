@@ -1,8 +1,10 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { Database, MapPin, Route, Shield, Sparkles, Zap } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Database, MapPin, Route, Shield, Sparkles, Sun, Zap } from 'lucide-react';
+import { fetchSolarConditions } from '../api';
 import { payloadVisual } from '../payloadVisuals';
 import type { LiveCoverageStats } from '../state';
-import type { PublicStats } from '../types';
+import type { PublicStats, SolarConditions } from '../types';
 import { formatPacketsTotal, serverStatus } from './statusDisplay';
 
 interface Props {
@@ -40,7 +42,29 @@ export default function StatusBar({ stats, socketStatus, nodeCount, routeCount, 
       <StatusMetric className="unmapped" title={`${coverage.unmappedPerMinute} unresolved packets per minute`} icon={<MapPin size={14} />} value={formatStatusNumber(coverage.unmappedPerMinute)} label="unmapped/min" meterLevel={metricMeterLevel(coverage.unmappedPerMinute, perMinuteMax)} />
       <StatusMetric className="count-pill node-count" title={`${nodeCount.toLocaleString()} positioned public nodes`} icon={<Shield size={14} />} value={formatStatusNumber(nodeCount)} label="nodes" />
       <StatusMetric className="route count-pill route-count" title={`${routeCount.toLocaleString()} public routes`} icon={<Route size={14} />} value={formatStatusNumber(routeCount)} label="routes" />
+      <SolarIndicator />
     </header>
+  );
+}
+
+function SolarIndicator() {
+  const [solar, setSolar] = useState<SolarConditions | null>(null);
+  useEffect(() => {
+    let active = true;
+    const fetch = () => { fetchSolarConditions().then(s => { if (active) setSolar(s); }).catch(() => {}); };
+    fetch(); const iv = setInterval(fetch, 300_000);
+    return () => { active = false; clearInterval(iv); };
+  }, []);
+  if (!solar || solar.kpIndex <= 0) return null;
+  const kpColor = solar.kpIndex >= 5 ? '#ef4444' : solar.kpIndex >= 4 ? '#f97316' : '#22c55e';
+  const title = `Solar: Kp ${solar.kpIndex} (${solar.kpLabel}), F10.7 ${solar.solarFluxSfu} SFU (${solar.solarFluxLabel})`;
+  return (
+    <div className="status-pill status-metric solar-indicator" title={title} aria-label={title}>
+      <Sun size={14} style={{ marginRight: 4 }} />
+      <span style={{ color: kpColor, fontWeight: 600 }}>Kp{solar.kpIndex.toFixed(1)}</span>
+      <span style={{ margin: '0 4px', opacity: 0.5 }}>·</span>
+      <span>F{solar.solarFluxSfu.toFixed(0)}</span>
+    </div>
   );
 }
 

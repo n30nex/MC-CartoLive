@@ -45,15 +45,17 @@ func (f *Fetcher) Fetch(ctx context.Context) (Conditions, error) {
 		c.KpLabel = kpLabel(kp)
 		c.GeomagActivity = geomagLabel(kp)
 	} else {
-		f.log.Debug("solar kp failed", "error", err)
+		f.log.Warn("solar kp failed", "error", err)
 	}
 
 	if flux, err := f.fetchFlux(ctx); err == nil {
 		c.SolarFluxSFU = flux
 		c.SolarFluxLabel = fluxLabel(flux)
 	} else {
-		f.log.Debug("solar flux failed", "error", err)
+		f.log.Warn("solar flux failed", "error", err)
 	}
+
+	f.log.Info("solar fetch", "kp", c.KpIndex, "flux", c.SolarFluxSFU)
 
 	return c, nil
 }
@@ -65,13 +67,13 @@ func (f *Fetcher) fetchKp(ctx context.Context) (float64, error) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	var rows [][]any
-	if err := json.Unmarshal(body, &rows); err != nil { return 0, err }
-	if len(rows) < 2 { return 0, fmt.Errorf("empty kp") }
+	if err := json.Unmarshal(body, &rows); err != nil { return 0, fmt.Errorf("kp parse: %w", err) }
+	if len(rows) < 2 { return 0, fmt.Errorf("kp empty: %d rows", len(rows)) }
 	for i := len(rows) - 1; i >= 1; i-- {
 		if len(rows[i]) < 3 { continue }
 		if v := toFloat(rows[i][1]); v > 0 { return math.Round(v*10) / 10, nil }
 	}
-	return 0, fmt.Errorf("no kp value")
+	return 0, fmt.Errorf("kp no value in %d data rows", len(rows)-1)
 }
 
 func (f *Fetcher) fetchFlux(ctx context.Context) (float64, error) {
@@ -80,10 +82,15 @@ func (f *Fetcher) fetchFlux(ctx context.Context) (float64, error) {
 	if err != nil { return 0, err }
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	var data struct{ Flux float64 `json:"flux"` }
-	if err := json.Unmarshal(body, &data); err != nil { return 0, err }
-	if data.Flux <= 0 { return 0, fmt.Errorf("zero flux") }
-	return math.Round(data.Flux*10) / 10, nil
+	var arr []struct{ Flux float64 `json:"flux"` }
+	if err := json.Unmarshal(body, &arr); err == nil && len(arr) > 0 && arr[0].Flux > 0 {
+		return math.Round(arr[0].Flux*10) / 10, nil
+	}
+	var obj struct{ Flux float64 `json:"flux"` }
+	if err := json.Unmarshal(body, &obj); err == nil && obj.Flux > 0 {
+		return math.Round(obj.Flux*10) / 10, nil
+	}
+	return 0, fmt.Errorf("zero flux")
 }
 
 func kpLabel(kp float64) string {
@@ -98,10 +105,12 @@ func geomagLabel(kp float64) string {
 func toFloat(v any) float64 {
 	switch val := v.(type) {
 	case float64: return val
+	case float32: return float64(val)
+	case int: return float64(val)
+	case int64: return float64(val)
 	case string:
 		var f float64
-		fmt.Sscanf(val, "%f", &f)
-		return f
+		if _, err := fmt.Sscanf(val, "%f", &f); err == nil { return f }
 	}
 	return 0
 }
