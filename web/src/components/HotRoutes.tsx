@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { hiddenPayloadCount, payloadVisualsFor } from '../payloadVisuals';
 import type { RouteActivitySummary } from '../state';
 import type { PublicRoute } from '../types';
@@ -10,7 +10,12 @@ interface Props {
   onSelect: (routeID: string) => void;
 }
 
+const INITIAL_VISIBLE = 10;
+
 export default function HotRoutes({ routes, selectedRouteID, routeActivityByID, onSelect }: Props) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? routes : routes.slice(0, INITIAL_VISIBLE);
+  const hasMore = routes.length > INITIAL_VISIBLE;
   return (
     <section className="hot-routes">
       <div className="panel-title compact">
@@ -18,7 +23,7 @@ export default function HotRoutes({ routes, selectedRouteID, routeActivityByID, 
         <em>last 15m</em>
       </div>
       <div className="hot-route-list">
-        {routes.slice(0, 10).map((route) => {
+        {visible.map((route) => {
           const activity = routeActivityByID.get(route.id);
           const recentCount = activity?.total ?? 0;
           const payloads = payloadVisualsFor(route.payloadTypeNames, 3);
@@ -45,7 +50,13 @@ export default function HotRoutes({ routes, selectedRouteID, routeActivityByID, 
             </button>
           );
         })}
-        {routes.length === 0 && <div className="empty compact-empty">No busy pathways</div>}
+        {routes.length === 0 && <div className="empty compact-empty">No routes established yet</div>}
+        {routes.length > 0 && routeActivityByID.size === 0 && <div className="empty compact-empty">Waiting for recent activity</div>}
+        {hasMore && (
+          <button className="hot-route show-more" type="button" onClick={() => setShowAll(s => !s)}>
+            {showAll ? `Show top ${INITIAL_VISIBLE}` : `Show all ${routes.length} routes`}
+          </button>
+        )}
       </div>
     </section>
   );

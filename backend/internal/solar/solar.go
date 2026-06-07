@@ -113,6 +113,8 @@ func (f *Fetcher) fetchFlux(ctx context.Context) (float64, error) {
 	return 0, fmt.Errorf("zero flux")
 }
 
+func KpLabelPublic(kp float64) string { return kpLabel(kp) }
+func FluxLabelPublic(sfu float64) string { return fluxLabel(sfu) }
 func kpLabel(kp float64) string {
 	switch { case kp <= 3: return "quiet"; case kp <= 4: return "active"; case kp <= 5: return "storm"; case kp <= 7: return "major"; default: return "severe" }
 }

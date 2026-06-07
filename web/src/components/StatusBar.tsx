@@ -49,19 +49,27 @@ export default function StatusBar({ stats, socketStatus, nodeCount, routeCount, 
 
 function SolarIndicator() {
   const [solar, setSolar] = useState<SolarConditions | null>(null);
+  const [error, setError] = useState(false);
   useEffect(() => {
     let active = true;
-    const fetch = () => { fetchSolarConditions().then(s => { if (active) setSolar(s); }).catch(() => {}); };
+    const fetch = () => {
+      fetchSolarConditions()
+        .then(s => { if (active) { setSolar(s); setError(false); } })
+        .catch(() => { if (active) setError(true); });
+    };
     fetch(); const iv = setInterval(fetch, 300_000);
     return () => { active = false; clearInterval(iv); };
   }, []);
-  if (!solar || solar.kpIndex <= 0) return null;
-  const kpColor = solar.kpIndex >= 5 ? '#ef4444' : solar.kpIndex >= 4 ? '#f97316' : '#22c55e';
-  const title = `Solar: Kp ${solar.kpIndex} (${solar.kpLabel}), F10.7 ${solar.solarFluxSfu} SFU (${solar.solarFluxLabel})`;
+  if (!solar && !error) return <div className="status-pill status-metric solar-indicator" title="Loading solar conditions..."><Sun size={14} style={{ marginRight: 4, opacity: 0.4 }} /><span style={{ opacity: 0.5 }}>···</span></div>;
+  if (error && !solar) return <div className="status-pill status-metric solar-indicator warn" title="Solar data unavailable"><Sun size={14} style={{ marginRight: 4, opacity: 0.5 }} /><span style={{ color: '#f97316' }}>N/A</span></div>;
+  if (!solar) return null;
+  const kp = solar.kpIndex;
+  const kpColor = kp >= 5 ? '#ef4444' : kp >= 4 ? '#f97316' : '#22c55e';
+  const title = `Solar: Kp ${kp.toFixed(1)} (${solar.kpLabel}), F10.7 ${solar.solarFluxSfu.toFixed(0)} SFU (${solar.solarFluxLabel})`;
   return (
     <div className="status-pill status-metric solar-indicator" title={title} aria-label={title}>
       <Sun size={14} style={{ marginRight: 4 }} />
-      <span style={{ color: kpColor, fontWeight: 600 }}>Kp{solar.kpIndex.toFixed(1)}</span>
+      <span style={{ color: kpColor, fontWeight: 600 }}>Kp{kp.toFixed(1)}</span>
       <span style={{ margin: '0 4px', opacity: 0.5 }}>·</span>
       <span>F{solar.solarFluxSfu.toFixed(0)}</span>
     </div>

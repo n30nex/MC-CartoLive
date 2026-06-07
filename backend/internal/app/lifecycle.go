@@ -665,6 +665,22 @@ func (a *Application) refreshPacketCountOnce(ctx context.Context) {
 }
 
 func (a *Application) solarFetchLoop(ctx context.Context) {
+	seedFromDB := func() {
+		snap, err := a.Store.LatestSolarSnapshot(ctx)
+		if err != nil { return }
+		cond := solar.Conditions{
+			ServerTime:     snap.FetchedAtMs,
+			KpIndex:        snap.KpIndex,
+			KpLabel:        solar.KpLabelPublic(snap.KpIndex),
+			SolarFluxSFU:   snap.SolarFluxSfu,
+			SolarFluxLabel: solar.FluxLabelPublic(snap.SolarFluxSfu),
+			GeomagActivity: snap.GeomagActivity,
+			FetchedAt:      snap.FetchedAtMs,
+		}
+		a.solarSnapshot.Store(&cond)
+		a.Log.Info("solar cache seeded from database", "kp", cond.KpIndex, "flux", cond.SolarFluxSFU)
+	}
+	seedFromDB()
 	fetch := func() {
 		cond, err := a.Solar.Fetch(ctx)
 		if err != nil { a.Log.Warn("solar fetch failed", "error", err); return }

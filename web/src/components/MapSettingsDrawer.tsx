@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { RotateCcw, SlidersHorizontal, X } from 'lucide-react';
 import {
   DEFAULT_MAP_SETTINGS,
@@ -129,10 +130,7 @@ export default function MapSettingsDrawer({ settings, onChange, onClose }: MapSe
       </section>
 
       <footer className="map-settings-footer">
-        <button type="button" onClick={() => onChange(DEFAULT_MAP_SETTINGS)}>
-          <RotateCcw size={15} />
-          Reset visual settings
-        </button>
+        <ResetButton onConfirm={() => onChange(DEFAULT_MAP_SETTINGS)} />
         <span><SlidersHorizontal size={14} /> local browser preference</span>
       </footer>
     </aside>
@@ -164,5 +162,24 @@ function Slider({
       </span>
       <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
     </label>
+  );
+}
+
+function ResetButton({ onConfirm }: { onConfirm: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  if (!confirming) {
+    return (
+      <button type="button" onClick={() => setConfirming(true)}>
+        <RotateCcw size={15} />
+        Reset visual settings
+      </button>
+    );
+  }
+  return (
+    <span className="reset-confirm">
+      <span>Reset all?</span>
+      <button type="button" className="danger" onClick={() => { onConfirm(); setConfirming(false); }}>Yes, reset</button>
+      <button type="button" onClick={() => setConfirming(false)}>Cancel</button>
+    </span>
   );
 }
