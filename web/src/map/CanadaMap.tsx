@@ -1087,6 +1087,10 @@ function lightOverlayLayer(layer: maplibregl.LayerSpecification): maplibregl.Lay
       next.paint['text-color'] = '#f8fafc';
       next.paint['text-halo-color'] = '#0f172a';
       break;
+    case OBSERVER_LABEL_LAYER:
+      next.paint['text-color'] = '#b45309';
+      next.paint['text-halo-color'] = 'rgba(255, 255, 255, 0.85)';
+      break;
     default:
       return layer;
   }
@@ -1363,7 +1367,8 @@ function CanadaMap({
       && (packetVisualSettingsRef.current.showLiveCometsAtAllZooms || isDetailMode(map));
     if (shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(pulse)) {
       const text = publicSafeMessage(pulse);
-      const key = `pulse:${hashBubbleText(text)}`;
+      const anchorId = pulse.messageAnchor?.nodeId ?? pulse.segments[0]?.from.nodeId ?? '';
+      const key = `pulse:${anchorId}:${hashBubbleText(text)}`;
       if (!shownBubbleTextsRef.current.has(key)) {
         shownBubbleTextsRef.current.add(key);
         showMessageBubble(map, messageBubbleFromPulse(map, pulse));
@@ -1399,7 +1404,8 @@ function CanadaMap({
     if (map && shouldAnimate) followTrafficObserverBurst(map, burst, followTrafficRef.current, followTrafficStateRef);
     if (map && shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(burst)) {
       const text = publicSafeMessage(burst);
-      const key = `burst:${hashBubbleText(text)}`;
+      const anchorLabel = burst.messageAnchor?.label ?? burst.location.label ?? '';
+      const key = `burst:${anchorLabel}:${hashBubbleText(text)}`;
       if (!shownBubbleTextsRef.current.has(key)) {
         shownBubbleTextsRef.current.add(key);
         showMessageBubble(map, messageBubbleFromObserverBurst(map, burst));
@@ -1741,15 +1747,18 @@ function CanadaMap({
     clearClusterActivityGlowStates(map, clusterActivityGlowRef.current);
     stopClusterActivityGlowTimer(clusterActivityGlowTimerRef);
     destroyOpenFreeMap3D();
+    layerEventsBoundRef.current = false;
 
     const nextStyle = mapStyleForMode(baseMode, themeMode);
     (window as any).__meshcoreMapStyle = nextStyle;
     map.setStyle(nextStyle);
     if (baseMode === 'openfreemap') ensureMercatorProjection(map);
-    map.easeTo({
-      pitch: defaultPitchForMode(baseMode),
-      bearing: defaultBearingForMode(baseMode),
-      duration: 500
+    map.once('style.load', () => {
+      map.easeTo({
+        pitch: defaultPitchForMode(baseMode),
+        bearing: defaultBearingForMode(baseMode),
+        duration: 500
+      });
     });
   }, [baseMode, themeMode]);
 

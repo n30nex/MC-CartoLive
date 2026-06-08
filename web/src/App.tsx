@@ -1013,6 +1013,8 @@ export default function App() {
         clearPlotRoutes();
       }
       if (event.code === 'Space') {
+        const target = event.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
         event.preventDefault();
         setPaused((value) => !value);
       }
