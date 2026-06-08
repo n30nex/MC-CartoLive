@@ -1573,7 +1573,7 @@ function CanadaMap({
           baseWarning = `OpenFreeMap base warning: ${message}`;
         }
       } else {
-        ensureTerrainSources(map, themeModeRef.current);
+        clearMapTerrain(map);
       }
       try {
         addPublicLayers(map);

@@ -916,6 +916,7 @@ export default function App() {
 
   const resumeLiveFromPacketTray = useCallback(() => {
     returnToLive();
+    setPaused(false);
     setPacketsPanelMode('expanded');
   }, [returnToLive]);
 
@@ -1354,8 +1355,8 @@ export default function App() {
         </ErrorBoundary>
       )}
       {chatOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><ChatPanel presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onClose={closeChat} /></Suspense></ErrorBoundary>}
-      {nodeListOpen && <Suspense fallback={<PanelSkeleton />}><NodeListPanel nodes={visibleNodes} selectedNodeID={selectedNodeID} onSelectNode={(id) => { selectNode(id); setNodeListOpen(false); }} onClose={() => setNodeListOpen(false)} /></Suspense>}
-      {shortcutHelpOpen && <Suspense fallback={<PanelSkeleton />}><ShortcutHelp onClose={() => setShortcutHelpOpen(false)} /></Suspense>}
+      {nodeListOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><NodeListPanel nodes={visibleNodes} selectedNodeID={selectedNodeID} onSelectNode={(id) => { selectNode(id); setNodeListOpen(false); }} onClose={() => setNodeListOpen(false)} /></Suspense></ErrorBoundary>}
+      {shortcutHelpOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><ShortcutHelp onClose={() => setShortcutHelpOpen(false)} /></Suspense></ErrorBoundary>}
 
       {!vcrOpen && packetsPanelMode !== 'compactTray' && !netGraphOpen && !chatOpen && !setupOpen && (
         <>
