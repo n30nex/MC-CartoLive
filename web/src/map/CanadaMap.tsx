@@ -949,8 +949,8 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
         'text-offset': [0, 1.3],
         'text-allow-overlap': true,
         'text-ignore-placement': true,
-        'text-optional': true,
-        'symbol-placement': 'point'
+        'text-rotation-alignment': 'viewport',
+        'text-pitch-alignment': 'viewport'
       },
       paint: {
         'text-color': '#fbbf24',
@@ -2642,8 +2642,8 @@ function addPublicLayers(map: maplibregl.Map) {
       'text-offset': [0, 1.3],
       'text-allow-overlap': true,
       'text-ignore-placement': true,
-      'text-optional': true,
-      'symbol-placement': 'point'
+      'text-rotation-alignment': 'viewport',
+      'text-pitch-alignment': 'viewport'
     },
     paint: {
       'text-color': '#fbbf24',
