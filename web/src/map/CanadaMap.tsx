@@ -193,6 +193,9 @@ const TERRAIN_SOURCE = 'meshcore-terrain-dem';
 const HILLSHADE_SOURCE = 'meshcore-hillshade-dem';
 const HILLSHADE_LAYER = 'meshcore-topographic-hillshade';
 const BUILDINGS_3D_LAYER = 'openfreemap-3d-buildings';
+const OBSERVER_LABEL_LAYER = 'observer-map-labels';
+const WEATHER_CLOUD_SOURCE = 'meshcore-weather-clouds';
+const WEATHER_CLOUD_LAYER = 'meshcore-weather-cloud-overlay';
 const NODE_ACTIVE_LABEL_VISIBLE_MS = 24_000;
 const NODE_LABEL_RECENT_VISIBLE_MS = 90_000;
 const MESSAGE_BUBBLE_LIFETIME_MS = 7_200;
@@ -216,6 +219,7 @@ const OPENFREEMAP_STYLE_URL = envURL('VITE_OPENFREEMAP_STYLE_URL', DEFAULT_OPENF
 const OPENFREEMAP_TILEJSON_URL = envURL('VITE_OPENFREEMAP_TILEJSON_URL', DEFAULT_OPENFREEMAP_TILEJSON_URL);
 const TERRAIN_TILE_URL = envURL('VITE_TERRAIN_TILE_URL', DEFAULT_TERRAIN_TILE_URL);
 const TERRAIN_EXAGGERATION = envFloat('VITE_TERRAIN_EXAGGERATION', 1.25);
+const WEATHER_API_KEY = (import.meta.env['VITE_OPENWEATHERMAP_API_KEY'] as string | undefined)?.trim() || '';
 
 export type MapBaseMode = 'original' | 'openfreemap';
 export type MapThemeMode = 'dark' | 'light';
@@ -930,6 +934,28 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       paint: {
         'icon-opacity': ['case', ['==', ['get', 'selected'], true], 1, ['==', ['get', 'dimmed'], true], 0.34, 0.94]
       }
+    },
+    {
+      id: OBSERVER_LABEL_LAYER,
+      type: 'symbol',
+      source: NODE_SOURCE,
+      minzoom: DETAIL_MIN_ZOOM,
+      filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'observer'], true]],
+      layout: {
+        'text-field': ['get', 'mapLabel'],
+        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 7, 10, 11, 12],
+        'text-anchor': 'top',
+        'text-offset': [0, 1.3],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true
+      },
+      paint: {
+        'text-color': '#fbbf24',
+        'text-halo-color': '#020617',
+        'text-halo-width': 1.8,
+        'text-opacity': ['case', ['==', ['get', 'dimmed'], true], 0.5, 0.92]
+      }
     }
   ]
 };
@@ -1574,6 +1600,8 @@ function CanadaMap({
         }
       } else {
         ensureHillshadeLayer(map, themeModeRef.current);
+        ensureBuildingExtrusions(map, themeModeRef.current);
+        ensureWeatherCloudLayer(map);
       }
       try {
         addPublicLayers(map);
@@ -2089,6 +2117,7 @@ function addOpenFreeMap3DBase(map: maplibregl.Map, themeMode: MapThemeMode) {
     });
   }
   ensureTerrainSources(map, themeMode);
+  ensureWeatherCloudLayer(map);
   addLayerIfMissing(map, {
     id: BUILDINGS_3D_LAYER,
     type: 'fill-extrusion',
@@ -2196,6 +2225,81 @@ function ensureHillshadeLayer(map: maplibregl.Map, themeMode: MapThemeMode) {
       'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 0.54
     } as any
   }, labelLayerID);
+}
+
+function ensureBuildingExtrusions(map: maplibregl.Map, themeMode: MapThemeMode) {
+  if (!map.getSource(OPENFREEMAP_SOURCE)) {
+    map.addSource(OPENFREEMAP_SOURCE, {
+      type: 'vector',
+      url: OPENFREEMAP_TILEJSON_URL
+    });
+  }
+  addLayerIfMissing(map, {
+    id: BUILDINGS_3D_LAYER,
+    type: 'fill-extrusion',
+    source: OPENFREEMAP_SOURCE,
+    'source-layer': 'building',
+    minzoom: 14.2,
+    filter: ['!=', ['get', 'hide_3d'], true],
+    paint: {
+      'fill-extrusion-color': [
+        'interpolate',
+        ['linear'],
+        ['coalesce', ['get', 'render_height'], 0],
+        0,
+        themeMode === 'light' ? '#dbe3ee' : '#172033',
+        80,
+        themeMode === 'light' ? '#cbd5e1' : '#243047',
+        200,
+        themeMode === 'light' ? '#b6c3d3' : '#334155',
+        420,
+        themeMode === 'light' ? '#94a3b8' : '#475569'
+      ],
+      'fill-extrusion-height': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        14.2,
+        0,
+        15.1,
+        ['coalesce', ['get', 'render_height'], 0]
+      ],
+      'fill-extrusion-base': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        14.2,
+        0,
+        15.1,
+        ['coalesce', ['get', 'render_min_height'], 0],
+      ],
+      'fill-extrusion-opacity': ['interpolate', ['linear'], ['zoom'], 14.2, 0.16, 15.5, themeMode === 'light' ? 0.56 : 0.62]
+    }
+  }, firstTextSymbolLayerID(map));
+}
+
+function ensureWeatherCloudLayer(map: maplibregl.Map) {
+  if (!WEATHER_API_KEY) return;
+  if (!map.getSource(WEATHER_CLOUD_SOURCE)) {
+    map.addSource(WEATHER_CLOUD_SOURCE, {
+      type: 'raster',
+      tiles: [`https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${WEATHER_API_KEY}`],
+      tileSize: 256,
+      maxzoom: 12,
+      attribution: '&copy; OpenWeatherMap'
+    });
+  }
+  addLayerIfMissing(map, {
+    id: WEATHER_CLOUD_LAYER,
+    type: 'raster',
+    source: WEATHER_CLOUD_SOURCE,
+    minzoom: 0,
+    maxzoom: 12,
+    paint: {
+      'raster-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.48, 3, 0.38, 5, 0.22, 7, 0.08, 8, 0],
+      'raster-fade-duration': 300
+    }
+  });
 }
 
 function addPublicLayers(map: maplibregl.Map) {
@@ -2522,6 +2626,29 @@ function addPublicLayers(map: maplibregl.Map) {
     }
   });
 
+  addLayerIfMissing(map, {
+    id: OBSERVER_LABEL_LAYER,
+    type: 'symbol',
+    source: NODE_SOURCE,
+    minzoom: DETAIL_MIN_ZOOM,
+    filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'observer'], true]],
+    layout: {
+      'text-field': ['get', 'mapLabel'],
+      'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 7, 10, 11, 12],
+      'text-anchor': 'top',
+      'text-offset': [0, 1.3],
+      'text-allow-overlap': true,
+      'text-ignore-placement': true
+    },
+    paint: {
+      'text-color': '#fbbf24',
+      'text-halo-color': '#020617',
+      'text-halo-width': 1.8,
+      'text-opacity': ['case', ['==', ['get', 'dimmed'], true], 0.5, 0.92]
+    }
+  });
+
 }
 
 function addLayerIfMissing(map: maplibregl.Map, layer: maplibregl.LayerSpecification, beforeID?: string) {
@@ -2537,7 +2664,7 @@ function applyLayerSettings(map: maplibregl.Map, settings: MapLayerSettings) {
     ...CLUSTER_ROLE_BADGES.flatMap((badge) => [`${CLUSTER_ROLE_BADGE_LAYER_PREFIX}-${badge.key}-dot`, `${CLUSTER_ROLE_BADGE_LAYER_PREFIX}-${badge.key}-count`])
   ];
   const activityHeatmapLayers = [ACTIVITY_HEATMAP_LAYER, ACTIVITY_SPARKLE_LAYER];
-  const nodeLayers = [NODE_HALO_LAYER, NODE_LAYER, NODE_ICON_LAYER, OBSERVER_LAYER];
+  const nodeLayers = [NODE_HALO_LAYER, NODE_LAYER, NODE_ICON_LAYER, OBSERVER_LAYER, OBSERVER_LABEL_LAYER];
   const routeLayers = [ROUTE_LAYER];
   const analysisLayers = [ROUTE_GLOW_LAYER, ROUTE_PAYLOAD_GLOW_LAYER, ANALYSIS_ROUTE_GLOW_LAYER, ANALYSIS_ROUTE_LAYER];
   const observerBurstLayers = [CLUSTER_ACTIVITY_AURA_LAYER, CLUSTER_ACTIVITY_RING_LAYER];
@@ -2549,6 +2676,7 @@ function applyLayerSettings(map: maplibregl.Map, settings: MapLayerSettings) {
   for (const layerID of observerBurstLayers) setLayerVisibility(map, layerID, settings.observerBursts);
   setLayerVisibility(map, BUILDINGS_3D_LAYER, settings.buildingExtrusions);
   setLayerVisibility(map, HILLSHADE_LAYER, settings.terrainHeightmap);
+  setLayerVisibility(map, WEATHER_CLOUD_LAYER, settings.weatherClouds);
 }
 
 function setLayerVisibility(map: maplibregl.Map, layerID: string, visible: boolean) {

@@ -1978,7 +1978,7 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.maplibre.org https://*.openfreemap.org https://tiles.openfreemap.org https://s3.amazonaws.com https://demotiles.maplibre.org https://*.basemaps.cartocdn.com; connect-src 'self' wss: ws: https://services.swpc.noaa.gov https://tiles.openfreemap.org https://s3.amazonaws.com https://demotiles.maplibre.org https://*.basemaps.cartocdn.com; font-src 'self' https://tiles.openfreemap.org https://fonts.openfreemap.org; worker-src 'self' blob:")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.maplibre.org https://*.openfreemap.org https://tiles.openfreemap.org https://s3.amazonaws.com https://demotiles.maplibre.org https://*.basemaps.cartocdn.com https://tile.openweathermap.org; connect-src 'self' wss: ws: https://services.swpc.noaa.gov https://tiles.openfreemap.org https://s3.amazonaws.com https://demotiles.maplibre.org https://*.basemaps.cartocdn.com https://tile.openweathermap.org; font-src 'self' https://tiles.openfreemap.org https://fonts.openfreemap.org; worker-src 'self' blob:")
 		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 		next.ServeHTTP(w, r)
 	}))

@@ -29,9 +29,10 @@ const LAYER_CONTROLS: readonly { key: keyof MapLayerSettings; label: string; hin
   { key: 'nodeModels3D', label: '3D node models', hint: 'OpenFreeMap repeater, companion, room, and observer models' },
   { key: 'routeArcs3D', label: '3D route arcs', hint: 'Elevated OpenFreeMap route/pathway arcs' },
   { key: 'packetComets3D', label: '3D packet comets', hint: 'OpenFreeMap mesh comets and trails' },
-  { key: 'buildingExtrusions', label: '3D buildings', hint: 'OpenFreeMap building extrusion layer' },
+  { key: 'buildingExtrusions', label: '3D buildings', hint: 'Building extrusion layer (OpenFreeMap tiles on any mode)' },
   { key: 'terrainLOS', label: 'Terrain line-of-sight', hint: 'Color routes by RF terrain clearance (915 MHz Fresnel)' },
-  { key: 'terrainHeightmap', label: 'Terrain heightmap', hint: 'DEM elevation hillshade and 3D terrain on base map' }
+  { key: 'terrainHeightmap', label: 'Terrain heightmap', hint: 'DEM elevation hillshade and 3D terrain on base map' },
+  { key: 'weatherClouds', label: 'Weather clouds', hint: 'Live cloud cover overlay fading at close zoom' }
 ];
 
 const ANIMATION_STYLES: readonly { value: PacketAnimationStyle; label: string }[] = [
