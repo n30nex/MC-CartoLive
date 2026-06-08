@@ -948,13 +948,15 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
         'text-anchor': 'top',
         'text-offset': [0, 1.3],
         'text-allow-overlap': true,
-        'text-ignore-placement': true
+        'text-ignore-placement': true,
+        'text-optional': true,
+        'symbol-placement': 'point'
       },
       paint: {
         'text-color': '#fbbf24',
-        'text-halo-color': '#020617',
-        'text-halo-width': 1.8,
-        'text-opacity': ['case', ['==', ['get', 'dimmed'], true], 0.5, 0.92]
+        'text-halo-color': 'rgba(2, 6, 23, 0.85)',
+        'text-halo-width': 1.2,
+        'text-opacity': ['case', ['==', ['get', 'dimmed'], true], 0.28, 0.55]
       }
     }
   ]
@@ -2639,13 +2641,15 @@ function addPublicLayers(map: maplibregl.Map) {
       'text-anchor': 'top',
       'text-offset': [0, 1.3],
       'text-allow-overlap': true,
-      'text-ignore-placement': true
+      'text-ignore-placement': true,
+      'text-optional': true,
+      'symbol-placement': 'point'
     },
     paint: {
       'text-color': '#fbbf24',
-      'text-halo-color': '#020617',
-      'text-halo-width': 1.8,
-      'text-opacity': ['case', ['==', ['get', 'dimmed'], true], 0.5, 0.92]
+      'text-halo-color': 'rgba(2, 6, 23, 0.85)',
+      'text-halo-width': 1.2,
+      'text-opacity': ['case', ['==', ['get', 'dimmed'], true], 0.28, 0.55]
     }
   });
 
@@ -2708,11 +2712,12 @@ function projectNodeLabels(
   if (!isDetailMode(map)) {
     return [];
   }
-  const maxLabels = 72;
+  const maxLabels = 40;
   const margin = 80;
 
   const projected = nodes
     .filter(isMappableNode)
+    .filter((node) => !node.isObserver)
     .map((node) => {
       const point = projectLngLat(map, node.longitude, node.latitude);
       const activityAt = meshActivityAtByNodeID.get(node.id);
