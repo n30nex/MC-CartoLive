@@ -16,7 +16,6 @@ services:
         VITE_APP_BRAND_LOGO: ${VITE_APP_BRAND_LOGO:-}
     container_name: meshcore-canada-live-map
     ports:
-      - "80:8080"
       - "39476:8080"
     env_file:
       - .env

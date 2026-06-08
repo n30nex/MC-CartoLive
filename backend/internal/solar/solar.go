@@ -79,6 +79,7 @@ func (f *Fetcher) fetchKp(ctx context.Context) (float64, error) {
 	resp, err := f.client.Do(req)
 	if err != nil { return 0, err }
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK { return 0, fmt.Errorf("kp: http %d", resp.StatusCode) }
 	body, err := io.ReadAll(resp.Body)
 	if err != nil { f.log.Warn("solar kp body read failed", "error", err); return 0, err }
 	var arr []struct{ Kp float64 `json:"Kp"` }
@@ -102,6 +103,7 @@ func (f *Fetcher) fetchFlux(ctx context.Context) (float64, error) {
 	resp, err := f.client.Do(req)
 	if err != nil { return 0, err }
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK { return 0, fmt.Errorf("flux: http %d", resp.StatusCode) }
 	body, err := io.ReadAll(resp.Body)
 	if err != nil { f.log.Warn("solar flux body read failed", "error", err); return 0, err }
 	var arr []struct{ Flux float64 `json:"flux"` }

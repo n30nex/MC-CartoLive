@@ -874,11 +874,11 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
           ['linear'],
           ['zoom'],
           3,
-          ['case', ['==', ['get', 'selected'], true], 7, ['==', ['get', 'path'], true], 6.1, ['==', ['get', 'neighbor'], true], 5.4, 3],
+          ['case', ['==', ['get', 'selected'], true], 7, ['==', ['get', 'path'], true], 6.1, ['==', ['get', 'observer'], true], 5.8, ['==', ['get', 'neighbor'], true], 5.4, 3],
           8,
-          ['case', ['==', ['get', 'selected'], true], 8, ['==', ['get', 'path'], true], 7.1, ['==', ['get', 'neighbor'], true], 6.4, 5.5],
+          ['case', ['==', ['get', 'selected'], true], 8, ['==', ['get', 'path'], true], 7.1, ['==', ['get', 'observer'], true], 7.4, ['==', ['get', 'neighbor'], true], 6.4, 5.5],
           12,
-          ['case', ['==', ['get', 'selected'], true], 9, ['==', ['get', 'path'], true], 8.1, ['==', ['get', 'neighbor'], true], 7.2, 7]
+          ['case', ['==', ['get', 'selected'], true], 9, ['==', ['get', 'path'], true], 8.1, ['==', ['get', 'observer'], true], 8.2, ['==', ['get', 'neighbor'], true], 7.2, 7]
         ],
         'circle-color': NODE_CIRCLE_COLOR,
         'circle-stroke-color': NODE_CIRCLE_STROKE_COLOR,

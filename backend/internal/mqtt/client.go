@@ -161,7 +161,7 @@ func (c *Client) onMessage(ctx context.Context) paho.MessageHandler {
 		}
 		if info.Subtopic == "internal" {
 			c.internalDropped.Add(1)
-			c.log.Warn("mqtt internal topic dropped", "iata", info.IATA)
+			c.log.Debug("mqtt internal topic dropped", "iata", info.IATA)
 			return
 		}
 		normalized, err := Normalize(topic, msg.Payload(), time.Now())

@@ -90,7 +90,6 @@ type NodeModelLOD = 'marker' | 'full';
 
 const geomPool = new Map<string, THREE.BufferGeometry>();
 const pooledSet = new WeakSet<THREE.BufferGeometry>();
-const arcCache = new Map<string, THREE.BufferGeometry>();
 
 function poolK(p: string, ...a: (number|string)[]): string { return p+':'+a.map(v=>typeof v==='number'?v.toFixed(1):v).join(','); }
 function poolG(k: string, f: ()=>THREE.BufferGeometry): THREE.BufferGeometry { const e=geomPool.get(k); if(e)return e; const g=f(); geomPool.set(k,g); pooledSet.add(g); return g; }
