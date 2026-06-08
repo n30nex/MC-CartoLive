@@ -215,6 +215,8 @@ button {
     filter 5200ms cubic-bezier(0.16, 1, 0.3, 1),
     color 4800ms cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform, opacity;
+  contain: layout style paint;
+  backface-visibility: hidden;
 }
 
 .node-screen-label-name,

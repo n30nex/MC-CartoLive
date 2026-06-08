@@ -1550,7 +1550,7 @@ function CanadaMap({
       if (!loadedRef.current) setMapInitError(event.error?.message ?? 'map style error');
     };
     map.on('resize', resizeOverlay);
-    map.on('move', scheduleMapOverlays);
+    map.on('moveend', scheduleMapOverlays);
     map.on('moveend', publishView);
     map.on('error', recordMapError);
     window.addEventListener('resize', resizeMap);
@@ -1573,7 +1573,7 @@ function CanadaMap({
           baseWarning = `OpenFreeMap base warning: ${message}`;
         }
       } else {
-        clearMapTerrain(map);
+        ensureHillshadeLayer(map, themeModeRef.current);
       }
       try {
         addPublicLayers(map);
@@ -1640,7 +1640,7 @@ function CanadaMap({
       if (initializeRetry !== null) window.clearTimeout(initializeRetry);
       window.removeEventListener('resize', resizeMap);
       map.off('resize', resizeOverlay);
-      map.off('move', scheduleMapOverlays);
+      map.off('moveend', scheduleMapOverlays);
       map.off('moveend', publishView);
       map.off('error', recordMapError);
       map.off('load', initializeMapLayers);
@@ -2176,6 +2176,26 @@ function clearMapTerrain(map: maplibregl.Map) {
   } catch {
     // Older MapLibre styles may not have sky support enabled.
   }
+}
+
+function ensureHillshadeLayer(map: maplibregl.Map, themeMode: MapThemeMode) {
+  if (!map.getSource(HILLSHADE_SOURCE)) {
+    map.addSource(HILLSHADE_SOURCE, { type: 'raster-dem', tiles: [TERRAIN_TILE_URL], encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
+  }
+  const labelLayerID = firstTextSymbolLayerID(map);
+  addLayerIfMissing(map, {
+    id: HILLSHADE_LAYER,
+    type: 'hillshade',
+    source: HILLSHADE_SOURCE,
+    paint: {
+      'hillshade-method': 'multidirectional',
+      'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#1e293b', '#334155', '#475569', '#64748b'],
+      'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#020617', '#08111f', '#0f172a', '#1e293b'],
+      'hillshade-illumination-direction': [270, 315, 0, 45],
+      'hillshade-illumination-altitude': [24, 32, 36, 28],
+      'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 0.54
+    } as any
+  }, labelLayerID);
 }
 
 function addPublicLayers(map: maplibregl.Map) {
