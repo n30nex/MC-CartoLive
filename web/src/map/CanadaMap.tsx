@@ -1183,6 +1183,7 @@ function CanadaMap({
   const mapVisualModeRef = useRef<MapVisualMode>(visualModeForZoom(initialView?.z ?? 3.35));
   const nodeLabelFrameRef = useRef<number | null>(null);
   const messageBubbleCleanupTimersRef = useRef<Map<string, number>>(new Map());
+  const shownBubbleTextsRef = useRef<Set<string>>(new Set());
   const pageHiddenRef = useRef(typeof document !== 'undefined' ? document.hidden : false);
   const pausedRef = useRef(paused);
   const initialViewRef = useRef(initialView);
@@ -1361,7 +1362,12 @@ function CanadaMap({
       && layerSettingsRef.current.liveComets
       && (packetVisualSettingsRef.current.showLiveCometsAtAllZooms || isDetailMode(map));
     if (shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(pulse)) {
-      showMessageBubble(map, messageBubbleFromPulse(map, pulse));
+      const text = publicSafeMessage(pulse);
+      const key = `pulse:${hashBubbleText(text)}`;
+      if (!shownBubbleTextsRef.current.has(key)) {
+        shownBubbleTextsRef.current.add(key);
+        showMessageBubble(map, messageBubbleFromPulse(map, pulse));
+      }
     }
     addPulseNodeActivity(map, nodeActivityRef.current, pulse);
     addPulseNodeMeshActivity(nodeMeshActivityAtRef.current, pulse);
@@ -1392,7 +1398,12 @@ function CanadaMap({
     const shouldAnimate = shouldAnimateLiveEvent(visualReceivedAt(burst), Date.now(), pageHiddenRef.current);
     if (map && shouldAnimate) followTrafficObserverBurst(map, burst, followTrafficRef.current, followTrafficStateRef);
     if (map && shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(burst)) {
-      showMessageBubble(map, messageBubbleFromObserverBurst(map, burst));
+      const text = publicSafeMessage(burst);
+      const key = `burst:${hashBubbleText(text)}`;
+      if (!shownBubbleTextsRef.current.has(key)) {
+        shownBubbleTextsRef.current.add(key);
+        showMessageBubble(map, messageBubbleFromObserverBurst(map, burst));
+      }
     }
     if (map && isClusterMode(map)) {
       if (shouldAnimate && layerSettingsRef.current.observerBursts && addObserverBurstClusterActivityGlow(map, clusterActivityGlowRef.current, burst)) {
@@ -1856,6 +1867,7 @@ function CanadaMap({
     }
     seenPulseIDsRef.current.clear();
     seenObserverBurstIDsRef.current.clear();
+    shownBubbleTextsRef.current.clear();
     pendingPulsesRef.current = [];
     pendingObserverBurstsRef.current = [];
     if (pulseSchedulerTimerRef.current !== null) window.clearTimeout(pulseSchedulerTimerRef.current);
