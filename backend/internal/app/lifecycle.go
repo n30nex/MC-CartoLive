@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -240,6 +241,9 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 	resolution, err := a.Resolver.Resolve(ctx, msg.TopicInfo.IATA, parsed)
 	if err != nil {
 		a.Log.Warn("resolver failed", "error", err)
+		if updateErr := a.Store.UpdateObservationResolution(ctx, observationID, resolve.StatusUnresolved, fmt.Sprintf("resolver_error: %v", err)); updateErr != nil {
+			a.Log.Warn("observation resolution update on resolver error failed", "error", updateErr)
+		}
 		return
 	}
 	status, reason := a.edgeDecision(ctx, msg, parsed, resolution, advertNode)

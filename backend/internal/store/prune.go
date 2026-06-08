@@ -11,6 +11,7 @@ func (s *Store) PruneOldData(ctx context.Context, beforeMs int64) error {
 		{"live_edge_events", "heard_at_ms"},
 		{"packet_observations", "heard_at_ms"},
 		{"observer_status", "received_at_ms"},
+		{"solar_snapshots", "fetched_at_ms"},
 	}
 	for _, t := range tables {
 		for {
