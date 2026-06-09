@@ -2213,11 +2213,12 @@ function ensureTerrainSources(map: maplibregl.Map, themeMode: MapThemeMode) {
     source: HILLSHADE_SOURCE,
     paint: {
       'hillshade-method': 'multidirectional',
-      'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#94a3b8', '#cbd5e1', '#e2e8f0', '#f1f5f9'],
-      'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#334155', '#475569', '#64748b', '#94a3b8'],
-      'hillshade-illumination-direction': [270, 315, 0, 45],
-      'hillshade-illumination-altitude': [24, 32, 36, 28],
-      'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 0.54
+      'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#e2e8f0', '#f1f5f9', '#f8fafc', '#ffffff'],
+      'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#0f172a', '#1e293b', '#334155', '#475569'],
+      'hillshade-accent-color': themeMode === 'light' ? '#f1f5f9' : '#64748b',
+      'hillshade-illumination-direction': [315],
+      'hillshade-illumination-altitude': [45],
+      'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 1.8
     } as any
   }, labelLayerID);
   map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: TERRAIN_EXAGGERATION });
