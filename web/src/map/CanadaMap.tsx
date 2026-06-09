@@ -588,11 +588,11 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       source: HILLSHADE_SOURCE,
       paint: {
         'hillshade-method': 'multidirectional',
-        'hillshade-highlight-color': ['#1e293b', '#334155', '#475569', '#64748b'],
-        'hillshade-shadow-color': ['#020617', '#08111f', '#0f172a', '#1e293b'],
+        'hillshade-highlight-color': ['#94a3b8', '#cbd5e1', '#e2e8f0', '#f1f5f9'],
+        'hillshade-shadow-color': ['#334155', '#475569', '#64748b', '#94a3b8'],
         'hillshade-illumination-direction': [270, 315, 0, 45],
         'hillshade-illumination-altitude': [24, 30, 36, 28],
-        'hillshade-exaggeration': 0.54
+        'hillshade-exaggeration': 0.78
       } as any
     },
     {
@@ -1625,9 +1625,15 @@ function CanadaMap({
           baseWarning = `OpenFreeMap base warning: ${message}`;
         }
       } else {
-        ensureHillshadeLayer(map, themeModeRef.current);
-        ensureBuildingExtrusions(map, themeModeRef.current);
-        ensureWeatherCloudLayer(map);
+        try {
+          ensureHillshadeLayer(map, themeModeRef.current);
+        } catch (err) { console.warn('hillshade layer init failed', err); }
+        try {
+          ensureBuildingExtrusions(map, themeModeRef.current);
+        } catch (err) { console.warn('building extrusions init failed', err); }
+        try {
+          ensureWeatherCloudLayer(map);
+        } catch (err) { console.warn('weather cloud layer init failed', err); }
       }
       try {
         addPublicLayers(map);
@@ -2206,8 +2212,8 @@ function ensureTerrainSources(map: maplibregl.Map, themeMode: MapThemeMode) {
     source: HILLSHADE_SOURCE,
     paint: {
       'hillshade-method': 'multidirectional',
-      'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#1e293b', '#334155', '#475569', '#64748b'],
-      'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#020617', '#08111f', '#0f172a', '#1e293b'],
+      'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#94a3b8', '#cbd5e1', '#e2e8f0', '#f1f5f9'],
+      'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#334155', '#475569', '#64748b', '#94a3b8'],
       'hillshade-illumination-direction': [270, 315, 0, 45],
       'hillshade-illumination-altitude': [24, 32, 36, 28],
       'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 0.54
@@ -2248,11 +2254,11 @@ function ensureHillshadeLayer(map: maplibregl.Map, themeMode: MapThemeMode) {
     source: HILLSHADE_SOURCE,
     paint: {
       'hillshade-method': 'multidirectional',
-      'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#1e293b', '#334155', '#475569', '#64748b'],
-      'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#020617', '#08111f', '#0f172a', '#1e293b'],
+      'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#94a3b8', '#cbd5e1', '#e2e8f0', '#f1f5f9'],
+      'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#334155', '#475569', '#64748b', '#94a3b8'],
       'hillshade-illumination-direction': [270, 315, 0, 45],
       'hillshade-illumination-altitude': [24, 32, 36, 28],
-      'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 0.54
+      'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 0.78
     } as any
   }, labelLayerID);
 }
@@ -2309,7 +2315,10 @@ function ensureBuildingExtrusions(map: maplibregl.Map, themeMode: MapThemeMode) 
 }
 
 function ensureWeatherCloudLayer(map: maplibregl.Map) {
-  if (!WEATHER_API_KEY) return;
+  if (!WEATHER_API_KEY) {
+    console.warn('Weather cloud layer disabled: VITE_OPENWEATHERMAP_API_KEY is not set');
+    return;
+  }
   if (!map.getSource(WEATHER_CLOUD_SOURCE)) {
     map.addSource(WEATHER_CLOUD_SOURCE, {
       type: 'raster',
