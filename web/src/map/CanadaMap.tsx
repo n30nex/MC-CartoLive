@@ -588,11 +588,12 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       source: HILLSHADE_SOURCE,
       paint: {
         'hillshade-method': 'multidirectional',
-        'hillshade-highlight-color': ['#94a3b8', '#cbd5e1', '#e2e8f0', '#f1f5f9'],
-        'hillshade-shadow-color': ['#334155', '#475569', '#64748b', '#94a3b8'],
-        'hillshade-illumination-direction': [270, 315, 0, 45],
-        'hillshade-illumination-altitude': [24, 30, 36, 28],
-        'hillshade-exaggeration': 0.78
+      'hillshade-highlight-color': ['#cbd5e1', '#e2e8f0', '#f1f5f9', '#ffffff'],
+      'hillshade-shadow-color': ['#0f172a', '#1e293b', '#334155', '#475569'],
+      'hillshade-accent-color': '#1e293b',
+      'hillshade-illumination-direction': [315],
+      'hillshade-illumination-altitude': [45],
+      'hillshade-exaggeration': 1.2
       } as any
     },
     {
@@ -2247,20 +2248,25 @@ function ensureHillshadeLayer(map: maplibregl.Map, themeMode: MapThemeMode) {
   if (!map.getSource(HILLSHADE_SOURCE)) {
     map.addSource(HILLSHADE_SOURCE, { type: 'raster-dem', tiles: [TERRAIN_TILE_URL], encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
   }
-  const labelLayerID = firstTextSymbolLayerID(map);
-  addLayerIfMissing(map, {
+  if (map.getLayer(HILLSHADE_LAYER)) return;
+  const basemapID = themeMode === 'light' ? CARTO_LIGHT_LAYER : CARTO_DARK_LAYER;
+  const layers = map.getStyle().layers ?? [];
+  const basemapIdx = layers.findIndex((l) => l.id === basemapID);
+  const beforeID = basemapIdx >= 0 && basemapIdx + 1 < layers.length ? layers[basemapIdx + 1].id : undefined;
+  map.addLayer({
     id: HILLSHADE_LAYER,
     type: 'hillshade',
     source: HILLSHADE_SOURCE,
     paint: {
       'hillshade-method': 'multidirectional',
-      'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#94a3b8', '#cbd5e1', '#e2e8f0', '#f1f5f9'],
-      'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#334155', '#475569', '#64748b', '#94a3b8'],
-      'hillshade-illumination-direction': [270, 315, 0, 45],
-      'hillshade-illumination-altitude': [24, 32, 36, 28],
-      'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 0.78
+      'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#cbd5e1', '#e2e8f0', '#f1f5f9', '#ffffff'],
+      'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#0f172a', '#1e293b', '#334155', '#475569'],
+      'hillshade-accent-color': themeMode === 'light' ? '#f1f5f9' : '#1e293b',
+      'hillshade-illumination-direction': [315],
+      'hillshade-illumination-altitude': [45],
+      'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 1.2
     } as any
-  }, labelLayerID);
+  }, beforeID);
 }
 
 function ensureBuildingExtrusions(map: maplibregl.Map, themeMode: MapThemeMode) {
