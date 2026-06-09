@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.7.5
+# MeshCore MQTT Live Map v2.7.7
 
 Also known as **MC-CartoLive**.
 
@@ -23,11 +23,12 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.7.5 Feature Gallery
+### v2.7.7 Feature Gallery
 
-Version 2.7.5 is the world-ready live network operations release with Route GIF
-Export, OpenFreeMap 3D performance improvements, and docked Packets and Chat
-workspaces. Hosted Canada stays
+Version 2.7.7 is the elevation-profile and infrastructure-hardening release with
+OS theme auto-detection, PWA service worker, node freshness pulse indicators,
+route elevation profile charts, backend panic guards, resolver/meshcore unit
+tests, and CI linting/vulnerability scanning.
 Canada-scoped, while packaged installs support worldwide/private brokers
 through configurable map bounds, generic region labels, first-run setup, and
 region-first diagnostics.
@@ -312,7 +313,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.7.5
+  ghcr.io/n30nex/mc-cartolive:2.7.7
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -323,7 +324,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.7.5
+  ghcr.io/n30nex/mc-cartolive:2.7.7
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -458,7 +459,7 @@ map, Packets, Chat, and NetGraph. Screenshots are written to
 Packaged image smoke for the 2.6 release gate:
 
 ```powershell
-node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.7.5 --pull
+node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.7.6 --pull
 ```
 
 The package smoke runs the image in synthetic and worldwide `r1` fixture modes,
@@ -467,7 +468,7 @@ privacy scanner against both temporary containers.
 
 ## Production Hosting
 
-The recommended v2.7.5 release path is clone + Docker Compose on a VPS or local
+The recommended v2.7.6 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

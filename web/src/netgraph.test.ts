@@ -138,7 +138,7 @@ describe('netgraph helpers', () => {
   });
 });
 
-function node(id: string, label: string, latitude: number, longitude: number, role: string, isObserver = false): PublicNode {
+function node(id: string, label: string, latitude: number, longitude: number, role: import('./types').NodeRole, isObserver = false): PublicNode {
   return {
     id,
     label,

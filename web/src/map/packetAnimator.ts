@@ -158,6 +158,7 @@ export class PacketAnimator {
   private maskFeatures: RenderedPointFeature[] = [];
   private nextMaskRefreshAt = 0;
   private observerBurstLastAtByLocation = new Map<string, number>();
+  private pruneBurstLocationInterval: number;
   private layerSettings = DEFAULT_MAP_LAYER_SETTINGS;
   private visualSettings = DEFAULT_PACKET_VISUAL_SETTINGS;
   private reducedMotion = false;
@@ -179,6 +180,12 @@ export class PacketAnimator {
     this.resize();
     this.map.on('move', this.handleMapMotion);
     this.map.on('zoom', this.handleMapMotion);
+    this.pruneBurstLocationInterval = window.setInterval(() => {
+      const cutoff = performance.now() - OBSERVER_BURST_LOCATION_INTERVAL_MS * 2;
+      for (const [key, timestamp] of this.observerBurstLastAtByLocation) {
+        if (timestamp < cutoff) this.observerBurstLastAtByLocation.delete(key);
+      }
+    }, 10_000);
     this.requestFrame();
   }
 
@@ -334,6 +341,7 @@ export class PacketAnimator {
   destroy() {
     if (this.raf !== 0) window.cancelAnimationFrame(this.raf);
     if (this.idleTimer !== 0) window.clearTimeout(this.idleTimer);
+    window.clearInterval(this.pruneBurstLocationInterval);
     this.raf = 0;
     this.idleTimer = 0;
     this.map.off('move', this.handleMapMotion);

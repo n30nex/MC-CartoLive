@@ -3,7 +3,7 @@
 @import './styles/chat.css';
 
 :root {
-  color-scheme: dark;
+  color-scheme: dark light;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: #05070b;
   color: #edf5ff;
@@ -11,10 +11,32 @@
   text-rendering: optimizeLegibility;
 }
 
+:root[data-theme-mode="dark"] {
+  color-scheme: dark;
+  background: #05070b;
+  color: #edf5ff;
+}
+
 :root[data-theme-mode="light"] {
   color-scheme: light;
   background: #eef5fb;
   color: #0f172a;
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme-mode="system"] {
+    color-scheme: light;
+    background: #eef5fb;
+    color: #0f172a;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme-mode="system"] {
+    color-scheme: dark;
+    background: #05070b;
+    color: #edf5ff;
+  }
 }
 
 * {
@@ -719,9 +741,6 @@ button {
 .link-bar-info-popover {
   position: fixed;
   z-index: var(--z-modal, 120);
-}
-
-.link-bar-info-popover {
   color: var(--mc-text, #f8fafc);
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--mc-surface, #07101d) 96%, transparent), color-mix(in srgb, var(--mc-surface-strong, #101827) 92%, transparent)),
@@ -733,9 +752,6 @@ button {
     0 0 28px color-mix(in srgb, var(--mc-accent, #38bdf8) 12%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(18px) saturate(1.25);
-}
-
-.link-bar-info-popover {
   top: 50px;
   right: 110px;
   width: min(430px, calc(100vw - 24px));
@@ -4196,6 +4212,81 @@ button {
   font-size: 12px;
   font-style: normal;
   font-weight: 700;
+}
+
+.elevation-profile {
+  margin-top: 12px;
+  border-top: 1px solid rgba(125, 211, 252, 0.12);
+  padding-top: 8px;
+}
+
+.elevation-profile svg {
+  display: block;
+  width: 100%;
+  height: 72px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.elevation-labels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 1px;
+}
+
+.elevation-labels span {
+  color: #8fa2bb;
+  font-size: 10px;
+}
+
+.elevation-labels span:last-child {
+  text-align: right;
+}
+
+.elevation-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.elevation-gain {
+  color: #22c55e;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.elevation-loss {
+  color: #ef4444;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.elevation-unavailable {
+  color: #8fa2bb;
+  font-size: 11px;
+}
+
+.elevation-skeleton {
+  background: rgba(125, 211, 252, 0.06);
+  border-radius: 4px;
+  animation: elevation-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes elevation-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes node-freshness-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.node-fresh-ring {
+  animation: node-freshness-pulse 2s ease-in-out infinite;
 }
 
 .activity-panel {

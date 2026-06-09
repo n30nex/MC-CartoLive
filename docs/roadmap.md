@@ -5,7 +5,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.7.5` is the current production-ready world operations release.
+Version `2.7.7` is the current production-ready world operations release.
 
 - Detailed next-phase plan: [2.7.5 to 2.7.7](roadmap-2.7.5-to-2.7.7.md).
 - Public map behavior remains stable while package installs support
@@ -27,7 +27,7 @@ Version `2.7.5` is the current production-ready world operations release.
   mobile ergonomics.
 - Make `2.7.5` the 3D performance pass for OpenFreeMap node models, route arcs,
   comets, observer glows, and rebuild budgets.
-- Make `2.7.6` the elevation/topography/line-of-sight pass for verified public
+- Make `2.7.7` the elevation/topography/line-of-sight pass for verified public
   pathways only.
 - Make `2.7.7` a research-first propagation-event pass for solar, geomagnetic,
   tropospheric, time-of-day, and long-distance burst correlations.

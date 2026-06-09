@@ -1,7 +1,7 @@
 import type { PublicNode } from '../types';
 import { isMappableNode } from './geo';
 import type { NodeFocus } from './nodeFocus';
-import { nodeStaleLevel } from './nodeLabels';
+import { nodeFreshLevel, nodeStaleLevel } from './nodeLabels';
 
 export function nodeSourceSignature(
   nodes: PublicNode[],
@@ -39,7 +39,8 @@ function nodeRenderIdentity(
     neighbor ? 1 : 0,
     path ? 1 : 0,
     focusActive && !selected && !neighbor && !path ? 1 : 0,
-    nodeStaleLevel(node, now, meshActivityAtByNodeID.get(node.id))
+    nodeStaleLevel(node, now, meshActivityAtByNodeID.get(node.id)),
+    nodeFreshLevel(node, now, meshActivityAtByNodeID.get(node.id))
   ].join(':');
 }
 

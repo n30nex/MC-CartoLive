@@ -32,6 +32,7 @@ import {
   nodeActivityGlow,
   nodeActivityHeat,
   nodeEffectiveActivityAt,
+  nodeFreshLevel,
   nodeLastHeardAgeLabel,
   nodeMapLabel,
   nodeStaleLevel
@@ -356,6 +357,8 @@ const NODE_CIRCLE_STROKE_COLOR: any = [
   '#fff7ed',
   ['==', ['get', 'neighbor'], true],
   '#67e8f9',
+  ['==', ['get', 'freshLevel'], 0],
+  '#22c55e',
   ['==', ['get', 'staleLevel'], 2],
   'rgba(148, 163, 184, 0.28)',
   ['==', ['get', 'staleLevel'], 1],
@@ -369,6 +372,10 @@ const NODE_CIRCLE_OPACITY: any = [
   0.24,
   ['==', ['get', 'observer'], true],
   0.96,
+  ['==', ['get', 'freshLevel'], 0],
+  0.9,
+  ['==', ['get', 'freshLevel'], 1],
+  0.72,
   ['==', ['get', 'staleLevel'], 2],
   0.4,
   ['==', ['get', 'staleLevel'], 1],
@@ -3467,7 +3474,8 @@ function nodeFeatureProperties(
     dimmed: focusActive && !selected && !neighbor && !path,
     neighborDistanceKm: focus.neighbourDistanceKmByNodeID.get(node.id) ?? null,
     observer: node.isObserver === true,
-    staleLevel: nodeStaleLevel(node, labelClock, meshActivityAt)
+    staleLevel: nodeStaleLevel(node, labelClock, meshActivityAt),
+    freshLevel: nodeFreshLevel(node, labelClock, meshActivityAt)
   };
 }
 

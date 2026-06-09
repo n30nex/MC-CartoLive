@@ -32,6 +32,7 @@ type rateLimiter struct {
 	rate    int
 	burst   int
 	cleanup time.Duration
+	done    chan struct{}
 }
 
 type rateBucket struct {
@@ -45,23 +46,33 @@ func newRateLimiter(ratePerMinute, burst int) *rateLimiter {
 		rate:    ratePerMinute,
 		burst:   burst,
 		cleanup: 5 * time.Minute,
+		done:    make(chan struct{}),
 	}
 	go rl.cleanupLoop()
 	return rl
 }
 
+func (rl *rateLimiter) stop() {
+	close(rl.done)
+}
+
 func (rl *rateLimiter) cleanupLoop() {
 	ticker := time.NewTicker(rl.cleanup)
 	defer ticker.Stop()
-	for range ticker.C {
-		rl.mu.Lock()
-		cutoff := time.Now().Add(-rl.cleanup)
-		for ip, bucket := range rl.clients {
-			if bucket.lastSeen.Before(cutoff) {
-				delete(rl.clients, ip)
+	for {
+		select {
+		case <-rl.done:
+			return
+		case <-ticker.C:
+			rl.mu.Lock()
+			cutoff := time.Now().Add(-rl.cleanup)
+			for ip, bucket := range rl.clients {
+				if bucket.lastSeen.Before(cutoff) {
+					delete(rl.clients, ip)
+				}
 			}
+			rl.mu.Unlock()
 		}
-		rl.mu.Unlock()
 	}
 }
 
@@ -138,6 +149,15 @@ type Server struct {
 	summaryCache     *historySummaryCache
 	rateLimiter      *rateLimiter
 	startTime        time.Time
+	memStatsMu       sync.Mutex
+	memStatsCached   runtime.MemStats
+	memStatsAt       time.Time
+}
+
+func (s *Server) Shutdown() {
+	if s.rateLimiter != nil {
+		s.rateLimiter.stop()
+	}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -225,7 +245,13 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 		runtimeStats = s.Runtime.Snapshot()
 	}
 	var memStats runtime.MemStats
-	runtime.ReadMemStats(&memStats)
+	s.memStatsMu.Lock()
+	if time.Since(s.memStatsAt) > 5*time.Second {
+		runtime.ReadMemStats(&s.memStatsCached)
+		s.memStatsAt = time.Now()
+	}
+	memStats = s.memStatsCached
+	s.memStatsMu.Unlock()
 	payload := map[string]any{
 		"ok":                              true,
 		"ready":                           true,

@@ -14,6 +14,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const maxClients = 512
+
 type Hub struct {
 	log           *slog.Logger
 	queueSize     int
@@ -54,6 +56,13 @@ func NewHub(log *slog.Logger, queueSize int, allowedBaseURLs ...string) *Hub {
 }
 
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
+	clientCount := len(h.clients)
+	h.mu.RUnlock()
+	if clientCount >= maxClients {
+		http.Error(w, "too many connections", http.StatusServiceUnavailable)
+		return
+	}
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.log.Warn("websocket upgrade failed", "error", err)
@@ -84,18 +93,23 @@ func (h *Hub) Broadcast(event string, data any) {
 	}
 	h.mu.Unlock()
 	for _, c := range clients {
-		h.observeQueueDepth(len(c.send))
+		safeSend(h, c, env)
+	}
+}
+
+func safeSend(h *Hub, c *client, env Envelope) {
+	defer func() { _ = recover() }()
+	h.observeQueueDepth(len(c.send))
+	select {
+	case c.send <- env:
+	default:
+		c.dropped++
+		h.totalDropped.Add(1)
+		now := time.Now().UnixMilli()
+		lag := Envelope{Version: 1, Type: "lagged", Seq: h.seq.Add(1), ServerTime: now, ReceivedAt: now, DisplayAt: now, DroppedCount: c.dropped, Since: c.created.UnixMilli()}
 		select {
-		case c.send <- env:
+		case c.send <- lag:
 		default:
-			c.dropped++
-			h.totalDropped.Add(1)
-			now := time.Now().UnixMilli()
-			lag := Envelope{Version: 1, Type: "lagged", Seq: h.seq.Add(1), ServerTime: now, ReceivedAt: now, DisplayAt: now, DroppedCount: c.dropped, Since: c.created.UnixMilli()}
-			select {
-			case c.send <- lag:
-			default:
-			}
 		}
 	}
 }
@@ -231,15 +245,9 @@ func (h *Hub) readPump(c *client) {
 		return c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	})
 	for {
-		_, data, err := c.conn.ReadMessage()
+		_, _, err := c.conn.ReadMessage()
 		if err != nil {
 			return
-		}
-		var incoming struct {
-			Type string `json:"type"`
-		}
-		if err := json.Unmarshal(data, &incoming); err != nil {
-			continue
 		}
 	}
 }

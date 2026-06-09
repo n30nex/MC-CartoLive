@@ -8,6 +8,8 @@ export const NODE_ACTIVITY_UPDATE_MS = 250;
 export const NODE_ACTIVITY_HOT_COUNT = 30;
 export const NODE_STALE_GREY_MS = 30 * 60_000;
 export const NODE_STALE_DARK_GREY_MS = 60 * 60_000;
+export const NODE_FRESH_MS = 5 * 60_000;
+export const NODE_MEDIUM_MS = 30 * 60_000;
 
 export function nodeMapLabel(node: PublicNode, now: number, meshActivityAt?: number): string {
   return compactNodeLabel(node.label);
@@ -62,4 +64,13 @@ export function nodeStaleLevel(node: PublicNode, now: number, meshActivityAt?: n
   if (ageMs >= NODE_STALE_DARK_GREY_MS) return 2;
   if (ageMs >= NODE_STALE_GREY_MS) return 1;
   return 0;
+}
+
+export function nodeFreshLevel(node: PublicNode, now: number, meshActivityAt?: number): 0 | 1 | 2 | 3 {
+  const activityAt = nodeEffectiveActivityAt(node, meshActivityAt);
+  if (!Number.isFinite(activityAt) || activityAt <= 0) return 3;
+  const ageMs = Math.max(0, now - activityAt);
+  if (ageMs < NODE_FRESH_MS) return 0;
+  if (ageMs < NODE_MEDIUM_MS) return 1;
+  return 2;
 }

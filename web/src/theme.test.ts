@@ -9,6 +9,7 @@ import {
   normalizeThemeMode,
   readablePaletteText,
   readStoredThemePreference,
+  resolveThemeMode,
   themePaletteByID,
   themeStyleVariables,
   toggleThemeMode,
@@ -31,9 +32,13 @@ describe('theme helpers', () => {
   it('validates theme mode and palette ids', () => {
     expect(normalizeThemeMode('light')).toBe('light');
     expect(normalizeThemeMode('dark')).toBe('dark');
-    expect(normalizeThemeMode('other')).toBe('dark');
+    expect(normalizeThemeMode('system')).toBe('system');
+    expect(normalizeThemeMode('other')).toBe('system');
+    expect(toggleThemeMode('system')).toBe('dark');
     expect(toggleThemeMode('dark')).toBe('light');
-    expect(toggleThemeMode('light')).toBe('dark');
+    expect(toggleThemeMode('light')).toBe('system');
+    expect(resolveThemeMode('dark')).toBe('dark');
+    expect(resolveThemeMode('light')).toBe('light');
     expect(THEME_PALETTE_IDS).toEqual([
       'neutral-blue',
       'arctic',

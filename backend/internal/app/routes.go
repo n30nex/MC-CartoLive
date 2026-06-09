@@ -8,7 +8,7 @@ import (
 )
 
 func (a *Application) Routes() http.Handler {
-	return (&api.Server{
+	a.apiServer = &api.Server{
 		Config: api.Config{
 			RecentPacketLimit:      a.Config.RecentPacketLimit,
 			RecentEdgeEventLimit:   a.Config.RecentEdgeEventLimit,
@@ -40,5 +40,6 @@ func (a *Application) Routes() http.Handler {
 		PublicCacheStatus: a.PublicCache.Status,
 		PublicAllowsIATA:  a.PublicCache.AllowsIATA,
 		SolarConditions:   func() *solar.Conditions { return a.solarSnapshot.Load() },
-	}).Routes()
+	}
+	return a.apiServer.Routes()
 }

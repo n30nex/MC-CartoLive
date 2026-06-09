@@ -38,6 +38,7 @@ type Client struct {
 	lastConnectedAt      atomic.Int64
 	lastConnectionLostAt atomic.Int64
 	lastForceDisconnect  atomic.Int64
+	shutdown             atomic.Bool
 	client               paho.Client
 }
 
@@ -87,7 +88,7 @@ func (c *Client) Start(ctx context.Context) error {
 		c.reconnects.Add(1)
 		c.lastConnectedAt.Store(time.Now().UnixMilli())
 		c.log.Info("mqtt connected", "broker", redactBroker(c.cfg.BrokerURL), "topic", c.cfg.Topic)
-		token := client.Subscribe(c.cfg.Topic, 0, c.onMessage(ctx))
+		token := client.Subscribe(c.cfg.Topic, 0, c.onMessage())
 		token.Wait()
 		if err := token.Error(); err != nil {
 			c.connected.Store(false)
@@ -115,6 +116,7 @@ func (c *Client) Start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
+		c.shutdown.Store(true)
 		c.client.Disconnect(250)
 		c.connected.Store(false)
 	}()
@@ -150,8 +152,11 @@ func (c *Client) watchdog(ctx context.Context) {
 	}
 }
 
-func (c *Client) onMessage(ctx context.Context) paho.MessageHandler {
+func (c *Client) onMessage() paho.MessageHandler {
 	return func(_ paho.Client, msg paho.Message) {
+		if c.shutdown.Load() {
+			return
+		}
 		topic := msg.Topic()
 		info, err := ParseTopic(topic)
 		if err != nil {

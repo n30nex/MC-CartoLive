@@ -36,6 +36,8 @@ type Application struct {
 	Solar         *solar.Fetcher
 	solarSnapshot atomic.Pointer[solar.Conditions]
 
+	apiServer *api.Server
+
 	cacheRefreshMu sync.Mutex
 	packetCount    atomic.Int64
 	wg             sync.WaitGroup
@@ -168,6 +170,9 @@ func (a *Application) Start(ctx context.Context) error {
 }
 
 func (a *Application) Close() error {
+	if a.apiServer != nil {
+		a.apiServer.Shutdown()
+	}
 	done := make(chan struct{})
 	go func() {
 		a.wg.Wait()
@@ -252,8 +257,9 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 			a.Log.Warn("observation resolution update failed", "error", err)
 		}
 	}
-	observation, err := a.Store.ObservationByID(ctx, observationID)
-	if err == nil {
+	observation, obsErr := a.Store.ObservationByID(ctx, observationID)
+	observationOK := obsErr == nil
+	if observationOK {
 		observation.MessageSender = decodedMessage.Sender
 		observation.MessageText = decodedMessage.Text
 		a.Hub.Broadcast("packetObservation", observation)
@@ -266,9 +272,9 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 		a.PublicCache.RecordExcludedIATA(msg.TopicInfo.IATA)
 	}
 	if ok {
-		stored, err := a.Store.InsertEdgeEvent(ctx, edge, status, reason)
-		if err != nil {
-			a.Log.Warn("edge insert failed", "error", err)
+		stored, insertErr := a.Store.InsertEdgeEvent(ctx, edge, status, reason)
+		if insertErr != nil {
+			a.Log.Warn("edge insert failed", "error", insertErr)
 		} else {
 			a.Hub.Broadcast("edgeAnimation", stored)
 			if publicAllowed {
@@ -284,15 +290,11 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 			}
 		}
 	}
-	if !publicActivitySent && err == nil && publicAllowed {
+	if !publicActivitySent && observationOK && publicAllowed {
 		activity := a.publicActivityFromPacket(ctx, observation, nil)
 		a.PublicHub.Broadcast("activity", activity)
 		a.PublicCache.ApplyActivity(activity)
 	}
-}
-
-func (a *Application) broadcastNodeUpdate(node live.Node) {
-	a.broadcastNodeUpdateForIATA(node, "")
 }
 
 func (a *Application) broadcastNodeUpdateForIATA(node live.Node, iata string) {

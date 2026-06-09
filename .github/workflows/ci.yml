@@ -27,6 +27,10 @@ jobs:
         working-directory: backend
         run: go test ./...
 
+      - name: Govulncheck
+        working-directory: backend
+        run: go tool govulncheck ./...
+
   frontend:
     name: Frontend tests and build
     runs-on: ubuntu-latest
@@ -44,6 +48,10 @@ jobs:
       - name: Install
         working-directory: web
         run: npm ci
+
+      - name: Audit
+        working-directory: web
+        run: npm audit --audit-level=high
 
       - name: Version sync
         run: node scripts/check-version-sync.mjs

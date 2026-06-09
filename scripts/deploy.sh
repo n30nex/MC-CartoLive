@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 REPO="${1:-/opt/MC-CartoLive}"
-BRANCH="${2:-dev/deepseek-v4}"
+BRANCH="${2:-dev}"
 cd "$REPO"
+PREV_SHA="$(git rev-parse HEAD)"
+BAK_NAME="data/meshcore-live.db.bak.$(date +%Y%m%d%H%M%S)"
 echo "=== Backing up database ==="
-cp data/meshcore-live.db data/meshcore-live.db.bak.$(date +%Y%m%d%H%M%S)
+cp data/meshcore-live.db "$BAK_NAME"
 echo "=== Pulling latest ==="
 git pull origin "$BRANCH"
 echo "=== Building and deploying ==="
@@ -19,8 +21,8 @@ for i in $(seq 1 30); do
 done
 echo "=== Health check failed, rolling back ==="
 docker compose down
-cp data/meshcore-live.db.bak.* data/meshcore-live.db 2>/dev/null || true
-git checkout HEAD~1
+cp "$BAK_NAME" data/meshcore-live.db
+git checkout "$PREV_SHA"
 docker compose up --build -d
-echo "=== Rolled back ==="
+echo "=== Rolled back to $PREV_SHA ==="
 exit 1

@@ -3,7 +3,7 @@ export type NodeRole = 'companion' | 'repeater' | 'room_server' | 'sensor' | 'un
 export interface PublicNode {
   id: string;
   label: string;
-  role: NodeRole | string;
+  role: NodeRole;
   isObserver?: boolean;
   latitude: number;
   longitude: number;

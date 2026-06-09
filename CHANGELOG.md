@@ -4,6 +4,41 @@
 
 - No unreleased changes.
 
+## 2.7.7 - 2026-06-09
+
+- **System theme auto-detection**: theme now supports `system` mode that follows
+  OS dark/light preference via `prefers-color-scheme` media query, with live
+  switching on OS preference change.
+- **PWA support**: added service worker with cache-first app shell and
+  network-first map tile strategies, web app manifest for installability,
+  Apple mobile web app meta tags.
+- **Node freshness indicators**: active nodes heard in the last 5 minutes show a
+  green pulse ring; opacity tiers indicate how recently each node was heard.
+- **Route elevation profile**: SVG-based elevation chart in SelectionDrawer
+  showing terrain profile, min/max/gain/loss along selected routes, sampled
+  from terrain RGB tiles (terrarium encoding).
+- **Backend hardening**: WebSocket broadcast panic guard via `defer/recover`,
+  rate limiter cleanup goroutine lifecycle fix, MQTT message handler shutdown
+  context fix, all rate limiters properly stopped during graceful shutdown.
+- **Test expansion**: 34 new meshcore decoder unit tests, 8 new resolver unit
+  tests including distance gate coverage, 1 new elevation profile test module.
+- **Infrastructure**: added `VITE_OPENWEATHERMAP_API_KEY` build arg to
+  Dockerfile, golangci-lint config, ESLint/Prettier configs, `npm audit` and
+  `govulncheck` CI steps, Makefile `lint`/`clean` targets with `--pull`.
+- **Frontend fixes**: top-level ErrorBoundary wrapping entire app, CSP meta tag
+  in index.html, `observerBurstLastAtByLocation` periodic pruning (10s),
+  duplicate CSS merge, `role` type tightened to `NodeRole` union.
+
+## 2.7.6 - 2026-06-08
+
+- Observer map labels with viewport-aligned naming, 3D building extrusions on
+  flat map, weather cloud layer, Space-key input guard, layer event refresh on
+  theme switch, message bubble deduplication anchored to first observer,
+  light-mode observer label contrast, label jitter fix on camera move,
+  CARTO basemap CSP fix, port 80 mapping restore for Cloudflare origin,
+  solar_snapshots prune table inclusion, observer error resilience,
+  end-to-end audit fixes.
+
 ## 2.7.5 - 2026-06-07
 
 - Reduced OpenFreeMap 3D scene churn by reusing selected node/route sets for

@@ -1,6 +1,7 @@
 import { Copy, MessageSquareText, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { phonebookGroupsForNode, type ConnectivityGraph, type PhonebookGroup, type PhonebookSortMode, type ReachableNode } from '../connectivity';
+import ElevationProfile from './ElevationProfile';
 import { formatRelative } from '../lib/formatRelative';
 import { meshcorePathAvailable, meshcorePathCopyText, type NodeMessageHistoryItem } from '../routeTools';
 import type { PublicNode, PublicRoute } from '../types';
@@ -97,6 +98,7 @@ export default function SelectionDrawer({
               <Detail label="From" value={route.from.label} />
               <Detail label="To" value={route.to.label} />
             </dl>
+            <ElevationProfile from={route.from} to={route.to} />
           </>
         )}
       </aside>

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Check, Columns3, Eye, EyeOff, Layers, LocateFixed, Moon, Palette, Pause, Play, RadioTower, RotateCcw, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
+import { Check, Columns3, Eye, EyeOff, Layers, LocateFixed, Monitor, Moon, Palette, Pause, Play, RadioTower, RotateCcw, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
 import { fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicState } from './api';
 import { connectPublicSocket } from './ws';
 import {
@@ -81,6 +81,7 @@ import {
   THEME_PALETTES,
   applyDocumentTheme,
   readStoredThemePreference,
+  resolveThemeMode,
   themePaletteByID,
   themeStyleVariables,
   toggleThemeMode,
@@ -196,7 +197,8 @@ export default function App() {
   const vcrReplayTimerRef = useRef<number | null>(null);
   const flushMessagesTimerRef = useRef<number | null>(null);
   const selectedThemePalette = useMemo(() => themePaletteByID(themePaletteID), [themePaletteID]);
-  const appThemeStyle = useMemo(() => themeStyleVariables(selectedThemePalette, themeMode) as CSSProperties, [selectedThemePalette, themeMode]);
+  const resolvedThemeMode = useMemo(() => resolveThemeMode(themeMode), [themeMode]);
+  const appThemeStyle = useMemo(() => themeStyleVariables(selectedThemePalette, resolvedThemeMode) as CSSProperties, [selectedThemePalette, resolvedThemeMode]);
 
   useEffect(() => {
     const updateRoute = () => {
@@ -564,6 +566,18 @@ export default function App() {
     const preference = { mode: themeMode, palette: selectedThemePalette };
     applyDocumentTheme(preference);
     writeStoredThemePreference(preference);
+  }, [selectedThemePalette, themeMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => {
+      if (themeMode === 'system') {
+        applyDocumentTheme({ mode: 'system', palette: selectedThemePalette });
+      }
+    };
+    mql.addEventListener('change', handleChange);
+    return () => mql.removeEventListener('change', handleChange);
   }, [selectedThemePalette, themeMode]);
 
   useEffect(() => {
@@ -1119,6 +1133,7 @@ export default function App() {
       style={appThemeStyle}
     >
       {isOffline && <div className="offline-banner">You are offline — reconnecting...</div>}
+      <ErrorBoundary fallback={<div className="panel-error">Something went wrong. <button onClick={() => window.location.reload()}>Reload</button></div>}>
       <ErrorBoundary>
         <CanadaMap
         nodes={visibleNodes}
@@ -1139,7 +1154,7 @@ export default function App() {
         mapAction={mapAction}
         routeGifExportRequest={routeGifExportRequest}
         baseMode={mapBaseMode}
-        themeMode={themeMode}
+        themeMode={resolvedThemeMode}
         initialView={sharedViewRef.current}
         mapConfig={publicMapConfig}
         loading={loadingPositionedNodes}
@@ -1228,10 +1243,10 @@ export default function App() {
           className={`icon-button theme-mode-toggle ${themeMode}`}
           type="button"
           aria-pressed={themeMode === 'light'}
-          title={themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={themeMode === 'system' ? 'Switch to dark mode' : themeMode === 'dark' ? 'Switch to light mode' : 'Switch to system mode'}
           onClick={() => setThemeMode((value) => toggleThemeMode(value))}
         >
-          {themeMode === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
+          {themeMode === 'system' ? <Monitor size={18} /> : themeMode === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
         </button>
         <div className="top-action-menu">
           <button
@@ -1481,6 +1496,7 @@ export default function App() {
         onCopyPath={copyMeshcorePath}
         onClose={clearSelection}
       />
+      </ErrorBoundary>
     </div>
   );
 }
