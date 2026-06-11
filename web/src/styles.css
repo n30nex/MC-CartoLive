@@ -2452,6 +2452,24 @@ button {
   gap: 6px;
 }
 
+.map-settings-layer-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.map-settings-layer-group {
+  display: grid;
+  gap: 6px;
+}
+
+.map-settings-layer-group h4 {
+  margin: 0;
+  color: var(--mc-text-muted, #9fb1c9);
+  font-size: 10px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
 .map-settings-toggle {
   justify-content: space-between;
   gap: 10px;
@@ -2460,6 +2478,10 @@ button {
   background: color-mix(in srgb, var(--mc-control-bg, rgba(7, 16, 29, 0.84)) 84%, transparent);
   border: 1px solid var(--mc-border, rgba(125, 211, 252, 0.24));
   border-radius: 7px;
+}
+
+.map-settings-toggle.unavailable {
+  opacity: 0.66;
 }
 
 .map-settings-toggle span {
@@ -2488,6 +2510,11 @@ button {
   width: 34px;
   height: 20px;
   accent-color: var(--mc-accent, #38bdf8);
+}
+
+.map-settings-toggle input:disabled {
+  cursor: not-allowed;
+  filter: grayscale(1);
 }
 
 .map-settings-slider {

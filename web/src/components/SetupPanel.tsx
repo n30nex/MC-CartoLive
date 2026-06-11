@@ -211,7 +211,8 @@ export function buildSetupEnvSnippet(form: SetupForm): string {
     `MAP_BOUNDS=${form.preset === 'custom' ? form.bounds.trim() : ''}`,
     `VITE_APP_BRAND_NAME=${form.brandName.trim() || 'MC-CartoLive'}`,
     `VITE_APP_BRAND_URL=${form.brandURL.trim() || 'https://github.com/n30nex/MC-CartoLive'}`,
-    'VITE_APP_BRAND_LOGO='
+    'VITE_APP_BRAND_LOGO=',
+    'VITE_ENABLE_SERVICE_WORKER=false'
   ];
   return lines.join('\n');
 }

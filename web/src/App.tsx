@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Check, Columns3, Eye, EyeOff, Layers, LocateFixed, Monitor, Moon, Palette, Pause, Play, RadioTower, RotateCcw, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
 import { fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicState } from './api';
 import { connectPublicSocket } from './ws';
@@ -24,10 +24,11 @@ import SelectionDrawer from './components/SelectionDrawer';
 import StatusBar from './components/StatusBar';
 import VcrBar, { MiniLiveClock } from './components/VcrBar';
 import ChromePanel from './components/ChromePanel';
-const PacketsPanel = lazy(() => import('./components/PacketsPanel'));
-const NetGraphPanel = lazy(() => import('./components/NetGraphPanel'));
-const ChatPanel = lazy(() => import('./components/ChatPanel'));
-const SetupPanel = lazy(() => import('./components/SetupPanel'));
+import { lazyWithReload } from './lazyWithReload';
+const PacketsPanel = lazyWithReload(() => import('./components/PacketsPanel'), 'PacketsPanel');
+const NetGraphPanel = lazyWithReload(() => import('./components/NetGraphPanel'), 'NetGraphPanel');
+const ChatPanel = lazyWithReload(() => import('./components/ChatPanel'), 'ChatPanel');
+const SetupPanel = lazyWithReload(() => import('./components/SetupPanel'), 'SetupPanel');
 import MapSettingsDrawer from './components/MapSettingsDrawer';
 import RouteGifExportButton, { type RouteGifExportStatus } from './components/RouteGifExportButton';
 import type { WorkspacePresentation } from './components/workspacePanel';
@@ -91,8 +92,8 @@ import {
 } from './theme';
 import type { PublicActivity, PublicHistorySummaryBucket, PublicLiveEnvelope, PublicMapConfig, PublicPacketPath } from './types';
 
-const NodeListPanel = lazy(() => import('./components/NodeListPanel'));
-const ShortcutHelp = lazy(() => import('./components/ShortcutHelp'));
+const NodeListPanel = lazyWithReload(() => import('./components/NodeListPanel'), 'NodeListPanel');
+const ShortcutHelp = lazyWithReload(() => import('./components/ShortcutHelp'), 'ShortcutHelp');
 
 interface VcrUiState {
   mode: VcrMode;
@@ -902,8 +903,8 @@ export default function App() {
     setFollowTraffic(false);
     setPaused(true);
     setSelectedPacket(packet);
-    setPacketsOpen(false);
-    setPacketsPanelMode('expanded');
+    setPacketsOpen(true);
+    setPacketsPanelMode('compactTray');
     if (window.location.hash === '#/packets') {
       window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
     }

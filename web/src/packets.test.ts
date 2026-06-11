@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PACKET_FILTERS, filterPackets, packetEndpointSummary, packetNodeIDs, packetRouteIDs, packetToPulse, packetWindowForScope } from './packets';
+import { DEFAULT_PACKET_FILTERS, filterPackets, packetEndpointSummary, packetNodeIDs, packetRouteIDs, packetSearchFields, packetToPulse, packetWindowForScope } from './packets';
 import type { PublicPacketPath } from './types';
+import { dedupePackets } from './lib/dedupePackets';
 
 const packet = (overrides: Partial<PublicPacketPath> = {}): PublicPacketPath => ({
   id: 'pulse-1',
@@ -65,5 +66,22 @@ describe('packet page helpers', () => {
   it('builds bounded fetch windows from timeline scopes', () => {
     expect(packetWindowForScope(100_000, 60_000)).toEqual({ from: 40_000, to: 100_000 });
     expect(packetWindowForScope(10_000, 60_000)).toEqual({ from: 0, to: 10_000 });
+  });
+
+  it('defensively handles malformed packet fields in search helpers', () => {
+    const malformed = packet({
+      routeIds: null as unknown as string[],
+      endpointLabels: null as unknown as string[],
+      segments: [
+        { routeId: 'r-a', from: { nodeId: 'A', label: 'Alpha', lat: 43.1, lng: -79.4 }, to: null as unknown as PublicPacketPath['segments'][number]['to'], distanceKm: 14 } as any,
+        null as unknown as PublicPacketPath['segments'][number]
+      ]
+    } as unknown as PublicPacketPath);
+    expect(() => packetSearchFields(malformed)).not.toThrow();
+    expect(packetSearchFields(malformed)).toContain('Alpha');
+    expect(packetEndpointSummary(malformed)).toBe('Unknown path');
+    expect(packetRouteIDs(malformed)).toEqual(new Set());
+    expect(packetNodeIDs(malformed)).toEqual(new Set(['A']));
+    expect(dedupePackets([malformed]).length).toBe(1);
   });
 });

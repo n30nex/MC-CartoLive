@@ -15,24 +15,53 @@ interface MapSettingsDrawerProps {
   onClose: () => void;
 }
 
-const LAYER_CONTROLS: readonly { key: keyof MapLayerSettings; label: string; hint: string }[] = [
-  { key: 'clusters', label: 'Clusters', hint: 'Grouped low-zoom node bubbles' },
-  { key: 'activityHeatmap', label: 'Activity heatmap', hint: 'Subtle live glow from recently active map areas' },
-  { key: 'nodes', label: 'Nodes', hint: 'Individual public nodes and observers' },
-  { key: 'nodeLabels', label: 'Node labels', hint: 'Projected map labels' },
-  { key: 'routes', label: 'Known pathways', hint: 'Idle public route lines' },
-  { key: 'analysisPaths', label: 'Analysis paths', hint: 'Selected packets, Plot Routes, phonebook paths' },
-  { key: 'liveComets', label: 'Live packet comets', hint: 'Live packet flight animations only' },
-  { key: 'packetResidue', label: 'Packet trails', hint: 'Recent route glow residue' },
-  { key: 'observerBursts', label: 'Observer bursts', hint: 'Observer-only packet pings' },
-  { key: 'messageBubbles', label: 'Message bubbles', hint: 'Public-safe decoded text overlays' },
-  { key: 'nodeModels3D', label: '3D node models', hint: 'OpenFreeMap repeater, companion, room, and observer models' },
-  { key: 'routeArcs3D', label: '3D route arcs', hint: 'Elevated OpenFreeMap route/pathway arcs' },
-  { key: 'packetComets3D', label: '3D packet comets', hint: 'OpenFreeMap mesh comets and trails' },
-  { key: 'buildingExtrusions', label: '3D buildings', hint: 'Building extrusion layer (OpenFreeMap tiles on any mode)' },
-  { key: 'terrainLOS', label: 'Terrain line-of-sight', hint: 'Color routes by RF terrain clearance (915 MHz Fresnel)' },
-  { key: 'terrainHeightmap', label: 'Terrain heightmap', hint: 'DEM elevation hillshade and 3D terrain on base map' },
-  { key: 'weatherClouds', label: 'Weather clouds', hint: 'Live cloud cover overlay fading at close zoom' }
+const WEATHER_CLOUDS_AVAILABLE = Boolean((import.meta.env['VITE_OPENWEATHERMAP_API_KEY'] as string | undefined)?.trim());
+
+type LayerControl = { key: keyof MapLayerSettings; label: string; hint: string; unavailableHint?: string };
+
+export const LAYER_GROUPS: readonly { label: string; controls: readonly LayerControl[] }[] = [
+  {
+    label: 'Base',
+    controls: [
+      { key: 'terrainHeightmap', label: 'Terrain heightmap', hint: 'DEM elevation hillshade and 3D terrain' },
+      { key: 'buildingExtrusions', label: '3D buildings', hint: 'Building extrusions from vector map tiles' },
+      { key: 'weatherClouds', label: 'Weather clouds', hint: 'Live cloud cover overlay', unavailableHint: 'API key required' }
+    ]
+  },
+  {
+    label: 'Mesh',
+    controls: [
+      { key: 'clusters', label: 'Clusters', hint: 'Grouped low-zoom node bubbles' },
+      { key: 'activityHeatmap', label: 'Activity heatmap', hint: 'Recent activity glow' },
+      { key: 'nodes', label: 'Nodes', hint: 'Individual public nodes and observers' },
+      { key: 'nodeLabels', label: 'Node labels', hint: 'Projected map labels' },
+      { key: 'routes', label: 'Known pathways', hint: 'Idle public route lines' }
+    ]
+  },
+  {
+    label: 'Live Motion',
+    controls: [
+      { key: 'liveComets', label: 'Live packet comets', hint: 'Live packet flight animations' },
+      { key: 'packetResidue', label: 'Packet trails', hint: 'Recent route glow residue' },
+      { key: 'observerBursts', label: 'Observer bursts', hint: 'Observer-only packet pings' },
+      { key: 'messageBubbles', label: 'Message bubbles', hint: 'Public decoded text overlays' }
+    ]
+  },
+  {
+    label: '3D',
+    controls: [
+      { key: 'nodeModels3D', label: '3D node models', hint: 'OpenFreeMap role models' },
+      { key: 'routeArcs3D', label: '3D route arcs', hint: 'Elevated pathway arcs' },
+      { key: 'packetComets3D', label: '3D packet comets', hint: 'OpenFreeMap mesh comets and trails' }
+    ]
+  },
+  {
+    label: 'Analysis',
+    controls: [
+      { key: 'analysisPaths', label: 'Analysis paths', hint: 'Selected packets and plotted paths' },
+      { key: 'terrainLOS', label: 'Terrain line-of-sight', hint: 'RF terrain clearance color on 3D routes' }
+    ]
+  }
 ];
 
 const ANIMATION_STYLES: readonly { value: PacketAnimationStyle; label: string }[] = [
@@ -71,19 +100,31 @@ export default function MapSettingsDrawer({ settings, onChange, onClose }: MapSe
 
       <section className="map-settings-section">
         <h3>Layers</h3>
-        <div className="map-settings-toggle-list">
-          {LAYER_CONTROLS.map((control) => (
-            <label key={control.key} className="map-settings-toggle">
-              <span>
-                <strong>{control.label}</strong>
-                <small>{control.hint}</small>
-              </span>
-              <input
-                type="checkbox"
-                checked={settings.layers[control.key]}
-                onChange={(event) => updateLayer(control.key, event.target.checked)}
-              />
-            </label>
+        <div className="map-settings-layer-groups">
+          {LAYER_GROUPS.map((group) => (
+            <div key={group.label} className="map-settings-layer-group">
+              <h4>{group.label}</h4>
+              <div className="map-settings-toggle-list">
+                {group.controls.map((control) => {
+                  const unavailable = control.key === 'weatherClouds' && !WEATHER_CLOUDS_AVAILABLE;
+                  const hint = unavailable ? control.unavailableHint ?? control.hint : control.hint;
+                  return (
+                    <label key={control.key} className={`map-settings-toggle${unavailable ? ' unavailable' : ''}`}>
+                      <span>
+                        <strong>{control.label}</strong>
+                        <small>{hint}</small>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={unavailable ? false : settings.layers[control.key]}
+                        disabled={unavailable}
+                        onChange={(event) => updateLayer(control.key, event.target.checked)}
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
           ))}
         </div>
       </section>

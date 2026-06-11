@@ -152,6 +152,61 @@ func TestPublicHistoryEndpointEnforcesWindowAndLimitCaps(t *testing.T) {
 	}
 }
 
+func TestPublicHistoryFallsBackWhenProjectionIncomplete(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := st.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+	})
+
+	observerKey := "AA00000000000000000000000000000000000000000000000000000000000000"
+	base := time.Now().Add(-time.Hour).UnixMilli()
+	firstID := insertHistoryObservation(t, ctx, st, "hash-history-projected-private", "YYZ", observerKey, base+1_000, resolve.StatusHigh)
+	firstEdge := insertHistoryEdge(t, ctx, st, firstID, "hash-history-projected-private", base+1_000)
+	secondID := insertHistoryObservation(t, ctx, st, "hash-history-missing-projection-private", "YYZ", observerKey, base+2_000, resolve.StatusHigh)
+	secondEdge := insertHistoryEdge(t, ctx, st, secondID, "hash-history-missing-projection-private", base+2_000)
+	if firstEdge <= 0 || secondEdge <= 0 {
+		t.Fatalf("invalid edge ids")
+	}
+	if err := st.DeletePublicPacketPathForEdge(ctx, secondEdge); err != nil {
+		t.Fatal(err)
+	}
+	complete, err := st.PublicPacketPathProjectionComplete(ctx, base, base+3_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if complete {
+		t.Fatalf("projection should be incomplete after deleting one projected row")
+	}
+
+	server := publicHistoryTestServer(st, func(iata string) bool { return strings.ToUpper(iata) == "YYZ" })
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/public/history?from="+ms(base)+"&to="+ms(base+3_000)+"&limit=10", nil)
+	server.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("history status = %d body=%s", response.Code, response.Body.String())
+	}
+	var history live.PublicHistoryResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &history); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(history.Events), 2; got != want {
+		t.Fatalf("history events = %d, want %d from legacy fallback: %#v", got, want, history.Events)
+	}
+	if history.Events[0].At != base+1_000 || history.Events[1].At != base+2_000 {
+		t.Fatalf("history events = %#v, want both legacy edge events oldest-first", history.Events)
+	}
+	raw := response.Body.String()
+	if strings.Contains(raw, "hash-history") || strings.Contains(raw, "packetHash") || strings.Contains(raw, "pathHex") {
+		t.Fatalf("history fallback leaked private fields: %s", raw)
+	}
+}
+
 func publicHistoryTestServer(st *store.Store, allows func(string) bool) api.Server {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return api.Server{
@@ -200,9 +255,9 @@ func insertHistoryObservation(t *testing.T, ctx context.Context, st *store.Store
 	return id
 }
 
-func insertHistoryEdge(t *testing.T, ctx context.Context, st *store.Store, observationID int64, hash string, heardAt int64) {
+func insertHistoryEdge(t *testing.T, ctx context.Context, st *store.Store, observationID int64, hash string, heardAt int64) int64 {
 	t.Helper()
-	if _, err := st.InsertEdgeEvent(ctx, live.EdgeEvent{
+	edge, err := st.InsertEdgeEvent(ctx, live.EdgeEvent{
 		PacketHash:      hash,
 		ObservationID:   observationID,
 		PayloadType:     2,
@@ -218,9 +273,11 @@ func insertHistoryEdge(t *testing.T, ctx context.Context, st *store.Store, obser
 			},
 		},
 		RenderReason: "resolved_path_high_confidence",
-	}, "high", "test"); err != nil {
+	}, "high", "test")
+	if err != nil {
 		t.Fatal(err)
 	}
+	return edge.ID
 }
 
 func ms(value int64) string {

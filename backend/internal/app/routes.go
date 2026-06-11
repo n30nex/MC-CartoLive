@@ -27,6 +27,7 @@ func (a *Application) Routes() http.Handler {
 			PublicIATARestricted:   a.PublicCache.RestrictsIATA(),
 			PublicRegionRestricted: a.PublicCache.RestrictsIATA(),
 			PublicIATAs:            a.Config.PublicIATAs,
+			TrustProxyHeaders:      a.Config.TrustProxyHeaders,
 		},
 		Store:             a.Store,
 		Hub:               a.Hub,

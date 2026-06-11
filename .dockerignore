@@ -5,6 +5,7 @@
 .github
 docs
 artifacts
+backups
 
 web/node_modules
 web/dist

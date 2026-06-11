@@ -7,7 +7,7 @@ Thanks for helping improve the MeshCore Canada live map.
 Prerequisites:
 
 - Docker and Docker Compose
-- Go 1.25+
+- Go 1.25.11+
 - Node.js 22+
 
 Local Docker run:

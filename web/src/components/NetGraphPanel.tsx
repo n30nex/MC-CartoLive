@@ -263,9 +263,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       scheduleDraw();
     };
     resize();
-    const observer = new ResizeObserver(resize);
-    observer.observe(canvas);
-    return () => observer.disconnect();
+    return observeNetGraphResize(canvas, resize);
   }, [scheduleDraw]);
 
   useEffect(() => {
@@ -883,6 +881,20 @@ function resizeCanvas(canvas: HTMLCanvasElement): void {
   canvas.height = Math.max(1, Math.floor(rect.height * dpr));
   const ctx = canvas.getContext('2d');
   ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+export function observeNetGraphResize(element: Element, resize: () => void, win: Pick<Window, 'addEventListener' | 'removeEventListener'> = window): () => void {
+  if (typeof ResizeObserver === 'function') {
+    try {
+      const observer = new ResizeObserver(resize);
+      observer.observe(element);
+      return () => observer.disconnect();
+    } catch {
+      // Fall through to window resize events when ResizeObserver is unavailable or broken.
+    }
+  }
+  win.addEventListener('resize', resize);
+  return () => win.removeEventListener('resize', resize);
 }
 
 export function netGraphThemeFromElement(element: Element | null | undefined): NetGraphThemeTokens {

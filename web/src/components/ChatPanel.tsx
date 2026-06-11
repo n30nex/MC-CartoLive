@@ -95,6 +95,10 @@ export default function ChatPanel({
     requestGenerationRef.current = generation;
     filterGenerationRef.current += 1;
     setLoading(true);
+    setMessages([]);
+    setWindowInfo(null);
+    setServerTime(0);
+    setNextCursor('');
     setError(null);
     const window = chatWindowForScope(Date.now(), scopeMs);
     fetchPublicChat({
@@ -286,12 +290,13 @@ export default function ChatPanel({
 }
 
 function ChatRow({ message }: { message: PublicChatMessage }) {
-  const region = chatRegion(message) || 'unknown';
+  const region = safeChatText(chatRegion(message), 'unknown');
   const channel = safeChatText(message.channelLabel, 'Public');
   const sender = safeChatText(message.sender, 'Unknown');
   const text = safeChatText(message.text, '');
   const payload = safeChatText(message.payloadTypeName, 'Message');
   const endpoints = (message.endpointLabels ?? []).map((label) => safeChatText(label, '')).filter(Boolean);
+  const anchorLabel = safeChatText(message.anchor?.label, '');
   return (
     <article className="chat-row" role="listitem">
       <div className="chat-row-top">
@@ -303,7 +308,7 @@ function ChatRow({ message }: { message: PublicChatMessage }) {
       <div className="chat-row-meta">
         <span>{channel || 'Public'}</span>
         <span>{payload || 'Message'}</span>
-        {message.anchor?.label && <span>{safeChatText(message.anchor.label)}</span>}
+        {anchorLabel && <span>{anchorLabel}</span>}
         {endpoints.length > 0 && <span>{endpointSummary(endpoints)}</span>}
       </div>
     </article>

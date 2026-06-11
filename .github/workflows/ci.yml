@@ -5,6 +5,13 @@ on:
   push:
     branches:
       - main
+      - dev/deepseek-v4
+  workflow_dispatch:
+    inputs:
+      browser_smoke:
+        description: Run local Docker browser smoke with Playwright
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -105,3 +112,54 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  browser-smoke:
+    name: Browser smoke
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_smoke }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: web
+        run: npm exec playwright install --with-deps chromium
+
+      - name: Prepare fixture environment
+        run: cp .env.example .env
+
+      - name: Start local app
+        run: docker compose up --build -d --remove-orphans
+
+      - name: Wait for readiness
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:39476/readyz | grep -q '"ready":true'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs --tail=180
+          curl -fsS http://127.0.0.1:39476/readyz || true
+          exit 1
+
+      - name: Run browser smoke
+        run: node scripts/browser-smoke.mjs --base-url http://127.0.0.1:39476
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-smoke-artifacts
+          path: artifacts/browser-smoke/

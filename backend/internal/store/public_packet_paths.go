@@ -12,6 +12,20 @@ import (
 	"meshcore-canada-live-map/backend/internal/live"
 )
 
+func (s *Store) DeletePublicPacketPathForEdge(ctx context.Context, edgeID int64) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	if edgeID <= 0 {
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM public_packet_paths WHERE edge_id = ?`, edgeID); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM public_packet_paths_fts WHERE rowid = ?`, edgeID)
+	return err
+}
+
 type PublicPacketPathQuery struct {
 	From            int64
 	To              int64

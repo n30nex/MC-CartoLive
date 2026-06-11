@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
-import NetGraphPanel, { netGraphSettlePlan, netGraphShouldRunFrame, netGraphThemeFromStyle, packedComponentCells } from './NetGraphPanel';
+import { describe, expect, it, vi } from 'vitest';
+import NetGraphPanel, { netGraphSettlePlan, netGraphShouldRunFrame, netGraphThemeFromStyle, observeNetGraphResize, packedComponentCells } from './NetGraphPanel';
 
 describe('NetGraphPanel', () => {
   it('renders the closeable live graph shell without private packet language', () => {
@@ -53,6 +53,21 @@ describe('NetGraphPanel', () => {
     expect(netGraphShouldRunFrame({ pageHidden: false, activeComets: false, activeGlows: true })).toBe(true);
     expect(netGraphShouldRunFrame({ pageHidden: true, activeComets: true, activeGlows: true })).toBe(false);
     expect(netGraphShouldRunFrame({ pageHidden: false, activeComets: false, activeGlows: false })).toBe(false);
+  });
+
+  it('falls back to window resize events when ResizeObserver is unavailable', () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    vi.stubGlobal('ResizeObserver', undefined);
+    const addEventListener = vi.fn();
+    const removeEventListener = vi.fn();
+    const resize = vi.fn();
+
+    const cleanup = observeNetGraphResize(document.createElement('canvas'), resize, { addEventListener, removeEventListener });
+    expect(addEventListener).toHaveBeenCalledWith('resize', resize);
+    cleanup();
+    expect(removeEventListener).toHaveBeenCalledWith('resize', resize);
+
+    vi.stubGlobal('ResizeObserver', originalResizeObserver);
   });
 
   it('uses active palette tokens for canvas colors in dark and light modes', () => {

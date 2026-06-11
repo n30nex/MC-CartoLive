@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
@@ -14,6 +15,23 @@ func TestCanonicalHistorySummaryWindowRoundsDownToStableBuckets(t *testing.T) {
 	from, to := canonicalHistorySummaryWindow(125_999, 188_123)
 	if from != 120_000 || to != 180_000 {
 		t.Fatalf("canonical window = %d..%d, want 120000..180000", from, to)
+	}
+}
+
+func TestClientIPRequiresTrustedProxyHeaders(t *testing.T) {
+	request, err := http.NewRequest(http.MethodGet, "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.RemoteAddr = "203.0.113.10:49152"
+	request.Header.Set("X-Forwarded-For", "198.51.100.77, 10.0.0.10")
+	request.Header.Set("X-Real-IP", "198.51.100.88")
+
+	if got := clientIP(request, false); got != "203.0.113.10" {
+		t.Fatalf("untrusted proxy client IP = %q, want remote addr", got)
+	}
+	if got := clientIP(request, true); got != "198.51.100.77" {
+		t.Fatalf("trusted proxy client IP = %q, want first XFF address", got)
 	}
 }
 

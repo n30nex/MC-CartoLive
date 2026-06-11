@@ -54,7 +54,7 @@ export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   buildingExtrusions: true,
   terrainLOS: false,
   terrainHeightmap: true,
-  weatherClouds: true
+  weatherClouds: false
 };
 
 export const DEFAULT_PACKET_VISUAL_SETTINGS: PacketVisualSettings = {

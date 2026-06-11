@@ -98,16 +98,23 @@ func (rl *rateLimiter) allow(ip string) bool {
 	return true
 }
 
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.SplitN(xff, ",", 2)
-		return strings.TrimSpace(parts[0])
-	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+func clientIP(r *http.Request, trustProxyHeaders bool) string {
+	if trustProxyHeaders {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.SplitN(xff, ",", 2)
+			if ip := strings.TrimSpace(parts[0]); ip != "" {
+				return ip
+			}
+		}
+		if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" {
+			return xri
+		}
 	}
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	return host
+	if host != "" {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 type Config struct {
@@ -128,6 +135,7 @@ type Config struct {
 	PublicIATARestricted   bool
 	PublicRegionRestricted bool
 	PublicIATAs            []string
+	TrustProxyHeaders      bool
 }
 
 type Server struct {
@@ -199,7 +207,7 @@ func (s *Server) Routes() http.Handler {
 
 func (s *Server) rateLimited(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.rateLimiter.allow(clientIP(r)) {
+		if !s.rateLimiter.allow(clientIP(r, s.Config.TrustProxyHeaders)) {
 			w.Header().Set("Retry-After", "60")
 			writeError(w, http.StatusTooManyRequests, errors.New("rate limit exceeded"))
 			return
@@ -675,9 +683,13 @@ func (s *Server) publicHistory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if s.publicHistoryFromProjection(w, ctx, now, from, to, limit, cursor) {
-		failed = false
-		return
+	if complete, completeErr := s.Store.PublicPacketPathProjectionComplete(ctx, from, to); completeErr == nil && complete {
+		if s.publicHistoryFromProjection(w, ctx, now, from, to, limit, cursor) {
+			failed = false
+			return
+		}
+	} else if completeErr != nil && s.Log != nil {
+		s.Log.Warn("public history projection completeness check failed", "error", completeErr)
 	}
 	events := make([]live.PublicHistoryEvent, 0, limit)
 	nextCursor := cursor
@@ -772,9 +784,6 @@ func (s *Server) publicHistoryFromProjection(
 		}
 		scanned += len(rawPackets)
 		if len(rawPackets) == 0 {
-			if len(events) == 0 && cursor == nil {
-				return false
-			}
 			nextCursor = nil
 			exhausted = true
 			break
@@ -1060,9 +1069,41 @@ func (s *Server) publicPackets(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if s.publicPacketsFromProjection(w, ctx, now, from, to, limit, cursor, filters) {
-		failed = false
-		return
+	projectionComplete := false
+	if complete, completeErr := s.Store.PublicPacketPathProjectionComplete(ctx, from, to); completeErr == nil {
+		projectionComplete = complete
+	} else {
+		if s.Log != nil {
+			s.Log.Warn("public packets projection completeness check failed", "error", completeErr)
+		}
+	}
+	if projectionComplete {
+		projection, projectionUsed := s.publicPacketsFromProjection(ctx, from, to, limit, cursor, filters)
+		if projectionUsed {
+			if s.Runtime != nil {
+				s.Runtime.RecordPublicPacketsProjection(true, true, false)
+				s.Runtime.RecordPublicPacketsSearchMode(string(projection.SearchMode))
+				s.Runtime.RecordPublicPacketsScan(projection.Scan.EventsScanned, projection.Scan.Partial && projection.Scan.EventsScanned >= publicPacketsMaxRawScan)
+			}
+			writeJSON(w, http.StatusOK, live.PublicPacketsResponse{
+				ServerTime: now,
+				Packets:    projection.Packets,
+				NextCursor: projection.NextCursor,
+				Window: live.PublicHistoryWindow{
+					From:  from,
+					To:    to,
+					Count: len(projection.Packets),
+				},
+				Scan: projection.Scan,
+			})
+			failed = false
+			return
+		}
+		if s.Runtime != nil {
+			s.Runtime.RecordPublicPacketsProjection(false, true, true)
+		}
+	} else if s.Runtime != nil {
+		s.Runtime.RecordPublicPacketsProjection(false, false, false)
 	}
 	packets := make([]live.PublicPacketPath, 0, limit)
 	nextCursor := cursor
@@ -1145,16 +1186,21 @@ func (s *Server) publicPackets(w http.ResponseWriter, r *http.Request) {
 	failed = false
 }
 
+type publicPacketsProjectionResult struct {
+	Packets    []live.PublicPacketPath
+	NextCursor string
+	Scan       live.PublicPacketScan
+	SearchMode store.PublicPacketPathSearchMode
+}
+
 func (s *Server) publicPacketsFromProjection(
-	w http.ResponseWriter,
 	ctx context.Context,
-	now int64,
 	from int64,
 	to int64,
 	limit int,
 	cursor *store.HistoryCursor,
 	filters publicPacketFilters,
-) bool {
+) (publicPacketsProjectionResult, bool) {
 	packets := make([]live.PublicPacketPath, 0, limit)
 	nextCursor := cursor
 	scanned := 0
@@ -1175,10 +1221,7 @@ func (s *Server) publicPacketsFromProjection(
 			Search:          filters.query,
 		})
 		if err != nil {
-			if s.Runtime != nil {
-				s.Runtime.RecordPublicPacketsProjection(false, true, true)
-			}
-			return false
+			return publicPacketsProjectionResult{}, false
 		}
 		if rawSearchMode != store.PublicPacketPathSearchNone {
 			searchMode = rawSearchMode
@@ -1213,28 +1256,17 @@ func (s *Server) publicPacketsFromProjection(
 		}
 	}
 	nextCursorToken := publicPacketsNextCursorToken(nextCursor, exhausted, len(packets), limit, scanned)
-	if s.Runtime != nil {
-		s.Runtime.RecordPublicPacketsProjection(true, true, false)
-		s.Runtime.RecordPublicPacketsSearchMode(string(searchMode))
-		s.Runtime.RecordPublicPacketsScan(scanned, nextCursorToken != "" && scanned >= publicPacketsMaxRawScan)
-	}
-	writeJSON(w, http.StatusOK, live.PublicPacketsResponse{
-		ServerTime: now,
+	return publicPacketsProjectionResult{
 		Packets:    packets,
 		NextCursor: nextCursorToken,
-		Window: live.PublicHistoryWindow{
-			From:  from,
-			To:    to,
-			Count: len(packets),
-		},
 		Scan: live.PublicPacketScan{
 			EventsScanned: scanned,
 			ScanLimit:     publicPacketsMaxRawScan,
 			Filtered:      filters.hasAny(),
 			Partial:       nextCursorToken != "",
 		},
-	})
-	return true
+		SearchMode: searchMode,
+	}, true
 }
 
 func publicPacketProjectionCursor(packet live.PublicPacketPath) *store.HistoryCursor {
@@ -2004,7 +2036,7 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.maplibre.org https://*.openfreemap.org https://tiles.openfreemap.org https://s3.amazonaws.com https://demotiles.maplibre.org https://*.basemaps.cartocdn.com https://tile.openweathermap.org; connect-src 'self' wss: ws: https://services.swpc.noaa.gov https://tiles.openfreemap.org https://s3.amazonaws.com https://demotiles.maplibre.org https://*.basemaps.cartocdn.com https://tile.openweathermap.org; font-src 'self' https://tiles.openfreemap.org https://fonts.openfreemap.org; worker-src 'self' blob:")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.cartocdn.com https://*.maplibre.org https://*.openfreemap.org https://tiles.openfreemap.org https://s3.amazonaws.com https://demotiles.maplibre.org https://*.basemaps.cartocdn.com https://tile.openweathermap.org; connect-src 'self' wss: ws: https://api.github.com https://services.swpc.noaa.gov https://*.cartocdn.com https://*.openfreemap.org https://tiles.openfreemap.org https://s3.amazonaws.com https://demotiles.maplibre.org https://*.basemaps.cartocdn.com https://api.openweathermap.org https://tile.openweathermap.org; font-src 'self' https://tiles.openfreemap.org https://fonts.openfreemap.org https://demotiles.maplibre.org; worker-src 'self' blob:")
 		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 		next.ServeHTTP(w, r)
 	}))

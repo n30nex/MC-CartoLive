@@ -593,7 +593,7 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       'hillshade-accent-color': '#64748b',
       'hillshade-illumination-direction': [315],
       'hillshade-illumination-altitude': [45],
-      'hillshade-exaggeration': 1.8
+      'hillshade-exaggeration': 0.44
       } as any
     },
     {

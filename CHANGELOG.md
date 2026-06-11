@@ -1,8 +1,15 @@
 # Changelog
 
-## Unreleased
+## 2.8.0 - 2026-06-11
 
-- No unreleased changes.
+- Promoted the `dev/deepseek-v4` feature line to production-ready World Release 2.
+- Stabilized Packets, Chat, and NetGraph with desktop/mobile browser-smoke coverage.
+- Disabled the service worker by default, added legacy service-worker/cache cleanup, and added one-shot lazy chunk reload recovery.
+- Fixed SQLite production migrations for old databases, including `nodes.supports_multibyte` and public packet projection columns.
+- Fixed public Packets and History projection fallback so incomplete projections cannot hide valid legacy RF edge events.
+- Added explicit proxy-header trust configuration for public rate limiting.
+- Hardened deployment with safe SQLite backup, correct host readiness checks, dirty-tree refusal, readiness diagnostics, and rollback.
+- Updated privacy scans, release checks, CI triggers, browser smoke, and documentation for the 2.8.0 release gate.
 
 ## 2.7.7 - 2026-06-09
 

@@ -19,6 +19,7 @@ try {
   Push-Location "backend"
   try {
     go test ./...
+    go tool govulncheck ./...
   }
   finally {
     Pop-Location
@@ -26,6 +27,8 @@ try {
 
   Push-Location "web"
   try {
+    npm ci
+    npm audit --audit-level=high
     npm test -- --run
     npm run build
   }
@@ -38,7 +41,7 @@ try {
   }
 
   if ($RunPackageSmoke) {
-    $packageImage = if ($PackageSmokeImage) { $PackageSmokeImage } else { "meshcore-canada-live-map-meshcore-live-map:latest" }
+    $packageImage = if ($PackageSmokeImage) { $PackageSmokeImage } else { "mc-cartolive-meshcore-live-map:latest" }
     node (Join-Path $root "scripts/package-smoke.mjs") --image $packageImage --version ((Get-Content (Join-Path $root "VERSION") -TotalCount 1).Trim())
   }
 
@@ -48,8 +51,11 @@ try {
   $now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
   $from = $now - 600000
   $history = Invoke-RestMethod "$BaseUrl/api/v1/public/history?from=$from&to=$now&limit=25"
+  $historySummary = Invoke-RestMethod "$BaseUrl/api/v1/public/history/summary?from=$from&to=$now&bucketMs=60000"
   $packets = Invoke-RestMethod "$BaseUrl/api/v1/public/packets?from=$from&to=$now&limit=25"
   $chat = Invoke-RestMethod "$BaseUrl/api/v1/public/chat?from=$from&to=$now&limit=25"
+  $solar = Invoke-RestMethod "$BaseUrl/api/v1/public/solar"
+  $metrics = Invoke-WebRequest -UseBasicParsing "$BaseUrl/metrics"
   node (Join-Path $root "scripts/check-public-privacy.mjs") $BaseUrl
 
   if ($RunBrowserSmoke) {
@@ -65,8 +71,11 @@ try {
     Nodes = $state.stats.activeNodes
     Routes = $state.stats.activeRoutes
     HistoryEvents = $history.window.count
+    HistorySummaryBuckets = @($historySummary.buckets).Count
     PacketPaths = $packets.window.count
     ChatMessages = $chat.window.count
+    SolarKp = $solar.kpIndex
+    MetricsBytes = $metrics.Content.Length
     PacketIngestState = $health.packetIngestState
     PublicCacheState = $health.publicCacheState
     MapMotionState = $health.mapMotionState

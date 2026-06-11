@@ -185,7 +185,8 @@ export default function PacketsPanel({
   const virtualRows = useMemo(() => virtualPacketRows(packets, scrollTop, listHeight), [listHeight, packets, scrollTop]);
 
   const copyRouteIDs = useCallback(async (packet: PublicPacketPath) => {
-    const text = packet.routeIds.join(',');
+    const routeIds = Array.isArray(packet?.routeIds) ? packet.routeIds.filter((value): value is string => Boolean(value)) : [];
+    const text = routeIds.join(',');
     if (!text) {
       setCopyStatus('No route IDs');
       return;
@@ -394,7 +395,7 @@ function PacketRow({
         <span className="packet-row-meta">
           <span>{packetRegion(packet) || 'unknown'}</span>
           <span>{packet.hopCount} {packet.hopCount === 1 ? 'hop' : 'hops'}</span>
-          <span>{packet.distanceKm.toFixed(1)} km</span>
+          <span>{safeToFixed(packet.distanceKm)} km</span>
           <span>{packet.segmentCount} {packet.segmentCount === 1 ? 'segment' : 'segments'}</span>
         </span>
         {packet.messageText && (
@@ -446,7 +447,7 @@ function PacketDetail({
         <div><dt>Heard</dt><dd>{new Date(packet.at).toLocaleString()}</dd></div>
         <div><dt>Age</dt><dd>{formatRelative(packet.at)}</dd></div>
         <div><dt>Path</dt><dd>{packet.hopCount} hops / {packet.segmentCount} segments</dd></div>
-        <div><dt>Distance</dt><dd>{packet.distanceKm.toFixed(1)} km</dd></div>
+        <div><dt>Distance</dt><dd>{safeToFixed(packet.distanceKm)} km</dd></div>
         <div><dt>Payload</dt><dd>{visual.label}</dd></div>
       </dl>
       {packet.messageText && (
@@ -462,11 +463,11 @@ function PacketDetail({
       </div>
       {copyStatus && <span className="packet-copy-status">{copyStatus}</span>}
       <div className="packet-segment-list" aria-label="Public packet segments">
-        {packet.segments.map((segment, index) => (
-          <div key={`${segment.routeId}-${index}`} className="packet-segment">
+        {(Array.isArray(packet.segments) ? packet.segments : []).map((segment, index) => (
+          <div key={`${segment.routeId || 'segment'}-${index}`} className="packet-segment">
             <span>{index + 1}</span>
-            <strong>{segment.from.label}{' -> '}{segment.to.label}</strong>
-            <em>{segment.distanceKm.toFixed(1)} km</em>
+            <strong>{segment.from?.label || 'Unknown'}{' -> '}{segment.to?.label || 'Unknown'}</strong>
+            <em>{safeToFixed(segment.distanceKm)} km</em>
           </div>
         ))}
       </div>
@@ -599,6 +600,11 @@ function packetRequestErrorMessage(err: unknown): string {
 
 function normalizeIataFilter(value: string): string {
   return value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 16);
+}
+
+function safeToFixed(value: number): string {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toFixed(1) : '0.0';
 }
 
 function filtersToParams(filters: PacketFilters) {

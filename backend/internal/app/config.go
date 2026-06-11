@@ -52,6 +52,7 @@ type Config struct {
 	PublicPacketPathBackfillEnabled bool
 	PublicPacketPathBackfillBatch   int
 	PublicPacketPathBackfillHours   int
+	TrustProxyHeaders               bool
 	ConfigYAML                      string
 	FixtureReplayPath               string
 	FixtureRecordEnabled            bool
@@ -72,7 +73,7 @@ func LoadConfig() (Config, error) {
 	publicRegions := configuredPublicRegions(mapPreset)
 	cfg := Config{
 		ListenAddr:                      envString("LISTEN_ADDR", ":8080"),
-		AppVersion:                      envString("APP_VERSION", "2.7.7"),
+		AppVersion:                      envString("APP_VERSION", "2.8.0"),
 		GitSHA:                          envString("GIT_SHA", envString("VITE_GIT_SHA", "")),
 		BuildTime:                       envString("BUILD_TIME", envString("VITE_BUILD_TIME", "")),
 		PublicBaseURL:                   envString("PUBLIC_BASE_URL", "http://localhost:8080"),
@@ -111,6 +112,7 @@ func LoadConfig() (Config, error) {
 		PublicPacketPathBackfillEnabled: envBool("PUBLIC_PACKET_PATH_BACKFILL_ENABLED", true),
 		PublicPacketPathBackfillBatch:   envInt("PUBLIC_PACKET_PATH_BACKFILL_BATCH", 500),
 		PublicPacketPathBackfillHours:   envInt("PUBLIC_PACKET_PATH_BACKFILL_HOURS", 24),
+		TrustProxyHeaders:               envBool("TRUST_PROXY_HEADERS", false),
 		ConfigYAML:                      envString("CONFIG_YAML", "./data/config.yaml"),
 		FixtureReplayPath:               os.Getenv("FIXTURE_REPLAY_PATH"),
 		FixtureRecordEnabled:            envBool("FIXTURE_RECORD_ENABLED", false),
