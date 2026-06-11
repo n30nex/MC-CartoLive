@@ -2,14 +2,14 @@
 
 Also known as **MC-CartoLive**.
 
-MC-CartoLive is a Dockerized live MQTT-to-map dashboard for MeshCore public RF
+MC-CartoLive is a containerized live MQTT-to-map dashboard for MeshCore public RF
 observations. It ingests MeshCore broker traffic, resolves only
 high-confidence RF routes, and serves a smooth public MapLibre dashboard with
 live packet motion, observer activity, decoded public message bubbles, and
 privacy-safe public APIs.
 
 The app stays intentionally simple for operators: one Go backend, one embedded
-React frontend, one SQLite database, one Docker Compose service.
+React frontend, one SQLite database, one container service.
 
 Public instance: [MeshCore Canada MQTT](https://carto.canadaverse.org/).
 
@@ -267,7 +267,8 @@ With `PUBLIC_MODE=true`, internal debug APIs are not exposed.
 
 ```bash
 cp .env.example .env
-docker compose up --build
+podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
+podman run --rm --name mc-cartolive -p 39476:8080 --env-file .env mc-cartolive-meshcore-live-map:latest
 ```
 
 Open:
@@ -409,10 +410,11 @@ MQTT_ENABLED=false
 FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson
 ```
 
-Then start Docker:
+Then start the local Podman container:
 
 ```bash
-docker compose up --build
+podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
+podman run --rm --name mc-cartolive -p 39476:8080 --env-file .env mc-cartolive-meshcore-live-map:latest
 ```
 
 The fixture uses fake public keys and synthetic messages. It is not copied from live traffic.
@@ -439,10 +441,10 @@ npm test -- --run
 npm run build
 ```
 
-Docker:
+Container image:
 
 ```bash
-docker compose build
+podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
 ```
 
 Browser layout smoke for the 2.8.0 release gate:
@@ -459,8 +461,11 @@ map, Packets, Chat, and NetGraph. Screenshots are written to
 Packaged image smoke for the 2.8.0 release gate:
 
 ```powershell
-node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.8.0 --pull
+node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:2.8.0 --pull
 ```
+
+The local release helpers auto-prefer Podman when it is installed. Set
+`CONTAINER_RUNTIME=docker` only on Docker hosts.
 
 The package smoke runs the image in synthetic and worldwide `r1` fixture modes,
 checks public APIs, verifies packet paths are returned, and runs the public

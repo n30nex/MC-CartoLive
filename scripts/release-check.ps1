@@ -6,7 +6,10 @@ param(
   [switch]$RunPackageSmoke,
   [string]$PackageSmokeImage = "",
   [switch]$RunLiveSmoke,
-  [string]$LiveSmokeBaseUrl = "https://carto.canadaverse.org"
+  [string]$LiveSmokeBaseUrl = "https://carto.canadaverse.org",
+  [string]$ContainerRuntime = "",
+  [switch]$SkipContainerBuild,
+  [string]$LocalImage = "mc-cartolive-meshcore-live-map:latest"
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +17,18 @@ $root = Split-Path -Parent $PSScriptRoot
 
 Push-Location $root
 try {
+  if (-not $ContainerRuntime) {
+    if ($env:CONTAINER_RUNTIME) {
+      $ContainerRuntime = $env:CONTAINER_RUNTIME
+    }
+    elseif (Get-Command podman -ErrorAction SilentlyContinue) {
+      $ContainerRuntime = "podman"
+    }
+    else {
+      $ContainerRuntime = "docker"
+    }
+  }
+
   node (Join-Path $root "scripts/check-version-sync.mjs")
 
   Push-Location "backend"
@@ -36,13 +51,18 @@ try {
     Pop-Location
   }
 
-  if (-not $SkipDocker) {
-    docker compose build
+  if (-not $SkipDocker -and -not $SkipContainerBuild) {
+    if ($ContainerRuntime -eq "podman") {
+      & $ContainerRuntime build --format docker -t $LocalImage .
+    }
+    else {
+      & $ContainerRuntime build -t $LocalImage .
+    }
   }
 
   if ($RunPackageSmoke) {
-    $packageImage = if ($PackageSmokeImage) { $PackageSmokeImage } else { "mc-cartolive-meshcore-live-map:latest" }
-    node (Join-Path $root "scripts/package-smoke.mjs") --image $packageImage --version ((Get-Content (Join-Path $root "VERSION") -TotalCount 1).Trim())
+    $packageImage = if ($PackageSmokeImage) { $PackageSmokeImage } else { $LocalImage }
+    node (Join-Path $root "scripts/package-smoke.mjs") --runtime $ContainerRuntime --image $packageImage --version ((Get-Content (Join-Path $root "VERSION") -TotalCount 1).Trim())
   }
 
   $health = Invoke-RestMethod "$BaseUrl/healthz"
@@ -65,6 +85,7 @@ try {
 
   [PSCustomObject]@{
     BaseUrl = $BaseUrl
+    ContainerRuntime = $ContainerRuntime
     HealthReady = $health.ready
     ReadyzReady = $ready.ready
     Packets = $state.stats.packets

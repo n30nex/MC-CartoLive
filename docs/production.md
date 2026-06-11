@@ -133,7 +133,7 @@ docker compose up -d
 ## Runtime Notes
 
 - Version 2.8.0 exposes the app version/build in the top project bar. CI builds use
-  the Git commit SHA when available; local Docker builds use a timestamp fallback
+  the Git commit SHA when available; local container builds use a timestamp fallback
   plus a separate ISO build time for build-age display.
 - Runtime liveness and readiness are split: `/healthz` stays cheap for Docker
   liveness, while `/readyz` verifies DB ping, public cache readiness, static
@@ -256,6 +256,8 @@ hints, and whether the position came from a node or observer record.
   Windows or `RUN_PACKAGE_SMOKE=1` on Linux/macOS to smoke the built image in
   both synthetic and worldwide fixture modes. Add `-RunBrowserSmoke` on Windows
   or `RUN_BROWSER_SMOKE=1` on Linux/macOS when doing a release-candidate UI gate.
+  Local workstations can set `CONTAINER_RUNTIME=podman`; Docker hosts can leave
+  the default or set `CONTAINER_RUNTIME=docker`.
 
 ```powershell
 .\scripts\release-check.ps1 -BaseUrl http://127.0.0.1:39476 -RunPackageSmoke -RunBrowserSmoke

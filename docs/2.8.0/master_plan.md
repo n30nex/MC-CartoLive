@@ -69,8 +69,10 @@ Phase 0 — Reproduce and baseline
    npm run build || true
    cd ..
 
-4. Run Docker locally:
-   docker compose up --build -d --remove-orphans
+4. Run the local container with Podman:
+   podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
+   podman rm -f mc-cartolive-local 2>/dev/null || true
+   podman run -d --name mc-cartolive-local -p 39476:8080 --env-file .env mc-cartolive-meshcore-live-map:latest
    curl -fsS http://127.0.0.1:39476/healthz | jq .
    curl -fsS http://127.0.0.1:39476/readyz | jq .
    curl -fsS http://127.0.0.1:39476/api/v1/public/state | jq '.stats'
@@ -314,9 +316,9 @@ npm test -- --run
 npm run build
 cd ..
 
-docker compose build --pull
-RUN_PACKAGE_SMOKE=1 ./scripts/release-check.sh
-RUN_BROWSER_SMOKE=1 ./scripts/release-check.sh
+podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
+CONTAINER_RUNTIME=podman RUN_PACKAGE_SMOKE=1 ./scripts/release-check.sh
+CONTAINER_RUNTIME=podman RUN_BROWSER_SMOKE=1 ./scripts/release-check.sh
 node scripts/check-public-privacy.mjs http://127.0.0.1:39476
 
 Manual browser:
@@ -403,3 +405,84 @@ Final deliverables:
 - main merged after approval
 - carto.canadaverse.org deployed after green checks
 ```
+
+## Completion Status
+
+As of 2026-06-11, this master plan is complete as a 2.8.0 local
+stabilization and release-gate plan, and public production checks confirm
+`carto.canadaverse.org` is serving `2.8.0` from the current `main` SHA. The
+release record still needs operator-only backup and rollback evidence that
+cannot be proven from public endpoints.
+
+Use `10_release_completion_evidence_2.8.0.md` as the source of truth for the
+completed local release gate and the remaining production evidence fields.
+
+## Completed Local Gates
+
+- Version sync passed for `2.8.0`.
+- Backend tests passed.
+- `govulncheck` passed with no called vulnerabilities.
+- Frontend install, audit, tests, and build passed.
+- Local container build/run completed with healthy readiness; current local
+  release helpers prefer Podman when available.
+- Runtime readiness reported `ready: true` and `version: "2.8.0"`.
+- Package smoke passed in synthetic and world modes.
+- Follow-up Podman package smoke passed on 2026-06-11 with `--runtime podman`.
+- Public privacy scan passed.
+- Browser smoke passed on desktop `1920x1080` and mobile `390x844`.
+- Browser smoke covered Packets, Chat, NetGraph, map settings, OpenFreeMap,
+  theme/palette controls, VCR, packet replay, NetGraph canvas sizing, service
+  worker disabled checks, and global `.panel-error`/console/page error checks.
+- Whitespace check passed.
+- Windows release gate passed with package smoke and browser smoke enabled.
+
+## Completed Release Blockers
+
+- Packets page fixed and covered by browser smoke.
+- Chat page fixed and covered by browser smoke.
+- NetGraph page fixed and covered by browser smoke, including canvas sizing.
+- Service worker disabled by default and legacy stale-cache recovery covered.
+- Database migrations made safe for old production-like databases.
+- Public Packets projection fallback made safe when projection data is missing
+  or incomplete.
+- Deploy checks and release gates updated for the 2.8.0 deployment shape.
+- Public privacy scanning expanded to the required public endpoints and WebSocket
+  path.
+
+## Production Deployment Evidence
+
+Public production checks on 2026-06-11 show `carto.canadaverse.org` is already
+serving `2.8.0` from `gitSha` `dbe176ea53ee6e23f719b06791382040586e2629` on
+`main`.
+
+- `https://carto.canadaverse.org/healthz` returned `ready: true`,
+  `version: "2.8.0"`, `mqttConnected: true`, and the deployed Git SHA above.
+- `https://carto.canadaverse.org/readyz` returned `ready: true`,
+  `dbReady: true`, `staticReady: true`, and `publicStateReady: true`.
+- `https://carto.canadaverse.org/api/v1/public/packets?limit=5` returned HTTP
+  `200`.
+- `https://carto.canadaverse.org/api/v1/public/chat?limit=5` returned HTTP
+  `200`.
+- `node scripts/check-public-privacy.mjs https://carto.canadaverse.org` passed.
+- Codex in-app browser checks passed for `/`, `#/setup`, `#/packets`,
+  `#/chat`, and `#/netgraph` on desktop `1920x1080` and mobile `390x844`.
+- The in-app browser found no `.panel-error`, no browser error logs, no
+  controlling service worker, and nonzero NetGraph canvas dimensions
+  (`1898x958` desktop, `390x653` mobile).
+
+## Still Pending Operator-Only Production Evidence
+
+These items cannot be proven from public endpoints and still require operator
+confirmation or droplet access:
+
+- Confirm the production SQLite backup file created before deployment.
+- Add the backup file, previous SHA, and operator confirmation to
+  `10_release_completion_evidence_2.8.0.md` once available.
+- Record the previous deployed SHA, backup file path, and operator name.
+
+## Final Completion Rule
+
+The plan may be treated as locally complete and publicly deployed at
+`carto.canadaverse.org` based on public health, privacy, API, and browser
+checks. The only remaining release-record gap is operator-only evidence for the
+production SQLite backup, previous SHA, and rollback handoff.

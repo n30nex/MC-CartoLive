@@ -12,6 +12,7 @@ const args = parseArgs(process.argv.slice(2));
 const version = String(args.version ?? process.env.PACKAGE_SMOKE_VERSION ?? (await readVersion()));
 const image = String(args.image ?? process.env.PACKAGE_SMOKE_IMAGE ?? `ghcr.io/n30nex/mc-cartolive:${version}`);
 const mode = String(args.mode ?? process.env.PACKAGE_SMOKE_MODE ?? 'all');
+const containerRuntime = String(args.runtime ?? process.env.PACKAGE_SMOKE_RUNTIME ?? process.env.CONTAINER_RUNTIME ?? 'docker');
 const shouldPull = args.pull !== undefined || process.env.PACKAGE_SMOKE_PULL === '1';
 const keepContainers = args.keep !== undefined || process.env.PACKAGE_SMOKE_KEEP === '1';
 const privacy = args.privacy !== '0' && process.env.PACKAGE_SMOKE_PRIVACY !== '0';
@@ -59,7 +60,7 @@ if (scenarios.length === 0) {
 }
 
 if (shouldPull) {
-  run('docker', ['pull', image], { stdio: 'inherit' });
+  run(containerRuntime, ['pull', image], { stdio: 'inherit' });
 }
 
 const results = [];
@@ -69,6 +70,7 @@ for (const scenario of scenarios) {
 
 console.log(JSON.stringify({
   image,
+  containerRuntime,
   version,
   mode,
   privacy,
@@ -95,7 +97,7 @@ async function runScenario(scenario) {
     image
   ];
   try {
-    const containerID = run('docker', runArgs).stdout.trim();
+    const containerID = run(containerRuntime, runArgs).stdout.trim();
     await waitForReady(baseUrl, timeoutMs);
     const health = await getJSON(`${baseUrl}/healthz`);
     const ready = await getJSON(`${baseUrl}/readyz`);
@@ -225,11 +227,11 @@ async function getJSON(url) {
 }
 
 function cleanup(container) {
-  spawnSync('docker', ['rm', '-f', container], { encoding: 'utf8', stdio: 'ignore' });
+  spawnSync(containerRuntime, ['rm', '-f', container], { encoding: 'utf8', stdio: 'ignore' });
 }
 
 function printContainerLogs(container) {
-  const result = spawnSync('docker', ['logs', '--tail', '180', container], { encoding: 'utf8' });
+  const result = spawnSync(containerRuntime, ['logs', '--tail', '180', container], { encoding: 'utf8' });
   if (result.stdout) process.stderr.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
 }

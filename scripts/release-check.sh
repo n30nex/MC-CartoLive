@@ -4,6 +4,16 @@ set -eu
 BASE_URL="${BASE_URL:-http://127.0.0.1:39476}"
 BROWSER_SMOKE_BASE_URL="${BROWSER_SMOKE_BASE_URL:-$BASE_URL}"
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-}"
+LOCAL_IMAGE="${LOCAL_IMAGE:-mc-cartolive-meshcore-live-map:latest}"
+
+if [ -z "$CONTAINER_RUNTIME" ]; then
+  if command -v podman >/dev/null 2>&1; then
+    CONTAINER_RUNTIME="podman"
+  else
+    CONTAINER_RUNTIME="docker"
+  fi
+fi
 
 cd "$ROOT/backend"
 node "$ROOT/scripts/check-version-sync.mjs"
@@ -18,13 +28,17 @@ npm test -- --run
 npm run build
 
 cd "$ROOT"
-if [ "${SKIP_DOCKER:-0}" != "1" ]; then
-  docker compose build
+if [ "${SKIP_DOCKER:-0}" != "1" ] && [ "${SKIP_CONTAINER_BUILD:-0}" != "1" ]; then
+  if [ "$CONTAINER_RUNTIME" = "podman" ]; then
+    "$CONTAINER_RUNTIME" build --format docker -t "$LOCAL_IMAGE" .
+  else
+    "$CONTAINER_RUNTIME" build -t "$LOCAL_IMAGE" .
+  fi
 fi
 
 if [ "${RUN_PACKAGE_SMOKE:-0}" = "1" ]; then
-  PACKAGE_IMAGE="${PACKAGE_SMOKE_IMAGE:-meshcore-canada-live-map-meshcore-live-map:latest}"
-  node "$ROOT/scripts/package-smoke.mjs" --image "$PACKAGE_IMAGE" --version "$(tr -d '\r\n' < VERSION)"
+  PACKAGE_IMAGE="${PACKAGE_SMOKE_IMAGE:-$LOCAL_IMAGE}"
+  node "$ROOT/scripts/package-smoke.mjs" --runtime "$CONTAINER_RUNTIME" --image "$PACKAGE_IMAGE" --version "$(tr -d '\r\n' < VERSION)"
 fi
 
 curl -fsS "$BASE_URL/healthz" >/tmp/mc-cartolive-health.json
@@ -46,6 +60,7 @@ if [ "${RUN_BROWSER_SMOKE:-0}" = "1" ]; then
 fi
 
 echo "release check ok for $BASE_URL"
+echo "container runtime: $CONTAINER_RUNTIME"
 echo "health:  /tmp/mc-cartolive-health.json"
 echo "ready:   /tmp/mc-cartolive-ready.json"
 echo "state:   /tmp/mc-cartolive-state.json"

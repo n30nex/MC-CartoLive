@@ -51,10 +51,10 @@ The correct path is:
 | `02_backend_database_api_audit_2.8.0.md` | Backend, SQLite, API, MQTT, projection, public-safety, and performance audit. |
 | `03_frontend_uiux_maps_layers_audit_2.8.0.md` | Frontend, broken pages, UI/UX, maps, layers, OpenFreeMap, NetGraph, Packets, Chat audit. |
 | `04_known_bugs_required_fixes_2.8.0.md` | Bug tracker with required fixes, evidence, and acceptance tests. |
-| `05_testing_local_browser_acceptance_2.8.0.md` | Local, Docker, browser, service-worker, privacy, and live acceptance gate. |
+| `05_testing_local_browser_acceptance_2.8.0.md` | Local container, browser, service-worker, privacy, and live acceptance gate. |
 | `06_production_deploy_runbook_carto_2.8.0.md` | Safe droplet deployment and rollback procedure for `carto.canadaverse.org`. |
 | `07_new_features_world_release_2_backlog.md` | New feature/enhancement plan beyond the current code. |
-| `08_gpt55_codex_xhigh_master_prompt.md` | Copy-paste goal prompt for GPT 5.5 Codex xhigh. |
+| `master_plan.md` | Copy-paste goal prompt and completion status for GPT 5.5 Codex xhigh. |
 | `09_subagent_task_cards_2.8.0.md` | Sub-agent task breakdown for parallel work. |
 | `10_release_completion_evidence_2.8.0.md` | Local release-gate evidence and post-deploy evidence record. |
 
@@ -91,7 +91,7 @@ The correct path is:
 - `cd backend && go test ./...` passes.
 - `cd backend && go tool govulncheck ./...` passes.
 - `cd web && npm ci && npm test -- --run && npm run build` passes.
-- Docker build passes.
+- Container build passes.
 - Package smoke passes.
 - Public privacy scan passes.
 - Browser smoke passes for desktop `1920x1080` and mobile `390x844`.

@@ -1,10 +1,11 @@
 # Development
 
-## Local Docker
+## Local Podman
 
 ```bash
 cp .env.example .env
-docker compose up --build
+podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
+podman run --rm --name mc-cartolive -p 39476:8080 --env-file .env mc-cartolive-meshcore-live-map:latest
 ```
 
 Open `http://localhost:39476`.
@@ -37,7 +38,8 @@ FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson
 Then run:
 
 ```bash
-docker compose up --build
+podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
+podman run --rm --name mc-cartolive -p 39476:8080 --env-file .env mc-cartolive-meshcore-live-map:latest
 ```
 
 The fixture at `examples/fixtures/synthetic-live.ndjson` contains fake public
@@ -150,8 +152,11 @@ npm run build
 ```
 
 ```bash
-docker compose build
+podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
 ```
+
+The release helpers auto-prefer Podman when it is installed. Set
+`CONTAINER_RUNTIME=docker` only on Docker hosts.
 
 Smoke check a built container:
 

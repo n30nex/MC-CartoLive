@@ -151,9 +151,9 @@ npm test -- --run
 npm run build
 
 cd ..
-docker compose build --pull
-RUN_PACKAGE_SMOKE=1 ./scripts/release-check.sh
-RUN_BROWSER_SMOKE=1 ./scripts/release-check.sh
+podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
+CONTAINER_RUNTIME=podman RUN_PACKAGE_SMOKE=1 ./scripts/release-check.sh
+CONTAINER_RUNTIME=podman RUN_BROWSER_SMOKE=1 ./scripts/release-check.sh
 ```
 
 Also manually open all pages in a browser.

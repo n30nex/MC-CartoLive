@@ -157,7 +157,7 @@ Make browser smoke a real release gate.
 ### Acceptance
 
 ```bash
-RUN_BROWSER_SMOKE=1 ./scripts/release-check.sh
+CONTAINER_RUNTIME=podman RUN_BROWSER_SMOKE=1 ./scripts/release-check.sh
 ```
 
 Must pass and produce screenshots for each scenario.

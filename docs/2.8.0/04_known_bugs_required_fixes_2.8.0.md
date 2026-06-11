@@ -93,7 +93,7 @@ These cannot be closed by unit tests alone:
 - [ ] Govulncheck passed
 - [ ] Frontend tests passed
 - [ ] Frontend build passed
-- [ ] Docker build passed
+- [ ] Container build passed
 - [ ] Package smoke passed
 - [ ] Public privacy scan passed
 - [ ] Browser smoke passed desktop

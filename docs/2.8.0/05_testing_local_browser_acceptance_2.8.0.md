@@ -11,7 +11,7 @@ Recommended:
 - Go version from `backend/go.mod`
 - Node 22+
 - npm from lockfile
-- Docker + Docker Compose
+- Podman 5+ for local container tests
 - Chrome/Chromium for Playwright
 - `sqlite3`
 - `jq`
@@ -91,13 +91,14 @@ Required new frontend tests:
 - mobile panel presentation state
 - API error messages do not expose secrets
 
-## Phase 5 — local Docker run
+## Phase 5 — local Podman run
 
 ```bash
-docker compose build --pull
-docker compose up -d --remove-orphans
-docker compose ps
-docker compose logs --tail=120 meshcore-live-map || docker compose logs --tail=120
+podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
+podman rm -f mc-cartolive-local 2>/dev/null || true
+podman run -d --name mc-cartolive-local -p 39476:8080 --env-file .env mc-cartolive-meshcore-live-map:latest
+podman ps --filter name=mc-cartolive-local
+podman logs --tail=120 mc-cartolive-local
 ```
 
 Check health:
@@ -124,7 +125,7 @@ curl -fsS "http://127.0.0.1:39476/api/v1/public/chat?from=$FROM&to=$NOW&limit=25
 ## Phase 6 — package smoke
 
 ```bash
-RUN_PACKAGE_SMOKE=1 ./scripts/release-check.sh
+CONTAINER_RUNTIME=podman RUN_PACKAGE_SMOKE=1 ./scripts/release-check.sh
 ```
 
 Package smoke must cover:
@@ -147,7 +148,7 @@ Update `scripts/browser-smoke.mjs` before running. Remove obsolete `perf` scenar
 Run:
 
 ```bash
-RUN_BROWSER_SMOKE=1 ./scripts/release-check.sh
+CONTAINER_RUNTIME=podman RUN_BROWSER_SMOKE=1 ./scripts/release-check.sh
 ```
 
 Or directly:
