@@ -24,6 +24,7 @@ export function connectPublicSocket(onMessage: (message: PublicLiveEnvelope) => 
   let socket: WebSocket | null = null;
   let closed = false;
   let retryTimer: number | undefined;
+  let pingTimer: number | undefined;
   let attempts = 0;
 
   const connect = () => {
@@ -35,8 +36,13 @@ export function connectPublicSocket(onMessage: (message: PublicLiveEnvelope) => 
       onStatus('live');
       onOpen?.();
       socket?.send(JSON.stringify({ v: 1, type: 'subscribe', id: 'public-map' }));
+      pingTimer = window.setInterval(() => {
+        socket?.send(JSON.stringify({ type: 'ping' }));
+      }, 25_000);
     });
     socket.addEventListener('close', () => {
+      if (pingTimer !== undefined) window.clearInterval(pingTimer);
+      pingTimer = undefined;
       if (closed) {
         onStatus('closed');
         return;
@@ -70,6 +76,7 @@ export function connectPublicSocket(onMessage: (message: PublicLiveEnvelope) => 
     close: () => {
       closed = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      if (pingTimer !== undefined) window.clearInterval(pingTimer);
       socket?.close();
     }
   };

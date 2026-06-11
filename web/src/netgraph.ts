@@ -1,4 +1,4 @@
-import type { PublicActivity, PublicNode, PublicRoute, PublicRoutePulse } from './types';
+import type { NodeRole, PublicActivity, PublicNode, PublicRoute, PublicRouteEndpoint, PublicRoutePulse, PublicRouteSegment } from './types';
 
 export interface NetGraphNode {
   id: string;
@@ -61,31 +61,44 @@ const DEFAULT_COMET_DURATION_MS = 2400;
 const DEFAULT_GLOW_DURATION_MS = 3600;
 
 export function buildNetGraphData(nodes: PublicNode[], routes: PublicRoute[]): NetGraphData {
-  const publicNodes = new Map(nodes.map((node) => [node.id, node]));
+  const publicNodes = new Map(
+    nodes
+      .map((node) => normalizePublicNode(node))
+      .filter((node): node is PublicNode => Boolean(node))
+      .map((node) => [node.id, node])
+  );
   const nodeDrafts = new Map<string, NetGraphNode>();
   const routeIDsByNode = new Map<string, Set<string>>();
   const edges = new Map<string, NetGraphEdge>();
 
   for (const route of routes) {
-    if (!route.from.nodeId || !route.to.nodeId || route.from.nodeId === route.to.nodeId) continue;
-    if (!isFiniteCoordinate(route.from.lat, route.from.lng) || !isFiniteCoordinate(route.to.lat, route.to.lng)) continue;
-    if (edges.has(route.id)) continue;
-    const from = publicNodes.get(route.from.nodeId);
-    const to = publicNodes.get(route.to.nodeId);
-    nodeDrafts.set(route.from.nodeId, netGraphNodeFromRouteEndpoint(route.from.nodeId, route.from.label, route.from.lat, route.from.lng, from));
-    nodeDrafts.set(route.to.nodeId, netGraphNodeFromRouteEndpoint(route.to.nodeId, route.to.label, route.to.lat, route.to.lng, to));
-    addRouteForNode(routeIDsByNode, route.from.nodeId, route.id);
-    addRouteForNode(routeIDsByNode, route.to.nodeId, route.id);
+    const safeRoute = normalizePublicRoute(route);
+    if (!safeRoute) continue;
+    if (!isFiniteCoordinate(safeRoute.from.lat, safeRoute.from.lng) || !isFiniteCoordinate(safeRoute.to.lat, safeRoute.to.lng)) continue;
+    if (safeRoute.from.nodeId === safeRoute.to.nodeId) continue;
+    if (edges.has(safeRoute.id)) continue;
+    const from = publicNodes.get(safeRoute.from.nodeId);
+    const to = publicNodes.get(safeRoute.to.nodeId);
+    nodeDrafts.set(
+      safeRoute.from.nodeId,
+      netGraphNodeFromRouteEndpoint(safeRoute.from.nodeId, safeRoute.from.label, safeRoute.from.lat, safeRoute.from.lng, from)
+    );
+    nodeDrafts.set(
+      safeRoute.to.nodeId,
+      netGraphNodeFromRouteEndpoint(safeRoute.to.nodeId, safeRoute.to.label, safeRoute.to.lat, safeRoute.to.lng, to)
+    );
+    addRouteForNode(routeIDsByNode, safeRoute.from.nodeId, safeRoute.id);
+    addRouteForNode(routeIDsByNode, safeRoute.to.nodeId, safeRoute.id);
     edges.set(route.id, {
-      id: route.id,
-      sourceID: route.from.nodeId,
-      targetID: route.to.nodeId,
-      sourceLabel: route.from.label,
-      targetLabel: route.to.label,
-      distanceKm: route.distanceKm,
-      packetCount: route.packetCount,
-      lastHeard: route.lastHeard,
-      payloadTypeNames: [...new Set(route.payloadTypeNames)].sort()
+      id: safeRoute.id,
+      sourceID: safeRoute.from.nodeId,
+      targetID: safeRoute.to.nodeId,
+      sourceLabel: safeRoute.from.label,
+      targetLabel: safeRoute.to.label,
+      distanceKm: safeRoute.distanceKm,
+      packetCount: safeRoute.packetCount,
+      lastHeard: safeRoute.lastHeard,
+      payloadTypeNames: [...new Set(safeRoute.payloadTypeNames)].sort()
     });
   }
 
@@ -142,16 +155,16 @@ export function selectionForEdge(graph: NetGraphData, edgeID: string): NetGraphS
 }
 
 export function graphSearchMatches(graph: NetGraphData, query: string): Set<string> {
-  const needle = query.trim().toLowerCase();
+  const needle = safeText(query).toLowerCase();
   if (!needle) return new Set<string>();
   const matches = new Set<string>();
   for (const node of graph.nodes) {
     const fields = [node.label, node.role, ...node.iatasHeardIn, ...node.routeIDs];
-    if (fields.some((field) => field.toLowerCase().includes(needle))) matches.add(node.id);
+    if (fields.some((field) => safeText(field).toLowerCase().includes(needle))) matches.add(node.id);
   }
   for (const edge of graph.edges) {
     const fields = [edge.id, edge.sourceLabel, edge.targetLabel, ...edge.payloadTypeNames];
-    if (!fields.some((field) => field.toLowerCase().includes(needle))) continue;
+    if (!fields.some((field) => safeText(field).toLowerCase().includes(needle))) continue;
     matches.add(edge.sourceID);
     matches.add(edge.targetID);
   }
@@ -161,14 +174,16 @@ export function graphSearchMatches(graph: NetGraphData, query: string): Set<stri
 export function routePulseToGraphComets(pulse: PublicRoutePulse, graph: NetGraphData, now = performanceNow()): NetGraphComet[] {
   const out: NetGraphComet[] = [];
   for (const [index, segment] of pulse.segments.entries()) {
-    const edge = graph.edgeByID.get(segment.routeId) ?? edgeForEndpoints(graph, segment.from.nodeId, segment.to.nodeId);
+    const safeSegment = normalizePublicRouteSegment(segment);
+    if (!safeSegment) continue;
+    const edge = graph.edgeByID.get(safeSegment.routeId) ?? edgeForEndpoints(graph, safeSegment.from.nodeId, safeSegment.to.nodeId);
     if (!edge) continue;
     out.push({
       id: `${pulse.id}:${edge.id}:${index}`,
       edgeID: edge.id,
       sourceID: edge.sourceID,
       targetID: edge.targetID,
-      payloadTypeName: pulse.payloadTypeName,
+      payloadTypeName: safeText(pulse.payloadTypeName),
       startedAt: now + index * 120,
       durationMs: DEFAULT_COMET_DURATION_MS
     });
@@ -178,7 +193,7 @@ export function routePulseToGraphComets(pulse: PublicRoutePulse, graph: NetGraph
 
 export function observerActivityToGraphGlow(activity: PublicActivity, graph: NetGraphData, now = performanceNow()): NetGraphGlow | null {
   if (activity.animationState !== 'observer' || !activity.observerLocation) return null;
-  const anchorNodeID = activity.messageAnchor?.nodeId;
+  const anchorNodeID = safeText(activity.messageAnchor?.nodeId);
   const byAnchor = anchorNodeID ? graph.nodeByID.get(anchorNodeID) : null;
   const node = byAnchor ?? nodeByObserverLocation(graph, activity.observerLocation.label, activity.observerLocation.lat, activity.observerLocation.lng);
   if (!node) return null;
@@ -192,9 +207,11 @@ export function observerActivityToGraphGlow(activity: PublicActivity, graph: Net
 }
 
 function netGraphNodeFromRouteEndpoint(id: string, label: string, lat: number, lng: number, node: PublicNode | undefined): NetGraphNode {
+  const safeID = safeText(id);
+  if (!safeID) return nodeFromDefaults('unknown');
   return {
-    id,
-    label: node?.label || label || id,
+    id: safeID,
+    label: safeText(node?.label || label || safeID),
     role: node?.role ?? 'unknown',
     isObserver: node?.isObserver === true,
     lat: node?.latitude ?? lat,
@@ -227,11 +244,142 @@ function nodeByObserverLocation(graph: NetGraphData, label: string, lat: number,
 }
 
 function observerMatchKey(label: string, lat: number, lng: number): string {
-  return `${label.trim().toLowerCase()}|${lat.toFixed(3)}|${lng.toFixed(3)}`;
+  return `${safeText(label).toLowerCase()}|${lat.toFixed(3)}|${lng.toFixed(3)}`;
 }
 
 function isFiniteCoordinate(lat: number, lng: number): boolean {
-  return Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0;
+  return Number.isFinite(lat) && Number.isFinite(lng);
+}
+
+function normalizePublicNode(node: PublicNode): PublicNode | null {
+  const id = safeText(node?.id);
+  if (!id) return null;
+  return {
+    ...node,
+    id,
+    label: safeText(node?.label, id),
+    role: normalizeNodeRole(node?.role),
+    isObserver: node?.isObserver === true,
+    latitude: safeNumber(node?.latitude),
+    longitude: safeNumber(node?.longitude),
+    lastSeen: safeNumber(node?.lastSeen),
+    firstSeen: safeNumber(node?.firstSeen, 0),
+    iatasHeardIn: safeStringArray(node?.iatasHeardIn).map((iata) => iata.toUpperCase()),
+    activityCount: safeNumber(node?.activityCount, 0),
+    regionsHeardIn: safeStringArray(node?.regionsHeardIn),
+    ...('routeIDs' in node ? {} : {})
+  };
+}
+
+function normalizePublicRoute(route: PublicRoute): PublicRoute | null {
+  const id = safeText(route?.id);
+  const from = normalizeRouteEndpoint(route?.from);
+  const to = normalizeRouteEndpoint(route?.to);
+  if (!id || !from || !to) return null;
+  return {
+    ...route,
+    id,
+    from,
+    to,
+    payloadTypeNames: safePayloadTypeNames(route?.payloadTypeNames),
+    distanceKm: safeNumber(route?.distanceKm, 0),
+    packetCount: safeNumber(route?.packetCount, 0),
+    lastHeard: safeNumber(route?.lastHeard, 0),
+    frequencyBucket: safeNumber(route?.frequencyBucket, 0)
+  };
+}
+
+function normalizeRouteEndpoint(endpoint: PublicRouteEndpoint | null | undefined): NetGraphPublicRouteEndpoint | null {
+  if (!endpoint) return null;
+  const nodeId = safeText(endpoint.nodeId);
+  if (!nodeId) return null;
+  return {
+    ...endpoint,
+    nodeId,
+    label: safeText(endpoint.label, nodeId),
+    lat: safeNumber(endpoint.lat),
+    lng: safeNumber(endpoint.lng),
+    pathHash3: safeText(endpoint.pathHash3)
+  };
+}
+
+interface NetGraphPublicRouteEndpoint {
+  nodeId: string;
+  label: string;
+  lat: number;
+  lng: number;
+  pathHash3?: string;
+}
+
+function normalizePublicRouteSegment(segment: PublicRouteSegment | null | undefined): PublicRouteSegment | null {
+  if (!segment) return null;
+  const routeId = safeText(segment.routeId);
+  const from = normalizeRouteEndpoint(segment.from);
+  const to = normalizeRouteEndpoint(segment.to);
+  if (!routeId || !from || !to) return null;
+  return {
+    ...segment,
+    routeId,
+    from,
+    to,
+    distanceKm: safeNumber(segment.distanceKm, 0)
+  };
+}
+
+function normalizeNodeRole(role: unknown): NodeRole {
+  const next = safeText(role as string).toLowerCase();
+  if (next === 'companion' || next === 'repeater' || next === 'room_server' || next === 'sensor') {
+    return next;
+  }
+  return 'unknown';
+}
+
+function safePayloadTypeNames(values: unknown): string[] {
+  if (!Array.isArray(values) || values.length === 0) return ['unknown'];
+  const next = values.filter((value): value is string => typeof value === 'string').map((value) => value.trim()).filter(Boolean);
+  if (next.length === 0) return ['unknown'];
+  return [...new Set(next.map((value) => value))];
+}
+
+function safeStringArray(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const out: string[] = [];
+  for (const value of values) {
+    const next = safeText(value);
+    if (next) out.push(next);
+  }
+  return out;
+}
+
+function safeText(value: unknown, fallback = ''): string {
+  if (typeof value === 'string') {
+    const next = value.trim();
+    return next || fallback;
+  }
+  return fallback;
+}
+
+function safeNumber(value: unknown, fallback = 0): number {
+  const next = Number(value);
+  if (!Number.isFinite(next)) return fallback;
+  return next;
+}
+
+function nodeFromDefaults(fallbackID: string): NetGraphNode {
+  return {
+    id: fallbackID,
+    label: fallbackID,
+    role: 'unknown',
+    isObserver: false,
+    lat: 0,
+    lng: 0,
+    lastSeen: 0,
+    firstSeen: 0,
+    iatasHeardIn: [],
+    activityCount: 0,
+    degree: 0,
+    routeIDs: []
+  };
 }
 
 function emptyGraph(): NetGraphData {

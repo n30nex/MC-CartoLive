@@ -23,16 +23,24 @@ export const DEFAULT_PACKET_FILTERS: PacketFilters = {
 };
 
 export function packetSearchFields(packet: PublicPacketPath): string[] {
+  const endpointLabels = Array.isArray(packet.endpointLabels) ? packet.endpointLabels : [];
+  const routeIds = Array.isArray(packet.routeIds) ? packet.routeIds : [];
+  const segments = Array.isArray(packet.segments) ? packet.segments : [];
+
   return [
-    packet.id,
+    packet.id ?? '',
     packet.region ?? '',
     packet.iata ?? '',
-    packet.payloadTypeName,
+    packet.payloadTypeName ?? '',
     packet.messageSender ?? '',
     packet.messageText ?? '',
-    ...packet.endpointLabels,
-    ...packet.routeIds,
-    ...packet.segments.flatMap((segment) => [segment.from.label, segment.to.label, segment.from.pathHash3 ?? '', segment.to.pathHash3 ?? ''])
+    ...endpointLabels,
+    ...routeIds,
+    ...segments.flatMap((segment) => {
+      const from = segment?.from;
+      const to = segment?.to;
+      return [from?.label ?? '', to?.label ?? '', from?.pathHash3 ?? '', to?.pathHash3 ?? ''];
+    })
   ].filter(Boolean);
 }
 
@@ -77,16 +85,20 @@ export function packetRouteIDs(packet: PublicPacketPath | null): Set<string> {
 export function packetNodeIDs(packet: PublicPacketPath | null): Set<string> {
   const ids = new Set<string>();
   for (const segment of packet?.segments ?? []) {
-    ids.add(segment.from.nodeId);
-    ids.add(segment.to.nodeId);
+    if (!segment?.from?.nodeId && !segment?.to?.nodeId) continue;
+    if (segment?.from?.nodeId) ids.add(segment.from.nodeId);
+    if (segment?.to?.nodeId) ids.add(segment.to.nodeId);
   }
   return ids;
 }
 
 export function packetEndpointSummary(packet: PublicPacketPath): string {
-  if (packet.endpointLabels.length === 0) return 'Unknown path';
-  if (packet.endpointLabels.length === 1) return packet.endpointLabels[0];
-  return `${packet.endpointLabels[0]} -> ${packet.endpointLabels[packet.endpointLabels.length - 1]}`;
+  const labels = Array.isArray(packet.endpointLabels) ? packet.endpointLabels : [];
+  if (labels.length === 0) return 'Unknown path';
+  if (labels.length === 1) return labels[0] ?? 'Unknown path';
+  const first = labels[0] ?? 'Unknown';
+  const last = labels[labels.length - 1] ?? 'Unknown';
+  return `${first} -> ${last}`;
 }
 
 export function packetWindowForScope(now: number, scopeMs: number): { from: number; to: number } {

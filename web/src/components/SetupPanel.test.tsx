@@ -26,5 +26,6 @@ describe('SetupPanel', () => {
     expect(snippet).toContain('PUBLIC_REGIONS=r1,r2');
     expect(snippet).toContain('MAP_BOUNDS=-45,110,-10,155');
     expect(snippet).toContain('VITE_APP_BRAND_NAME=AUS Mesh');
+    expect(snippet).toContain('VITE_ENABLE_SERVICE_WORKER=false');
   });
 });

@@ -52,13 +52,17 @@ type Config struct {
 	PublicPacketPathBackfillEnabled bool
 	PublicPacketPathBackfillBatch   int
 	PublicPacketPathBackfillHours   int
+	TrustProxyHeaders               bool
 	ConfigYAML                      string
 	FixtureReplayPath               string
 	FixtureRecordEnabled            bool
+	DataRetentionDays               int // 0 = default 30 days, negative = disable pruning
 }
 
 func LoadConfig() (Config, error) {
-	_ = loadDotEnv(".env")
+	if err := loadDotEnv(".env"); err != nil {
+		slog.Debug("loadDotEnv failed", "path", ".env", "error", err)
+	}
 	mapPreset := configuredMapRegionPreset()
 	mapBounds := mapBoundsForPreset(mapPreset)
 	if parsed, ok := envMapBounds("MAP_BOUNDS"); ok {
@@ -69,7 +73,7 @@ func LoadConfig() (Config, error) {
 	publicRegions := configuredPublicRegions(mapPreset)
 	cfg := Config{
 		ListenAddr:                      envString("LISTEN_ADDR", ":8080"),
-		AppVersion:                      envString("APP_VERSION", "2.6.3"),
+		AppVersion:                      envString("APP_VERSION", "2.8.0"),
 		GitSHA:                          envString("GIT_SHA", envString("VITE_GIT_SHA", "")),
 		BuildTime:                       envString("BUILD_TIME", envString("VITE_BUILD_TIME", "")),
 		PublicBaseURL:                   envString("PUBLIC_BASE_URL", "http://localhost:8080"),
@@ -108,9 +112,11 @@ func LoadConfig() (Config, error) {
 		PublicPacketPathBackfillEnabled: envBool("PUBLIC_PACKET_PATH_BACKFILL_ENABLED", true),
 		PublicPacketPathBackfillBatch:   envInt("PUBLIC_PACKET_PATH_BACKFILL_BATCH", 500),
 		PublicPacketPathBackfillHours:   envInt("PUBLIC_PACKET_PATH_BACKFILL_HOURS", 24),
+		TrustProxyHeaders:               envBool("TRUST_PROXY_HEADERS", false),
 		ConfigYAML:                      envString("CONFIG_YAML", "./data/config.yaml"),
 		FixtureReplayPath:               os.Getenv("FIXTURE_REPLAY_PATH"),
 		FixtureRecordEnabled:            envBool("FIXTURE_RECORD_ENABLED", false),
+		DataRetentionDays:               envInt("DATA_RETENTION_DAYS", 30),
 	}
 	if cfg.AuthMode == "subscriber" && cfg.MQTTEnabled && (cfg.MQTTUsername == "" || cfg.MQTTPassword == "") {
 		return cfg, fmt.Errorf("MQTT subscriber auth requires MQTT_USERNAME and MQTT_PASSWORD or MQTT_ENABLED=false")
@@ -178,14 +184,6 @@ func envList(key string) []string {
 		if item := strings.TrimSpace(field); item != "" {
 			out = append(out, item)
 		}
-	}
-	return out
-}
-
-func envListFallback(key string, fallback []string) []string {
-	out := envList(key)
-	if len(out) == 0 {
-		return append([]string{}, fallback...)
 	}
 	return out
 }

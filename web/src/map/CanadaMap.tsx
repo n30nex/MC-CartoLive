@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import maplibregl from 'maplibre-gl';
 import type { PublicMapConfig, PublicMessageAnchor, PublicNode, PublicObserverBurst, PublicRoute, PublicRoutePulse } from '../types';
 import { parseSharedView, type MapViewState, type SharedViewState } from '../shareView';
@@ -32,6 +32,7 @@ import {
   nodeActivityGlow,
   nodeActivityHeat,
   nodeEffectiveActivityAt,
+  nodeFreshLevel,
   nodeLastHeardAgeLabel,
   nodeMapLabel,
   nodeStaleLevel
@@ -193,6 +194,9 @@ const TERRAIN_SOURCE = 'meshcore-terrain-dem';
 const HILLSHADE_SOURCE = 'meshcore-hillshade-dem';
 const HILLSHADE_LAYER = 'meshcore-topographic-hillshade';
 const BUILDINGS_3D_LAYER = 'openfreemap-3d-buildings';
+const OBSERVER_LABEL_LAYER = 'observer-map-labels';
+const WEATHER_CLOUD_SOURCE = 'meshcore-weather-clouds';
+const WEATHER_CLOUD_LAYER = 'meshcore-weather-cloud-overlay';
 const NODE_ACTIVE_LABEL_VISIBLE_MS = 24_000;
 const NODE_LABEL_RECENT_VISIBLE_MS = 90_000;
 const MESSAGE_BUBBLE_LIFETIME_MS = 7_200;
@@ -210,12 +214,13 @@ const DEFAULT_OPENFREEMAP_MAP_PITCH = 46;
 const DEFAULT_OPENFREEMAP_MAP_BEARING = -11;
 const DEFAULT_OPENFREEMAP_STYLE_URL = '';
 const DEFAULT_OPENFREEMAP_TILEJSON_URL = 'https://tiles.openfreemap.org/planet';
-const DEFAULT_TERRAIN_TILEJSON_URL = 'https://demotiles.maplibre.org/terrain-tiles/tiles.json';
+const DEFAULT_TERRAIN_TILE_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
 const DEFAULT_WORLD_CENTER = { lat: 20, lng: 0, z: 1.8 };
 const OPENFREEMAP_STYLE_URL = envURL('VITE_OPENFREEMAP_STYLE_URL', DEFAULT_OPENFREEMAP_STYLE_URL);
 const OPENFREEMAP_TILEJSON_URL = envURL('VITE_OPENFREEMAP_TILEJSON_URL', DEFAULT_OPENFREEMAP_TILEJSON_URL);
-const TERRAIN_TILEJSON_URL = envURL('VITE_TERRAIN_TILEJSON_URL', DEFAULT_TERRAIN_TILEJSON_URL);
+const TERRAIN_TILE_URL = envURL('VITE_TERRAIN_TILE_URL', DEFAULT_TERRAIN_TILE_URL);
 const TERRAIN_EXAGGERATION = envFloat('VITE_TERRAIN_EXAGGERATION', 1.25);
+const WEATHER_API_KEY = (import.meta.env['VITE_OPENWEATHERMAP_API_KEY'] as string | undefined)?.trim() || '';
 
 export type MapBaseMode = 'original' | 'openfreemap';
 export type MapThemeMode = 'dark' | 'light';
@@ -352,6 +357,8 @@ const NODE_CIRCLE_STROKE_COLOR: any = [
   '#fff7ed',
   ['==', ['get', 'neighbor'], true],
   '#67e8f9',
+  ['==', ['get', 'freshLevel'], 0],
+  '#22c55e',
   ['==', ['get', 'staleLevel'], 2],
   'rgba(148, 163, 184, 0.28)',
   ['==', ['get', 'staleLevel'], 1],
@@ -365,6 +372,10 @@ const NODE_CIRCLE_OPACITY: any = [
   0.24,
   ['==', ['get', 'observer'], true],
   0.96,
+  ['==', ['get', 'freshLevel'], 0],
+  0.9,
+  ['==', ['get', 'freshLevel'], 1],
+  0.72,
   ['==', ['get', 'staleLevel'], 2],
   0.4,
   ['==', ['get', 'staleLevel'], 1],
@@ -447,13 +458,17 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
     },
     [TERRAIN_SOURCE]: {
       type: 'raster-dem',
-      url: TERRAIN_TILEJSON_URL,
-      tileSize: 256
+      tiles: [TERRAIN_TILE_URL],
+      encoding: 'terrarium',
+      tileSize: 256,
+      maxzoom: 15
     },
     [HILLSHADE_SOURCE]: {
       type: 'raster-dem',
-      url: TERRAIN_TILEJSON_URL,
+      tiles: [TERRAIN_TILE_URL],
+      encoding: 'terrarium',
       tileSize: 256,
+      maxzoom: 15
     },
     [NODE_SOURCE]: {
       type: 'geojson',
@@ -573,11 +588,12 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       source: HILLSHADE_SOURCE,
       paint: {
         'hillshade-method': 'multidirectional',
-        'hillshade-highlight-color': ['#1e293b', '#334155', '#475569', '#64748b'],
-        'hillshade-shadow-color': ['#020617', '#08111f', '#0f172a', '#1e293b'],
-        'hillshade-illumination-direction': [270, 315, 0, 45],
-        'hillshade-illumination-altitude': [24, 30, 36, 28],
-        'hillshade-exaggeration': 0.54
+      'hillshade-highlight-color': ['#e2e8f0', '#f1f5f9', '#f8fafc', '#ffffff'],
+      'hillshade-shadow-color': ['#0f172a', '#1e293b', '#334155', '#475569'],
+      'hillshade-accent-color': '#64748b',
+      'hillshade-illumination-direction': [315],
+      'hillshade-illumination-altitude': [45],
+      'hillshade-exaggeration': 0.44
       } as any
     },
     {
@@ -870,11 +886,11 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
           ['linear'],
           ['zoom'],
           3,
-          ['case', ['==', ['get', 'selected'], true], 7, ['==', ['get', 'path'], true], 6.1, ['==', ['get', 'neighbor'], true], 5.4, 3],
+          ['case', ['==', ['get', 'selected'], true], 7, ['==', ['get', 'path'], true], 6.1, ['==', ['get', 'observer'], true], 5.8, ['==', ['get', 'neighbor'], true], 5.4, 3],
           8,
-          ['case', ['==', ['get', 'selected'], true], 8, ['==', ['get', 'path'], true], 7.1, ['==', ['get', 'neighbor'], true], 6.4, 5.5],
+          ['case', ['==', ['get', 'selected'], true], 8, ['==', ['get', 'path'], true], 7.1, ['==', ['get', 'observer'], true], 7.4, ['==', ['get', 'neighbor'], true], 6.4, 5.5],
           12,
-          ['case', ['==', ['get', 'selected'], true], 9, ['==', ['get', 'path'], true], 8.1, ['==', ['get', 'neighbor'], true], 7.2, 7]
+          ['case', ['==', ['get', 'selected'], true], 9, ['==', ['get', 'path'], true], 8.1, ['==', ['get', 'observer'], true], 8.2, ['==', ['get', 'neighbor'], true], 7.2, 7]
         ],
         'circle-color': NODE_CIRCLE_COLOR,
         'circle-stroke-color': NODE_CIRCLE_STROKE_COLOR,
@@ -925,6 +941,30 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       },
       paint: {
         'icon-opacity': ['case', ['==', ['get', 'selected'], true], 1, ['==', ['get', 'dimmed'], true], 0.34, 0.94]
+      }
+    },
+    {
+      id: OBSERVER_LABEL_LAYER,
+      type: 'symbol',
+      source: NODE_SOURCE,
+      minzoom: DETAIL_MIN_ZOOM,
+      filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'observer'], true]],
+      layout: {
+        'text-field': ['get', 'mapLabel'],
+        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 7, 10, 11, 12],
+        'text-anchor': 'top',
+        'text-offset': [0, 1.3],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+        'text-rotation-alignment': 'viewport',
+        'text-pitch-alignment': 'viewport'
+      },
+      paint: {
+        'text-color': '#fbbf24',
+        'text-halo-color': 'rgba(2, 6, 23, 0.85)',
+        'text-halo-width': 1.2,
+        'text-opacity': ['case', ['==', ['get', 'dimmed'], true], 0.28, 0.55]
       }
     }
   ]
@@ -1055,6 +1095,10 @@ function lightOverlayLayer(layer: maplibregl.LayerSpecification): maplibregl.Lay
       next.paint['text-color'] = '#f8fafc';
       next.paint['text-halo-color'] = '#0f172a';
       break;
+    case OBSERVER_LABEL_LAYER:
+      next.paint['text-color'] = '#b45309';
+      next.paint['text-halo-color'] = 'rgba(255, 255, 255, 0.85)';
+      break;
     default:
       return layer;
   }
@@ -1077,7 +1121,7 @@ function defaultMapViewFromConfig(config?: PublicMapConfig | null): MapViewState
   return { lat, lng, z };
 }
 
-export default function CanadaMap({
+function CanadaMap({
   nodes,
   routes,
   pulses,
@@ -1151,6 +1195,7 @@ export default function CanadaMap({
   const mapVisualModeRef = useRef<MapVisualMode>(visualModeForZoom(initialView?.z ?? 3.35));
   const nodeLabelFrameRef = useRef<number | null>(null);
   const messageBubbleCleanupTimersRef = useRef<Map<string, number>>(new Map());
+  const shownBubbleTextsRef = useRef<Set<string>>(new Set());
   const pageHiddenRef = useRef(typeof document !== 'undefined' ? document.hidden : false);
   const pausedRef = useRef(paused);
   const initialViewRef = useRef(initialView);
@@ -1329,7 +1374,13 @@ export default function CanadaMap({
       && layerSettingsRef.current.liveComets
       && (packetVisualSettingsRef.current.showLiveCometsAtAllZooms || isDetailMode(map));
     if (shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(pulse)) {
-      showMessageBubble(map, messageBubbleFromPulse(map, pulse));
+      const text = publicSafeMessage(pulse);
+      const anchorId = pulse.messageAnchor?.nodeId ?? pulse.segments[0]?.from.nodeId ?? '';
+      const key = `pulse:${anchorId}:${hashBubbleText(text)}`;
+      if (!shownBubbleTextsRef.current.has(key)) {
+        shownBubbleTextsRef.current.add(key);
+        showMessageBubble(map, messageBubbleFromPulse(map, pulse));
+      }
     }
     addPulseNodeActivity(map, nodeActivityRef.current, pulse);
     addPulseNodeMeshActivity(nodeMeshActivityAtRef.current, pulse);
@@ -1360,7 +1411,13 @@ export default function CanadaMap({
     const shouldAnimate = shouldAnimateLiveEvent(visualReceivedAt(burst), Date.now(), pageHiddenRef.current);
     if (map && shouldAnimate) followTrafficObserverBurst(map, burst, followTrafficRef.current, followTrafficStateRef);
     if (map && shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(burst)) {
-      showMessageBubble(map, messageBubbleFromObserverBurst(map, burst));
+      const text = publicSafeMessage(burst);
+      const anchorLabel = burst.messageAnchor?.label ?? burst.location.label ?? '';
+      const key = `burst:${anchorLabel}:${hashBubbleText(text)}`;
+      if (!shownBubbleTextsRef.current.has(key)) {
+        shownBubbleTextsRef.current.add(key);
+        showMessageBubble(map, messageBubbleFromObserverBurst(map, burst));
+      }
     }
     if (map && isClusterMode(map)) {
       if (shouldAnimate && layerSettingsRef.current.observerBursts && addObserverBurstClusterActivityGlow(map, clusterActivityGlowRef.current, burst)) {
@@ -1546,7 +1603,7 @@ export default function CanadaMap({
       if (!loadedRef.current) setMapInitError(event.error?.message ?? 'map style error');
     };
     map.on('resize', resizeOverlay);
-    map.on('move', scheduleMapOverlays);
+    map.on('moveend', scheduleMapOverlays);
     map.on('moveend', publishView);
     map.on('error', recordMapError);
     window.addEventListener('resize', resizeMap);
@@ -1569,7 +1626,15 @@ export default function CanadaMap({
           baseWarning = `OpenFreeMap base warning: ${message}`;
         }
       } else {
-        clearMapTerrain(map);
+        try {
+          ensureHillshadeLayer(map, themeModeRef.current);
+        } catch (err) { console.warn('hillshade layer init failed', err); }
+        try {
+          ensureBuildingExtrusions(map, themeModeRef.current);
+        } catch (err) { console.warn('building extrusions init failed', err); }
+        try {
+          ensureWeatherCloudLayer(map);
+        } catch (err) { console.warn('weather cloud layer init failed', err); }
       }
       try {
         addPublicLayers(map);
@@ -1636,7 +1701,7 @@ export default function CanadaMap({
       if (initializeRetry !== null) window.clearTimeout(initializeRetry);
       window.removeEventListener('resize', resizeMap);
       map.off('resize', resizeOverlay);
-      map.off('move', scheduleMapOverlays);
+      map.off('moveend', scheduleMapOverlays);
       map.off('moveend', publishView);
       map.off('error', recordMapError);
       map.off('load', initializeMapLayers);
@@ -1696,15 +1761,18 @@ export default function CanadaMap({
     clearClusterActivityGlowStates(map, clusterActivityGlowRef.current);
     stopClusterActivityGlowTimer(clusterActivityGlowTimerRef);
     destroyOpenFreeMap3D();
+    layerEventsBoundRef.current = false;
 
     const nextStyle = mapStyleForMode(baseMode, themeMode);
     (window as any).__meshcoreMapStyle = nextStyle;
     map.setStyle(nextStyle);
     if (baseMode === 'openfreemap') ensureMercatorProjection(map);
-    map.easeTo({
-      pitch: defaultPitchForMode(baseMode),
-      bearing: defaultBearingForMode(baseMode),
-      duration: 500
+    map.once('style.load', () => {
+      map.easeTo({
+        pitch: defaultPitchForMode(baseMode),
+        bearing: defaultBearingForMode(baseMode),
+        duration: 500
+      });
     });
   }, [baseMode, themeMode]);
 
@@ -1822,6 +1890,7 @@ export default function CanadaMap({
     }
     seenPulseIDsRef.current.clear();
     seenObserverBurstIDsRef.current.clear();
+    shownBubbleTextsRef.current.clear();
     pendingPulsesRef.current = [];
     pendingObserverBurstsRef.current = [];
     if (pulseSchedulerTimerRef.current !== null) window.clearTimeout(pulseSchedulerTimerRef.current);
@@ -2019,7 +2088,24 @@ export default function CanadaMap({
       data-label-count={screenNodeLabels.length}
       data-map-init-error={mapInitError}
     >
-      <div ref={containerRef} className="map-container" />
+      <div
+        ref={containerRef}
+        className="map-container"
+        role="application"
+        aria-label="Live MeshCore Canada network map"
+        aria-description={`${nodes.length} nodes, ${routes.length} routes visible`}
+      />
+      {mapInitError && !loading && (
+        <div className="map-error-fallback">
+          <div className="map-error-message">
+            <strong>Map failed to load</strong>
+            <p>{mapInitError}</p>
+          </div>
+          <button type="button" className="map-error-reload" onClick={() => window.location.reload()}>
+            Reload
+          </button>
+        </div>
+      )}
       <div className="map-vignette" />
       <canvas ref={canvasRef} className="rf-canvas" />
       <div className="node-label-overlay" aria-hidden="true">
@@ -2058,6 +2144,8 @@ export default function CanadaMap({
   );
 }
 
+export default memo(CanadaMap);
+
 function addOpenFreeMap3DBase(map: maplibregl.Map, themeMode: MapThemeMode) {
   if (!map.getSource(OPENFREEMAP_SOURCE)) {
     map.addSource(OPENFREEMAP_SOURCE, {
@@ -2065,36 +2153,8 @@ function addOpenFreeMap3DBase(map: maplibregl.Map, themeMode: MapThemeMode) {
       url: OPENFREEMAP_TILEJSON_URL
     });
   }
-  if (!map.getSource(TERRAIN_SOURCE)) {
-    map.addSource(TERRAIN_SOURCE, {
-      type: 'raster-dem',
-      url: TERRAIN_TILEJSON_URL,
-      tileSize: 256
-    });
-  }
-  if (!map.getSource(HILLSHADE_SOURCE)) {
-    map.addSource(HILLSHADE_SOURCE, {
-      type: 'raster-dem',
-      url: TERRAIN_TILEJSON_URL,
-      tileSize: 256
-    });
-  }
-
-  const labelLayerID = firstTextSymbolLayerID(map);
-  addLayerIfMissing(map, {
-    id: HILLSHADE_LAYER,
-      type: 'hillshade',
-      source: HILLSHADE_SOURCE,
-      paint: {
-        'hillshade-method': 'multidirectional',
-        'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#1e293b', '#334155', '#475569', '#64748b'],
-        'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#020617', '#08111f', '#0f172a', '#1e293b'],
-        'hillshade-illumination-direction': [270, 315, 0, 45],
-        'hillshade-illumination-altitude': [24, 32, 36, 28],
-        'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 0.54
-      } as any
-    }, labelLayerID);
-
+  ensureTerrainSources(map, themeMode);
+  ensureWeatherCloudLayer(map);
   addLayerIfMissing(map, {
     id: BUILDINGS_3D_LAYER,
     type: 'fill-extrusion',
@@ -2136,8 +2196,31 @@ function addOpenFreeMap3DBase(map: maplibregl.Map, themeMode: MapThemeMode) {
       ],
       'fill-extrusion-opacity': ['interpolate', ['linear'], ['zoom'], 14.2, 0.16, 15.5, themeMode === 'light' ? 0.56 : 0.62]
     }
-  }, labelLayerID);
+  }, firstTextSymbolLayerID(map));
+}
 
+function ensureTerrainSources(map: maplibregl.Map, themeMode: MapThemeMode) {
+  if (!map.getSource(TERRAIN_SOURCE)) {
+    map.addSource(TERRAIN_SOURCE, { type: 'raster-dem', tiles: [TERRAIN_TILE_URL], encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
+  }
+  if (!map.getSource(HILLSHADE_SOURCE)) {
+    map.addSource(HILLSHADE_SOURCE, { type: 'raster-dem', tiles: [TERRAIN_TILE_URL], encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
+  }
+  const labelLayerID = firstTextSymbolLayerID(map);
+  addLayerIfMissing(map, {
+    id: HILLSHADE_LAYER,
+    type: 'hillshade',
+    source: HILLSHADE_SOURCE,
+    paint: {
+      'hillshade-method': 'multidirectional',
+      'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#e2e8f0', '#f1f5f9', '#f8fafc', '#ffffff'],
+      'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#0f172a', '#1e293b', '#334155', '#475569'],
+      'hillshade-accent-color': themeMode === 'light' ? '#f1f5f9' : '#64748b',
+      'hillshade-illumination-direction': [315],
+      'hillshade-illumination-altitude': [45],
+      'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 1.8
+    } as any
+  }, labelLayerID);
   map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: TERRAIN_EXAGGERATION });
   map.setSky({
     'sky-color': themeMode === 'light' ? '#dbeafe' : '#0f172a',
@@ -2160,6 +2243,125 @@ function clearMapTerrain(map: maplibregl.Map) {
   } catch {
     // Older MapLibre styles may not have sky support enabled.
   }
+}
+
+function ensureHillshadeLayer(map: maplibregl.Map, themeMode: MapThemeMode) {
+  if (!map.getSource(HILLSHADE_SOURCE)) {
+    map.addSource(HILLSHADE_SOURCE, { type: 'raster-dem', tiles: [TERRAIN_TILE_URL], encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
+  }
+  const basemapID = themeMode === 'light' ? CARTO_LIGHT_LAYER : CARTO_DARK_LAYER;
+  const layers = map.getStyle().layers ?? [];
+  const basemapIdx = layers.findIndex((l) => l.id === basemapID);
+  const afterBasemapID = basemapIdx >= 0 && basemapIdx + 1 < layers.length ? layers[basemapIdx + 1].id : undefined;
+  const groundID = 'meshcore-terrain-ground';
+  if (!map.getLayer(groundID)) {
+    map.addLayer({
+      id: groundID,
+      type: 'fill',
+      source: { type: 'geojson', data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[[-180,-85],[-180,85],[180,85],[180,-85],[-180,-85]]] }, properties: {} }] } },
+      paint: {
+        'fill-color': themeMode === 'light' ? '#e2e8f0' : '#334155',
+        'fill-opacity': themeMode === 'light' ? 0.3 : 0.45
+      }
+    }, afterBasemapID);
+  }
+  if (map.getLayer(HILLSHADE_LAYER)) {
+    map.setPaintProperty(HILLSHADE_LAYER, 'hillshade-exaggeration', themeMode === 'light' ? 0.42 : 2.0);
+    map.setPaintProperty(HILLSHADE_LAYER, 'hillshade-accent-color', themeMode === 'light' ? '#f1f5f9' : '#94a3b8');
+    return;
+  }
+  map.addLayer({
+    id: HILLSHADE_LAYER,
+    type: 'hillshade',
+    source: HILLSHADE_SOURCE,
+    paint: {
+      'hillshade-method': 'multidirectional',
+      'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#e2e8f0', '#f1f5f9', '#f8fafc', '#ffffff'],
+      'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#0f172a', '#1e293b', '#334155', '#475569'],
+      'hillshade-accent-color': themeMode === 'light' ? '#f1f5f9' : '#94a3b8',
+      'hillshade-illumination-direction': [315],
+      'hillshade-illumination-altitude': [45],
+      'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 2.0
+    } as any
+  }, afterBasemapID);
+}
+
+function ensureBuildingExtrusions(map: maplibregl.Map, themeMode: MapThemeMode) {
+  if (!map.getSource(OPENFREEMAP_SOURCE)) {
+    map.addSource(OPENFREEMAP_SOURCE, {
+      type: 'vector',
+      url: OPENFREEMAP_TILEJSON_URL
+    });
+  }
+  addLayerIfMissing(map, {
+    id: BUILDINGS_3D_LAYER,
+    type: 'fill-extrusion',
+    source: OPENFREEMAP_SOURCE,
+    'source-layer': 'building',
+    minzoom: 14.2,
+    filter: ['!=', ['get', 'hide_3d'], true],
+    paint: {
+      'fill-extrusion-color': [
+        'interpolate',
+        ['linear'],
+        ['coalesce', ['get', 'render_height'], 0],
+        0,
+        themeMode === 'light' ? '#dbe3ee' : '#172033',
+        80,
+        themeMode === 'light' ? '#cbd5e1' : '#243047',
+        200,
+        themeMode === 'light' ? '#b6c3d3' : '#334155',
+        420,
+        themeMode === 'light' ? '#94a3b8' : '#475569'
+      ],
+      'fill-extrusion-height': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        14.2,
+        0,
+        15.1,
+        ['coalesce', ['get', 'render_height'], 0]
+      ],
+      'fill-extrusion-base': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        14.2,
+        0,
+        15.1,
+        ['coalesce', ['get', 'render_min_height'], 0],
+      ],
+      'fill-extrusion-opacity': ['interpolate', ['linear'], ['zoom'], 14.2, 0.16, 15.5, themeMode === 'light' ? 0.56 : 0.62]
+    }
+  }, firstTextSymbolLayerID(map));
+}
+
+function ensureWeatherCloudLayer(map: maplibregl.Map) {
+  if (!WEATHER_API_KEY) {
+    console.warn('Weather cloud layer disabled: VITE_OPENWEATHERMAP_API_KEY is not set');
+    return;
+  }
+  if (!map.getSource(WEATHER_CLOUD_SOURCE)) {
+    map.addSource(WEATHER_CLOUD_SOURCE, {
+      type: 'raster',
+      tiles: [`https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${WEATHER_API_KEY}`],
+      tileSize: 256,
+      maxzoom: 12,
+      attribution: '&copy; OpenWeatherMap'
+    });
+  }
+  addLayerIfMissing(map, {
+    id: WEATHER_CLOUD_LAYER,
+    type: 'raster',
+    source: WEATHER_CLOUD_SOURCE,
+    minzoom: 0,
+    maxzoom: 12,
+    paint: {
+      'raster-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.48, 3, 0.38, 5, 0.22, 7, 0.08, 8, 0],
+      'raster-fade-duration': 300
+    }
+  });
 }
 
 function addPublicLayers(map: maplibregl.Map) {
@@ -2486,6 +2688,31 @@ function addPublicLayers(map: maplibregl.Map) {
     }
   });
 
+  addLayerIfMissing(map, {
+    id: OBSERVER_LABEL_LAYER,
+    type: 'symbol',
+    source: NODE_SOURCE,
+    minzoom: DETAIL_MIN_ZOOM,
+    filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'observer'], true]],
+    layout: {
+      'text-field': ['get', 'mapLabel'],
+      'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 7, 10, 11, 12],
+      'text-anchor': 'top',
+      'text-offset': [0, 1.3],
+      'text-allow-overlap': true,
+      'text-ignore-placement': true,
+      'text-rotation-alignment': 'viewport',
+      'text-pitch-alignment': 'viewport'
+    },
+    paint: {
+      'text-color': '#fbbf24',
+      'text-halo-color': 'rgba(2, 6, 23, 0.85)',
+      'text-halo-width': 1.2,
+      'text-opacity': ['case', ['==', ['get', 'dimmed'], true], 0.28, 0.55]
+    }
+  });
+
 }
 
 function addLayerIfMissing(map: maplibregl.Map, layer: maplibregl.LayerSpecification, beforeID?: string) {
@@ -2501,7 +2728,7 @@ function applyLayerSettings(map: maplibregl.Map, settings: MapLayerSettings) {
     ...CLUSTER_ROLE_BADGES.flatMap((badge) => [`${CLUSTER_ROLE_BADGE_LAYER_PREFIX}-${badge.key}-dot`, `${CLUSTER_ROLE_BADGE_LAYER_PREFIX}-${badge.key}-count`])
   ];
   const activityHeatmapLayers = [ACTIVITY_HEATMAP_LAYER, ACTIVITY_SPARKLE_LAYER];
-  const nodeLayers = [NODE_HALO_LAYER, NODE_LAYER, NODE_ICON_LAYER, OBSERVER_LAYER];
+  const nodeLayers = [NODE_HALO_LAYER, NODE_LAYER, NODE_ICON_LAYER, OBSERVER_LAYER, OBSERVER_LABEL_LAYER];
   const routeLayers = [ROUTE_LAYER];
   const analysisLayers = [ROUTE_GLOW_LAYER, ROUTE_PAYLOAD_GLOW_LAYER, ANALYSIS_ROUTE_GLOW_LAYER, ANALYSIS_ROUTE_LAYER];
   const observerBurstLayers = [CLUSTER_ACTIVITY_AURA_LAYER, CLUSTER_ACTIVITY_RING_LAYER];
@@ -2512,6 +2739,8 @@ function applyLayerSettings(map: maplibregl.Map, settings: MapLayerSettings) {
   for (const layerID of analysisLayers) setLayerVisibility(map, layerID, settings.analysisPaths);
   for (const layerID of observerBurstLayers) setLayerVisibility(map, layerID, settings.observerBursts);
   setLayerVisibility(map, BUILDINGS_3D_LAYER, settings.buildingExtrusions);
+  setLayerVisibility(map, HILLSHADE_LAYER, settings.terrainHeightmap);
+  setLayerVisibility(map, WEATHER_CLOUD_LAYER, settings.weatherClouds);
 }
 
 function setLayerVisibility(map: maplibregl.Map, layerID: string, visible: boolean) {
@@ -2543,12 +2772,12 @@ function projectNodeLabels(
   if (!isDetailMode(map)) {
     return [];
   }
-  const maxLabels = 72;
+  const maxLabels = 40;
   const margin = 80;
 
   const projected = nodes
     .filter(isMappableNode)
-    .filter((node) => node.isObserver === true)
+    .filter((node) => !node.isObserver)
     .map((node) => {
       const point = projectLngLat(map, node.longitude, node.latitude);
       const activityAt = meshActivityAtByNodeID.get(node.id);
@@ -2666,6 +2895,7 @@ function mercatorPoint(lng: number, lat: number, scale: number): { x: number; y:
 }
 
 function messageBubbleFromPulse(map: maplibregl.Map, pulse: PublicRoutePulse): MessageBubble | null {
+  if (!pulse.segments || pulse.segments.length === 0) return null;
   const first = pulse.segments[0];
   const anchor = pulse.messageAnchor ?? (first ? routeEndpointAnchor(first.from) : null);
   if (!anchor) return null;
@@ -3276,7 +3506,8 @@ function nodeFeatureProperties(
     dimmed: focusActive && !selected && !neighbor && !path,
     neighborDistanceKm: focus.neighbourDistanceKmByNodeID.get(node.id) ?? null,
     observer: node.isObserver === true,
-    staleLevel: nodeStaleLevel(node, labelClock, meshActivityAt)
+    staleLevel: nodeStaleLevel(node, labelClock, meshActivityAt),
+    freshLevel: nodeFreshLevel(node, labelClock, meshActivityAt)
   };
 }
 

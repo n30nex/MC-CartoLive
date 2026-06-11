@@ -52,7 +52,6 @@ CREATE TABLE IF NOT EXISTS packet_observations (
   FOREIGN KEY(packet_hash) REFERENCES packets(packet_hash)
 );
 
-CREATE INDEX IF NOT EXISTS idx_observations_recent ON packet_observations(heard_at_ms DESC);
 CREATE INDEX IF NOT EXISTS idx_observations_recent_id ON packet_observations(heard_at_ms DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_observations_resolution ON packet_observations(resolution_status, heard_at_ms DESC);
 CREATE INDEX IF NOT EXISTS idx_observations_iata ON packet_observations(iata, heard_at_ms DESC);
@@ -87,6 +86,8 @@ CREATE TABLE IF NOT EXISTS node_iatas (
 
 CREATE INDEX IF NOT EXISTS idx_node_iatas_iata_recent ON node_iatas(iata, last_seen_ms DESC);
 
+CREATE INDEX IF NOT EXISTS idx_nodes_last_seen ON nodes(last_seen_ms DESC);
+
 CREATE TABLE IF NOT EXISTS node_short_ids (
   public_key TEXT NOT NULL,
   iata TEXT NOT NULL,
@@ -113,6 +114,7 @@ CREATE TABLE IF NOT EXISTS observers (
 );
 
 CREATE INDEX IF NOT EXISTS idx_observers_iata_recent ON observers(iata, last_seen_ms DESC);
+CREATE INDEX IF NOT EXISTS idx_observers_last_seen ON observers(last_seen_ms DESC);
 
 CREATE TABLE IF NOT EXISTS observer_status (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -123,16 +125,6 @@ CREATE TABLE IF NOT EXISTS observer_status (
 );
 
 CREATE INDEX IF NOT EXISTS idx_observer_status_recent ON observer_status(received_at_ms DESC);
-
-CREATE TABLE IF NOT EXISTS path_resolution_cache (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  iata TEXT NOT NULL,
-  hash_size INTEGER NOT NULL,
-  prefix_hex TEXT NOT NULL,
-  status TEXT NOT NULL,
-  candidate_count INTEGER NOT NULL,
-  updated_at_ms INTEGER NOT NULL
-);
 
 CREATE TABLE IF NOT EXISTS live_edge_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -197,3 +189,12 @@ END;
 CREATE TRIGGER IF NOT EXISTS public_packet_paths_ad AFTER DELETE ON public_packet_paths BEGIN
   DELETE FROM public_packet_paths_fts WHERE rowid=old.edge_id;
 END;
+
+CREATE TABLE IF NOT EXISTS solar_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fetched_at_ms INTEGER NOT NULL,
+  kp_index REAL NOT NULL DEFAULT 0,
+  solar_flux_sfu REAL NOT NULL DEFAULT 0,
+  geomag_activity TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_solar_snapshots_recent ON solar_snapshots(fetched_at_ms DESC);

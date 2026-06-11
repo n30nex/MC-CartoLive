@@ -10,6 +10,7 @@ import { arcTrailSamples, sampleRouteArc, type ArcSample } from './routeArcs';
 import { routeColors } from './routeSource';
 import { DETAIL_MIN_ZOOM } from './zoomMode';
 import { packetTravelDuration, sequentialSegmentProgress, type PacketAnimationOptions } from './packetAnimator';
+import { computeLineOfSight, routeLOSColor, type LOSResult } from './terrainProfile';
 
 export const OPENFREEMAP_3D_LAYER_ID = 'meshcore-openfreemap-3d-live';
 
@@ -87,6 +88,14 @@ type ObserverGlow = {
 
 type NodeModelLOD = 'marker' | 'full';
 
+const geomPool = new Map<string, THREE.BufferGeometry>();
+const pooledSet = new WeakSet<THREE.BufferGeometry>();
+
+function poolK(p: string, ...a: (number|string)[]): string { return p+':'+a.map(v=>typeof v==='number'?v.toFixed(1):v).join(','); }
+function poolG(k: string, f: ()=>THREE.BufferGeometry): THREE.BufferGeometry { const e=geomPool.get(k); if(e)return e; const g=f(); geomPool.set(k,g); pooledSet.add(g); return g; }
+function isPooled(g: THREE.BufferGeometry|undefined): boolean { return g!==undefined && pooledSet.has(g); }
+function disposeGK(o: THREE.Object3D) { o.traverse(c=>{if(!(c instanceof THREE.Mesh))return;if(c.geometry&&isPooled(c.geometry))c.geometry=undefined as unknown as THREE.BufferGeometry;const m=c.material as THREE.Material|THREE.Material[]|undefined;if(Array.isArray(m))m.forEach(x=>x.dispose());else m?.dispose?.();}); }
+
 export function createOpenFreeMap3DController(): OpenFreeMap3DController {
   return new OpenFreeMap3DLayer();
 }
@@ -120,6 +129,7 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
   private lastAnimationFrameAt = 0;
   private paused = false;
   private disposed = false;
+  private losCache = new Map<string, LOSResult>();
   private readonly handleMoveEnd = () => {
     if (this.rebuildIfNeeded(false)) {
       this.map?.triggerRepaint();
@@ -138,8 +148,10 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
 
   update(input: OpenFreeMap3DUpdate) {
     this.latest = input;
+    const prev = this.layerSettings;
     this.layerSettings = normalizeLayerSettings(input.layerSettings);
     this.packetVisualSettings = normalizePacketVisualSettings(input.packetVisualSettings);
+    if (!this.layerSettings.terrainLOS && prev.terrainLOS) this.losCache.clear();
     if (this.rebuildIfNeeded(false) || this.hasActiveAnimations()) {
       this.map?.triggerRepaint();
     }
@@ -306,16 +318,19 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
   private rebuildIfNeeded(force: boolean): boolean {
     if (!this.map || !this.scene || !this.latest || this.disposed) return false;
     let changed = false;
-    const nextNodeSignature = nodeSceneSignature(this.map, this.latest);
+    const now = Date.now();
+    const selectedNodes = selectOpenFreeMap3DNodes(this.map, this.latest);
+    const nextNodeSignature = nodeSceneSignature(this.map, this.latest, selectedNodes);
     if (force || nextNodeSignature !== this.nodeSignature) {
       this.nodeSignature = nextNodeSignature;
-      rebuildNodeModels(this.map, this.nodeRoot, this.latest);
+      rebuildNodeModels(this.map, this.nodeRoot, this.latest, selectedNodes);
       changed = true;
     }
-    const nextRouteSignature = routeSceneSignature(this.map, this.latest);
+    const selectedRoutes = selectOpenFreeMap3DRoutes(this.map, this.latest, now);
+    const nextRouteSignature = routeSceneSignature(this.map, this.latest, now, selectedRoutes);
     if (force || nextRouteSignature !== this.routeSignature) {
       this.routeSignature = nextRouteSignature;
-      rebuildRouteArcs(this.map, this.routeRoot, this.latest);
+      rebuildRouteArcs(this.map, this.routeRoot, this.latest, this.losCache, selectedRoutes, now);
       changed = true;
     }
     return changed;
@@ -326,21 +341,35 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
   }
 }
 
-function rebuildNodeModels(map: maplibregl.Map, root: THREE.Group, input: OpenFreeMap3DUpdate) {
+function rebuildNodeModels(map: maplibregl.Map, root: THREE.Group, input: OpenFreeMap3DUpdate, selectedNodes: PublicNode[]) {
   clearGroup(root);
   const zoom = map.getZoom();
-  for (const node of selectOpenFreeMap3DNodes(map, input)) {
+  for (const node of selectedNodes) {
     const model = createNodeModel(node, input.themeMode, nodeModelLOD(node, input.focus, zoom));
     positionAtLngLat(model, node.longitude, node.latitude, 8);
     root.add(model);
   }
 }
 
-function rebuildRouteArcs(map: maplibregl.Map, root: THREE.Group, input: OpenFreeMap3DUpdate) {
+function rebuildRouteArcs(
+  map: maplibregl.Map,
+  root: THREE.Group,
+  input: OpenFreeMap3DUpdate,
+  losCache: Map<string, LOSResult>,
+  selectedRoutes: PublicRoute[],
+  now: number
+) {
   clearGroup(root);
-  const now = Date.now();
-  for (const route of selectOpenFreeMap3DRoutes(map, input, now)) {
-    root.add(createRouteArcMesh(route, input, now));
+  for (const route of selectedRoutes) {
+    let los: LOSResult | undefined;
+    if (input.layerSettings.terrainLOS) {
+      los = losCache.get(route.id);
+      if (!los) {
+        los = computeLineOfSight({ from: route.from, to: route.to, distanceKm: route.distanceKm }, map);
+        if (los.fresnelRadiusMeters > 0) losCache.set(route.id, los);
+      }
+    }
+    root.add(createRouteArcMesh(route, input, now, los));
   }
   if (input.layerSettings.analysisPaths) {
     for (const [index, segment] of input.analysisSegments.entries()) {
@@ -449,12 +478,19 @@ function createNodeModel(node: PublicNode, themeMode: 'dark' | 'light', lod: Nod
   return group;
 }
 
-function createRouteArcMesh(route: PublicRoute, input: OpenFreeMap3DUpdate, now: number): THREE.Object3D {
+function createRouteArcMesh(route: PublicRoute, input: OpenFreeMap3DUpdate, now: number, los?: LOSResult): THREE.Object3D {
   const selected = route.id === input.selectedRouteID;
   const path = input.focus.pathRouteIDs.has(route.id);
   const connected = input.focus.connectedRouteIDs.has(route.id);
-  const color = selected ? '#f8fafc' : path ? '#facc15' : connected ? '#67e8f9' : routeColors[Math.max(0, Math.min(4, route.frequencyBucket))];
-  const opacity = selected ? 0.82 : path ? 0.72 : connected ? 0.58 : now - route.lastHeard <= ROUTE_FRESH_MS ? 0.5 : 0.28;
+  let color: string; let opacity: number;
+  if (los && input.layerSettings.terrainLOS) {
+    const s = routeLOSColor(los);
+    color = s.color; opacity = s.opacity;
+    if (selected || path) opacity = Math.min(1, opacity + 0.22);
+  } else {
+    color = selected ? '#f8fafc' : path ? '#facc15' : connected ? '#67e8f9' : routeColors[Math.max(0, Math.min(4, route.frequencyBucket))];
+    opacity = selected ? 0.82 : path ? 0.72 : connected ? 0.58 : now - route.lastHeard <= ROUTE_FRESH_MS ? 0.5 : 0.28;
+  }
   const emphasis = selected || path ? 1.85 : connected ? 1.35 : 1;
   return createSegmentArcMesh(route.id, { from: route.from, to: route.to, distanceKm: route.distanceKm, routeId: route.id }, color, opacity, emphasis, input.packetVisualSettings.renderQuality);
 }
@@ -612,8 +648,7 @@ function trimObserverGlows(root: THREE.Group, glows: ObserverGlow[], budget: num
   }
 }
 
-function nodeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): string {
-  const selectedNodes = selectOpenFreeMap3DNodes(map, input);
+function nodeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate, selectedNodes: PublicNode[] = selectOpenFreeMap3DNodes(map, input)): string {
   const zoom = map.getZoom();
   return [
     input.layerSettings.nodes,
@@ -624,23 +659,28 @@ function nodeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): st
     input.focus.selectedNodeID ?? '',
     stableSetSignature(input.focus.pathNodeIDs),
     stableSetSignature(input.focus.neighbourNodeIDs),
-    selectedNodes.map((node) => `${node.id}:${nodeModelLOD(node, input.focus, zoom)}:${node.role}:${node.isObserver ? 1 : 0}:${node.latitude.toFixed(4)}:${node.longitude.toFixed(4)}`).sort().join('|')
+    selectedNodes.map((node) => `${node.id}:${nodeModelLOD(node, input.focus, zoom)}:${node.role}:${node.isObserver ? 1 : 0}:${node.latitude.toFixed(4)}:${node.longitude.toFixed(4)}`).join('|')
   ].join('~');
 }
 
-function routeSceneSignature(map: maplibregl.Map, input: OpenFreeMap3DUpdate): string {
-  const selectedRoutes = selectOpenFreeMap3DRoutes(map, input);
+function routeSceneSignature(
+  map: maplibregl.Map,
+  input: OpenFreeMap3DUpdate,
+  now = Date.now(),
+  selectedRoutes: PublicRoute[] = selectOpenFreeMap3DRoutes(map, input, now)
+): string {
   return [
     input.layerSettings.routes,
     input.layerSettings.routeArcs3D,
     input.layerSettings.analysisPaths,
+    input.layerSettings.terrainLOS,
     input.packetVisualSettings.renderQuality,
     input.selectedRouteID ?? '',
     viewSignature(map),
     stableSetSignature(input.focus.connectedRouteIDs),
     stableSetSignature(input.focus.pathRouteIDs),
     input.analysisSegments.map((segment) => `${segment.routeId}:${segment.from.lat.toFixed(4)}:${segment.from.lng.toFixed(4)}:${segment.to.lat.toFixed(4)}:${segment.to.lng.toFixed(4)}`).join('|'),
-    selectedRoutes.map((route) => `${route.id}:${route.frequencyBucket}:${Math.floor(route.lastHeard / ROUTE_FRESH_MS)}:${route.from.lat.toFixed(4)}:${route.from.lng.toFixed(4)}:${route.to.lat.toFixed(4)}:${route.to.lng.toFixed(4)}`).sort().join('|')
+    selectedRoutes.map((route) => `${route.id}:${route.frequencyBucket}:${Math.floor(route.lastHeard / ROUTE_FRESH_MS)}:${route.from.lat.toFixed(4)}:${route.from.lng.toFixed(4)}:${route.to.lat.toFixed(4)}:${route.to.lng.toFixed(4)}`).join('|')
   ].join('~');
 }
 
@@ -726,83 +766,37 @@ function meterScale(lng: number, lat: number): number {
 }
 
 function addBox(group: THREE.Group, width: number, depth: number, height: number, color: number, opacity: number, z: number) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, depth, height), material(color, opacity));
-  mesh.position.z = z;
-  group.add(mesh);
+  const g = poolG(poolK('box', width, depth, height), () => new THREE.BoxGeometry(width, depth, height));
+  const m = new THREE.Mesh(g, material(color, opacity)); m.position.z = z; group.add(m);
 }
-
 function addCylinder(group: THREE.Group, radiusTop: number, radiusBottom: number, height: number, color: number, opacity: number, z: number, x = 0, y = 0) {
-  const geometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, 12);
-  geometry.rotateX(Math.PI / 2);
-  const mesh = new THREE.Mesh(geometry, material(color, opacity));
-  mesh.position.set(x, y, z);
-  group.add(mesh);
+  const g = poolG(poolK('cyl', radiusTop, radiusBottom, height), () => { const c = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, 12); c.rotateX(Math.PI / 2); return c; });
+  const m = new THREE.Mesh(g, material(color, opacity)); m.position.set(x, y, z); group.add(m);
 }
-
 function addCone(group: THREE.Group, radius: number, height: number, color: number, opacity: number, z: number, x = 0, y = 0) {
-  const geometry = new THREE.ConeGeometry(radius, height, 16);
-  geometry.rotateX(Math.PI / 2);
-  const mesh = new THREE.Mesh(geometry, material(color, opacity, true));
-  mesh.position.set(x, y, z);
-  group.add(mesh);
+  const g = poolG(poolK('cone', radius, height), () => { const c = new THREE.ConeGeometry(radius, height, 16); c.rotateX(Math.PI / 2); return c; });
+  const m = new THREE.Mesh(g, material(color, opacity, true)); m.position.set(x, y, z); group.add(m);
 }
-
 function addSphere(group: THREE.Group, radius: number, color: number, opacity: number, z: number) {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 10), material(color, opacity, true));
-  mesh.position.z = z;
-  group.add(mesh);
+  const g = poolG(poolK('sphere', radius), () => new THREE.SphereGeometry(radius, 16, 10));
+  const m = new THREE.Mesh(g, material(color, opacity, true)); m.position.z = z; group.add(m);
 }
-
 function addTorus(group: THREE.Group, radius: number, tube: number, color: number, opacity: number, z: number) {
-  const mesh = new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 8, 32), material(color, opacity, true));
-  mesh.rotation.x = Math.PI / 2;
-  mesh.position.z = z;
-  group.add(mesh);
+  const g = poolG(poolK('torus', radius, tube), () => new THREE.TorusGeometry(radius, tube, 8, 32));
+  const m = new THREE.Mesh(g, material(color, opacity, true)); m.rotation.x = Math.PI / 2; m.position.z = z; group.add(m);
 }
 
 function material(color: number, opacity: number, additive = false): THREE.MeshBasicMaterial {
-  return new THREE.MeshBasicMaterial({
-    color,
-    transparent: opacity < 1 || additive,
-    opacity,
-    blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
-    depthWrite: !additive,
-    toneMapped: false
-  });
+  return new THREE.MeshBasicMaterial({ color, transparent: opacity < 1 || additive, opacity, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: !additive, toneMapped: false });
 }
-
-function nodeColor(node: PublicNode): string {
-  if (node.isObserver) return '#f59e0b';
-  if (node.role === 'repeater') return '#22c55e';
-  if (node.role === 'companion') return '#3b82f6';
-  if (node.role === 'room_server') return '#a855f7';
-  if (node.role === 'sensor') return '#65a30d';
-  return '#94a3b8';
-}
-
-function hexNumber(color: string): number {
-  if (/^#[0-9a-fA-F]{6}$/.test(color)) return parseInt(color.slice(1), 16);
-  return 0x67e8f9;
-}
+function nodeColor(node: PublicNode): string { if(node.isObserver)return'#f59e0b';if(node.role==='repeater')return'#22c55e';if(node.role==='companion')return'#3b82f6';if(node.role==='room_server')return'#a855f7';if(node.role==='sensor')return'#65a30d';return'#94a3b8'; }
+function hexNumber(color: string): number { return /^#[0-9a-fA-F]{6}$/.test(color) ? parseInt(color.slice(1), 16) : 0x67e8f9; }
 
 function clearGroup(group: THREE.Group) {
-  for (const child of [...group.children]) {
-    group.remove(child);
-    disposeObject(child);
-  }
+  for (const c of [...group.children]) { group.remove(c); disposeGK(c); }
 }
-
 function disposeObject(object: THREE.Object3D) {
-  object.traverse((child: THREE.Object3D) => {
-    const mesh = child as THREE.Mesh;
-    mesh.geometry?.dispose?.();
-    const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
-    if (Array.isArray(mat)) {
-      mat.forEach((item) => item.dispose());
-    } else {
-      mat?.dispose?.();
-    }
-  });
+  object.traverse((c) => { if (!(c instanceof THREE.Mesh)) return; if (!isPooled(c.geometry)) c.geometry?.dispose?.(); const m = c.material as THREE.Material|THREE.Material[]|undefined; if (Array.isArray(m)) m.forEach(x => x.dispose()); else m?.dispose?.(); });
 }
 
 function stableSetSignature(values: Set<string>): string {

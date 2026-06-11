@@ -4,10 +4,11 @@ import (
 	"net/http"
 
 	"meshcore-canada-live-map/backend/internal/api"
+	"meshcore-canada-live-map/backend/internal/solar"
 )
 
 func (a *Application) Routes() http.Handler {
-	return (&api.Server{
+	a.apiServer = &api.Server{
 		Config: api.Config{
 			RecentPacketLimit:      a.Config.RecentPacketLimit,
 			RecentEdgeEventLimit:   a.Config.RecentEdgeEventLimit,
@@ -25,6 +26,8 @@ func (a *Application) Routes() http.Handler {
 			BuildTime:              a.Config.BuildTime,
 			PublicIATARestricted:   a.PublicCache.RestrictsIATA(),
 			PublicRegionRestricted: a.PublicCache.RestrictsIATA(),
+			PublicIATAs:            a.Config.PublicIATAs,
+			TrustProxyHeaders:      a.Config.TrustProxyHeaders,
 		},
 		Store:             a.Store,
 		Hub:               a.Hub,
@@ -37,5 +40,7 @@ func (a *Application) Routes() http.Handler {
 		PublicState:       a.PublicCache.Snapshot,
 		PublicCacheStatus: a.PublicCache.Status,
 		PublicAllowsIATA:  a.PublicCache.AllowsIATA,
-	}).Routes()
+		SolarConditions:   func() *solar.Conditions { return a.solarSnapshot.Load() },
+	}
+	return a.apiServer.Routes()
 }

@@ -31,8 +31,8 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(4)
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(8)
 	s := &Store{db: db, path: path, coordinatePolicy: live.CurrentCoordinatePolicy()}
 	if err := s.Migrate(ctx); err != nil {
 		_ = db.Close()
@@ -56,21 +56,123 @@ func OpenMemory(ctx context.Context) (*Store, error) {
 }
 
 func (s *Store) Migrate(ctx context.Context) error {
+	if err := s.ensureBaseTables(ctx); err != nil {
+		return err
+	}
+	if err := s.migrateColumns(ctx); err != nil {
+		return err
+	}
 	if _, err := s.db.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("migrate sqlite: %w", err)
 	}
-	for _, stmt := range []string{
-		`ALTER TABLE packet_observations ADD COLUMN message_sender TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE packet_observations ADD COLUMN message_text TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE live_edge_events ADD COLUMN message_sender TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE live_edge_events ADD COLUMN message_text TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE live_edge_events ADD COLUMN message_anchor_json TEXT NOT NULL DEFAULT ''`,
-	} {
-		if _, err := s.db.ExecContext(ctx, stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
-			return fmt.Errorf("migrate sqlite column: %w", err)
+	return nil
+}
+
+func (s *Store) ensureBaseTables(ctx context.Context) error {
+	for _, stmt := range sqliteStatements(schemaSQL) {
+		normalized := strings.ToUpper(strings.TrimSpace(stmt))
+		if !strings.HasPrefix(normalized, "CREATE TABLE IF NOT EXISTS ") && !strings.HasPrefix(normalized, "PRAGMA ") {
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("migrate sqlite base tables: %w", err)
 		}
 	}
 	return nil
+}
+
+type columnMigration struct {
+	table    string
+	column   string
+	alterSQL string
+}
+
+func (s *Store) migrateColumns(ctx context.Context) error {
+	migrations := []columnMigration{
+		{table: "nodes", column: "supports_multibyte", alterSQL: `ALTER TABLE nodes ADD COLUMN supports_multibyte TEXT NOT NULL DEFAULT 'unknown'`},
+		{table: "packet_observations", column: "message_sender", alterSQL: `ALTER TABLE packet_observations ADD COLUMN message_sender TEXT NOT NULL DEFAULT ''`},
+		{table: "packet_observations", column: "message_text", alterSQL: `ALTER TABLE packet_observations ADD COLUMN message_text TEXT NOT NULL DEFAULT ''`},
+		{table: "live_edge_events", column: "message_sender", alterSQL: `ALTER TABLE live_edge_events ADD COLUMN message_sender TEXT NOT NULL DEFAULT ''`},
+		{table: "live_edge_events", column: "message_text", alterSQL: `ALTER TABLE live_edge_events ADD COLUMN message_text TEXT NOT NULL DEFAULT ''`},
+		{table: "live_edge_events", column: "message_anchor_json", alterSQL: `ALTER TABLE live_edge_events ADD COLUMN message_anchor_json TEXT NOT NULL DEFAULT ''`},
+		{table: "public_packet_paths", column: "mappable", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN mappable INTEGER NOT NULL DEFAULT 1`},
+		{table: "public_packet_paths", column: "region", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN region TEXT NOT NULL DEFAULT ''`},
+		{table: "public_packet_paths", column: "payload_type_name", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN payload_type_name TEXT NOT NULL DEFAULT ''`},
+		{table: "public_packet_paths", column: "message_sender", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN message_sender TEXT NOT NULL DEFAULT ''`},
+		{table: "public_packet_paths", column: "message_text", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN message_text TEXT NOT NULL DEFAULT ''`},
+		{table: "public_packet_paths", column: "hop_count", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN hop_count INTEGER NOT NULL DEFAULT 0`},
+		{table: "public_packet_paths", column: "segment_count", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN segment_count INTEGER NOT NULL DEFAULT 0`},
+		{table: "public_packet_paths", column: "distance_km", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN distance_km REAL NOT NULL DEFAULT 0`},
+		{table: "public_packet_paths", column: "route_ids_json", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN route_ids_json TEXT NOT NULL DEFAULT '[]'`},
+		{table: "public_packet_paths", column: "endpoint_labels_json", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN endpoint_labels_json TEXT NOT NULL DEFAULT '[]'`},
+		{table: "public_packet_paths", column: "segments_json", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN segments_json TEXT NOT NULL DEFAULT '[]'`},
+		{table: "public_packet_paths", column: "search_text", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN search_text TEXT NOT NULL DEFAULT ''`},
+	}
+	for _, migration := range migrations {
+		if err := s.addColumnIfMissing(ctx, migration); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) addColumnIfMissing(ctx context.Context, migration columnMigration) error {
+	tableIdent, err := sqliteIdent(migration.table)
+	if err != nil {
+		return err
+	}
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+tableIdent+`)`)
+	if err != nil {
+		return fmt.Errorf("inspect sqlite table %s: %w", migration.table, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name string
+		var typ string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+			return fmt.Errorf("inspect sqlite column %s.%s: %w", migration.table, migration.column, err)
+		}
+		if strings.EqualFold(name, migration.column) {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("inspect sqlite table %s: %w", migration.table, err)
+	}
+	if _, err := s.db.ExecContext(ctx, migration.alterSQL); err != nil {
+		return fmt.Errorf("migrate sqlite column %s.%s: %w", migration.table, migration.column, err)
+	}
+	return nil
+}
+
+func sqliteIdent(name string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("empty sqlite identifier")
+	}
+	for _, r := range name {
+		if r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		return "", fmt.Errorf("unsafe sqlite identifier %q", name)
+	}
+	return `"` + name + `"`, nil
+}
+
+func sqliteStatements(sqlText string) []string {
+	parts := strings.Split(sqlText, ";")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		stmt := strings.TrimSpace(part)
+		if stmt == "" {
+			continue
+		}
+		out = append(out, stmt)
+	}
+	return out
 }
 
 func sqliteDSN(path string) string {
@@ -82,6 +184,10 @@ func sqliteDSN(path string) string {
 		"_pragma=busy_timeout%3d5000",
 		"_pragma=foreign_keys%3dON",
 		"_pragma=journal_mode%3dWAL",
+		"_pragma=synchronous%3dNORMAL",
+		"_pragma=cache_size%3d-64000",
+		"_pragma=temp_store%3dMEMORY",
+		"_pragma=mmap_size%3d268435456",
 	}, "&")
 }
 
@@ -108,6 +214,16 @@ func (s *Store) Ping(ctx context.Context) error {
 		return fmt.Errorf("store unavailable")
 	}
 	return s.db.PingContext(ctx)
+}
+
+func (s *Store) VacuumAndAnalyze(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, "ANALYZE"); err != nil {
+		return fmt.Errorf("analyze: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, "VACUUM"); err != nil {
+		return fmt.Errorf("vacuum: %w", err)
+	}
+	return nil
 }
 
 type RuntimeInfo struct {

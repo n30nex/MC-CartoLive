@@ -1,3 +1,0 @@
-package api
-
-// Debug handlers are implemented in routes.go for v1.

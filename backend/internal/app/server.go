@@ -31,6 +31,9 @@ func (a *Application) StartHTTP(ctx context.Context) error {
 		Addr:              a.Config.ListenAddr,
 		Handler:           a.Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	errCh := make(chan error, 1)
 	go func() {

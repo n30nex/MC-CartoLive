@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Activity, Search, X } from 'lucide-react';
+import { clamp } from '../lib/clamp';
+import { fnv1a } from '../lib/hash';
+import { formatRelative } from '../lib/formatRelative';
+import { hexToRgba } from '../lib/color';
 import {
   forceCenter,
   forceCollide,
@@ -259,9 +263,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       scheduleDraw();
     };
     resize();
-    const observer = new ResizeObserver(resize);
-    observer.observe(canvas);
-    return () => observer.disconnect();
+    return observeNetGraphResize(canvas, resize);
   }, [scheduleDraw]);
 
   useEffect(() => {
@@ -881,6 +883,20 @@ function resizeCanvas(canvas: HTMLCanvasElement): void {
   ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
+export function observeNetGraphResize(element: Element, resize: () => void, win: Pick<Window, 'addEventListener' | 'removeEventListener'> = window): () => void {
+  if (typeof ResizeObserver === 'function') {
+    try {
+      const observer = new ResizeObserver(resize);
+      observer.observe(element);
+      return () => observer.disconnect();
+    } catch {
+      // Fall through to window resize events when ResizeObserver is unavailable or broken.
+    }
+  }
+  win.addEventListener('resize', resize);
+  return () => win.removeEventListener('resize', resize);
+}
+
 export function netGraphThemeFromElement(element: Element | null | undefined): NetGraphThemeTokens {
   if (typeof window === 'undefined' || !element) return DEFAULT_NETGRAPH_THEME;
   const style = window.getComputedStyle(element);
@@ -934,14 +950,6 @@ function tintColor(color: string, alpha: number): string {
   const trimmed = color.trim();
   if (/^#[0-9a-f]{6}$/i.test(trimmed)) return hexToRgba(trimmed, alpha);
   return trimmed;
-}
-
-function hexToRgba(hex: string, alpha: number): string {
-  const normalized = hex.slice(1);
-  const red = Number.parseInt(normalized.slice(0, 2), 16);
-  const green = Number.parseInt(normalized.slice(2, 4), 16);
-  const blue = Number.parseInt(normalized.slice(4, 6), 16);
-  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
 function drawBackground(ctx: CanvasRenderingContext2D, width: number, height: number, theme: NetGraphThemeTokens): void {
@@ -1077,22 +1085,10 @@ function stableNodeAngle(value: string): number {
 }
 
 function stableNodeHash(value: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index++) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
+  return fnv1a(value);
 }
 
 function formatAge(ageMs: number): string {
   if (!Number.isFinite(ageMs) || ageMs < 0) return 'unknown';
-  if (ageMs < 60_000) return `${Math.max(1, Math.round(ageMs / 1000))}s ago`;
-  if (ageMs < 3_600_000) return `${Math.round(ageMs / 60_000)}m ago`;
-  if (ageMs < 86_400_000) return `${Math.round(ageMs / 3_600_000)}h ago`;
-  return `${Math.round(ageMs / 86_400_000)}d ago`;
+  return formatRelative(Date.now() - ageMs);
 }

@@ -14,6 +14,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const maxClients = 512
+
 type Hub struct {
 	log           *slog.Logger
 	queueSize     int
@@ -54,6 +56,13 @@ func NewHub(log *slog.Logger, queueSize int, allowedBaseURLs ...string) *Hub {
 }
 
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.mu.RLock()
+	clientCount := len(h.clients)
+	h.mu.RUnlock()
+	if clientCount >= maxClients {
+		http.Error(w, "too many connections", http.StatusServiceUnavailable)
+		return
+	}
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.log.Warn("websocket upgrade failed", "error", err)
@@ -77,21 +86,30 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *Hub) Broadcast(event string, data any) {
 	env := h.eventEnvelope(event, data)
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+	h.mu.Lock()
+	clients := make([]*client, 0, len(h.clients))
 	for c := range h.clients {
-		h.observeQueueDepth(len(c.send))
+		clients = append(clients, c)
+	}
+	h.mu.Unlock()
+	for _, c := range clients {
+		safeSend(h, c, env)
+	}
+}
+
+func safeSend(h *Hub, c *client, env Envelope) {
+	defer func() { _ = recover() }()
+	h.observeQueueDepth(len(c.send))
+	select {
+	case c.send <- env:
+	default:
+		c.dropped++
+		h.totalDropped.Add(1)
+		now := time.Now().UnixMilli()
+		lag := Envelope{Version: 1, Type: "lagged", Seq: h.seq.Add(1), ServerTime: now, ReceivedAt: now, DisplayAt: now, DroppedCount: c.dropped, Since: c.created.UnixMilli()}
 		select {
-		case c.send <- env:
+		case c.send <- lag:
 		default:
-			c.dropped++
-			h.totalDropped.Add(1)
-			now := time.Now().UnixMilli()
-			lag := Envelope{Version: 1, Type: "lagged", Seq: h.seq.Add(1), ServerTime: now, ReceivedAt: now, DisplayAt: now, DroppedCount: c.dropped, Since: c.created.UnixMilli()}
-			select {
-			case c.send <- lag:
-			default:
-			}
 		}
 	}
 }
@@ -183,6 +201,9 @@ func (h *Hub) remove(c *client) {
 		close(c.send)
 	}
 	h.mu.Unlock()
+	c.conn.WriteControl(websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"),
+		time.Now().Add(2*time.Second))
 	_ = c.conn.Close()
 }
 
@@ -198,8 +219,12 @@ func (h *Hub) writePump(c *client) {
 			if !ok {
 				return
 			}
+			data, err := json.Marshal(msg)
+			if err != nil {
+				return
+			}
 			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := c.conn.WriteJSON(msg); err != nil {
+			if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
 				return
 			}
 		case <-ticker.C:
@@ -220,15 +245,9 @@ func (h *Hub) readPump(c *client) {
 		return c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	})
 	for {
-		_, data, err := c.conn.ReadMessage()
+		_, _, err := c.conn.ReadMessage()
 		if err != nil {
 			return
-		}
-		var incoming struct {
-			Type string `json:"type"`
-		}
-		if err := json.Unmarshal(data, &incoming); err != nil {
-			continue
 		}
 	}
 }
@@ -248,7 +267,7 @@ func allowedOriginHosts(baseURLs []string) map[string]struct{} {
 func websocketOriginAllowed(r *http.Request, allowedHosts map[string]struct{}) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
-		return true
+		return false
 	}
 	parsed, err := url.Parse(origin)
 	if err != nil || parsed.Host == "" {

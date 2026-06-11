@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   NODE_ACTIVITY_GLOW_MS,
+  NODE_FRESH_MS,
+  NODE_MEDIUM_MS,
   NODE_STALE_DARK_GREY_MS,
   NODE_STALE_GREY_MS,
   nodeActivityGlow,
   nodeActivityHeat,
+  nodeFreshLevel,
   nodeLabelActivityProgress,
   compactNodeLabel,
   nodeEffectiveActivityAt,
@@ -86,5 +89,26 @@ describe('map node labels', () => {
     expect(nodeStaleLevel(node, now)).toBe(1);
     expect(nodeStaleLevel({ ...node, lastSeen: now - NODE_STALE_DARK_GREY_MS }, now)).toBe(2);
     expect(nodeStaleLevel(node, now, now - 1000)).toBe(0);
+  });
+
+  it('classifies node freshness from mesh activity with lastSeen fallback', () => {
+    const now = 1_700_000_000_000;
+    const node = {
+      id: 'n1',
+      label: 'Node',
+      role: 'repeater',
+      latitude: 43.65,
+      longitude: -79.38,
+      firstSeen: 1,
+      lastSeen: now - NODE_MEDIUM_MS - 1,
+      iatasHeardIn: ['YYZ'],
+      activityCount: 10
+    } satisfies PublicNode;
+
+    expect(nodeFreshLevel({ ...node, lastSeen: now - (NODE_FRESH_MS - 1000) }, now)).toBe(0);
+    expect(nodeFreshLevel({ ...node, lastSeen: now - NODE_FRESH_MS }, now)).toBe(1);
+    expect(nodeFreshLevel({ ...node, lastSeen: now - NODE_MEDIUM_MS }, now)).toBe(2);
+    expect(nodeFreshLevel({ ...node, lastSeen: 0 }, now)).toBe(3);
+    expect(nodeFreshLevel(node, now, now - 1000)).toBe(0);
   });
 });

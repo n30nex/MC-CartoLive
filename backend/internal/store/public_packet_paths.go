@@ -4,12 +4,27 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"time"
 	"unicode"
 
 	"meshcore-canada-live-map/backend/internal/live"
 )
+
+func (s *Store) DeletePublicPacketPathForEdge(ctx context.Context, edgeID int64) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	if edgeID <= 0 {
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM public_packet_paths WHERE edge_id = ?`, edgeID); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM public_packet_paths_fts WHERE rowid = ?`, edgeID)
+	return err
+}
 
 type PublicPacketPathQuery struct {
 	From            int64
@@ -480,7 +495,9 @@ func scanPublicPacketPathBackfillEdge(rows *sql.Rows) (live.EdgeEvent, error) {
 			edge.MessageAnchor = &anchor
 		}
 	}
-	_ = json.Unmarshal([]byte(segmentsJSON), &edge.Segments)
+	if err := json.Unmarshal([]byte(segmentsJSON), &edge.Segments); err != nil {
+		slog.Default().Warn("public packet path backfill edge segments unmarshal failed", "error", err)
+	}
 	return edge, nil
 }
 

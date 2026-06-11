@@ -1,8 +1,92 @@
 # Changelog
 
-## Unreleased
+## 2.8.0 - 2026-06-11
 
-- No unreleased changes.
+- Promoted the `dev/deepseek-v4` feature line to production-ready World Release 2.
+- Stabilized Packets, Chat, and NetGraph with desktop/mobile browser-smoke coverage.
+- Disabled the service worker by default, added legacy service-worker/cache cleanup, and added one-shot lazy chunk reload recovery.
+- Fixed SQLite production migrations for old databases, including `nodes.supports_multibyte` and public packet projection columns.
+- Fixed public Packets and History projection fallback so incomplete projections cannot hide valid legacy RF edge events.
+- Added explicit proxy-header trust configuration for public rate limiting.
+- Hardened deployment with safe SQLite backup, correct host readiness checks, dirty-tree refusal, readiness diagnostics, and rollback.
+- Updated privacy scans, release checks, CI triggers, browser smoke, and documentation for the 2.8.0 release gate.
+
+## 2.7.7 - 2026-06-09
+
+- **System theme auto-detection**: theme now supports `system` mode that follows
+  OS dark/light preference via `prefers-color-scheme` media query, with live
+  switching on OS preference change.
+- **PWA support**: added service worker with cache-first app shell and
+  network-first map tile strategies, web app manifest for installability,
+  Apple mobile web app meta tags.
+- **Node freshness indicators**: active nodes heard in the last 5 minutes show a
+  green pulse ring; opacity tiers indicate how recently each node was heard.
+- **Route elevation profile**: SVG-based elevation chart in SelectionDrawer
+  showing terrain profile, min/max/gain/loss along selected routes, sampled
+  from terrain RGB tiles (terrarium encoding).
+- **Backend hardening**: WebSocket broadcast panic guard via `defer/recover`,
+  rate limiter cleanup goroutine lifecycle fix, MQTT message handler shutdown
+  context fix, all rate limiters properly stopped during graceful shutdown.
+- **Test expansion**: 34 new meshcore decoder unit tests, 8 new resolver unit
+  tests including distance gate coverage, 1 new elevation profile test module.
+- **Infrastructure**: added `VITE_OPENWEATHERMAP_API_KEY` build arg to
+  Dockerfile, golangci-lint config, ESLint/Prettier configs, `npm audit` and
+  `govulncheck` CI steps, Makefile `lint`/`clean` targets with `--pull`.
+- **Frontend fixes**: top-level ErrorBoundary wrapping entire app, CSP meta tag
+  in index.html, `observerBurstLastAtByLocation` periodic pruning (10s),
+  duplicate CSS merge, `role` type tightened to `NodeRole` union.
+
+## 2.7.6 - 2026-06-08
+
+- Observer map labels with viewport-aligned naming, 3D building extrusions on
+  flat map, weather cloud layer, Space-key input guard, layer event refresh on
+  theme switch, message bubble deduplication anchored to first observer,
+  light-mode observer label contrast, label jitter fix on camera move,
+  CARTO basemap CSP fix, port 80 mapping restore for Cloudflare origin,
+  solar_snapshots prune table inclusion, observer error resilience,
+  end-to-end audit fixes.
+
+## 2.7.5 - 2026-06-07
+
+- Reduced OpenFreeMap 3D scene churn by reusing selected node/route sets for
+  scene signatures and rebuilds, eliminating redundant selection and signature
+  sorting work.
+
+## 2.7.4 - 2026-06-07
+
+- Full sweep: rate limiting, security headers, Docker hardening, React.lazy code
+  splitting, React.memo on CanadaMap, parallel LiveState queries, virtual chat
+  scroll, /metrics endpoint, node list panel, keyboard help, panel transitions,
+  loading skeletons, prefers-reduced-motion, ARIA roles, mobile StatusBar
+  collapse, App.tsx decomposition, utility consolidation, dead code removal,
+  version sync.
+
+## 2.7.3 - 2026-06-07
+
+- GIF export rate limiting (30s cooldown, 5 per 10min window).
+
+## 2.7.2 - 2026-06-07
+
+- Comprehensive polish/stability pass — 30 fixes: Hub data race, UpsertObserver
+  tx, useDebouncedValue hook fix, empty segments crash guard, ErrorBoundary,
+  solar timer leak, search debounce, keyboard shortcuts, offline banner,
+  React.memo, WS keep-alive.
+
+## 2.7.1 - 2026-06-07
+
+- Production audit fixes: WaitGroup tracking, MQTT panic recovery,
+  UpsertObserver transaction, UpdatedAt serialization, packet pruning, schema
+  cleanup, resolution dedup, error handling, retention config, context guards,
+  stale closure fix, singleton ResizeObserver, loadOlder generation guard,
+  AbortController, loading bar fade-in, shared utilities.
+
+## 2.7.0 - 2026-06-07
+
+- P0-P3 fixes: transactional packet upsert, MQTT connect timeout, VCR mode exit
+  fix, loadOlder race guards, UpdatedAt serialization,
+  resolution-in-edge-transaction, COUNT(*), missing DB indexes, MQTT
+  watchdog/backoff, 30-day retention, graceful shutdown WaitGroup,
+  ResizeObserver, SetupPanel validation, StatusBar DOM remount fix.
 
 ## 2.6.3 - 2026-06-06
 

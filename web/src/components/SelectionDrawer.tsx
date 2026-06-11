@@ -1,6 +1,8 @@
 import { Copy, MessageSquareText, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { phonebookGroupsForNode, type ConnectivityGraph, type PhonebookGroup, type PhonebookSortMode, type ReachableNode } from '../connectivity';
+import ElevationProfile from './ElevationProfile';
+import { formatRelative } from '../lib/formatRelative';
 import { meshcorePathAvailable, meshcorePathCopyText, type NodeMessageHistoryItem } from '../routeTools';
 import type { PublicNode, PublicRoute } from '../types';
 
@@ -96,6 +98,7 @@ export default function SelectionDrawer({
               <Detail label="From" value={route.from.label} />
               <Detail label="To" value={route.to.label} />
             </dl>
+            <ElevationProfile from={route.from} to={route.to} />
           </>
         )}
       </aside>
@@ -299,14 +302,4 @@ function formatRegions(regions: string[], limit = 5): string {
   if (regions.length === 0) return 'Unknown';
   const shown = regions.slice(0, limit).join(', ');
   return regions.length > limit ? `${shown} +${regions.length - limit}` : shown;
-}
-
-function formatRelative(ms: number): string {
-  const seconds = Math.max(0, Math.round((Date.now() - ms) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(ms));
 }

@@ -3,31 +3,46 @@ services:
     build:
       context: .
       args:
-        APP_VERSION: ${APP_VERSION:-2.6.3}
+        APP_VERSION: ${APP_VERSION:-2.8.0}
         VITE_OPENFREEMAP_STYLE_URL: ${VITE_OPENFREEMAP_STYLE_URL:-}
         VITE_OPENFREEMAP_TILEJSON_URL: ${VITE_OPENFREEMAP_TILEJSON_URL:-https://tiles.openfreemap.org/planet}
-        VITE_TERRAIN_TILEJSON_URL: ${VITE_TERRAIN_TILEJSON_URL:-https://demotiles.maplibre.org/terrain-tiles/tiles.json}
+        VITE_TERRAIN_TILE_URL: ${VITE_TERRAIN_TILE_URL:-https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png}
         VITE_TERRAIN_EXAGGERATION: ${VITE_TERRAIN_EXAGGERATION:-1.25}
+        VITE_OPENWEATHERMAP_API_KEY: ${VITE_OPENWEATHERMAP_API_KEY:-}
         VITE_BUILD_NUMBER: ${VITE_BUILD_NUMBER:-}
         VITE_GIT_SHA: ${VITE_GIT_SHA:-${GIT_SHA:-}}
         VITE_BUILD_TIME: ${VITE_BUILD_TIME:-${BUILD_TIME:-}}
         VITE_APP_BRAND_NAME: ${VITE_APP_BRAND_NAME:-MC-CartoLive}
         VITE_APP_BRAND_URL: ${VITE_APP_BRAND_URL:-https://github.com/n30nex/MC-CartoLive}
         VITE_APP_BRAND_LOGO: ${VITE_APP_BRAND_LOGO:-}
+        VITE_ENABLE_SERVICE_WORKER: ${VITE_ENABLE_SERVICE_WORKER:-false}
     container_name: meshcore-canada-live-map
     ports:
+      - "80:8080"
       - "39476:8080"
     env_file:
       - .env
     environment:
-      APP_VERSION: ${APP_VERSION:-2.6.3}
+      APP_VERSION: ${APP_VERSION:-2.8.0}
       GIT_SHA: ${GIT_SHA:-${VITE_GIT_SHA:-}}
       BUILD_TIME: ${BUILD_TIME:-${VITE_BUILD_TIME:-}}
+      VITE_ENABLE_SERVICE_WORKER: ${VITE_ENABLE_SERVICE_WORKER:-false}
     volumes:
       - ./data:/app/data
       - ./examples:/app/examples:ro
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     stop_grace_period: 30s
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]

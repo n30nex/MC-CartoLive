@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -60,13 +61,22 @@ ON CONFLICT(public_key) DO UPDATE SET
 }
 
 func (s *Store) UpsertObserver(ctx context.Context, msg mq.NormalizedMessage) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
 	lat, lng := mq.StatusLatLng(msg.Payload)
 	dbLat, dbLng := s.nullableMapLatLng(lat, lng)
 	name := msg.ObserverName
 	if name == "" {
 		name = firstPayloadString(msg.Payload, "origin", "name", "node_name")
 	}
-	_, err := s.db.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 INSERT INTO observers (public_key, iata, name, latitude, longitude, last_seen_ms, packet_count, status_json)
 VALUES (?, ?, ?, ?, ?, ?, 1, ?)
 ON CONFLICT(public_key, iata) DO UPDATE SET
@@ -89,25 +99,31 @@ ON CONFLICT(public_key, iata) DO UPDATE SET
 		return err
 	}
 	if msg.TopicInfo.Subtopic == "status" {
-		_, _ = s.db.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 INSERT INTO observer_status (public_key, iata, status_json, received_at_ms)
 VALUES (?, ?, ?, ?)`,
 			msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA, msg.RawJSON, msg.HeardAtMs)
-		if err := s.upsertStatusNode(ctx, msg, name, lat, lng); err != nil {
+		if err != nil {
 			return err
 		}
+		if err = s.upsertStatusNode(ctx, tx, msg, name, lat, lng); err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (s *Store) upsertStatusNode(ctx context.Context, msg mq.NormalizedMessage, name string, lat, lng *float64) error {
+func (s *Store) upsertStatusNode(ctx context.Context, tx *sql.Tx, msg mq.NormalizedMessage, name string, lat, lng *float64) error {
 	role, nodeType := observerRole(msg.Payload, name)
 	locationSource := ""
 	dbLat, dbLng := s.nullableMapLatLng(lat, lng)
 	if dbLat.Valid && dbLng.Valid {
 		locationSource = "status"
 	}
-	_, err := s.db.ExecContext(ctx, `
+	_, err := tx.ExecContext(ctx, `
 INSERT INTO nodes (
   node_id, public_key, name, node_type, role, latitude, longitude, location_source,
   first_seen_ms, last_seen_ms, observation_count, supports_multibyte
@@ -136,10 +152,10 @@ ON CONFLICT(public_key) DO UPDATE SET
 	if err != nil {
 		return err
 	}
-	if err := s.upsertNodeIATA(ctx, msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA, msg.HeardAtMs); err != nil {
+	if err := s.upsertNodeIATAWithTx(ctx, tx, msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA, msg.HeardAtMs); err != nil {
 		return err
 	}
-	return s.upsertShortIDs(ctx, msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA, role, msg.HeardAtMs)
+	return s.upsertShortIDsWithTx(ctx, tx, msg.TopicInfo.PublisherPK, msg.TopicInfo.IATA, role, msg.HeardAtMs)
 }
 
 func (s *Store) IncrementObserverPacket(ctx context.Context, msg mq.NormalizedMessage) error {
@@ -164,6 +180,27 @@ func (s *Store) NodeByPublicKey(ctx context.Context, publicKey string) (live.Nod
 SELECT node_id, public_key, name, node_type, role, latitude, longitude, location_source,
   first_seen_ms, last_seen_ms, observation_count, supports_multibyte
 FROM nodes WHERE public_key=?`, strings.ToUpper(publicKey))
+	if err != nil {
+		return live.Node{}, err
+	}
+	defer rows.Close()
+	nodes, err := s.scanNodes(ctx, rows)
+	if err != nil {
+		return live.Node{}, err
+	}
+	if len(nodes) == 0 {
+		return live.Node{}, sql.ErrNoRows
+	}
+	return nodes[0], nil
+}
+
+func (s *Store) NodeByID(ctx context.Context, nodeID string) (live.Node, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT n.node_id, n.public_key, n.name, n.node_type, n.role, n.latitude, n.longitude,
+       n.location_source, n.first_seen_ms, n.last_seen_ms, n.observation_count, n.supports_multibyte
+FROM nodes n
+WHERE n.node_id = ? OR n.public_key = UPPER(?)
+LIMIT 1`, nodeID, nodeID)
 	if err != nil {
 		return live.Node{}, err
 	}
@@ -405,21 +442,35 @@ ON CONFLICT(public_key, iata, hash_size, prefix_hex) DO UPDATE SET
 	return nil
 }
 
-func (s *Store) nodeIATAs(ctx context.Context, publicKey string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT iata FROM node_iatas WHERE public_key=? ORDER BY iata`, publicKey)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []string{}
-	for rows.Next() {
-		var iata string
-		if err := rows.Scan(&iata); err != nil {
-			return nil, err
+func (s *Store) upsertNodeIATAWithTx(ctx context.Context, tx *sql.Tx, publicKey, iata string, seenAt int64) error {
+	_, err := tx.ExecContext(ctx, `
+INSERT INTO node_iatas (public_key, iata, first_seen_ms, last_seen_ms, observation_count)
+VALUES (?, ?, ?, ?, 1)
+ON CONFLICT(public_key, iata) DO UPDATE SET
+  last_seen_ms=excluded.last_seen_ms,
+  observation_count=node_iatas.observation_count + 1`,
+		publicKey, strings.ToUpper(iata), seenAt, seenAt)
+	return err
+}
+
+func (s *Store) upsertShortIDsWithTx(ctx context.Context, tx *sql.Tx, publicKey, iata, role string, seenAt int64) error {
+	pk := strings.ToUpper(publicKey)
+	for size := 1; size <= 3; size++ {
+		if len(pk) < size*2 {
+			continue
 		}
-		out = append(out, iata)
+		prefix := pk[:size*2]
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO node_short_ids (public_key, iata, hash_size, prefix_hex, role, updated_at_ms)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(public_key, iata, hash_size, prefix_hex) DO UPDATE SET
+  role=excluded.role,
+  updated_at_ms=excluded.updated_at_ms`,
+			pk, strings.ToUpper(iata), size, prefix, role, seenAt); err != nil {
+			return err
+		}
 	}
-	return out, rows.Err()
+	return nil
 }
 
 func (s *Store) nodeIATAsForPublicKeys(ctx context.Context, publicKeys []string) (map[string][]string, error) {
@@ -480,22 +531,36 @@ func observerRole(m map[string]any, name string) (string, int) {
 		firstPayloadString(m, "client_version") + " " +
 		firstPayloadString(m, "firmware_version"))
 	switch {
-	case strings.Contains(text, "room server") || strings.Contains(text, "room_server") || strings.Contains(text, "room-server"):
-		return "room_server", 3
-	case strings.Contains(text, "repeater") || strings.Contains(text, "pymc_repeater") || strings.Contains(text, "pymc-repeater"):
+	case roleWordMatch(text, "repeater", "pymc_repeater", "pymc-repeater"):
 		return "repeater", 2
-	case strings.Contains(text, "sensor"):
-		return "sensor", 4
-	case strings.Contains(text, "companion") || strings.Contains(text, "chat node"):
+	case roleWordMatch(text, "room_server", "room-server", "room server"):
+		return "room_server", 3
+	case roleWordMatch(text, "companion", "chat node"):
 		return "companion", 1
+	case roleWordMatch(text, "sensor"):
+		return "sensor", 4
 	default:
 		return "unknown", 0
 	}
 }
 
+func roleWordMatch(text string, words ...string) bool {
+	for _, word := range words {
+		if idx := strings.Index(text, word); idx >= 0 {
+			end := idx + len(word)
+			before := idx == 0 || text[idx-1] == ' ' || text[idx-1] == '_' || text[idx-1] == '-'
+			after := end >= len(text) || text[end] == ' ' || text[end] == '_' || text[end] == '-'
+			if before && after {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *Store) ApplyManualNode(ctx context.Context, publicKey, name string, lat, lng float64, source string) error {
 	if !s.validMapCoords(lat, lng) {
-		return nil
+		return fmt.Errorf("manual node coordinates outside valid map bounds")
 	}
 	now := time.Now().UnixMilli()
 	role := "repeater"

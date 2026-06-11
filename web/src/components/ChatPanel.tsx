@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Clock3, Maximize2, MessageSquareText, Minimize2, RefreshCw, Search, X } from 'lucide-react';
 import { fetchPublicChat } from '../api';
+import { formatRelative } from '../lib/formatRelative';
+import { isAbortError } from '../lib/isAbortError';
+import { useDebouncedValue } from '../lib/useDebouncedValue';
 import {
   CHAT_SCOPE_OPTIONS,
   DEFAULT_CHAT_FILTERS,
-  chatChannelOptions,
   chatRegion,
   chatWindowForScope,
   dedupeChatMessages,
@@ -27,6 +29,8 @@ interface ChatPanelProps {
 const CHAT_PAGE_LIMIT = 200;
 const CHAT_RETAINED_LIMIT = 1000;
 const CHAT_FILTER_DEBOUNCE_MS = 250;
+const CHAT_ROW_HEIGHT = 96;
+const CHAT_LIST_OVERSCAN = 5;
 
 export default function ChatPanel({
   initialMessages = [],
@@ -39,6 +43,7 @@ export default function ChatPanel({
   const [scopeMs, setScopeMs] = useState(CHAT_SCOPE_OPTIONS[0].value);
   const [filters, setFilters] = useState<ChatFilters>(DEFAULT_CHAT_FILTERS);
   const [messages, setMessages] = useState<PublicChatMessage[]>(() => dedupeChatMessages(initialMessages));
+  const prevInitialLenRef = useRef(initialMessages.length);
   const [windowInfo, setWindowInfo] = useState<PublicHistoryWindow | null>(null);
   const [nextCursor, setNextCursor] = useState('');
   const [serverTime, setServerTime] = useState(0);
@@ -46,11 +51,27 @@ export default function ChatPanel({
   const [loading, setLoading] = useState(autoRefresh && initialMessages.length === 0 && !initialError);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [listHeight, setListHeight] = useState(460);
   const mountedRef = useRef(true);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
   const requestGenerationRef = useRef(0);
+  const filterGenerationRef = useRef(0);
+  const initialLoadRef = useRef(true);
   const debouncedFilters = useDebouncedValue(filters, CHAT_FILTER_DEBOUNCE_MS);
   const visibleMessages = useMemo(() => capChatMessages(messages), [messages]);
+  const virtualRows = useMemo(() => virtualChatRows(visibleMessages, scrollTop, listHeight), [visibleMessages, scrollTop, listHeight]);
+
+  useEffect(() => {
+    const updateHeight = () => {
+      const element = listRef.current;
+      if (element) setListHeight(Math.max(220, element.clientHeight || 460));
+    };
+    updateHeight();
+    window.addEventListener('resize', updateHeight);
+    return () => window.removeEventListener('resize', updateHeight);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -59,13 +80,25 @@ export default function ChatPanel({
     };
   }, []);
 
+  useEffect(() => {
+    if (initialMessages.length > 0 && prevInitialLenRef.current === 0) {
+      setMessages(dedupeChatMessages(initialMessages));
+    }
+    prevInitialLenRef.current = initialMessages.length;
+  }, [initialMessages]);
+
   const refresh = useCallback(() => {
     requestAbortRef.current?.abort();
     const controller = new AbortController();
     requestAbortRef.current = controller;
     const generation = requestGenerationRef.current + 1;
     requestGenerationRef.current = generation;
+    filterGenerationRef.current += 1;
     setLoading(true);
+    setMessages([]);
+    setWindowInfo(null);
+    setServerTime(0);
+    setNextCursor('');
     setError(null);
     const window = chatWindowForScope(Date.now(), scopeMs);
     fetchPublicChat({
@@ -84,6 +117,7 @@ export default function ChatPanel({
         setNextCursor(response.nextCursor ?? '');
         setServerTime(response.serverTime);
         setLastCheckedAt(Date.now());
+        initialLoadRef.current = false;
       })
       .catch((err: unknown) => {
         if (isAbortError(err)) return;
@@ -102,6 +136,7 @@ export default function ChatPanel({
     const controller = new AbortController();
     requestAbortRef.current = controller;
     const generation = requestGenerationRef.current;
+    const filterGeneration = filterGenerationRef.current;
     setLoadingMore(true);
     setError(null);
     fetchPublicChat({
@@ -115,7 +150,7 @@ export default function ChatPanel({
       signal: controller.signal
     })
       .then((response) => {
-        if (controller.signal.aborted || !mountedRef.current || generation !== requestGenerationRef.current) return;
+        if (controller.signal.aborted || !mountedRef.current || generation !== requestGenerationRef.current || filterGeneration !== filterGenerationRef.current) return;
         setMessages((current) => capChatMessages([...current, ...response.messages]));
         setWindowInfo(response.window);
         setNextCursor(response.nextCursor ?? '');
@@ -123,10 +158,12 @@ export default function ChatPanel({
       })
       .catch((err: unknown) => {
         if (isAbortError(err)) return;
-        if (mountedRef.current && generation === requestGenerationRef.current) setError(chatRequestErrorMessage(err));
+        if (mountedRef.current && generation === requestGenerationRef.current && filterGeneration === filterGenerationRef.current) setError(chatRequestErrorMessage(err));
       })
       .finally(() => {
         if (!mountedRef.current) return;
+        if (generation !== requestGenerationRef.current) return;
+        if (filterGeneration !== filterGenerationRef.current) return;
         if (requestAbortRef.current === controller) requestAbortRef.current = null;
         setLoadingMore(false);
       });
@@ -142,7 +179,11 @@ export default function ChatPanel({
     };
   }, [autoRefresh, refresh]);
 
-  const channelOptions = useMemo(() => chatChannelOptions(visibleMessages), [visibleMessages]);
+  const channelOptions = useMemo(() => {
+    const channelLabels = new Set(visibleMessages.map((m) => m.channelLabel).filter(Boolean));
+    if (filters.channel) channelLabels.add(filters.channel);
+    return [...channelLabels].sort();
+  }, [visibleMessages, filters.channel]);
 
   return (
     <section className={`chat-panel workspace-panel workspace-${presentation}`} aria-label="Public chat">
@@ -217,10 +258,20 @@ export default function ChatPanel({
       </div>
 
       {error && <div className="chat-error" role="alert">{error}</div>}
-      {loading && messages.length === 0 && <div className="chat-loading">Loading public chat...</div>}
+      {loading && initialLoadRef.current && <div className="chat-loading-bar" />}
 
-      <div className="chat-list" role="list" aria-label="Public chat messages">
-        {visibleMessages.map((message) => <ChatRow key={message.id} message={message} />)}
+      <div
+        ref={listRef}
+        className="chat-list"
+        role="list"
+        aria-label="Public chat messages"
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      >
+        <div style={{ height: visibleMessages.length * CHAT_ROW_HEIGHT, position: 'relative' }}>
+          <div style={{ transform: `translateY(${virtualRows.offset}px)` }}>
+            {virtualRows.items.map((message) => <ChatRow key={message.id} message={message} />)}
+          </div>
+        </div>
         {!loading && visibleMessages.length === 0 && (
           <div className="chat-empty">
             {hasActiveChatFilters(debouncedFilters) ? 'No public chat messages match the current filters.' : 'No public chat messages in this window.'}
@@ -239,12 +290,13 @@ export default function ChatPanel({
 }
 
 function ChatRow({ message }: { message: PublicChatMessage }) {
-  const region = chatRegion(message) || 'unknown';
+  const region = safeChatText(chatRegion(message), 'unknown');
   const channel = safeChatText(message.channelLabel, 'Public');
   const sender = safeChatText(message.sender, 'Unknown');
   const text = safeChatText(message.text, '');
   const payload = safeChatText(message.payloadTypeName, 'Message');
   const endpoints = (message.endpointLabels ?? []).map((label) => safeChatText(label, '')).filter(Boolean);
+  const anchorLabel = safeChatText(message.anchor?.label, '');
   return (
     <article className="chat-row" role="listitem">
       <div className="chat-row-top">
@@ -256,7 +308,7 @@ function ChatRow({ message }: { message: PublicChatMessage }) {
       <div className="chat-row-meta">
         <span>{channel || 'Public'}</span>
         <span>{payload || 'Message'}</span>
-        {message.anchor?.label && <span>{safeChatText(message.anchor.label)}</span>}
+        {anchorLabel && <span>{anchorLabel}</span>}
         {endpoints.length > 0 && <span>{endpointSummary(endpoints)}</span>}
       </div>
     </article>
@@ -301,27 +353,13 @@ function formatWindow(window: PublicHistoryWindow | null, scopeMs: number): stri
   return '1h';
 }
 
-function formatRelative(at: number, now = Date.now()): string {
-  const age = Math.max(0, now - at);
-  if (age < 60_000) return `${Math.max(1, Math.round(age / 1000))}s ago`;
-  if (age < 3_600_000) return `${Math.round(age / 60_000)}m ago`;
-  return `${Math.round(age / 3_600_000)}h ago`;
-}
-
-function isAbortError(err: unknown): boolean {
-  return Boolean(err && typeof err === 'object' && 'name' in err && (err as { name?: unknown }).name === 'AbortError');
-}
-
 function chatRequestErrorMessage(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err || '');
   return message || 'Unable to load public chat';
 }
 
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => window.clearTimeout(timer);
-  }, [delayMs, value]);
-  return debounced;
+function virtualChatRows(messages: PublicChatMessage[], scrollTop: number, height: number): { offset: number; items: PublicChatMessage[] } {
+  const start = Math.max(0, Math.floor(scrollTop / CHAT_ROW_HEIGHT) - CHAT_LIST_OVERSCAN);
+  const end = Math.min(messages.length, Math.ceil((scrollTop + height) / CHAT_ROW_HEIGHT) + CHAT_LIST_OVERSCAN);
+  return { offset: start * CHAT_ROW_HEIGHT, items: messages.slice(start, end) };
 }

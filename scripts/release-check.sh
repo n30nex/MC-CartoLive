@@ -9,8 +9,11 @@ cd "$ROOT/backend"
 node "$ROOT/scripts/check-version-sync.mjs"
 
 go test ./...
+go tool govulncheck ./...
 
 cd "$ROOT/web"
+npm ci
+npm audit --audit-level=high
 npm test -- --run
 npm run build
 
@@ -31,8 +34,11 @@ curl -fsS "$BASE_URL/api/v1/public/state" >/tmp/mc-cartolive-state.json
 NOW="$(date -u +%s)000"
 FROM="$((NOW - 600000))"
 curl -fsS "$BASE_URL/api/v1/public/history?from=$FROM&to=$NOW&limit=25" >/tmp/mc-cartolive-history.json
+curl -fsS "$BASE_URL/api/v1/public/history/summary?from=$FROM&to=$NOW&bucketMs=60000" >/tmp/mc-cartolive-history-summary.json
 curl -fsS "$BASE_URL/api/v1/public/packets?from=$FROM&to=$NOW&limit=25" >/tmp/mc-cartolive-packets.json
 curl -fsS "$BASE_URL/api/v1/public/chat?from=$FROM&to=$NOW&limit=25" >/tmp/mc-cartolive-chat.json
+curl -fsS "$BASE_URL/api/v1/public/solar" >/tmp/mc-cartolive-solar.json
+curl -fsS "$BASE_URL/metrics" >/tmp/mc-cartolive-metrics.txt
 node "$ROOT/scripts/check-public-privacy.mjs" "$BASE_URL"
 
 if [ "${RUN_BROWSER_SMOKE:-0}" = "1" ]; then
@@ -44,7 +50,10 @@ echo "health:  /tmp/mc-cartolive-health.json"
 echo "ready:   /tmp/mc-cartolive-ready.json"
 echo "state:   /tmp/mc-cartolive-state.json"
 echo "history: /tmp/mc-cartolive-history.json"
+echo "summary: /tmp/mc-cartolive-history-summary.json"
 echo "packets: /tmp/mc-cartolive-packets.json"
 echo "chat:    /tmp/mc-cartolive-chat.json"
+echo "solar:   /tmp/mc-cartolive-solar.json"
+echo "metrics: /tmp/mc-cartolive-metrics.txt"
 echo "live confidence:"
 grep -Eo '"(packetIngestState|publicCacheState|mapMotionState|liveConfidenceState)":"[^"]+"' /tmp/mc-cartolive-health.json || true

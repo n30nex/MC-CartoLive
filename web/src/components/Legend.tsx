@@ -1,9 +1,10 @@
 import type { CSSProperties } from 'react';
+import { memo } from 'react';
 import { normalizePayloadType, payloadLegendVisuals } from '../payloadVisuals';
 import { OBSERVER_NODE_VISUAL, NODE_ROLE_VISUALS } from '../nodeVisuals';
 import { routePacketDots } from '../assets/routes/assets';
 
-export default function Legend() {
+export default memo(function Legend() {
   const payloads = payloadLegendVisuals();
   return (
     <section className="legend-panel" aria-label="Map legend">
@@ -34,4 +35,4 @@ export default function Legend() {
       </div>
     </section>
   );
-}
+});

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -13,7 +14,7 @@ import (
 
 const maxFutureEdgeSkew = 5 * time.Minute
 
-func (s *Store) InsertEdgeEvent(ctx context.Context, event live.EdgeEvent) (live.EdgeEvent, error) {
+func (s *Store) InsertEdgeEvent(ctx context.Context, event live.EdgeEvent, resolutionStatus, resolutionReason string) (live.EdgeEvent, error) {
 	now := time.Now().UnixMilli()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -25,6 +26,14 @@ func (s *Store) InsertEdgeEvent(ctx context.Context, event live.EdgeEvent) (live
 			_ = tx.Rollback()
 		}
 	}()
+	if resolutionStatus != "" {
+		if _, err := tx.ExecContext(ctx, `
+UPDATE packet_observations
+SET resolution_status=?, resolution_reason=?
+WHERE id=?`, resolutionStatus, resolutionReason, event.ObservationID); err != nil {
+			return event, err
+		}
+	}
 	result, err := tx.ExecContext(ctx, `
 INSERT INTO live_edge_events (
   packet_hash, observation_id, payload_type, payload_type_name, message_sender, message_text, message_anchor_json,
@@ -45,10 +54,14 @@ INSERT INTO live_edge_events (
 	if err != nil {
 		return event, err
 	}
-	event.ID, _ = result.LastInsertId()
+	if id, err := result.LastInsertId(); err == nil {
+		event.ID = id
+	}
 	region := event.IATA
 	if strings.TrimSpace(region) == "" {
-		_ = tx.QueryRowContext(ctx, `SELECT COALESCE(iata, '') FROM packet_observations WHERE id=?`, event.ObservationID).Scan(&region)
+		if rowErr := tx.QueryRowContext(ctx, `SELECT COALESCE(iata, '') FROM packet_observations WHERE id=?`, event.ObservationID).Scan(&region); rowErr != nil {
+			region = ""
+		}
 	}
 	if _, err := insertPublicPacketPathTx(ctx, tx, event, region); err != nil {
 		return event, err
@@ -85,7 +98,9 @@ LIMIT ?`, maxHeardAt, limit)
 		if err := rows.Scan(&item.ID, &item.PacketHash, &item.ObservationID, &item.IATA, &item.PayloadType, &item.PayloadTypeName, &item.MessageSender, &item.MessageText, &messageAnchorJSON, &item.HeardAt, &segmentsJSON, &item.RenderReason); err != nil {
 			return nil, err
 		}
-		_ = json.Unmarshal([]byte(segmentsJSON), &item.Segments)
+		if err := json.Unmarshal([]byte(segmentsJSON), &item.Segments); err != nil {
+			slog.Default().Warn("edge segments unmarshal failed", "error", err)
+		}
 		if messageAnchorJSON != "" {
 			var anchor live.MessageAnchor
 			if err := json.Unmarshal([]byte(messageAnchorJSON), &anchor); err == nil {

@@ -5,15 +5,14 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.6.3` is the current production-ready world operations release.
+Version `2.8.0` is the current production-ready world operations release.
 
-- Detailed next-phase plan: [2.6.3 to 2.6.6](roadmap-2.6.3-to-2.6.6.md).
+- Detailed next-phase plan: [2.7.5 to 2.7.7](roadmap-2.7.5-to-2.7.7.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current release focus: 2.6.3 workspace UI polish is complete; the next
-  patches move through OpenFreeMap 3D performance, elevation/topography
-  line-of-sight context, and propagation-event research on top of the stable
-  public-safe 2.6.3 feature set.
+- Current release focus: 2.8.0 production stabilization is complete; the next
+  patches should build diagnostics, observer-quality, route-confidence, and
+  propagation-analysis features on top of the stable public-safe release.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
@@ -22,15 +21,14 @@ Version `2.6.3` is the current production-ready world operations release.
 
 ## Active Maintenance Focus
 
-- Treat `2.6.3` as the completed public-experience polish pass: less chrome
-  clutter, clearer route/share flows, docked Packets/Chat workspaces, and safer
-  mobile ergonomics.
-- Make `2.6.4` the 3D performance pass for OpenFreeMap node models, route arcs,
-  comets, observer glows, and rebuild budgets.
-- Make `2.6.5` the elevation/topography/line-of-sight pass for verified public
-  pathways only.
-- Make `2.6.6` a research-first propagation-event pass for solar, geomagnetic,
-  tropospheric, time-of-day, and long-distance burst correlations.
+- Keep `2.8.0` as the production-ready baseline: Packets, Chat, NetGraph,
+  OpenFreeMap/3D, service-worker cleanup, migrations, projection fallback,
+  release checks, and deployment rollback are release-critical surfaces.
+- Make `2.8.1` the public-safe diagnostics pass for projection/cache/MQTT
+  readiness and browser-side release health.
+- Make `2.8.2` the observer-quality and route-confidence overlay pass.
+- Make `2.8.3` the SNR/RSSI heatmap and terrain/RF analysis pass for verified
+  public pathways only.
 - Keep packet ingest, public cache, WebSocket fanout, public history, and public
   packet paths observable through public-safe health/readiness counters.
 - Keep the Packets page server-backed, cursor-stable, and bounded under rare
@@ -51,6 +49,26 @@ Version `2.6.3` is the current production-ready world operations release.
   screenshot artifacts, and operator diagnostic scripts.
 - Keep docs concise enough that new operators can deploy, smoke test, diagnose,
   back up, restore, and upgrade without reading historical planning notes.
+
+## 2.7.5 Patch Focus
+
+- Full sweep — rate limiting, security headers, Docker hardening, React.lazy code splitting, React.memo on CanadaMap, parallel LiveState queries, virtual chat scroll, /metrics endpoint, node list panel, keyboard help, panel transitions, loading skeletons, prefers-reduced-motion, ARIA roles, mobile StatusBar collapse, App.tsx decomposition, utility consolidation, dead code removal, version sync.
+
+## 2.7.3 Patch Focus
+
+- GIF export rate limiting (30s cooldown, 5 per 10min window).
+
+## 2.7.2 Patch Focus
+
+- Comprehensive polish/stability pass — 30 fixes (Hub data race, UpsertObserver tx, useDebouncedValue hook fix, empty segments crash guard, ErrorBoundary, solar timer leak, search debounce, keyboard shortcuts, offline banner, React.memo, WS keep-alive).
+
+## 2.7.1 Patch Focus
+
+- Production audit fixes — WaitGroup tracking, MQTT panic recovery, UpsertObserver transaction, UpdatedAt serialization, packet pruning, schema cleanup, resolution dedup, error handling, retention config, context guards, stale closure fix, singleton ResizeObserver, loadOlder generation guard, AbortController, loading bar fade-in, shared utilities.
+
+## 2.7.0 Patch Focus
+
+- P0-P3 fixes — transactional packet upsert, MQTT connect timeout, VCR mode exit fix, loadOlder race guards, UpdatedAt serialization, resolution-in-edge-transaction, COUNT(*), missing DB indexes, MQTT watchdog/backoff, 30-day retention, graceful shutdown WaitGroup, ResizeObserver, SetupPanel validation, StatusBar DOM remount fix.
 
 ## 2.6.3 Patch Focus
 

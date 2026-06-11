@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Check, Columns3, Eye, EyeOff, Layers, LocateFixed, Moon, Palette, Pause, Play, RadioTower, RotateCcw, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Check, Columns3, Eye, EyeOff, Layers, LocateFixed, Monitor, Moon, Palette, Pause, Play, RadioTower, RotateCcw, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
 import { fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicState } from './api';
 import { connectPublicSocket } from './ws';
 import {
@@ -8,11 +8,14 @@ import {
   filterNodes,
   filterRoutes,
   initialAppState,
+  isPacketActivity,
   liveCoverageStats,
   summarizeRouteActivity,
   type AppState
 } from './state';
 import CanadaMap, { type MapAction, type MapBaseMode } from './map/CanadaMap';
+import ErrorBoundary from './components/ErrorBoundary';
+import PanelSkeleton from './components/PanelSkeleton';
 import HotRoutes from './components/HotRoutes';
 import Legend from './components/Legend';
 import LinkBar from './components/LinkBar';
@@ -21,10 +24,11 @@ import SelectionDrawer from './components/SelectionDrawer';
 import StatusBar from './components/StatusBar';
 import VcrBar, { MiniLiveClock } from './components/VcrBar';
 import ChromePanel from './components/ChromePanel';
-import PacketsPanel from './components/PacketsPanel';
-import NetGraphPanel from './components/NetGraphPanel';
-import ChatPanel from './components/ChatPanel';
-import SetupPanel from './components/SetupPanel';
+import { lazyWithReload } from './lazyWithReload';
+const PacketsPanel = lazyWithReload(() => import('./components/PacketsPanel'), 'PacketsPanel');
+const NetGraphPanel = lazyWithReload(() => import('./components/NetGraphPanel'), 'NetGraphPanel');
+const ChatPanel = lazyWithReload(() => import('./components/ChatPanel'), 'ChatPanel');
+const SetupPanel = lazyWithReload(() => import('./components/SetupPanel'), 'SetupPanel');
 import MapSettingsDrawer from './components/MapSettingsDrawer';
 import RouteGifExportButton, { type RouteGifExportStatus } from './components/RouteGifExportButton';
 import type { WorkspacePresentation } from './components/workspacePanel';
@@ -34,9 +38,11 @@ import {
   chromePanelVisible,
   normalizePanelAnchor,
   reduceChromeVisibility,
+  useViewportBounds,
   type ChromePanelAnchor,
   type ChromePanelID,
-  type ChromeVisibilityState
+  type ChromeVisibilityState,
+  type ViewportBounds
 } from './components/panelChrome';
 import { capLiveEnvelopeQueue, liveEnvelopeDisplayAt, nextLiveEnvelopeDelayMs, sortLiveEnvelopes, takeDueLiveEnvelopes } from './livePacing';
 import {
@@ -57,6 +63,8 @@ import {
   shortestPathBetween
 } from './connectivity';
 import { boundsFromPoints, meshcorePathCopyText, messageHistoryForNode, routeNodeIDs, routesInBounds, type MapPoint } from './routeTools';
+import { dedupePackets } from './lib/dedupePackets';
+import { useDebouncedValue } from './lib/useDebouncedValue';
 import { packetNodeIDs, packetRouteIDs, packetToPulse } from './packets';
 import { downloadRouteGifBlob, routeGifAnimationDurationMs, type RouteMapGifExportRequest } from './routeGifExport';
 import {
@@ -74,6 +82,7 @@ import {
   THEME_PALETTES,
   applyDocumentTheme,
   readStoredThemePreference,
+  resolveThemeMode,
   themePaletteByID,
   themeStyleVariables,
   toggleThemeMode,
@@ -82,6 +91,9 @@ import {
   type ThemePalette
 } from './theme';
 import type { PublicActivity, PublicHistorySummaryBucket, PublicLiveEnvelope, PublicMapConfig, PublicPacketPath } from './types';
+
+const NodeListPanel = lazyWithReload(() => import('./components/NodeListPanel'), 'NodeListPanel');
+const ShortcutHelp = lazyWithReload(() => import('./components/ShortcutHelp'), 'ShortcutHelp');
 
 interface VcrUiState {
   mode: VcrMode;
@@ -145,7 +157,8 @@ export default function App() {
   const [workspacePresentation, setWorkspacePresentation] = useState<WorkspacePresentation>('side');
   const [initialLoadGateOpen, setInitialLoadGateOpen] = useState(true);
   const [shareToast, setShareToast] = useState<string | null>(null);
-  const [routeGifExport, setRouteGifExport] = useState<{ status: RouteGifExportStatus; progress: number }>({ status: 'idle', progress: 0 });
+  const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
+  const [routeGifExport, setRouteGifExport] = useState<{ status: RouteGifExportStatus; progress: number; remainingExports: number; cooldownUntil: number }>({ status: 'idle', progress: 0, remainingExports: 5, cooldownUntil: 0 });
   const [routeGifExportRequest, setRouteGifExportRequest] = useState<RouteMapGifExportRequest | null>(null);
   const [liveClock, setLiveClock] = useState(() => Date.now());
   const [initialNodesReceived, setInitialNodesReceived] = useState(false);
@@ -153,10 +166,13 @@ export default function App() {
   const [nodeLoadFailed, setNodeLoadFailed] = useState(false);
   const [vcrOpen, setVcrOpen] = useState(false);
   const [laserShowActive, setLaserShowActive] = useState(false);
+  const [nodeListOpen, setNodeListOpen] = useState(false);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [chromeVisibility, setChromeVisibility] = useState<ChromeVisibilityState>({
     chromeHidden: false,
     panels: { ...INITIAL_CHROME_PANEL_VISIBILITY }
   });
+  const viewportBounds = useViewportBounds();
   const [panelAnchors, setPanelAnchors] = useState<Record<ChromePanelID, ChromePanelAnchor>>({ ...DEFAULT_CHROME_PANEL_ANCHORS });
   const [vcr, setVcr] = useState<VcrUiState>({
     mode: 'live',
@@ -169,6 +185,11 @@ export default function App() {
     summary: []
   });
   const actionTokenRef = useRef(0);
+  const gifExportTimestampsRef = useRef<number[]>([]);
+  const gifCooldownUntilRef = useRef(0);
+  const GIF_EXPORT_MAX_PER_WINDOW = 5;
+  const GIF_EXPORT_WINDOW_MS = 10 * 60_000;
+  const GIF_EXPORT_COOLDOWN_MS = 30_000;
   const pendingMessagesRef = useRef<PublicLiveEnvelope[]>([]);
   const vcrBufferedMessagesRef = useRef<PublicLiveEnvelope[]>([]);
   const vcrModeRef = useRef<VcrMode>('live');
@@ -177,7 +198,8 @@ export default function App() {
   const vcrReplayTimerRef = useRef<number | null>(null);
   const flushMessagesTimerRef = useRef<number | null>(null);
   const selectedThemePalette = useMemo(() => themePaletteByID(themePaletteID), [themePaletteID]);
-  const appThemeStyle = useMemo(() => themeStyleVariables(selectedThemePalette, themeMode) as CSSProperties, [selectedThemePalette, themeMode]);
+  const resolvedThemeMode = useMemo(() => resolveThemeMode(themeMode), [themeMode]);
+  const appThemeStyle = useMemo(() => themeStyleVariables(selectedThemePalette, resolvedThemeMode) as CSSProperties, [selectedThemePalette, resolvedThemeMode]);
 
   useEffect(() => {
     const updateRoute = () => {
@@ -202,7 +224,9 @@ export default function App() {
         setPanelsMenuOpen(false);
         setMapSettingsOpen(false);
       }
-      setPacketsPanelMode('expanded');
+      if (nextPacketsOpen) {
+        setPacketsPanelMode('expanded');
+      }
     };
     updateRoute();
     window.addEventListener('hashchange', updateRoute);
@@ -243,13 +267,13 @@ export default function App() {
     writeStoredMapSettings(mapSettings);
   }, [mapSettings]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     vcrModeRef.current = vcr.mode;
     vcrSpeedRef.current = vcr.speed;
   }, [vcr.mode, vcr.speed]);
 
   useEffect(() => {
-    setRouteGifExport((current) => (current.status === 'rendering' ? current : { status: 'idle', progress: 0 }));
+    setRouteGifExport((current) => (current.status === 'rendering' ? current : { ...current, status: 'idle', progress: 0 }));
   }, [selectedPacket?.id]);
 
   const clearPendingLiveFlush = useCallback(() => {
@@ -298,7 +322,9 @@ export default function App() {
       window.clearTimeout(vcrReplayTimerRef.current);
       vcrReplayTimerRef.current = null;
     }
-    recordVcrReplayQueueSize(vcrBufferedMessagesRef.current.length);
+    pendingMessagesRef.current = [];
+    vcrBufferedMessagesRef.current = [];
+    recordVcrReplayQueueSize(0);
   }, []);
 
   const refreshLiveSnapshot = useCallback(() => {
@@ -321,19 +347,16 @@ export default function App() {
   const returnToLive = useCallback(() => {
     stopReplay();
     clearPendingLiveFlush();
-    pendingMessagesRef.current = [];
-    vcrBufferedMessagesRef.current = [];
-    recordVcrReplayQueueSize(0);
     setVcr((current) => ({ ...current, mode: 'live', missedCount: 0, scrubAt: null, clock: null, status: 'idle' }));
     refreshLiveSnapshot();
   }, [clearPendingLiveFlush, refreshLiveSnapshot, stopReplay]);
 
   const pausePlayback = useCallback(() => {
     const now = Date.now();
-    stopReplay();
     if (vcrModeRef.current === 'live') {
       movePendingLiveToVcrBuffer();
     }
+    stopReplay();
     setVcr((current) => ({
       ...current,
       mode: 'paused',
@@ -435,9 +458,6 @@ export default function App() {
   const startLaserShow = useCallback(() => {
     stopReplay();
     clearPendingLiveFlush();
-    pendingMessagesRef.current = [];
-    vcrBufferedMessagesRef.current = [];
-    recordVcrReplayQueueSize(0);
     setPaused(false);
     setClearToken((value) => value + 1);
     const generation = vcrGenerationRef.current + 1;
@@ -550,6 +570,18 @@ export default function App() {
   }, [selectedThemePalette, themeMode]);
 
   useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => {
+      if (themeMode === 'system') {
+        applyDocumentTheme({ mode: 'system', palette: selectedThemePalette });
+      }
+    };
+    mql.addEventListener('change', handleChange);
+    return () => mql.removeEventListener('change', handleChange);
+  }, [selectedThemePalette, themeMode]);
+
+  useEffect(() => {
     if (initialNodesReceived) return;
     let cancelled = false;
     let retryTimer: number | undefined;
@@ -655,7 +687,7 @@ export default function App() {
       recordLivePendingQueueSize(0);
       socket.close();
     };
-  }, [bufferVcrMessage]);
+  }, [bufferVcrMessage, initialNodesReceived]);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -747,9 +779,11 @@ export default function App() {
     };
   }, [vcr.scopeMs]);
 
-  const visibleNodes = useMemo(() => filterNodes(state.nodes, query), [state.nodes, query]);
+  const debouncedQuery = useDebouncedValue(query, 200);
+
+  const visibleNodes = useMemo(() => filterNodes(state.nodes, debouncedQuery), [state.nodes, debouncedQuery]);
   const visibleNodeIDs = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
-  const visibleRoutes = useMemo(() => filterRoutes(state.routes, visibleNodeIDs, query), [state.routes, visibleNodeIDs, query]);
+  const visibleRoutes = useMemo(() => filterRoutes(state.routes, visibleNodeIDs, debouncedQuery), [state.routes, visibleNodeIDs, debouncedQuery]);
   const selectedNode = useMemo(() => state.nodes.find((node) => node.id === selectedNodeID) ?? null, [state.nodes, selectedNodeID]);
   const selectedRoute = useMemo(() => state.routes.find((route) => route.id === selectedRouteID) ?? null, [state.routes, selectedRouteID]);
   const connectivityGraph = useMemo(() => buildConnectivityGraph(visibleNodes, visibleRoutes), [visibleNodes, visibleRoutes]);
@@ -869,8 +903,8 @@ export default function App() {
     setFollowTraffic(false);
     setPaused(true);
     setSelectedPacket(packet);
-    setPacketsOpen(false);
-    setPacketsPanelMode('expanded');
+    setPacketsOpen(true);
+    setPacketsPanelMode('compactTray');
     if (window.location.hash === '#/packets') {
       window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
     }
@@ -896,9 +930,10 @@ export default function App() {
   }, [applySelection, clearPendingLiveFlush, mapSettings.packets, stopReplay]);
 
   const resumeLiveFromPacketTray = useCallback(() => {
+    returnToLive();
     setPaused(false);
     setPacketsPanelMode('expanded');
-  }, []);
+  }, [returnToLive]);
 
   const startNodePlot = useCallback(() => {
     setPlotMode('node');
@@ -976,10 +1011,34 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         clearSelection();
         clearPlotRoutes();
+      }
+      if (event.code === 'Space') {
+        const target = event.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+        event.preventDefault();
+        setPaused((value) => !value);
+      }
+      if (event.code === 'KeyL') {
+        setFollowTraffic((value) => !value);
+      }
+      if (event.key === '?' && !event.ctrlKey && !event.metaKey) {
+        setShortcutHelpOpen(true);
+        return;
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -1009,9 +1068,23 @@ export default function App() {
 
   const exportSelectedPacketGif = useCallback(async () => {
     if (!selectedPacket || routeGifExport.status === 'rendering') return;
+    const now = Date.now();
+    if (now < gifCooldownUntilRef.current) return;
+    const windowStart = now - GIF_EXPORT_WINDOW_MS;
+    gifExportTimestampsRef.current = gifExportTimestampsRef.current.filter(t => t > windowStart);
+    if (gifExportTimestampsRef.current.length >= GIF_EXPORT_MAX_PER_WINDOW) {
+      setRouteGifExport(s => ({ ...s, status: 'error', progress: 0 }));
+      window.setTimeout(() => {
+        setRouteGifExport((current) => (current.status === 'error' ? { ...current, status: 'idle', progress: 0 } : current));
+      }, 3600);
+      return;
+    }
+    gifExportTimestampsRef.current.push(now);
+    gifCooldownUntilRef.current = now + GIF_EXPORT_COOLDOWN_MS;
+    const remaining = GIF_EXPORT_MAX_PER_WINDOW - gifExportTimestampsRef.current.filter(t => t > now - GIF_EXPORT_WINDOW_MS).length;
     setFollowTraffic(false);
     setPaused(true);
-    setRouteGifExport({ status: 'rendering', progress: 0.02 });
+    setRouteGifExport({ status: 'rendering', progress: 0.02, remainingExports: remaining, cooldownUntil: gifCooldownUntilRef.current });
     const token = actionTokenRef.current + 1;
     actionTokenRef.current = token;
     const travelDurationMs = routeGifAnimationDurationMs();
@@ -1028,20 +1101,22 @@ export default function App() {
       pulse,
       settleMs: 650,
       travelDurationMs,
-      onProgress: (progress) => setRouteGifExport({ status: 'rendering', progress }),
+      onProgress: (progress) => setRouteGifExport(s => ({ ...s, progress })),
       onComplete: (blob) => {
         downloadRouteGifBlob(selectedPacket, blob);
         setRouteGifExportRequest(null);
-        setRouteGifExport({ status: 'done', progress: 1 });
+        setRouteGifExport(s => ({ ...s, status: 'done', progress: 1 }));
         window.setTimeout(() => {
-          setRouteGifExport((current) => (current.status === 'done' ? { status: 'idle', progress: 0 } : current));
+          setRouteGifExport((current) => (current.status === 'done' ? { ...current, status: 'idle', progress: 0 } : current));
         }, 2600);
       },
       onError: () => {
+        gifExportTimestampsRef.current.pop();
+        const rem = GIF_EXPORT_MAX_PER_WINDOW - gifExportTimestampsRef.current.filter(t => t > Date.now() - GIF_EXPORT_WINDOW_MS).length;
         setRouteGifExportRequest(null);
-        setRouteGifExport({ status: 'error', progress: 0 });
+        setRouteGifExport(s => ({ ...s, status: 'error', progress: 0, remainingExports: rem }));
         window.setTimeout(() => {
-          setRouteGifExport((current) => (current.status === 'error' ? { status: 'idle', progress: 0 } : current));
+          setRouteGifExport((current) => (current.status === 'error' ? { ...current, status: 'idle', progress: 0 } : current));
         }, 3600);
       }
     });
@@ -1058,7 +1133,10 @@ export default function App() {
       data-packets-mode={packetsOpen ? packetsPanelMode : 'closed'}
       style={appThemeStyle}
     >
-      <CanadaMap
+      {isOffline && <div className="offline-banner">You are offline — reconnecting...</div>}
+      <ErrorBoundary fallback={<div className="panel-error">Something went wrong. <button onClick={() => window.location.reload()}>Reload</button></div>}>
+      <ErrorBoundary>
+        <CanadaMap
         nodes={visibleNodes}
         routes={visibleRoutes}
         pulses={state.pulses}
@@ -1077,7 +1155,7 @@ export default function App() {
         mapAction={mapAction}
         routeGifExportRequest={routeGifExportRequest}
         baseMode={mapBaseMode}
-        themeMode={themeMode}
+        themeMode={resolvedThemeMode}
         initialView={sharedViewRef.current}
         mapConfig={publicMapConfig}
         loading={loadingPositionedNodes}
@@ -1086,8 +1164,9 @@ export default function App() {
         onSelectNode={selectNode}
         onPlotNodePick={handlePlotNodePick}
         onPlotMapPoint={handlePlotMapPoint}
-        onClearSelection={clearSelection}
-      />
+          onClearSelection={clearSelection}
+        />
+      </ErrorBoundary>
       {loadingPositionedNodes && <NodeLoadingToast failed={nodeLoadFailed} drawing={initialNodesReceived} />}
       <LinkBar packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} chatOpen={chatOpen} />
       {!chromeHidden && (
@@ -1165,10 +1244,10 @@ export default function App() {
           className={`icon-button theme-mode-toggle ${themeMode}`}
           type="button"
           aria-pressed={themeMode === 'light'}
-          title={themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={themeMode === 'system' ? 'Switch to dark mode' : themeMode === 'dark' ? 'Switch to light mode' : 'Switch to system mode'}
           onClick={() => setThemeMode((value) => toggleThemeMode(value))}
         >
-          {themeMode === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
+          {themeMode === 'system' ? <Monitor size={18} /> : themeMode === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
         </button>
         <div className="top-action-menu">
           <button
@@ -1235,6 +1314,9 @@ export default function App() {
         <button className="icon-button" type="button" title="Share this view" onClick={shareView}>
           <Share2 size={18} />
         </button>
+        <button className="icon-button" type="button" title="Open node list" onClick={() => setNodeListOpen(true)}>
+          <RadioTower size={18} />
+        </button>
         <button className="icon-button" type="button" title="Reset map" onClick={() => dispatchMapAction('reset')}>
           <X size={18} />
         </button>
@@ -1245,10 +1327,12 @@ export default function App() {
           packet={selectedPacket}
           status={routeGifExport.status}
           progress={routeGifExport.progress}
+          cooldownUntil={routeGifExport.cooldownUntil}
+          remainingExports={routeGifExport.remainingExports}
           onExport={exportSelectedPacketGif}
         />
       )}
-      {setupOpen && <SetupPanel mapConfig={publicMapConfig} onClose={closeSetup} />}
+      {setupOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><SetupPanel mapConfig={publicMapConfig} onClose={closeSetup} /></Suspense></ErrorBoundary>}
       {mapSettingsOpen && (
         <MapSettingsDrawer
           settings={mapSettings}
@@ -1257,30 +1341,40 @@ export default function App() {
         />
       )}
       {packetsOpen && (
-        <PacketsPanel
-          mode={packetsPanelMode}
-          selectedPacketID={selectedPacket?.id ?? null}
-          selectedPacket={selectedPacket}
-          presentation={workspacePresentation}
-          onClose={closePackets}
-          onExpand={() => setPacketsPanelMode('expanded')}
-          onPresentationChange={setWorkspacePresentation}
-          onResumeLive={resumeLiveFromPacketTray}
-          onSelectPacket={focusPacketPath}
-          onReplayPacket={replayPacketPath}
-        />
+        <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}>
+          <Suspense fallback={<PanelSkeleton />}>
+            <PacketsPanel
+              mode={packetsPanelMode}
+              selectedPacketID={selectedPacket?.id ?? null}
+              selectedPacket={selectedPacket}
+              presentation={workspacePresentation}
+              onClose={closePackets}
+              onExpand={() => setPacketsPanelMode('expanded')}
+              onPresentationChange={setWorkspacePresentation}
+              onResumeLive={resumeLiveFromPacketTray}
+              onSelectPacket={focusPacketPath}
+              onReplayPacket={replayPacketPath}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
       {netGraphOpen && (
-        <NetGraphPanel
-          nodes={state.nodes}
-          routes={state.routes}
-          pulses={state.pulses}
-          activity={state.activity}
-          socketStatus={socketStatus}
-          onClose={closeNetGraph}
-        />
+        <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}>
+          <Suspense fallback={<PanelSkeleton />}>
+            <NetGraphPanel
+              nodes={state.nodes}
+              routes={state.routes}
+              pulses={state.pulses}
+              activity={state.activity}
+              socketStatus={socketStatus}
+              onClose={closeNetGraph}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
-      {chatOpen && <ChatPanel presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onClose={closeChat} />}
+      {chatOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><ChatPanel presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onClose={closeChat} /></Suspense></ErrorBoundary>}
+      {nodeListOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><NodeListPanel nodes={visibleNodes} selectedNodeID={selectedNodeID} onSelectNode={(id) => { selectNode(id); setNodeListOpen(false); }} onClose={() => setNodeListOpen(false)} /></Suspense></ErrorBoundary>}
+      {shortcutHelpOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><ShortcutHelp onClose={() => setShortcutHelpOpen(false)} /></Suspense></ErrorBoundary>}
 
       {!vcrOpen && packetsPanelMode !== 'compactTray' && !netGraphOpen && !chatOpen && !setupOpen && (
         <>
@@ -1350,6 +1444,7 @@ export default function App() {
             title="Search"
             anchor={panelAnchors.search}
             hidden={!chromeVisibility.panels.search}
+            viewportBounds={viewportBounds}
             onAnchorChange={setChromePanelAnchor}
             onHide={hideChromePanel}
           >
@@ -1368,6 +1463,7 @@ export default function App() {
             title="Legend"
             anchor={panelAnchors.legend}
             hidden={!chromeVisibility.panels.legend}
+            viewportBounds={viewportBounds}
             onAnchorChange={setChromePanelAnchor}
             onHide={hideChromePanel}
           >
@@ -1378,6 +1474,7 @@ export default function App() {
             title="Busy Pathways"
             anchor={panelAnchors.hotRoutes}
             hidden={!chromeVisibility.panels.hotRoutes}
+            viewportBounds={viewportBounds}
             onAnchorChange={setChromePanelAnchor}
             onHide={hideChromePanel}
           >
@@ -1400,6 +1497,7 @@ export default function App() {
         onCopyPath={copyMeshcorePath}
         onClose={clearSelection}
       />
+      </ErrorBoundary>
     </div>
   );
 }
@@ -1438,10 +1536,6 @@ async function copyTextToClipboard(text: string): Promise<void> {
   }
 }
 
-function isPacketActivity(item: PublicActivity): boolean {
-  return item.kind === 'packet' || item.kind === 'route';
-}
-
 function replayEnvelopeClockAt(message: PublicLiveEnvelope): number {
   if (message.type === 'event' && (message.event === 'routePulse' || message.event === 'activity')) {
     return message.data.heardAt;
@@ -1453,18 +1547,6 @@ function cinematicPacketReplayDuration(segmentCount: number, speed: number): num
   const safeSpeed = Number.isFinite(speed) ? Math.max(0.5, Math.min(3, speed)) : 1;
   const hopBonus = Math.min(3000, Math.max(0, segmentCount - 4) * 420);
   return Math.round((6000 + hopBonus) / safeSpeed);
-}
-
-function dedupePackets(packets: PublicPacketPath[]): PublicPacketPath[] {
-  const seen = new Set<string>();
-  const output: PublicPacketPath[] = [];
-  for (const packet of packets) {
-    const key = `${packet.at}:${packet.routeIds.join('|')}:${packet.endpointLabels.join('|')}:${packet.segmentCount}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    output.push(packet);
-  }
-  return output;
 }
 
 function paletteSwatchStyle(palette: ThemePalette): CSSProperties {

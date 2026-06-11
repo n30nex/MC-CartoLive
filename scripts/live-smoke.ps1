@@ -1,7 +1,7 @@
 param(
   [string]$BaseUrl = "https://carto.canadaverse.org",
-  [string]$SshTarget = "root@134.122.45.228",
-  [string]$KeyPath = (Join-Path $env:USERPROFILE ".ssh\neonx"),
+  [string]$SshTarget = $env:LIVE_SMOKE_SSH_TARGET,
+  [string]$KeyPath = $env:LIVE_SMOKE_KEY_PATH,
   [string]$RepoPath = "/opt/MC-CartoLive",
   [string]$Service = "meshcore-live-map",
   [Alias("DiagnoseIata")]
@@ -152,6 +152,12 @@ docker compose exec -T "__SERVICE__" sh -lc 'regions="${PUBLIC_REGIONS:-${PUBLIC
 
 Push-Location $root
 try {
+  if ([string]::IsNullOrWhiteSpace($SshTarget)) {
+    throw "LIVE_SMOKE_SSH_TARGET environment variable is required but was empty"
+  }
+  if ([string]::IsNullOrWhiteSpace($KeyPath)) {
+    throw "LIVE_SMOKE_KEY_PATH environment variable is required but was empty"
+  }
   if ([string]::IsNullOrWhiteSpace($ExpectedVersion)) {
     $ExpectedVersion = (Get-Content (Join-Path $root "VERSION") -TotalCount 1).Trim()
   }

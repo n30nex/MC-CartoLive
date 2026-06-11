@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.6.3` added docked Packets/Chat workspaces on top of Route GIF Export and browser-annotation UI cleanup,
+Baseline audited: `v2.8.0` added docked Packets/Chat workspaces on top of Route GIF Export and browser-annotation UI cleanup,
 expanded browser-control smoke coverage,
 packaged-image release-gate smoke automation,
 projected Packets search-path observability,

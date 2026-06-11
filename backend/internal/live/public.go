@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"meshcore-canada-live-map/backend/internal/resolve"
@@ -181,6 +182,7 @@ type PublicLiveState struct {
 	Routes         []PublicRoute      `json:"routes"`
 	RecentPulses   []PublicRoutePulse `json:"recentPulses,omitempty"`
 	RecentActivity []PublicActivity   `json:"recentActivity"`
+	UpdatedAt      int64              `json:"updatedAt"`
 }
 
 type PublicMapConfig struct {
@@ -264,6 +266,7 @@ func BuildPublicLiveState(state State, stats PublicStats) PublicLiveState {
 		Routes:         routes,
 		RecentPulses:   recentPulses,
 		RecentActivity: activity,
+		UpdatedAt:      time.Now().UnixMilli(),
 	}
 }
 

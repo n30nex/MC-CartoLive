@@ -26,6 +26,7 @@ describe('map settings', () => {
     expect(settings.layers.routeArcs3D).toBe(true);
     expect(settings.layers.packetComets3D).toBe(true);
     expect(settings.layers.buildingExtrusions).toBe(true);
+    expect(settings.layers.weatherClouds).toBe(false);
     expect(settings.packets.speed).toBe(3);
     expect(settings.packets.brightness).toBe(0.4);
     expect(settings.packets.trail).toBe(2);

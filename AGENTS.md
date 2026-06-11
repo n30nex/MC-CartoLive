@@ -74,7 +74,6 @@ Docker:
 ```bash
 docker compose up --build
 docker compose build
-docker compose -f docker-compose.openfreemap.yml up --build
 ```
 
 `make test` runs backend tests and the frontend Vitest suite, assuming dependencies are installed.
@@ -85,7 +84,6 @@ docker compose -f docker-compose.openfreemap.yml up --build
 - The committed example defaults to synthetic fixture mode with `MQTT_ENABLED=false` and `FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson`.
 - To use live MQTT, set `MQTT_ENABLED=true`, clear `FIXTURE_REPLAY_PATH`, and add private MQTT credentials in `.env`.
 - Public Docker port is `39476:8080`.
-- Experimental OpenFreeMap stack uses `docker-compose.openfreemap.yml`, port `39477`, and `data-openfreemap/`.
 - `PUBLIC_BASE_URL` must match the public browser origin so WebSocket origin checks pass.
 - Keep `PUBLIC_MODE=true` for public deployments. Internal debug routes are available only when `PUBLIC_MODE=false`.
 

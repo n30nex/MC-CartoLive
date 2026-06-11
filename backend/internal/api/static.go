@@ -23,6 +23,13 @@ func StaticReady() bool {
 	return err == nil
 }
 
+func StaticWarn() string {
+	if StaticReady() {
+		return ""
+	}
+	return "static files unavailable; frontend will not be served"
+}
+
 func StaticHandler(w http.ResponseWriter, r *http.Request) {
 	sub, err := fs.Sub(staticFS, "static")
 	if err != nil {

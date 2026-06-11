@@ -3,7 +3,7 @@
 @import './styles/chat.css';
 
 :root {
-  color-scheme: dark;
+  color-scheme: dark light;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: #05070b;
   color: #edf5ff;
@@ -11,10 +11,32 @@
   text-rendering: optimizeLegibility;
 }
 
+:root[data-theme-mode="dark"] {
+  color-scheme: dark;
+  background: #05070b;
+  color: #edf5ff;
+}
+
 :root[data-theme-mode="light"] {
   color-scheme: light;
   background: #eef5fb;
   color: #0f172a;
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme-mode="system"] {
+    color-scheme: light;
+    background: #eef5fb;
+    color: #0f172a;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme-mode="system"] {
+    color-scheme: dark;
+    background: #05070b;
+    color: #edf5ff;
+  }
 }
 
 * {
@@ -215,6 +237,8 @@ button {
     filter 5200ms cubic-bezier(0.16, 1, 0.3, 1),
     color 4800ms cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform, opacity;
+  contain: layout style paint;
+  backface-visibility: hidden;
 }
 
 .node-screen-label-name,
@@ -717,9 +741,6 @@ button {
 .link-bar-info-popover {
   position: fixed;
   z-index: var(--z-modal, 120);
-}
-
-.link-bar-info-popover {
   color: var(--mc-text, #f8fafc);
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--mc-surface, #07101d) 96%, transparent), color-mix(in srgb, var(--mc-surface-strong, #101827) 92%, transparent)),
@@ -731,9 +752,6 @@ button {
     0 0 28px color-mix(in srgb, var(--mc-accent, #38bdf8) 12%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(18px) saturate(1.25);
-}
-
-.link-bar-info-popover {
   top: 50px;
   right: 110px;
   width: min(430px, calc(100vw - 24px));
@@ -2434,6 +2452,24 @@ button {
   gap: 6px;
 }
 
+.map-settings-layer-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.map-settings-layer-group {
+  display: grid;
+  gap: 6px;
+}
+
+.map-settings-layer-group h4 {
+  margin: 0;
+  color: var(--mc-text-muted, #9fb1c9);
+  font-size: 10px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
 .map-settings-toggle {
   justify-content: space-between;
   gap: 10px;
@@ -2442,6 +2478,10 @@ button {
   background: color-mix(in srgb, var(--mc-control-bg, rgba(7, 16, 29, 0.84)) 84%, transparent);
   border: 1px solid var(--mc-border, rgba(125, 211, 252, 0.24));
   border-radius: 7px;
+}
+
+.map-settings-toggle.unavailable {
+  opacity: 0.66;
 }
 
 .map-settings-toggle span {
@@ -2470,6 +2510,11 @@ button {
   width: 34px;
   height: 20px;
   accent-color: var(--mc-accent, #38bdf8);
+}
+
+.map-settings-toggle input:disabled {
+  cursor: not-allowed;
+  filter: grayscale(1);
 }
 
 .map-settings-slider {
@@ -4196,6 +4241,81 @@ button {
   font-weight: 700;
 }
 
+.elevation-profile {
+  margin-top: 12px;
+  border-top: 1px solid rgba(125, 211, 252, 0.12);
+  padding-top: 8px;
+}
+
+.elevation-profile svg {
+  display: block;
+  width: 100%;
+  height: 72px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.elevation-labels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 1px;
+}
+
+.elevation-labels span {
+  color: #8fa2bb;
+  font-size: 10px;
+}
+
+.elevation-labels span:last-child {
+  text-align: right;
+}
+
+.elevation-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.elevation-gain {
+  color: #22c55e;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.elevation-loss {
+  color: #ef4444;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.elevation-unavailable {
+  color: #8fa2bb;
+  font-size: 11px;
+}
+
+.elevation-skeleton {
+  background: rgba(125, 211, 252, 0.06);
+  border-radius: 4px;
+  animation: elevation-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes elevation-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes node-freshness-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.node-fresh-ring {
+  animation: node-freshness-pulse 2s ease-in-out infinite;
+}
+
 .activity-panel {
   left: 10px;
   bottom: 10px;
@@ -5046,4 +5166,67 @@ button {
   .packets-panel.workspace-side .packet-detail {
     display: grid;
   }
+}
+
+.workspace-panel {
+  animation: panel-slide-in 0.2s ease-out;
+}
+@keyframes panel-slide-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.panel-skeleton { padding: 16px; }
+.skeleton-header { height: 24px; width: 60%; border-radius: 4px; margin-bottom: 16px; background: var(--surface-2, #1e293b); }
+.skeleton-row { height: 40px; width: 100%; border-radius: 4px; margin-bottom: 8px; background: var(--surface-2, #1e293b); }
+.shimmer { position: relative; overflow: hidden; }
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+  animation: shimmer 1.5s infinite;
+}
+@keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .status-secondary { display: none; }
+}
+
+.share-toast, .path-copy-toast {
+  animation: toast-slide-up 0.2s ease-out;
+}
+@keyframes toast-slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.panel-error {
+  padding: 16px;
+  color: var(--mc-text, #f8fafc);
+  background: color-mix(in srgb, var(--mc-danger, #ef4444) 12%, var(--mc-control-bg, rgba(7, 16, 29, 0.84)));
+  border: 1px solid color-mix(in srgb, var(--mc-danger, #ef4444) 40%, transparent);
+  border-radius: 8px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.panel-error button {
+  padding: 4px 12px;
+  color: var(--mc-text, #f8fafc);
+  background: color-mix(in srgb, var(--mc-danger, #ef4444) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-danger, #ef4444) 50%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
 }

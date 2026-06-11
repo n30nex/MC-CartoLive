@@ -37,6 +37,8 @@ type Client struct {
 	lastMessageAt        atomic.Int64
 	lastConnectedAt      atomic.Int64
 	lastConnectionLostAt atomic.Int64
+	lastForceDisconnect  atomic.Int64
+	shutdown             atomic.Bool
 	client               paho.Client
 }
 
@@ -65,6 +67,8 @@ func (c *Client) Start(ctx context.Context) error {
 	opts.SetConnectRetry(true)
 	opts.SetKeepAlive(60 * time.Second)
 	opts.SetPingTimeout(10 * time.Second)
+	opts.SetMaxReconnectInterval(5 * time.Minute)
+	opts.SetConnectRetryInterval(5 * time.Second)
 	opts.SetTLSConfig(&tls.Config{MinVersion: tls.VersionTLS12})
 	if c.cfg.Auth.Mode == "subscriber" {
 		opts.SetUsername(c.cfg.Auth.Username)
@@ -84,9 +88,10 @@ func (c *Client) Start(ctx context.Context) error {
 		c.reconnects.Add(1)
 		c.lastConnectedAt.Store(time.Now().UnixMilli())
 		c.log.Info("mqtt connected", "broker", redactBroker(c.cfg.BrokerURL), "topic", c.cfg.Topic)
-		token := client.Subscribe(c.cfg.Topic, 0, c.onMessage(ctx))
+		token := client.Subscribe(c.cfg.Topic, 0, c.onMessage())
 		token.Wait()
 		if err := token.Error(); err != nil {
+			c.connected.Store(false)
 			c.log.Error("mqtt subscribe failed", "error", err)
 			return
 		}
@@ -98,7 +103,10 @@ func (c *Client) Start(ctx context.Context) error {
 	go func() {
 		if !token.WaitTimeout(10 * time.Second) {
 			c.log.Warn("mqtt initial connect still pending; continuing startup")
-			token.Wait()
+			if !token.WaitTimeout(20 * time.Second) {
+				c.log.Error("mqtt connect timed out after 30s total")
+				return
+			}
 		}
 		if err := token.Error(); err != nil {
 			c.connected.Store(false)
@@ -108,15 +116,47 @@ func (c *Client) Start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
+		c.shutdown.Store(true)
 		c.client.Disconnect(250)
 		c.connected.Store(false)
 	}()
 
+	go c.watchdog(ctx)
+
 	return nil
 }
 
-func (c *Client) onMessage(ctx context.Context) paho.MessageHandler {
+func (c *Client) watchdog(ctx context.Context) {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if c.Connected() {
+				lastMsg := c.lastMessageAt.Load()
+				if lastMsg > 0 && time.Now().UnixMilli()-lastMsg > 120_000 {
+					lastDisconnect := c.lastForceDisconnect.Load()
+					now := time.Now().UnixMilli()
+					if lastDisconnect > 0 && now-lastDisconnect < 60_000 {
+						c.log.Warn("mqtt watchdog: skipping force disconnect; last disconnect <60s ago")
+						continue
+					}
+					c.log.Warn("mqtt watchdog: connected but no messages for >120s; forcing reconnect")
+					c.lastForceDisconnect.Store(now)
+					c.client.Disconnect(0)
+				}
+			}
+		}
+	}
+}
+
+func (c *Client) onMessage() paho.MessageHandler {
 	return func(_ paho.Client, msg paho.Message) {
+		if c.shutdown.Load() {
+			return
+		}
 		topic := msg.Topic()
 		info, err := ParseTopic(topic)
 		if err != nil {
@@ -126,7 +166,7 @@ func (c *Client) onMessage(ctx context.Context) paho.MessageHandler {
 		}
 		if info.Subtopic == "internal" {
 			c.internalDropped.Add(1)
-			c.log.Warn("mqtt internal topic dropped", "iata", info.IATA)
+			c.log.Debug("mqtt internal topic dropped", "iata", info.IATA)
 			return
 		}
 		normalized, err := Normalize(topic, msg.Payload(), time.Now())
@@ -154,7 +194,14 @@ func (c *Client) dispatch(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case msg := <-c.queue:
-			c.handler(ctx, msg)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						c.log.Error("mqtt dispatch panic", "panic", r)
+					}
+				}()
+				c.handler(ctx, msg)
+			}()
 		}
 	}
 }
@@ -218,8 +265,12 @@ func (c *Client) Status(now time.Time) Status {
 }
 
 func redactBroker(in string) string {
-	if at := strings.LastIndex(in, "@"); at >= 0 {
-		return in[:strings.Index(in, "://")+3] + "redacted@" + in[at+1:]
+	protoEnd := strings.Index(in, "://")
+	if protoEnd < 0 {
+		protoEnd = -3
+	}
+	if at := strings.LastIndex(in, "@"); at >= 0 && protoEnd < at {
+		return in[:protoEnd+3] + "redacted@" + in[at+1:]
 	}
 	return in
 }

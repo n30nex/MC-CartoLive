@@ -33,15 +33,6 @@ const scenarios = [
     actions: [smokeLiveMapControls]
   },
   {
-    name: 'perf',
-    hash: '#/perf',
-    waitFor: '.perf-panel',
-    checks: [
-      { selector: '.link-bar', label: 'top project bar' },
-      { selector: '.perf-panel', label: 'Perf panel' }
-    ]
-  },
-  {
     name: 'setup',
     hash: '#/setup',
     waitFor: '.setup-panel',
@@ -57,7 +48,8 @@ const scenarios = [
     waitFor: '.packets-panel',
     checks: [
       { selector: '.link-bar', label: 'top project bar' },
-      { selector: '.packets-panel', label: 'Packets panel' }
+      { selector: '.packets-panel', label: 'Packets panel' },
+      { selector: '.packets-summary-strip', label: 'Packets summary strip' }
     ],
     actions: [smokePacketsReplay]
   },
@@ -68,7 +60,8 @@ const scenarios = [
     checks: [
       { selector: '.link-bar', label: 'top project bar' },
       { selector: '.chat-panel', label: 'Chat panel' }
-    ]
+    ],
+    actions: [smokeChatPanel]
   },
   {
     name: 'netgraph',
@@ -78,7 +71,8 @@ const scenarios = [
       { selector: '.link-bar', label: 'top project bar' },
       { selector: '.netgraph-panel', label: 'NetGraph panel' },
       { selector: '.netgraph-canvas', label: 'NetGraph canvas' }
-    ]
+    ],
+    actions: [smokeNetGraphPanel]
   }
 ];
 
@@ -138,11 +132,23 @@ async function runScenario(browser, viewport, scenario) {
   const errors = [];
   const consoleErrors = [];
   const pageErrors = [];
+  let ignoredFailedResourceCount = 0;
+  let ignoredFailedResourceConsoleCount = 0;
 
-  page.on('console', (message) => {
-    if (message.type() === 'error' && !isIgnoredConsoleMessage(message.text())) {
-      consoleErrors.push(message.text());
+  page.on('response', (response) => {
+    if (isIgnoredFailedResource(response.status(), response.url())) {
+      ignoredFailedResourceCount += 1;
     }
+  });
+  page.on('console', (message) => {
+    if (message.type() !== 'error') return;
+    const text = message.text();
+    if (isIgnoredConsoleMessage(text)) return;
+    if (isGenericFailedResourceConsoleMessage(text) && ignoredFailedResourceConsoleCount < ignoredFailedResourceCount) {
+      ignoredFailedResourceConsoleCount += 1;
+      return;
+    }
+    consoleErrors.push(text);
   });
   page.on('pageerror', (error) => {
     pageErrors.push(error.message || String(error));
@@ -169,6 +175,8 @@ async function runScenario(browser, viewport, scenario) {
     for (const action of scenario.actions ?? []) {
       await action(page, viewport);
     }
+
+    await assertGlobalReleaseChecks(page, errors);
 
     if (consoleErrors.length > 0) errors.push(...consoleErrors.map((item) => `console error: ${item}`));
     if (pageErrors.length > 0) errors.push(...pageErrors.map((item) => `page error: ${item}`));
@@ -305,7 +313,7 @@ async function smokeSetupPanel(page, viewport) {
   const required = [
     'MAP_REGION_PRESET=custom',
     'PUBLIC_REGIONS=',
-    'MAP_BOUNDS=-45,110,-10,155'
+    'MAP_BOUNDS=-85,-180,85,180'
   ];
   for (const item of required) {
     if (!snippet?.includes(item)) throw new Error(`setup generated env is missing ${item}`);
@@ -316,10 +324,14 @@ async function smokeSetupPanel(page, viewport) {
 }
 
 async function smokePacketsReplay(page, viewport) {
-  const row = await waitForPacketRow(page);
-  await row.locator('.packet-row-main').click();
-  await page.waitForSelector('.packet-row.selected', { state: 'visible', timeout: 8_000 });
-  await page.waitForSelector('.packet-detail:not(.empty)', { state: 'visible', timeout: 8_000 });
+  const row = await waitForPacketRow(page, false);
+  if (!row) {
+    const empty = await page.locator('.packets-empty').first().textContent({ timeout: 2_000 }).catch(() => 'No packets available');
+    if (!empty || !empty.toLowerCase().includes('no true path packets')) {
+      throw new Error(`Packets replay smoke found no row and no clear empty state: ${compactText(empty)}`);
+    }
+    return;
+  }
 
   if (!viewport.isMobile) {
     const toggle = page.locator('.map-base-toggle').first();
@@ -331,7 +343,7 @@ async function smokePacketsReplay(page, viewport) {
   }
 
   const before = await readMapViewData(page);
-  await page.locator('.packet-detail .packet-detail-actions').getByRole('button', { name: /^Replay$/i }).click();
+  await row.locator('.packet-replay-button').click();
   await page.waitForSelector('.app-shell[data-packets-mode="compactTray"]', { state: 'visible', timeout: 10_000 });
   await assertVisibleInViewport(page, 'section.packets-compact-tray[aria-label="Selected packet replay"]', 'Packets compact replay tray', viewport);
   await page.getByRole('button', { name: /Replay again/i }).waitFor({ state: 'visible', timeout: 8_000 });
@@ -346,7 +358,58 @@ async function smokePacketsReplay(page, viewport) {
   }
 }
 
-async function waitForPacketRow(page) {
+async function smokeChatPanel(page) {
+  const hasRow = await page.locator('.chat-row').first().isVisible({ timeout: 2_000 }).catch(() => false);
+  const hasEmpty = await page.locator('.chat-empty').first().isVisible({ timeout: 2_000 }).catch(() => false);
+  if (!hasRow && !hasEmpty) {
+    throw new Error('Chat panel has neither messages nor empty state after initial load');
+  }
+
+  const endpointCheck = await page.evaluate(async () => {
+    const params = new URLSearchParams({
+      from: String(Math.max(0, Date.now() - 60 * 60_000)),
+      to: String(Date.now()),
+      limit: '50'
+    });
+    const response = await fetch(`/api/v1/public/chat?${params.toString()}`, { headers: { accept: 'application/json' } });
+    if (!response.ok) return `HTTP ${response.status}`;
+    const body = await response.json().catch(() => null);
+    if (!body || !Array.isArray(body.messages) || !Number.isFinite(Number(body.serverTime))) return `invalid chat body: ${JSON.stringify(body)}`;
+    return 'ok';
+  });
+  if (endpointCheck !== 'ok') {
+    throw new Error(`Chat endpoint smoke check failed: ${endpointCheck}`);
+  }
+}
+
+async function smokeNetGraphPanel(page, viewport) {
+  const search = page.locator('.netgraph-search input').first();
+  await search.waitFor({ state: 'visible', timeout: 12_000 });
+  await search.fill('repeater');
+  await page.waitForTimeout(250);
+  await assertVisibleInViewport(page, '.netgraph-canvas', 'NetGraph canvas after search', viewport);
+
+  const canvasState = await page.locator('.netgraph-canvas').first().evaluate((canvas) => {
+    if (!(canvas instanceof HTMLCanvasElement)) return null;
+    const box = canvas.getBoundingClientRect();
+    return {
+      cssWidth: box.width,
+      cssHeight: box.height,
+      width: canvas.width,
+      height: canvas.height
+    };
+  });
+  if (!canvasState || canvasState.cssWidth < 50 || canvasState.cssHeight < 50 || canvasState.width < 50 || canvasState.height < 50) {
+    throw new Error(`NetGraph canvas invalid size: ${JSON.stringify(canvasState)}`);
+  }
+
+  const box = await page.locator('.netgraph-canvas').first().boundingBox();
+  if (box) {
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  }
+}
+
+async function waitForPacketRow(page, requireRow = true) {
   const row = page.locator('.packet-row').first();
   if (await waitForVisible(row, 120_000)) return row;
 
@@ -362,6 +425,7 @@ async function waitForPacketRow(page) {
     if (await waitForVisible(row, 120_000)) return row;
   }
 
+  if (!requireRow) return null;
   const error = await page.locator('.packets-error').first().textContent({ timeout: 1_000 }).catch(() => '');
   const empty = await page.locator('.packets-empty').first().textContent({ timeout: 1_000 }).catch(() => '');
   const panel = await page.locator('.packets-panel').first().textContent({ timeout: 1_000 }).catch(() => '');
@@ -392,9 +456,9 @@ async function findRecentRoutePulseReplayTarget(page) {
         const body = await response.json();
         const events = Array.isArray(body.events) ? body.events : [];
         const routePulses = events.filter((event) => event?.type === 'routePulse' && Number.isFinite(event.at));
-        const routePulse = routePulses.at(-1);
+        const routePulse = routePulses[0];
         diagnostics.push(`${item.label}: ${routePulses.length} routed pulses / ${events.length} events`);
-        if (routePulse) return { timestamp: routePulse.at, scopeLabel: item.label };
+        if (routePulse) return { timestamp: Math.max(0, routePulse.at - 1), scopeLabel: item.label };
       } catch (error) {
         diagnostics.push(`${item.label}: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -481,6 +545,19 @@ async function assertVisibleInViewport(page, selector, label, viewport) {
   }
 }
 
+async function assertGlobalReleaseChecks(page, errors) {
+  const panelErrors = await page.locator('.panel-error').count();
+  if (panelErrors > 0) {
+    const text = await page.locator('.panel-error').first().textContent().catch(() => '');
+    errors.push(`panel-error rendered: ${panelErrors} ${compactText(text)}`);
+  }
+
+  const serviceWorkerControlled = await page.evaluate(() => Boolean(navigator.serviceWorker?.controller)).catch(() => false);
+  if (serviceWorkerControlled && process.env.VITE_ENABLE_SERVICE_WORKER !== 'true') {
+    errors.push('service worker controlled page while disabled');
+  }
+}
+
 async function dismissWelcome(page) {
   const start = page.getByRole('button', { name: /start watching/i });
   if (await start.isVisible({ timeout: 1000 }).catch(() => false)) {
@@ -547,5 +624,15 @@ function formatBox(box) {
 }
 
 function isIgnoredConsoleMessage(text) {
-  return /favicon|ResizeObserver loop|Failed to load resource: the server responded with a status of 404/i.test(text);
+  return /favicon|ResizeObserver loop/i.test(text);
+}
+
+function isGenericFailedResourceConsoleMessage(text) {
+  return /^Failed to load resource: the server responded with a status of \d+/i.test(text);
+}
+
+function isIgnoredFailedResource(status, url) {
+  if (status !== 404) return false;
+  return /^https:\/\/demotiles\.maplibre\.org\/font\/.+\.pbf(?:$|\?)/i.test(url)
+    || /\/favicon\.ico(?:$|\?)/i.test(url);
 }

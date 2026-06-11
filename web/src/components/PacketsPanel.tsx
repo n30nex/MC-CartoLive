@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Clock3, Copy, Filter, Maximize2, MessageSquareText, Minimize2, Play, RefreshCw, Route, Search, X } from 'lucide-react';
 import { fetchPublicPackets } from '../api';
+import { formatRelative } from '../lib/formatRelative';
+import { isAbortError } from '../lib/isAbortError';
+import { useDebouncedValue } from '../lib/useDebouncedValue';
 import { DEFAULT_PACKET_FILTERS, packetEndpointSummary, PACKETS_SCOPE_OPTIONS, packetRegion, packetWindowForScope, type PacketFilters } from '../packets';
 import { payloadLegendVisuals, payloadVisual } from '../payloadVisuals';
+import { dedupePackets } from '../lib/dedupePackets';
 import type { PublicHistoryWindow, PublicPacketPath, PublicPacketScan } from '../types';
 import { toggleWorkspacePresentation, workspacePresentationTitle, type WorkspacePresentation } from './workspacePanel';
 
@@ -58,6 +62,8 @@ export default function PacketsPanel({
   const listRef = useRef<HTMLDivElement | null>(null);
   const requestGenerationRef = useRef(0);
   const requestAbortRef = useRef<AbortController | null>(null);
+  const filterGenerationRef = useRef(0);
+  const initialLoadRef = useRef(true);
   const debouncedFilters = useDebouncedValue(filters, PACKET_FILTER_DEBOUNCE_MS);
   const selectedFromList = useMemo(() => packets.find((packet) => packet.id === selectedPacketID) ?? null, [packets, selectedPacketID]);
   const activePacket = selectedPacket ?? selectedFromList;
@@ -76,6 +82,7 @@ export default function PacketsPanel({
     requestAbortRef.current = controller;
     const generation = requestGenerationRef.current + 1;
     requestGenerationRef.current = generation;
+    filterGenerationRef.current += 1;
     setLoading(true);
     setError(null);
     setSearchState(hasActivePacketFilters(debouncedFilters) ? 'searching' : 'idle');
@@ -89,6 +96,7 @@ export default function PacketsPanel({
         setNextCursor(response.nextCursor ?? '');
         setSearchState(response.nextCursor ? 'more' : 'end');
         setLastCheckedAt(Date.now());
+        initialLoadRef.current = false;
         setScrollTop(0);
         if (listRef.current) listRef.current.scrollTop = 0;
       })
@@ -116,6 +124,7 @@ export default function PacketsPanel({
     const controller = new AbortController();
     requestAbortRef.current = controller;
     const generation = requestGenerationRef.current;
+    const filterGeneration = filterGenerationRef.current;
     setLoadingMore(true);
     setError(null);
     setSearchState(hasActivePacketFilters(debouncedFilters) ? 'searching' : 'idle');
@@ -127,7 +136,7 @@ export default function PacketsPanel({
       signal: controller.signal
     })
       .then((response) => {
-        if (controller.signal.aborted || !mountedRef.current || generation !== requestGenerationRef.current) return;
+        if (controller.signal.aborted || !mountedRef.current || generation !== requestGenerationRef.current || filterGeneration !== filterGenerationRef.current) return;
         setPackets((current) => capPackets([...current, ...response.packets]));
         setNextCursor(response.nextCursor ?? '');
         setWindowInfo(response.window);
@@ -136,10 +145,12 @@ export default function PacketsPanel({
       })
       .catch((err: unknown) => {
         if (isAbortError(err)) return;
-        if (mountedRef.current && generation === requestGenerationRef.current) setError(packetRequestErrorMessage(err));
+        if (mountedRef.current && generation === requestGenerationRef.current && filterGeneration === filterGenerationRef.current) setError(packetRequestErrorMessage(err));
       })
       .finally(() => {
         if (!mountedRef.current) return;
+        if (generation !== requestGenerationRef.current) return;
+        if (filterGeneration !== filterGenerationRef.current) return;
         if (requestAbortRef.current === controller) requestAbortRef.current = null;
         setLoadingMore(false);
       });
@@ -174,7 +185,8 @@ export default function PacketsPanel({
   const virtualRows = useMemo(() => virtualPacketRows(packets, scrollTop, listHeight), [listHeight, packets, scrollTop]);
 
   const copyRouteIDs = useCallback(async (packet: PublicPacketPath) => {
-    const text = packet.routeIds.join(',');
+    const routeIds = Array.isArray(packet?.routeIds) ? packet.routeIds.filter((value): value is string => Boolean(value)) : [];
+    const text = routeIds.join(',');
     if (!text) {
       setCopyStatus('No route IDs');
       return;
@@ -294,7 +306,7 @@ export default function PacketsPanel({
 
       <PacketSearchStatus state={searchState} nextCursor={nextCursor} loading={loading || loadingMore} scan={scanInfo} />
       {error && <div className="packets-error" role="alert">{error}</div>}
-      {loading && packets.length === 0 && <div className="packets-loading">Loading true path packets...</div>}
+      {loading && initialLoadRef.current && <div className="packets-loading-bar" />}
 
       <div className="packets-content">
         <div
@@ -383,7 +395,7 @@ function PacketRow({
         <span className="packet-row-meta">
           <span>{packetRegion(packet) || 'unknown'}</span>
           <span>{packet.hopCount} {packet.hopCount === 1 ? 'hop' : 'hops'}</span>
-          <span>{packet.distanceKm.toFixed(1)} km</span>
+          <span>{safeToFixed(packet.distanceKm)} km</span>
           <span>{packet.segmentCount} {packet.segmentCount === 1 ? 'segment' : 'segments'}</span>
         </span>
         {packet.messageText && (
@@ -435,7 +447,7 @@ function PacketDetail({
         <div><dt>Heard</dt><dd>{new Date(packet.at).toLocaleString()}</dd></div>
         <div><dt>Age</dt><dd>{formatRelative(packet.at)}</dd></div>
         <div><dt>Path</dt><dd>{packet.hopCount} hops / {packet.segmentCount} segments</dd></div>
-        <div><dt>Distance</dt><dd>{packet.distanceKm.toFixed(1)} km</dd></div>
+        <div><dt>Distance</dt><dd>{safeToFixed(packet.distanceKm)} km</dd></div>
         <div><dt>Payload</dt><dd>{visual.label}</dd></div>
       </dl>
       {packet.messageText && (
@@ -451,11 +463,11 @@ function PacketDetail({
       </div>
       {copyStatus && <span className="packet-copy-status">{copyStatus}</span>}
       <div className="packet-segment-list" aria-label="Public packet segments">
-        {packet.segments.map((segment, index) => (
-          <div key={`${segment.routeId}-${index}`} className="packet-segment">
+        {(Array.isArray(packet.segments) ? packet.segments : []).map((segment, index) => (
+          <div key={`${segment.routeId || 'segment'}-${index}`} className="packet-segment">
             <span>{index + 1}</span>
-            <strong>{segment.from.label}{' -> '}{segment.to.label}</strong>
-            <em>{segment.distanceKm.toFixed(1)} km</em>
+            <strong>{segment.from?.label || 'Unknown'}{' -> '}{segment.to?.label || 'Unknown'}</strong>
+            <em>{safeToFixed(segment.distanceKm)} km</em>
           </div>
         ))}
       </div>
@@ -526,21 +538,6 @@ async function fetchPacketPages({
   };
 }
 
-function isAbortError(err: unknown): boolean {
-  return Boolean(err && typeof err === 'object' && 'name' in err && (err as { name?: unknown }).name === 'AbortError');
-}
-
-function dedupePackets(items: PublicPacketPath[]): PublicPacketPath[] {
-  const seen = new Set<string>();
-  const out: PublicPacketPath[] = [];
-  for (const item of items) {
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
-    out.push(item);
-  }
-  return out;
-}
-
 function capPackets(items: PublicPacketPath[]): PublicPacketPath[] {
   return dedupePackets(items).slice(0, PACKETS_RETAINED_LIMIT);
 }
@@ -605,6 +602,11 @@ function normalizeIataFilter(value: string): string {
   return value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 16);
 }
 
+function safeToFixed(value: number): string {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toFixed(1) : '0.0';
+}
+
 function filtersToParams(filters: PacketFilters) {
   return {
     region: filters.iata || undefined,
@@ -621,26 +623,10 @@ function virtualPacketRows(packets: PublicPacketPath[], scrollTop: number, heigh
   return { offset: start * PACKET_ROW_HEIGHT, items: packets.slice(start, end) };
 }
 
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => window.clearTimeout(timer);
-  }, [delayMs, value]);
-  return debounced;
-}
-
 function formatWindow(window: PublicHistoryWindow | null): string {
   if (!window) return 'loading';
   const span = Math.max(0, window.to - window.from);
   if (span >= 23 * 60 * 60_000) return '24h';
   if (span >= 5 * 60 * 60_000) return '6h';
   return '1h';
-}
-
-function formatRelative(at: number, now = Date.now()): string {
-  const age = Math.max(0, now - at);
-  if (age < 60_000) return `${Math.max(1, Math.round(age / 1000))}s ago`;
-  if (age < 3_600_000) return `${Math.round(age / 60_000)}m ago`;
-  return `${Math.round(age / 3_600_000)}h ago`;
 }

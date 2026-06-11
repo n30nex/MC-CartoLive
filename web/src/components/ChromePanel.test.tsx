@@ -10,6 +10,7 @@ describe('ChromePanel', () => {
         title="Search"
         anchor="top-left"
         hidden={false}
+        viewportBounds={{ width: 1024, height: 768 }}
         onAnchorChange={() => undefined}
         onHide={() => undefined}
       >

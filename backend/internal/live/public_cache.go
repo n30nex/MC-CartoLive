@@ -175,12 +175,14 @@ func (c *PublicStateCache) Replace(state PublicLiveState, excluded map[string]in
 	state.Routes = limitPublicRoutes(state.Routes)
 	state.RecentPulses = limitPublicPulses(state.RecentPulses)
 	state.RecentActivity = limitPublicActivity(state.RecentActivity)
+	now := time.Now()
+	state.UpdatedAt = now.UnixMilli()
 	c.mu.Lock()
 	state.Stats.ExcludedIATAs = mergeCounters(excluded, c.anomalies)
 	state.Stats.ExcludedRegions = copyCounter(state.Stats.ExcludedIATAs)
 	c.state = copyPublicState(state)
 	c.ready = true
-	c.updatedAt = time.Now()
+	c.updatedAt = now
 	c.truncated = truncated
 	c.mu.Unlock()
 }

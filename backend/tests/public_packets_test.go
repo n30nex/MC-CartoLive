@@ -88,6 +88,51 @@ func TestPublicPacketsEndpointReturnsOnlySanitizedTrueRoutedPackets(t *testing.T
 	}
 }
 
+func TestPublicPacketsEndpointFallsBackToRawEdgesWhenProjectionTableMissingRows(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := st.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+	})
+
+	observerKey := "AA00000000000000000000000000000000000000000000000000000000000000"
+	if err := st.ApplyManualNode(ctx, observerKey, "YYZ Observer", 43.65, -79.38, "test"); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now().Add(-time.Hour).UnixMilli()
+	observedID := insertHistoryObservation(t, ctx, st, "hash-fallback-private", "YYZ", observerKey, base+1_000, resolve.StatusHigh)
+	edgeID := insertHistoryEdge(t, ctx, st, observedID, "hash-fallback-private", base+1_000)
+	if err := st.DeletePublicPacketPathForEdge(ctx, edgeID); err != nil {
+		t.Fatal(err)
+	}
+
+	server := publicHistoryTestServer(st, func(iata string) bool { return strings.ToUpper(iata) == "YYZ" })
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/public/packets?from="+ms(base)+"&to="+ms(base+2_000)+"&limit=10", nil)
+	server.Routes().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("packets status = %d body=%s", response.Code, response.Body.String())
+	}
+	var packets live.PublicPacketsResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &packets); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(packets.Packets), 1; got != want {
+		t.Fatalf("packets = %d, want %d: %#v", got, want, packets.Packets)
+	}
+	if packets.Packets[0].At != base+1_000 || packets.Packets[0].IATA != "YYZ" || packets.Packets[0].HopCount != 1 || packets.Packets[0].SegmentCount != 1 {
+		t.Fatalf("fallback packet summary = %#v, want raw path fallback packet", packets.Packets[0])
+	}
+	if packets.Scan.EventsScanned == 0 {
+		t.Fatalf("scan metadata = %#v, want raw scan path", packets.Scan)
+	}
+}
+
 func TestPublicPacketsEndpointReturnsNewestFirstWithStableCursorPagination(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.OpenMemory(ctx)
@@ -391,7 +436,7 @@ func insertHistoryEdgeWithOptions(t *testing.T, ctx context.Context, st *store.S
 		HeardAt:         heardAt,
 		Segments:        segments,
 		RenderReason:    "resolved_path_high_confidence",
-	}); err != nil {
+	}, "high", "test"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -412,7 +457,7 @@ func insertInvalidHistoryEdge(t *testing.T, ctx context.Context, st *store.Store
 			},
 		},
 		RenderReason: "resolved_path_high_confidence",
-	}); err != nil {
+	}, "high", "test"); err != nil {
 		t.Fatal(err)
 	}
 }

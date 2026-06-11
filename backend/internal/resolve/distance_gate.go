@@ -7,5 +7,8 @@ func ShouldRejectDistance(distanceKM, maxKM float64, isTrace bool, allowLongTrac
 	if distanceKM <= maxKM {
 		return false
 	}
-	return !(isTrace && allowLongTrace && hasTraceEvidence)
+	if isTrace && allowLongTrace {
+		return false
+	}
+	return true
 }

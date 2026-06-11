@@ -1,16 +1,22 @@
 #!/usr/bin/env node
+import crypto from 'node:crypto';
+import net from 'node:net';
+import tls from 'node:tls';
+
 const baseUrl = normalizeBaseUrl(process.argv[2] || process.env.BASE_URL || 'http://127.0.0.1:39476');
 const now = Date.now();
 const from = now - 10 * 60 * 1000;
 
 const endpoints = [
-  '/healthz',
-  '/readyz',
-  '/api/v1/public/state',
-  `/api/v1/public/history?from=${from}&to=${now}&limit=25`,
-  `/api/v1/public/history/summary?from=${from}&to=${now}&bucketMs=60000`,
-  `/api/v1/public/packets?from=${from}&to=${now}&limit=25`,
-  `/api/v1/public/chat?from=${from}&to=${now}&limit=25`
+  { path: '/healthz', type: 'json' },
+  { path: '/readyz', type: 'json' },
+  { path: '/metrics', type: 'text' },
+  { path: '/api/v1/public/state', type: 'json' },
+  { path: `/api/v1/public/history?from=${from}&to=${now}&limit=25`, type: 'json' },
+  { path: `/api/v1/public/history/summary?from=${from}&to=${now}&bucketMs=60000`, type: 'json' },
+  { path: `/api/v1/public/packets?from=${from}&to=${now}&limit=25`, type: 'json' },
+  { path: `/api/v1/public/chat?from=${from}&to=${now}&limit=25`, type: 'json' },
+  { path: '/api/v1/public/solar', type: 'json' }
 ];
 
 const forbiddenKeyPatterns = [
@@ -51,22 +57,23 @@ const secretPair = /\b(?:broker|resolver|debug|secret|token|key|hash|payload|pat
 const findings = [];
 
 for (const endpoint of endpoints) {
-  const url = `${baseUrl}${endpoint}`;
+  const url = `${baseUrl}${endpoint.path}`;
   const response = await fetch(url, { headers: { accept: 'application/json' } });
-  if (response.status === 404 && endpoint.startsWith('/api/v1/public/chat')) {
-    continue;
-  }
   if (!response.ok) {
-    throw new Error(`${endpoint} returned ${response.status}`);
+    throw new Error(`${endpoint.path} returned ${response.status}`);
   }
   const text = await response.text();
+  if (endpoint.type === 'text') {
+    scanPublicText(text, endpoint.path, '$');
+    continue;
+  }
   let json;
   try {
     json = JSON.parse(text);
   } catch (error) {
-    throw new Error(`${endpoint} returned non-JSON: ${error.message}`);
+    throw new Error(`${endpoint.path} returned non-JSON: ${error.message}`);
   }
-  scanValue(json, endpoint, '$', null);
+  scanValue(json, endpoint.path, '$', null);
 }
 
 await scanPublicWebSocket(baseUrl);
@@ -82,26 +89,8 @@ if (findings.length > 0) {
 console.log(`public privacy scan ok: ${baseUrl}`);
 
 async function scanPublicWebSocket(base) {
-  if (typeof WebSocket !== 'function') {
-    return;
-  }
   const url = `${webSocketBaseUrl(base)}/ws/public`;
-  const frame = await new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
-    const timer = setTimeout(() => {
-      ws.close();
-      reject(new Error('/ws/public did not send a frame within 5s'));
-    }, 5000);
-    ws.addEventListener('message', (event) => {
-      clearTimeout(timer);
-      ws.close();
-      resolve(String(event.data));
-    }, { once: true });
-    ws.addEventListener('error', () => {
-      clearTimeout(timer);
-      reject(new Error('/ws/public websocket connection failed'));
-    }, { once: true });
-  });
+  const frame = await readFirstWebSocketTextFrame(url, base);
   let json;
   try {
     json = JSON.parse(frame);
@@ -109,6 +98,143 @@ async function scanPublicWebSocket(base) {
     throw new Error(`/ws/public returned non-JSON: ${error.message}`);
   }
   scanValue(json, '/ws/public', '$', null);
+}
+
+async function readFirstWebSocketTextFrame(rawUrl, origin) {
+  const target = new URL(rawUrl);
+  const isSecure = target.protocol === 'wss:';
+  const port = Number(target.port || (isSecure ? 443 : 80));
+  const path = `${target.pathname || '/'}${target.search || ''}`;
+  const host = target.port ? target.host : target.hostname;
+  const key = crypto.randomBytes(16).toString('base64');
+  const expectedAccept = crypto
+    .createHash('sha1')
+    .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+    .digest('base64');
+
+  return await new Promise((resolve, reject) => {
+    const socket = isSecure
+      ? tls.connect({ host: target.hostname, port, servername: target.hostname })
+      : net.connect({ host: target.hostname, port });
+    let buffer = Buffer.alloc(0);
+    let upgraded = false;
+    let settled = false;
+    const timer = setTimeout(() => fail(new Error('/ws/public did not send a frame within 5s')), 5000);
+
+    socket.on('connect', () => {
+      socket.write([
+        `GET ${path} HTTP/1.1`,
+        `Host: ${host}`,
+        'Upgrade: websocket',
+        'Connection: Upgrade',
+        `Sec-WebSocket-Key: ${key}`,
+        'Sec-WebSocket-Version: 13',
+        `Origin: ${normalizeBaseUrl(origin)}`,
+        '',
+        ''
+      ].join('\r\n'));
+    });
+    socket.on('data', (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      tryParse();
+    });
+    socket.on('error', (error) => fail(error));
+    socket.on('close', () => {
+      if (!settled) {
+        fail(new Error('/ws/public websocket connection closed before first frame'));
+      }
+    });
+
+    function tryParse() {
+      if (!upgraded) {
+        const headerEnd = buffer.indexOf('\r\n\r\n');
+        if (headerEnd === -1) return;
+        const header = buffer.subarray(0, headerEnd).toString('utf8');
+        buffer = buffer.subarray(headerEnd + 4);
+        const lines = header.split('\r\n');
+        if (!/^HTTP\/1\.[01] 101\b/.test(lines[0] || '')) {
+          fail(new Error('/ws/public websocket connection failed'));
+          return;
+        }
+        const acceptHeader = lines.find((line) => /^sec-websocket-accept:/i.test(line));
+        if (!acceptHeader || acceptHeader.split(':').slice(1).join(':').trim() !== expectedAccept) {
+          fail(new Error('/ws/public websocket accept header invalid'));
+          return;
+        }
+        upgraded = true;
+      }
+
+      for (;;) {
+        const frame = tryReadFrame(buffer);
+        if (!frame) return;
+        buffer = buffer.subarray(frame.consumed);
+        if (frame.opcode === 0x1) {
+          done(frame.payload.toString('utf8'));
+          return;
+        }
+        if (frame.opcode === 0x8) {
+          fail(new Error('/ws/public websocket closed before first text frame'));
+          return;
+        }
+      }
+    }
+
+    function done(value) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(value);
+    }
+
+    function fail(error) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      reject(error);
+    }
+  });
+}
+
+function tryReadFrame(buffer) {
+  if (buffer.length < 2) return null;
+  const first = buffer[0];
+  const second = buffer[1];
+  const opcode = first & 0x0f;
+  const masked = (second & 0x80) !== 0;
+  let length = second & 0x7f;
+  let offset = 2;
+
+  if (length === 126) {
+    if (buffer.length < offset + 2) return null;
+    length = buffer.readUInt16BE(offset);
+    offset += 2;
+  } else if (length === 127) {
+    if (buffer.length < offset + 8) return null;
+    const bigLength = buffer.readBigUInt64BE(offset);
+    if (bigLength > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error('/ws/public websocket frame too large');
+    }
+    length = Number(bigLength);
+    offset += 8;
+  }
+
+  let mask;
+  if (masked) {
+    if (buffer.length < offset + 4) return null;
+    mask = buffer.subarray(offset, offset + 4);
+    offset += 4;
+  }
+  if (buffer.length < offset + length) return null;
+
+  const payload = Buffer.from(buffer.subarray(offset, offset + length));
+  if (mask) {
+    for (let i = 0; i < payload.length; i += 1) {
+      payload[i] ^= mask[i % 4];
+    }
+  }
+  return { opcode, payload, consumed: offset + length };
 }
 
 function scanValue(value, endpoint, path, key) {
@@ -157,6 +283,13 @@ function publicStringFinding(value) {
     return 'long base64-like substring';
   }
   return '';
+}
+
+function scanPublicText(value, endpoint, path) {
+  const finding = publicStringFinding(value);
+  if (finding) {
+    findings.push(`${endpoint} ${path}: ${finding}`);
+  }
 }
 
 function normalizeBaseUrl(value) {

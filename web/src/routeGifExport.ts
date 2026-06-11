@@ -1,4 +1,6 @@
 import { appBrandName } from './buildInfo';
+import { clamp } from './lib/clamp';
+import { hexToRgba } from './lib/color';
 import { packetEndpointSummary, packetRegion } from './packets';
 import { payloadVisual } from './payloadVisuals';
 import type { PublicPacketPath, PublicRoutePulse, PublicRouteSegment } from './types';
@@ -325,22 +327,8 @@ function roundedRect(
   }
 }
 
-function hexToRgba(hex: string, alpha: number): string {
-  const normalized = hex.replace('#', '');
-  if (normalized.length !== 6) return `rgba(34, 211, 238, ${alpha})`;
-  const value = Number.parseInt(normalized, 16);
-  const r = (value >> 16) & 255;
-  const g = (value >> 8) & 255;
-  const b = value & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
 function truncateText(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, Math.max(0, max - 3))}...`;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
 }
 
 function yieldToBrowser(): Promise<void> {

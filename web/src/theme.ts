@@ -1,4 +1,4 @@
-export type ThemeMode = 'dark' | 'light';
+export type ThemeMode = 'dark' | 'light' | 'system';
 
 export interface ThemePalette {
   id: string;
@@ -13,7 +13,7 @@ interface StorageLike {
 
 export const THEME_MODE_STORAGE_KEY = 'mc-cartolive-theme-mode';
 export const THEME_PALETTE_STORAGE_KEY = 'mc-cartolive-palette-id';
-export const DEFAULT_THEME_MODE: ThemeMode = 'dark';
+export const DEFAULT_THEME_MODE: ThemeMode = 'system';
 export const DEFAULT_THEME_PALETTE_ID = 'neutral-blue';
 
 export const THEME_PALETTES: readonly ThemePalette[] = [
@@ -363,11 +363,18 @@ export interface ThemePreference {
 }
 
 export function normalizeThemeMode(value: string | null | undefined): ThemeMode {
-  return value === 'light' || value === 'dark' ? value : DEFAULT_THEME_MODE;
+  if (value === 'light' || value === 'dark' || value === 'system') return value;
+  return DEFAULT_THEME_MODE;
 }
 
 export function toggleThemeMode(mode: ThemeMode): ThemeMode {
-  return mode === 'dark' ? 'light' : 'dark';
+  return mode === 'system' ? 'dark' : mode === 'dark' ? 'light' : 'system';
+}
+
+export function resolveThemeMode(mode: ThemeMode): 'dark' | 'light' {
+  if (mode !== 'system') return mode;
+  if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark';
+  return 'light';
 }
 
 export function themePaletteByID(id: string | null | undefined): ThemePalette {
@@ -415,7 +422,7 @@ export function writeStoredThemePreference(preference: ThemePreference, storage:
 export function applyDocumentTheme(preference: ThemePreference, root: HTMLElement | undefined = document.documentElement): void {
   root.dataset.themeMode = preference.mode;
   root.dataset.themePalette = preference.palette.id;
-  root.style.colorScheme = preference.mode;
+  root.style.colorScheme = preference.mode === 'system' ? 'dark light' : preference.mode;
 }
 
 function browserStorage(): StorageLike | undefined {

@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.6.3
+# MeshCore MQTT Live Map v2.8.0
 
 Also known as **MC-CartoLive**.
 
@@ -23,15 +23,17 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.6.3 Feature Gallery
+### v2.8.0 Feature Gallery
 
-Version 2.6.3 is the world-ready live network operations release with Route GIF
-Export plus docked Packets and Chat workspaces. Hosted Canada stays
+Version 2.8.0 is the production-ready World Release 2 line with stabilized
+Packets, Chat, NetGraph, OpenFreeMap/3D layers, safe SQLite migrations,
+projection fallback hardening, service-worker cleanup, and deployment rollback
+guardrails.
 Canada-scoped, while packaged installs support worldwide/private brokers
 through configurable map bounds, generic region labels, first-run setup, and
 region-first diagnostics.
 
-The 2.6.3 release keeps the public-safe Packets Explorer, VCR replay, Chat,
+The 2.8.0 release keeps the public-safe Packets Explorer, VCR replay, Chat,
 NetGraph, OpenFreeMap 3D route arcs/models/comets, palette/theme controls, and
 browser smoke coverage for desktop and 390px mobile. Packets and Chat open as
 Google Maps-style side panels on desktop, can expand to fullscreen, and still
@@ -311,7 +313,7 @@ docker run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.6.3
+  ghcr.io/n30nex/mc-cartolive:2.8.0
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -322,7 +324,7 @@ docker run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.6.3
+  ghcr.io/n30nex/mc-cartolive:2.8.0
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -443,7 +445,7 @@ Docker:
 docker compose build
 ```
 
-Browser layout smoke for the 2.6 release gate:
+Browser layout smoke for the 2.8.0 release gate:
 
 ```powershell
 npm --prefix web exec playwright install chromium
@@ -454,10 +456,10 @@ The smoke checks desktop `1920x1080` and mobile `390px` layouts for the live
 map, Packets, Chat, and NetGraph. Screenshots are written to
 `artifacts/browser-smoke` by default.
 
-Packaged image smoke for the 2.6 release gate:
+Packaged image smoke for the 2.8.0 release gate:
 
 ```powershell
-node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.6.3 --pull
+node scripts/package-smoke.mjs --image ghcr.io/n30nex/mc-cartolive:2.8.0 --pull
 ```
 
 The package smoke runs the image in synthetic and worldwide `r1` fixture modes,
@@ -466,7 +468,7 @@ privacy scanner against both temporary containers.
 
 ## Production Hosting
 
-The recommended v2.6.3 release path is clone + Docker Compose on a VPS or local
+The recommended v2.8.0 release path is clone + Docker Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

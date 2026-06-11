@@ -1,0 +1,22 @@
+{
+  "name": "MC-CartoLive",
+  "short_name": "CartoLive",
+  "description": "MeshCore MQTT Live Map",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#05070b",
+  "background_color": "#05070b",
+  "icons": [
+    {
+      "src": "/meshcore-canada-favicon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/meshcore-canada-favicon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

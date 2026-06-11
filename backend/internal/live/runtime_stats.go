@@ -213,11 +213,11 @@ func (s *RuntimeStats) RecordPacketPathBackfill(duration time.Duration, failed b
 	}
 	s.packetPathBackfillLastLatencyMs.Store(duration.Milliseconds())
 	s.packetPathBackfillLastAtMs.Store(time.Now().UnixMilli())
-	s.packetPathBackfillLastScanned.Store(int64(maxInt(scanned, 0)))
-	s.packetPathBackfillLastProjected.Store(int64(maxInt(projected, 0)))
-	s.packetPathBackfillLastMappable.Store(int64(maxInt(mappable, 0)))
-	s.packetPathBackfillLastInvalid.Store(int64(maxInt(nonMappable, 0)))
-	s.packetPathSearchIndexLastSync.Store(int64(maxInt(searchIndexed, 0)))
+	s.packetPathBackfillLastScanned.Store(int64(max(scanned, 0)))
+	s.packetPathBackfillLastProjected.Store(int64(max(projected, 0)))
+	s.packetPathBackfillLastMappable.Store(int64(max(mappable, 0)))
+	s.packetPathBackfillLastInvalid.Store(int64(max(nonMappable, 0)))
+	s.packetPathSearchIndexLastSync.Store(int64(max(searchIndexed, 0)))
 	if searchRemaining {
 		s.packetPathSearchIndexRemaining.Store(1)
 	} else {
@@ -274,11 +274,4 @@ func (s *RuntimeStats) Snapshot() RuntimeStatsSnapshot {
 		PacketPathSearchIndexRemaining:  s.packetPathSearchIndexRemaining.Load() == 1,
 		PacketPathBackfillRemaining:     s.packetPathBackfillRemaining.Load() == 1,
 	}
-}
-
-func maxInt(value int, minimum int) int {
-	if value < minimum {
-		return minimum
-	}
-	return value
 }
