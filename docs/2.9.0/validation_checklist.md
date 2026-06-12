@@ -48,12 +48,17 @@
 
 ## Deployment
 
-- [ ] Merge validated feature branch into `main`.
-- [ ] Push `main` to GitHub.
-- [ ] Delete the feature branch if it is no longer needed.
-- [ ] Deploy 2.9.0 to the droplet.
-- [ ] Run live smoke and record deployed version, Git SHA, and ready status.
+- [x] Merge validated feature branch into `main`.
+- [x] Push `main` to GitHub.
+- [x] Delete the feature branch if it is no longer needed.
+- [x] Deploy 2.9.0 to the droplet.
+- [x] Run live smoke and record deployed version, Git SHA, and ready status.
 
 ## Deployment Evidence
 
-- Pending.
+- 2.9.0 deploy to `https://carto.canadaverse.org` completed from pushed
+  `main`.
+- Live smoke reported version `2.9.0`, fresh packet ingest, fresh public cache,
+  ready state, public state/history/packets/chat APIs, WebSocket hello, and
+  healthy remote container diagnostics for `YTR`.
+- Deployed public privacy scan passed at `https://carto.canadaverse.org`.
