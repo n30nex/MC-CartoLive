@@ -8,6 +8,7 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 Version `2.8.2` is the current production-ready map UI polish release.
 
 - Detailed next-phase plan: [2.7.5 to 2.7.7](roadmap-2.7.5-to-2.7.7.md).
+- UX release ladder: [2.9.0 UX roadmap](2.9.0/roadmap.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
 - Current release focus: 2.8.2 keeps the 2.8.1 propagation foundation while
@@ -24,11 +25,15 @@ Version `2.8.2` is the current production-ready map UI polish release.
   OpenFreeMap/3D, service-worker cleanup, migrations, projection fallback,
   propagation insights, release checks, and deployment rollback are
   release-critical surfaces.
-- Make `2.8.3` the public-safe diagnostics pass for projection/cache/MQTT
-  readiness, observer-quality, and browser-side release health.
-- Make `2.8.4` the route-confidence overlay pass.
-- Make `2.8.5` the SNR/RSSI heatmap and terrain/RF analysis pass for verified
-  public pathways only.
+- Make `2.8.3` the map chrome stabilization pass for desktop/mobile controls,
+  safe-area layout, and panel stacking.
+- Make `2.8.4` the layer and settings UX pass with visitor-friendly presets.
+- Make `2.8.5` the selection and route-understanding pass.
+- Make `2.8.6` the panels workspace polish pass.
+- Make `2.8.7` the visitor onboarding and help pass.
+- Make `2.8.8` the visual QA and performance pass.
+- Make `2.9.0` the no-public-API-change UX rollup release for live map
+  visitors.
 - Keep packet ingest, public cache, WebSocket fanout, public history, and public
   packet paths observable through public-safe health/readiness counters.
 - Keep the Packets page server-backed, cursor-stable, and bounded under rare
