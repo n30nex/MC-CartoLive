@@ -36,8 +36,17 @@ export interface MapSettings {
   packets: PacketVisualSettings;
 }
 
+export type MapLayerPresetID = 'live' | 'clean' | 'analysis' | '3d';
+
+export interface MapLayerPreset {
+  id: MapLayerPresetID;
+  label: string;
+  hint: string;
+  layers: MapLayerSettings;
+}
+
 export const MAP_SETTINGS_STORAGE_KEY = 'mc-cartolive-map-settings';
-export const MAP_SETTINGS_SCHEMA_VERSION = 2;
+export const MAP_SETTINGS_SCHEMA_VERSION = 3;
 
 export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   clusters: true,
@@ -73,6 +82,59 @@ export const DEFAULT_MAP_SETTINGS: MapSettings = {
   layers: DEFAULT_MAP_LAYER_SETTINGS,
   packets: DEFAULT_PACKET_VISUAL_SETTINGS
 };
+
+export const MAP_LAYER_PRESETS: readonly MapLayerPreset[] = [
+  {
+    id: 'live',
+    label: 'Live',
+    hint: 'First-view traffic: comets, trails, nodes, and quiet route lines.',
+    layers: { ...DEFAULT_MAP_LAYER_SETTINGS }
+  },
+  {
+    id: 'clean',
+    label: 'Clean',
+    hint: 'Minimal map for watching current packet movement.',
+    layers: {
+      ...DEFAULT_MAP_LAYER_SETTINGS,
+      activityHeatmap: false,
+      analysisPaths: false,
+      packetResidue: false,
+      observerBursts: false,
+      messageBubbles: false,
+      nodeModels3D: false,
+      routeArcs3D: false,
+      packetComets3D: false,
+      buildingExtrusions: false
+    }
+  },
+  {
+    id: 'analysis',
+    label: 'Analysis',
+    hint: 'Routes, selected paths, and propagation context for RF review.',
+    layers: {
+      ...DEFAULT_MAP_LAYER_SETTINGS,
+      routes: true,
+      analysisPaths: true,
+      propagationInsights: true,
+      terrainLOS: true
+    }
+  },
+  {
+    id: '3d',
+    label: '3D',
+    hint: 'Relief, buildings, route arcs, and 3D packet motion.',
+    layers: {
+      ...DEFAULT_MAP_LAYER_SETTINGS,
+      routes: true,
+      nodeModels3D: true,
+      routeArcs3D: true,
+      packetComets3D: true,
+      buildingExtrusions: true,
+      terrainLOS: true,
+      terrainHeightmap: true
+    }
+  }
+];
 
 export function normalizeMapSettings(input: unknown): MapSettings {
   const raw = isRecord(input) ? input : {};
@@ -137,6 +199,19 @@ export function writeStoredMapSettings(settings: MapSettings) {
   }));
 }
 
+export function applyMapLayerPreset(settings: MapSettings, presetID: MapLayerPresetID): MapSettings {
+  const preset = MAP_LAYER_PRESETS.find((item) => item.id === presetID);
+  return normalizeMapSettings({
+    ...settings,
+    layers: preset ? preset.layers : settings.layers
+  });
+}
+
+export function mapLayerPresetIDForSettings(settings: MapLayerSettings): MapLayerPresetID | null {
+  const signature = layerSettingsSignature(settings);
+  return MAP_LAYER_PRESETS.find((preset) => layerSettingsSignature(preset.layers) === signature)?.id ?? null;
+}
+
 export function isPacketAnimationStyle(value: unknown): value is PacketAnimationStyle {
   return value === 'comet' || value === 'pulse' || value === 'minimal';
 }
@@ -180,7 +255,7 @@ function normalizeStoredMapSettings(input: unknown): MapSettings {
   const settings = normalizeMapSettings(input);
   const raw = isRecord(input) ? input : {};
   const schemaVersion = typeof raw.schemaVersion === 'number' ? raw.schemaVersion : 1;
-  if (schemaVersion < MAP_SETTINGS_SCHEMA_VERSION) {
+  if (schemaVersion < 2) {
     const layers = isRecord(raw.layers) ? raw.layers : {};
     if (layers.terrainHeightmap !== false) settings.layers.terrainHeightmap = false;
     if (layers.propagationInsights !== false) settings.layers.propagationInsights = false;

@@ -2,7 +2,7 @@
 
 Last audited: 2026-06-02
 
-Baseline audited: `v2.8.2` adds the flat-first map UI polish pass, default-off terrain and propagation overlays, mobile bottom controls, and a quieter status bar on top of the 2.8.1 propagation foundation,
+Baseline audited: `v2.9.0` adds the visitor UX rollup, layer presets, first-visit orientation, refreshed help, denser selection summaries, and current release highlights on top of the 2.8.x flat-first map and propagation foundation,
 expanded browser-control smoke coverage,
 packaged-image release-gate smoke automation,
 projected Packets search-path observability,

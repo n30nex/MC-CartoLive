@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import { RotateCcw, SlidersHorizontal, X } from 'lucide-react';
 import {
+  applyMapLayerPreset,
   DEFAULT_MAP_SETTINGS,
+  MAP_LAYER_PRESETS,
+  mapLayerPresetIDForSettings,
   normalizeMapSettings,
   type MapLayerSettings,
+  type MapLayerPresetID,
   type MapSettings,
   type PacketAnimationStyle,
   type RenderQuality
@@ -30,18 +34,11 @@ export const LAYER_GROUPS: readonly { label: string; controls: readonly LayerCon
     ]
   },
   {
-    label: 'Mesh',
+    label: 'Live',
     controls: [
       { key: 'clusters', label: 'Clusters', hint: 'Grouped low-zoom node bubbles' },
       { key: 'activityHeatmap', label: 'Activity heatmap', hint: 'Recent activity glow' },
       { key: 'nodes', label: 'Nodes', hint: 'Individual public nodes and observers' },
-      { key: 'nodeLabels', label: 'Node labels', hint: 'Projected map labels' },
-      { key: 'routes', label: 'Known pathways', hint: 'Idle public route lines' }
-    ]
-  },
-  {
-    label: 'Live Motion',
-    controls: [
       { key: 'liveComets', label: 'Live packet comets', hint: 'Live packet flight animations' },
       { key: 'packetResidue', label: 'Packet trails', hint: 'Recent route glow residue' },
       { key: 'observerBursts', label: 'Observer bursts', hint: 'Observer-only packet pings' },
@@ -49,19 +46,26 @@ export const LAYER_GROUPS: readonly { label: string; controls: readonly LayerCon
     ]
   },
   {
-    label: '3D',
+    label: 'Routes',
     controls: [
-      { key: 'nodeModels3D', label: '3D node models', hint: 'OpenFreeMap role models' },
-      { key: 'routeArcs3D', label: '3D route arcs', hint: 'Elevated pathway arcs' },
-      { key: 'packetComets3D', label: '3D packet comets', hint: 'OpenFreeMap mesh comets and trails' }
+      { key: 'nodeLabels', label: 'Node labels', hint: 'Projected map labels' },
+      { key: 'routes', label: 'Known pathways', hint: 'Idle public route lines' },
+      { key: 'analysisPaths', label: 'Analysis paths', hint: 'Selected packets and plotted paths' }
     ]
   },
   {
     label: 'Analysis',
     controls: [
-      { key: 'analysisPaths', label: 'Analysis paths', hint: 'Selected packets and plotted paths' },
       { key: 'terrainLOS', label: 'Terrain line-of-sight', hint: 'RF terrain clearance color on 3D routes' },
       { key: 'propagationInsights', label: 'Propagation insights', hint: 'Long-distance route annotations and replay history' }
+    ]
+  },
+  {
+    label: 'Visuals',
+    controls: [
+      { key: 'nodeModels3D', label: '3D node models', hint: 'OpenFreeMap role models' },
+      { key: 'routeArcs3D', label: '3D route arcs', hint: 'Elevated pathway arcs' },
+      { key: 'packetComets3D', label: '3D packet comets', hint: 'OpenFreeMap mesh comets and trails' }
     ]
   }
 ];
@@ -79,6 +83,10 @@ const RENDER_QUALITIES: readonly { value: RenderQuality; label: string }[] = [
 ];
 
 export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenPropagation }: MapSettingsDrawerProps) {
+  const activePresetID = mapLayerPresetIDForSettings(settings.layers);
+  const applyPreset = (presetID: MapLayerPresetID) => {
+    onChange(applyMapLayerPreset(settings, presetID));
+  };
   const updateLayer = (key: keyof MapLayerSettings, value: boolean) => {
     onChange(normalizeMapSettings({ ...settings, layers: { ...settings.layers, [key]: value } }));
   };
@@ -99,6 +107,24 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
           <X size={17} />
         </button>
       </header>
+
+      <section className="map-settings-section">
+        <h3>Presets</h3>
+        <div className="map-settings-preset-grid" role="group" aria-label="Layer presets">
+          {MAP_LAYER_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              className={activePresetID === preset.id ? 'active' : ''}
+              aria-pressed={activePresetID === preset.id}
+              onClick={() => applyPreset(preset.id)}
+            >
+              <strong>{preset.label}</strong>
+              <small>{preset.hint}</small>
+            </button>
+          ))}
+        </div>
+      </section>
 
       <section className="map-settings-section">
         <h3>Layers</h3>

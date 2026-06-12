@@ -9,7 +9,7 @@ describe('MapSettingsDrawer', () => {
       <MapSettingsDrawer settings={DEFAULT_MAP_SETTINGS} onChange={() => undefined} onClose={() => undefined} />
     );
 
-    expect(LAYER_GROUPS.map((group) => group.label)).toEqual(['Base', 'Mesh', 'Live Motion', '3D', 'Analysis']);
+    expect(LAYER_GROUPS.map((group) => group.label)).toEqual(['Base', 'Live', 'Routes', 'Analysis', 'Visuals']);
     expect(html).toContain('Weather clouds');
     expect(html).toContain('Propagation insights');
     expect(html).toContain('Terrain relief');
@@ -24,5 +24,21 @@ describe('MapSettingsDrawer', () => {
 
     expect(DEFAULT_MAP_SETTINGS.layers.propagationInsights).toBe(false);
     expect(html).toContain('Open history');
+  });
+
+  it('renders the 2.9.0 layer presets with Live active by default', () => {
+    const html = renderToStaticMarkup(
+      <MapSettingsDrawer settings={DEFAULT_MAP_SETTINGS} onChange={() => undefined} onClose={() => undefined} />
+    );
+
+    expect(html).toContain('Layer presets');
+    expect(html).toContain('Live');
+    expect(html).toContain('Clean');
+    expect(html).toContain('Analysis');
+    expect(html).toContain('3D');
+    expect(html).toContain('aria-pressed="true"');
+    expect(DEFAULT_MAP_SETTINGS.layers.routes).toBe(false);
+    expect(DEFAULT_MAP_SETTINGS.layers.terrainHeightmap).toBe(false);
+    expect(DEFAULT_MAP_SETTINGS.layers.propagationInsights).toBe(false);
   });
 });

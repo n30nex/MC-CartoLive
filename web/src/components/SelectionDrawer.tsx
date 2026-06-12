@@ -61,6 +61,14 @@ export default function SelectionDrawer({
           <>
             <span className="eyebrow">{formatNodeRole(node.role)}{node.isObserver ? ' observer' : ''}</span>
             <h2>{node.label}</h2>
+            <SelectionSummaryStrip
+              items={[
+                { label: 'Routes', value: connectedRoutes.length.toLocaleString() },
+                { label: 'Reachable', value: reachableCount.toLocaleString() },
+                { label: 'Activity', value: node.activityCount.toLocaleString() },
+                { label: 'Seen', value: formatRelative(node.lastSeen) }
+              ]}
+            />
             <dl>
               <Detail label="Role" value={formatNodeRole(node.role)} />
               <Detail label="Observer" value={node.isObserver ? 'Yes' : 'No'} />
@@ -90,6 +98,19 @@ export default function SelectionDrawer({
           <>
             <span className="eyebrow">route</span>
             <h2>{route.from.label}{' -> '}{route.to.label}</h2>
+            <SelectionSummaryStrip
+              items={[
+                { label: 'Distance', value: `${route.distanceKm.toFixed(1)} km` },
+                { label: 'Packets', value: route.packetCount.toLocaleString() },
+                { label: 'Last', value: formatRelative(route.lastHeard) },
+                { label: 'Payloads', value: route.payloadTypeNames.length.toLocaleString() }
+              ]}
+            />
+            <div className="selection-endpoint-row" aria-label="Route endpoints">
+              <span>{route.from.label}</span>
+              <em>to</em>
+              <span>{route.to.label}</span>
+            </div>
             <dl>
               <Detail label="Packets" value={route.packetCount.toLocaleString()} />
               <Detail label="Distance" value={`${route.distanceKm.toFixed(1)} km`} />
@@ -141,6 +162,19 @@ export default function SelectionDrawer({
           )}
         </aside>
       )}
+    </div>
+  );
+}
+
+function SelectionSummaryStrip({ items }: { items: { label: string; value: string }[] }) {
+  return (
+    <div className="selection-summary-strip">
+      {items.map((item) => (
+        <span key={item.label}>
+          <strong>{item.value}</strong>
+          <em>{item.label}</em>
+        </span>
+      ))}
     </div>
   );
 }

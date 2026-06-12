@@ -3066,6 +3066,49 @@ button.status-pill {
   gap: 10px;
 }
 
+.map-settings-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.map-settings-preset-grid button {
+  min-width: 0;
+  min-height: 56px;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 8px;
+  color: var(--mc-text-normal, #dbeafe);
+  text-align: left;
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(7, 16, 29, 0.84)) 84%, transparent);
+  border: 1px solid var(--mc-border, rgba(125, 211, 252, 0.24));
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.map-settings-preset-grid button strong {
+  color: var(--mc-text, #f8fafc);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.map-settings-preset-grid button small {
+  color: var(--mc-text-muted, #9fb1c9);
+  font-size: 10px;
+  font-weight: 720;
+  line-height: 1.25;
+}
+
+.map-settings-preset-grid button.active,
+.map-settings-preset-grid button:hover,
+.map-settings-preset-grid button:focus-visible {
+  color: var(--mc-text, #ffffff);
+  border-color: var(--mc-border-strong, rgba(56, 189, 248, 0.64));
+  box-shadow: 0 0 18px color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent);
+  outline: none;
+}
+
 .map-settings-layer-group {
   display: grid;
   gap: 6px;
@@ -3928,6 +3971,226 @@ button.status-pill {
   line-height: 1.2;
 }
 
+.visitor-guide {
+  right: 10px;
+  bottom: calc(var(--vcr-bar-height, 0px) + 56px);
+  z-index: var(--z-map-chrome, 8);
+  display: grid;
+  gap: 8px;
+  width: min(340px, calc(100vw - 20px));
+  padding: 12px;
+  color: var(--mc-text, #f8fafc);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--mc-surface, #060b12) 94%, transparent), color-mix(in srgb, var(--mc-surface-strong, #111827) 88%, transparent)),
+    radial-gradient(circle at 0 0, color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent), transparent 42%);
+  border: 1px solid color-mix(in srgb, var(--mc-border-strong, rgba(125, 211, 252, 0.5)) 72%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 24px 58px var(--mc-shadow, rgba(0, 0, 0, 0.44)), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(18px) saturate(1.16);
+  pointer-events: auto;
+}
+
+.visitor-guide h2 {
+  margin: -4px 26px 0 0;
+  color: var(--mc-text, #f8fafc);
+  font-size: 17px;
+  line-height: 1.12;
+}
+
+.visitor-guide p {
+  margin: 0;
+  color: var(--mc-text-normal, #cbd5e1);
+  font-size: 12px;
+  line-height: 1.42;
+}
+
+.visitor-guide-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 25px;
+  height: 25px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--mc-text-normal, #dbeafe);
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(15, 23, 42, 0.86)) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-border, rgba(125, 211, 252, 0.24)) 80%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.visitor-guide-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.visitor-guide-actions button {
+  min-width: 0;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 7px;
+  color: var(--mc-text-normal, #dbeafe);
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(15, 23, 42, 0.86)) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-border, rgba(125, 211, 252, 0.24)) 80%, transparent);
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 850;
+}
+
+.visitor-guide-actions button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visitor-guide-actions button.active,
+.visitor-guide-actions button:hover,
+.visitor-guide-actions button:focus-visible,
+.visitor-guide-close:hover,
+.visitor-guide-close:focus-visible {
+  color: var(--mc-text, #ffffff);
+  border-color: color-mix(in srgb, var(--mc-accent, #38bdf8) 52%, transparent);
+  outline: none;
+}
+
+.shortcut-help-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal, 120);
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  background: rgba(2, 6, 12, 0.56);
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+}
+
+.shortcut-help {
+  width: min(560px, calc(100vw - 28px));
+  max-height: calc(100vh - 28px);
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  overflow: auto;
+  color: var(--mc-text, #f8fafc);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--mc-surface, #060b12) 96%, transparent), color-mix(in srgb, var(--mc-surface-strong, #111827) 90%, transparent)),
+    radial-gradient(circle at 10% 0, color-mix(in srgb, var(--mc-accent, #38bdf8) 14%, transparent), transparent 34%);
+  border: 1px solid color-mix(in srgb, var(--mc-border-strong, rgba(125, 211, 252, 0.5)) 78%, transparent);
+  border-radius: 9px;
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.58), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.shortcut-help header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.shortcut-help h3,
+.shortcut-help h4 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.shortcut-help h3 {
+  font-size: 18px;
+}
+
+.shortcut-help h4 {
+  color: color-mix(in srgb, var(--mc-accent, #38bdf8) 78%, var(--mc-text, #ffffff));
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.shortcut-help header button {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--mc-text-normal, #dbeafe);
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(15, 23, 42, 0.86)) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-border, rgba(125, 211, 252, 0.24)) 80%, transparent);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.shortcut-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.shortcut-guide-grid section {
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(15, 23, 42, 0.78)) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-border, rgba(125, 211, 252, 0.2)) 82%, transparent);
+  border-radius: 7px;
+}
+
+.shortcut-guide-grid strong {
+  color: var(--mc-text, #f8fafc);
+  font-size: 12px;
+}
+
+.shortcut-guide-grid p {
+  margin: 0;
+  color: var(--mc-text-normal, #cbd5e1);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.shortcut-help dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.shortcut-help dl div {
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(15, 23, 42, 0.7)) 86%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-border, rgba(125, 211, 252, 0.18)) 82%, transparent);
+  border-radius: 7px;
+}
+
+.shortcut-help dt,
+.shortcut-help dd {
+  margin: 0;
+}
+
+.shortcut-help kbd {
+  display: inline-flex;
+  min-width: 0;
+  justify-content: center;
+  padding: 3px 6px;
+  color: #e0f2fe;
+  background: rgba(2, 6, 23, 0.8);
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.shortcut-help dd {
+  color: var(--mc-text-normal, #cbd5e1);
+  font-size: 12px;
+}
+
 @keyframes packet-type-flash {
   0% {
     transform: scale(1.12);
@@ -4437,6 +4700,80 @@ button.status-pill {
   line-height: 1.15;
   letter-spacing: 0;
   overflow-wrap: anywhere;
+}
+
+.selection-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.selection-summary-strip span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 7px 6px;
+  background: rgba(15, 23, 42, 0.66);
+  border: 1px solid rgba(125, 211, 252, 0.14);
+  border-radius: 7px;
+}
+
+.selection-summary-strip strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selection-summary-strip em {
+  overflow: hidden;
+  color: #8fa2bb;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 780;
+  letter-spacing: 0;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.selection-endpoint-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+  padding: 7px 8px;
+  color: #dbeafe;
+  background: rgba(15, 23, 42, 0.58);
+  border: 1px solid rgba(125, 211, 252, 0.14);
+  border-radius: 7px;
+}
+
+.selection-endpoint-row span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selection-endpoint-row span:last-child {
+  text-align: right;
+}
+
+.selection-endpoint-row em {
+  color: #8fa2bb;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 850;
+  text-transform: uppercase;
 }
 
 .selection-panel dl {
@@ -5253,6 +5590,14 @@ button.status-pill {
     width: auto;
   }
 
+  .shortcut-guide-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .shortcut-help dl div {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
+
   .perf-panel,
   .setup-panel,
   .packets-panel {
@@ -5275,6 +5620,10 @@ button.status-pill {
     width: auto;
     max-height: none;
     overflow: auto;
+  }
+
+  .map-settings-preset-grid {
+    grid-template-columns: 1fr;
   }
 
   .top-popover.palette-picker,
@@ -5442,6 +5791,13 @@ button.status-pill {
     color: #fecaca;
     border-color: rgba(248, 113, 113, 0.58);
     box-shadow: 0 0 18px rgba(248, 113, 113, 0.16);
+  }
+
+  .visitor-guide {
+    right: calc(8px + var(--ui-safe-right, 0px));
+    bottom: calc(78px + var(--ui-safe-bottom, 0px));
+    left: calc(8px + var(--ui-safe-left, 0px));
+    width: auto;
   }
 
   .mobile-control-sheet {
@@ -5682,6 +6038,10 @@ button.status-pill {
   .selection-panel h2 {
     margin-right: 32px;
     font-size: 16px;
+  }
+
+  .selection-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .selection-panel dl div {

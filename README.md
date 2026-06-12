@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.8.2
+# MeshCore MQTT Live Map v2.9.0
 
 Also known as **MC-CartoLive**.
 
@@ -23,19 +23,21 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.8.2 Feature Gallery
+### v2.9.0 Feature Gallery
 
-Version 2.8.2 is the map UI polish release on top of the propagation-ready
-World Release 2 line. The first view is flatter and cleaner: terrain relief and
-propagation overlays are off by default, Known Pathways remain off for new
-visitors, and the top status bar returns to live traffic metrics.
+Version 2.9.0 is the visitor UX rollup on top of the propagation-ready World
+Release 2 line. It keeps public API shapes stable while making the live map
+easier to read: layer presets, clearer Map Settings groups, first-visit
+orientation, refreshed help, denser selection summaries, and current release
+highlights all focus visitors on live traffic first.
 
-The 2.8.2 release keeps public-safe propagation history available from Map
-Settings, keeps terrain relief as an optional layer, softens dark-mode
-hillshade, and replaces the crowded mobile top controls with a thumb-reachable
-bottom dock and control sheet. Packaged installs still support
-worldwide/private brokers through configurable map bounds, generic region
-labels, first-run setup, and region-first diagnostics.
+The 2.9.0 release preserves the flat first view introduced in 2.8.2: terrain
+relief, propagation overlays, and Known Pathways remain off by default for new
+visitors, while optional propagation history, terrain relief, route lines, 3D
+visuals, Packets, Chat, NetGraph, and NodeList remain available through the map
+controls and panels. Packaged installs still support worldwide/private brokers
+through configurable map bounds, generic region labels, first-run setup, and
+region-first diagnostics.
 
 Version 2.5.50 hardened the package release gate: `scripts/package-smoke.mjs`
 now runs a built or published image through both the synthetic hosted-style
@@ -307,7 +309,7 @@ podman run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.8.2
+  ghcr.io/n30nex/mc-cartolive:2.9.0
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
@@ -318,7 +320,7 @@ podman run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.8.2
+  ghcr.io/n30nex/mc-cartolive:2.9.0
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -440,7 +442,7 @@ Container image:
 podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
 ```
 
-Browser layout smoke for the 2.8.2 release gate:
+Browser layout smoke for the 2.9.0 release gate:
 
 ```powershell
 npm --prefix web exec playwright install chromium
@@ -451,10 +453,10 @@ The smoke checks desktop `1920x1080` and mobile `390px` layouts for the live
 map, Packets, Chat, and NetGraph. Screenshots are written to
 `artifacts/browser-smoke` by default.
 
-Packaged image smoke for the 2.8.2 release gate:
+Packaged image smoke for the 2.9.0 release gate:
 
 ```powershell
-node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:2.8.2 --pull
+node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:2.9.0 --pull
 ```
 
 The local release helpers auto-prefer Podman when it is installed. Set
@@ -466,7 +468,7 @@ privacy scanner against both temporary containers.
 
 ## Production Hosting
 
-The recommended v2.8.2 release path is clone + Compose on a VPS or local
+The recommended v2.9.0 release path is clone + Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:

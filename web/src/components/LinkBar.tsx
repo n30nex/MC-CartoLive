@@ -19,19 +19,19 @@ type InfoPanel = 'changelog' | null;
 
 export const LATEST_RELEASE_HIGHLIGHTS = [
   {
-    label: '2.7.0',
-    title: 'ETag caching & performance',
-    body: 'ETag-based state caching reduces network load. AWS terrain tiles, solar weather integration, transaction safety fixes, and render performance tuning.'
+    label: '2.9.0',
+    title: 'Visitor UX rollup',
+    body: 'Layer presets, clearer map settings, first-visit orientation, and denser selection summaries polish the live map without public API changes.'
   },
   {
-    label: '2.7.5',
-    title: 'Workspace side panels',
-    body: 'OpenFreeMap 3D performance now avoids duplicate node/route computations during scene rebuilds.'
+    label: '2.8.2',
+    title: 'Flat first view',
+    body: 'Terrain relief and propagation overlays default off, mobile controls move to a bottom dock, and the top status bar stays focused on traffic.'
   },
   {
-    label: '2.6.2',
-    title: 'Route GIF export',
-    body: 'Exports real map replay GIFs with route-fit framing and compact hop details for public sharing.'
+    label: '2.8.1',
+    title: 'Propagation tools',
+    body: 'Public-safe long-distance route history, cautious tropo labels, cloud fade, MapLibre node labels, and the redesigned chat panel remain available.'
   }
 ];
 
@@ -131,7 +131,7 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
       </div>
       {activeInfoPanel === 'changelog' && (
         <InfoPopover title="Latest Changelog" icon={<History size={14} />} onClose={() => setActiveInfoPanel(null)}>
-          <p>Current public map baseline plus the next 3D performance focus.</p>
+          <p>Current public map baseline and the UX polish that makes live traffic easier to read.</p>
           <div className="link-bar-release-list">
             {LATEST_RELEASE_HIGHLIGHTS.map((item) => (
               <article key={`${item.label}-${item.title}`} className="link-bar-release-note">

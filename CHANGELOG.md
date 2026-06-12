@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.9.0 - 2026-06-12
+
+- Shipped the no-public-API-change visitor UX rollup on top of the 2.8.x
+  propagation and flat-first map foundation.
+- Added frontend-only layer presets for Live, Clean, Analysis, and 3D map
+  workflows while preserving existing packet visual preferences.
+- Reworked Map Settings into clearer Base, Live, Routes, Analysis, and Visuals
+  groups.
+- Added local-only first-visit orientation plus refreshed in-app help for live
+  comets, trails, nodes, panels, VCR, and Known Pathways.
+- Improved selection drawer hierarchy with compact node and route summary
+  metrics before detailed public-safe fields.
+- Updated the compact top-bar changelog to the current 2.9.0/2.8.x release
+  train and added 2.9.0 documentation, release notes, and validation artifacts.
+
 ## 2.8.2 - 2026-06-12
 
 - Made the first map view flatter and quieter by defaulting terrain relief and

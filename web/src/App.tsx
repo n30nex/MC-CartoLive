@@ -23,6 +23,7 @@ import PlotRoutesPanel, { type PlotMode, type PlotResult } from './components/Pl
 import SelectionDrawer from './components/SelectionDrawer';
 import StatusBar from './components/StatusBar';
 import PropagationPanel from './components/PropagationPanel';
+import VisitorGuide from './components/VisitorGuide';
 import VcrBar, { MiniLiveClock } from './components/VcrBar';
 import ChromePanel from './components/ChromePanel';
 import { lazyWithReload } from './lazyWithReload';
@@ -1237,6 +1238,7 @@ export default function App() {
 
   const showRouteGifExport = Boolean(selectedPacket && !packetsOpen && !netGraphOpen && !chatOpen && !setupOpen && !propagationOpen && !vcrOpen);
   const knownPathwaysOn = mapSettings.layers.routes;
+  const visitorGuideSuppressed = chromeHidden || packetsOpen || netGraphOpen || chatOpen || setupOpen || propagationOpen || vcrOpen || nodeListOpen || shortcutHelpOpen || mapSettingsOpen || mobileControlsOpen || Boolean(selectedNode || selectedRoute || selectedPacket);
 
   return (
     <div
@@ -1445,6 +1447,18 @@ export default function App() {
           <X size={18} />
         </button>
       </div>
+      <VisitorGuide
+        knownPathwaysOn={knownPathwaysOn}
+        suppressed={visitorGuideSuppressed}
+        onOpenSettings={() => {
+          setMapSettingsOpen(true);
+          setPanelsMenuOpen(false);
+          setPaletteMenuOpen(false);
+          setMobileControlsOpen(false);
+        }}
+        onOpenHelp={() => setShortcutHelpOpen(true)}
+        onToggleKnownPathways={toggleKnownPathways}
+      />
       <div className="mobile-control-dock" aria-label="Mobile map controls">
         <button
           className={`mobile-control-button ${mapSettingsOpen ? 'active' : ''}`}

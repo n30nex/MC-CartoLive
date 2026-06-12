@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  applyMapLayerPreset,
   DEFAULT_MAP_SETTINGS,
+  MAP_LAYER_PRESETS,
   MAP_SETTINGS_SCHEMA_VERSION,
   MAP_SETTINGS_STORAGE_KEY,
+  mapLayerPresetIDForSettings,
   normalizeMapSettings,
   readStoredMapSettings,
   writeStoredMapSettings
@@ -79,9 +82,9 @@ describe('map settings', () => {
     expect(migrated.packets.speed).toBe(2);
   });
 
-  it('preserves post-2.8.2 explicit terrain and propagation choices', () => {
+  it('preserves 2.8.2 explicit terrain and propagation choices during the 2.9.0 schema bump', () => {
     window.localStorage.setItem(MAP_SETTINGS_STORAGE_KEY, JSON.stringify({
-      schemaVersion: MAP_SETTINGS_SCHEMA_VERSION,
+      schemaVersion: 2,
       layers: {
         terrainHeightmap: true,
         propagationInsights: true
@@ -91,6 +94,31 @@ describe('map settings', () => {
     const stored = readStoredMapSettings();
     expect(stored.layers.terrainHeightmap).toBe(true);
     expect(stored.layers.propagationInsights).toBe(true);
+  });
+
+  it('applies frontend-only layer presets without changing packet preferences', () => {
+    const base = normalizeMapSettings({
+      layers: { routes: false, terrainHeightmap: false },
+      packets: { speed: 2, animationStyle: 'pulse' }
+    });
+
+    const analysis = applyMapLayerPreset(base, 'analysis');
+    expect(analysis.layers.routes).toBe(true);
+    expect(analysis.layers.propagationInsights).toBe(true);
+    expect(analysis.layers.terrainLOS).toBe(true);
+    expect(analysis.layers.terrainHeightmap).toBe(false);
+    expect(analysis.packets.speed).toBe(2);
+    expect(analysis.packets.animationStyle).toBe('pulse');
+
+    const threeD = applyMapLayerPreset(base, '3d');
+    expect(threeD.layers.terrainHeightmap).toBe(true);
+    expect(threeD.layers.routeArcs3D).toBe(true);
+  });
+
+  it('identifies exact layer preset matches', () => {
+    expect(MAP_LAYER_PRESETS.map((preset) => preset.id)).toEqual(['live', 'clean', 'analysis', '3d']);
+    expect(mapLayerPresetIDForSettings(MAP_LAYER_PRESETS[0].layers)).toBe('live');
+    expect(mapLayerPresetIDForSettings({ ...MAP_LAYER_PRESETS[0].layers, routes: true })).toBeNull();
   });
 
   it('falls back to safe defaults for invalid stored settings', () => {
