@@ -37,6 +37,7 @@ export interface MapSettings {
 }
 
 export const MAP_SETTINGS_STORAGE_KEY = 'mc-cartolive-map-settings';
+export const MAP_SETTINGS_SCHEMA_VERSION = 2;
 
 export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   clusters: true,
@@ -54,9 +55,9 @@ export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   packetComets3D: true,
   buildingExtrusions: true,
   terrainLOS: false,
-  terrainHeightmap: true,
+  terrainHeightmap: false,
   weatherClouds: false,
-  propagationInsights: true
+  propagationInsights: false
 };
 
 export const DEFAULT_PACKET_VISUAL_SETTINGS: PacketVisualSettings = {
@@ -122,7 +123,7 @@ export function readStoredMapSettings(): MapSettings {
   try {
     const raw = window.localStorage.getItem(MAP_SETTINGS_STORAGE_KEY);
     if (!raw) return DEFAULT_MAP_SETTINGS;
-    return normalizeMapSettings(JSON.parse(raw));
+    return normalizeStoredMapSettings(JSON.parse(raw));
   } catch {
     return DEFAULT_MAP_SETTINGS;
   }
@@ -130,7 +131,10 @@ export function readStoredMapSettings(): MapSettings {
 
 export function writeStoredMapSettings(settings: MapSettings) {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(MAP_SETTINGS_STORAGE_KEY, JSON.stringify(normalizeMapSettings(settings)));
+  window.localStorage.setItem(MAP_SETTINGS_STORAGE_KEY, JSON.stringify({
+    schemaVersion: MAP_SETTINGS_SCHEMA_VERSION,
+    ...normalizeMapSettings(settings)
+  }));
 }
 
 export function isPacketAnimationStyle(value: unknown): value is PacketAnimationStyle {
@@ -170,6 +174,18 @@ export function packetVisualSignature(settings: PacketVisualSettings): string {
 
 function boolOrDefault(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
+}
+
+function normalizeStoredMapSettings(input: unknown): MapSettings {
+  const settings = normalizeMapSettings(input);
+  const raw = isRecord(input) ? input : {};
+  const schemaVersion = typeof raw.schemaVersion === 'number' ? raw.schemaVersion : 1;
+  if (schemaVersion < MAP_SETTINGS_SCHEMA_VERSION) {
+    const layers = isRecord(raw.layers) ? raw.layers : {};
+    if (layers.terrainHeightmap !== false) settings.layers.terrainHeightmap = false;
+    if (layers.propagationInsights !== false) settings.layers.propagationInsights = false;
+  }
+  return settings;
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {

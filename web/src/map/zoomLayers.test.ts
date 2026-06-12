@@ -36,7 +36,8 @@ describe('map zoom layer consistency', () => {
 
   it('uses restrained OpenFreeMap terrain and keeps 3D buildings out of low zoom', () => {
     const hillshade = layer('meshcore-topographic-hillshade') as any;
-    expect(hillshade?.paint?.['hillshade-exaggeration']).toBeLessThanOrEqual(0.54);
+    expect(hillshade?.layout?.visibility).toBe('none');
+    expect(hillshade?.paint?.['hillshade-exaggeration']).toBeLessThanOrEqual(0.34);
     expect((mapOverlayStyle.sources['meshcore-terrain-dem'] as any).encoding).toBe('terrarium');
     expect((mapOverlayStyle.sources['meshcore-hillshade-dem'] as any).attribution).toContain('Elevation tiles');
   });

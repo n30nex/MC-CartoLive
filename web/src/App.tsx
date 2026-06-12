@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Check, Columns3, Eye, EyeOff, Layers, LocateFixed, Monitor, Moon, Palette, Pause, Play, RadioTower, RotateCcw, Route, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
+import { Check, CloudSun, Columns3, Eye, EyeOff, Layers, LocateFixed, Monitor, Moon, MoreHorizontal, Palette, Pause, Play, RadioTower, RotateCcw, Route, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
 import { fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicPropagation, fetchPublicState } from './api';
 import { connectPublicSocket } from './ws';
 import {
@@ -149,6 +149,7 @@ export default function App() {
   const [paletteMenuOpen, setPaletteMenuOpen] = useState(false);
   const [panelsMenuOpen, setPanelsMenuOpen] = useState(false);
   const [mapSettingsOpen, setMapSettingsOpen] = useState(false);
+  const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [mapSettings, setMapSettings] = useState<MapSettings>(() => readStoredMapSettings());
   const [packetsOpen, setPacketsOpen] = useState(() => window.location.hash === '#/packets');
   const [netGraphOpen, setNetGraphOpen] = useState(() => window.location.hash === '#/netgraph');
@@ -229,6 +230,7 @@ export default function App() {
         setPaletteMenuOpen(false);
         setPanelsMenuOpen(false);
         setMapSettingsOpen(false);
+        setMobileControlsOpen(false);
       }
       if (nextPacketsOpen) {
         setPacketsPanelMode('expanded');
@@ -786,6 +788,12 @@ export default function App() {
   }, [vcr.scopeMs]);
 
   useEffect(() => {
+    const shouldLoadPropagation = propagationOpen || mapSettings.layers.propagationInsights;
+    if (!shouldLoadPropagation) {
+      setPropagationLoading(false);
+      setPropagationError(null);
+      return;
+    }
     let active = true;
     let controller: AbortController | null = null;
     const loadPropagation = () => {
@@ -818,7 +826,7 @@ export default function App() {
       controller?.abort();
       window.clearInterval(interval);
     };
-  }, []);
+  }, [mapSettings.layers.propagationInsights, propagationOpen]);
 
   const debouncedQuery = useDebouncedValue(query, 200);
 
@@ -1285,9 +1293,6 @@ export default function App() {
           coverage={coverage}
           latestPayloadTypeName={latestPacketActivity?.payloadTypeName ?? null}
           latestPacketID={latestPacketActivity?.id ?? null}
-          propagationConditions={propagationConditions}
-          propagationEventCount={propagationEvents.length}
-          onOpenPropagation={() => setPropagationOpen(true)}
         />
       )}
 
@@ -1440,6 +1445,160 @@ export default function App() {
           <X size={18} />
         </button>
       </div>
+      <div className="mobile-control-dock" aria-label="Mobile map controls">
+        <button
+          className={`mobile-control-button ${mapSettingsOpen ? 'active' : ''}`}
+          type="button"
+          aria-pressed={mapSettingsOpen}
+          title="Map settings"
+          onClick={() => {
+            setMapSettingsOpen((value) => !value);
+            setPanelsMenuOpen(false);
+            setPaletteMenuOpen(false);
+            setMobileControlsOpen(false);
+          }}
+        >
+          <SlidersHorizontal size={20} />
+          <span>Settings</span>
+        </button>
+        <button
+          className={`mobile-control-button known-pathways-toggle ${knownPathwaysOn ? 'on' : 'off'}`}
+          type="button"
+          aria-pressed={knownPathwaysOn}
+          title={knownPathwaysOn ? 'Known Pathways on' : 'Known Pathways off'}
+          onClick={toggleKnownPathways}
+        >
+          <Route size={20} />
+          <span>Paths</span>
+        </button>
+        <button
+          className={`mobile-control-button theme-mode-toggle ${themeMode}`}
+          type="button"
+          aria-pressed={themeMode === 'light'}
+          title={themeMode === 'system' ? 'Switch to dark mode' : themeMode === 'dark' ? 'Switch to light mode' : 'Switch to system mode'}
+          onClick={() => setThemeMode((value) => toggleThemeMode(value))}
+        >
+          {themeMode === 'system' ? <Monitor size={20} /> : themeMode === 'dark' ? <Moon size={20} /> : <Sun size={20} />}
+          <span>Theme</span>
+        </button>
+        <button
+          className={`mobile-control-button ${mobileControlsOpen ? 'active' : ''}`}
+          type="button"
+          aria-expanded={mobileControlsOpen}
+          title="More map controls"
+          onClick={() => {
+            setMobileControlsOpen((value) => !value);
+            setPanelsMenuOpen(false);
+            setPaletteMenuOpen(false);
+            setMapSettingsOpen(false);
+          }}
+        >
+          <MoreHorizontal size={20} />
+          <span>More</span>
+        </button>
+      </div>
+      {mobileControlsOpen && (
+        <section className="mobile-control-sheet" aria-label="Map controls">
+          <header className="mobile-control-sheet-header">
+            <div>
+              <span className="panel-eyebrow">Map</span>
+              <h2>Controls</h2>
+            </div>
+            <button type="button" className="icon-button" title="Close map controls" onClick={() => setMobileControlsOpen(false)}>
+              <X size={18} />
+            </button>
+          </header>
+          <div className="mobile-control-grid">
+            <button type="button" onClick={toggleChromeVisibility}>
+              {chromeHidden ? <Eye size={18} /> : <EyeOff size={18} />}
+              <span>{chromeHidden ? 'Show UI' : 'Hide UI'}</span>
+            </button>
+            <button type="button" onClick={() => {
+              setPropagationOpen(true);
+              setMobileControlsOpen(false);
+            }}>
+              <CloudSun size={18} />
+              <span>Propagation</span>
+            </button>
+            <button type="button" onClick={() => setPaused((value) => !value)}>
+              {paused ? <Play size={18} /> : <Pause size={18} />}
+              <span>{paused ? 'Resume' : 'Pause'}</span>
+            </button>
+            <button type="button" onClick={() => setClearToken((value) => value + 1)}>
+              <RotateCcw size={18} />
+              <span>Clear</span>
+            </button>
+            <button type="button" onClick={() => dispatchMapAction('latest-route')}>
+              <LocateFixed size={18} />
+              <span>Focus</span>
+            </button>
+            <button
+              type="button"
+              className={mapBaseMode === 'openfreemap' ? 'active' : ''}
+              onClick={() => setMapBaseMode((value) => (value === 'openfreemap' ? 'original' : 'openfreemap'))}
+            >
+              <Layers size={18} />
+              <span>Basemap</span>
+            </button>
+            <button type="button" onClick={shareView}>
+              <Share2 size={18} />
+              <span>Share</span>
+            </button>
+            <button type="button" onClick={() => {
+              setNodeListOpen(true);
+              setMobileControlsOpen(false);
+            }}>
+              <RadioTower size={18} />
+              <span>Nodes</span>
+            </button>
+          </div>
+          <section className="mobile-control-section">
+            <h3>Panels</h3>
+            <div className="mobile-panel-grid">
+              {PANEL_MENU_ITEMS.map((item) => {
+                const visible = chromePanelVisible(chromeVisibility, item.id);
+                return (
+                  <button
+                    key={item.id}
+                    className={visible ? 'active' : ''}
+                    type="button"
+                    aria-pressed={visible}
+                    onClick={() => toggleChromePanel(item.id)}
+                  >
+                    <span>{item.label}</span>
+                    {visible && <Check size={14} />}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+          <section className="mobile-control-section">
+            <h3>Palette</h3>
+            <div className="mobile-panel-grid palette-mobile-grid">
+              {THEME_PALETTES.map((palette) => {
+                const selected = palette.id === selectedThemePalette.id;
+                return (
+                  <button
+                    key={palette.id}
+                    className={selected ? 'active' : ''}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setThemePaletteID(palette.id)}
+                  >
+                    <span className="palette-swatch" style={paletteSwatchStyle(palette)}>
+                      <i />
+                      <i />
+                      <i />
+                    </span>
+                    <span>{palette.name}</span>
+                    {selected && <Check size={14} />}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </section>
+      )}
       {shareToast && <div className="share-toast" role="status">{shareToast}</div>}
       {showRouteGifExport && (
         <RouteGifExportButton
@@ -1457,6 +1616,10 @@ export default function App() {
           settings={mapSettings}
           onChange={setMapSettings}
           onClose={() => setMapSettingsOpen(false)}
+          onOpenPropagation={() => {
+            setPropagationOpen(true);
+            setMapSettingsOpen(false);
+          }}
         />
       )}
       {propagationOpen && (

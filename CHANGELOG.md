@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.8.2 - 2026-06-12
+
+- Made the first map view flatter and quieter by defaulting terrain relief and
+  propagation overlays off, including a one-time migration for legacy 2.8.1
+  saved settings.
+- Removed the top-bar propagation event counter while keeping propagation
+  history available from Map Settings and the propagation drawer.
+- Kept flat maps free of DEM hillshade and softened dark-mode relief contrast
+  when terrain is manually enabled.
+- Replaced the crowded mobile top action strip with a bottom control dock and
+  sheet for map settings, Known Pathways, panels, theme, palette, and secondary
+  map actions.
+- Updated 2.8.2 release metadata, docs, tests, and validation checklist.
+
 ## 2.8.1 - 2026-06-11
 
 - Added public-safe propagation insights for already-public high-confidence RF paths, including `/api/v1/public/propagation`, SQLite retention, cautious weather-supported scoring, and replay/focus actions.

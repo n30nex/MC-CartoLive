@@ -13,6 +13,7 @@ interface MapSettingsDrawerProps {
   settings: MapSettings;
   onChange: (settings: MapSettings) => void;
   onClose: () => void;
+  onOpenPropagation?: () => void;
 }
 
 const WEATHER_CLOUDS_AVAILABLE = Boolean((import.meta.env['VITE_OPENWEATHERMAP_API_KEY'] as string | undefined)?.trim());
@@ -23,7 +24,7 @@ export const LAYER_GROUPS: readonly { label: string; controls: readonly LayerCon
   {
     label: 'Base',
     controls: [
-      { key: 'terrainHeightmap', label: 'Terrain heightmap', hint: 'DEM elevation hillshade and 3D terrain' },
+      { key: 'terrainHeightmap', label: 'Terrain relief', hint: 'Optional DEM hillshade and 3D elevation context' },
       { key: 'buildingExtrusions', label: '3D buildings', hint: 'Building extrusions from vector map tiles' },
       { key: 'weatherClouds', label: 'Weather clouds', hint: 'Live cloud cover overlay', unavailableHint: 'API key required' }
     ]
@@ -77,7 +78,7 @@ const RENDER_QUALITIES: readonly { value: RenderQuality; label: string }[] = [
   { value: 'high', label: 'High' }
 ];
 
-export default function MapSettingsDrawer({ settings, onChange, onClose }: MapSettingsDrawerProps) {
+export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenPropagation }: MapSettingsDrawerProps) {
   const updateLayer = (key: keyof MapLayerSettings, value: boolean) => {
     onChange(normalizeMapSettings({ ...settings, layers: { ...settings.layers, [key]: value } }));
   };
@@ -110,18 +111,29 @@ export default function MapSettingsDrawer({ settings, onChange, onClose }: MapSe
                   const unavailable = control.key === 'weatherClouds' && !WEATHER_CLOUDS_AVAILABLE;
                   const hint = unavailable ? control.unavailableHint ?? control.hint : control.hint;
                   return (
-                    <label key={control.key} className={`map-settings-toggle${unavailable ? ' unavailable' : ''}`}>
-                      <span>
-                        <strong>{control.label}</strong>
-                        <small>{hint}</small>
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={unavailable ? false : settings.layers[control.key]}
-                        disabled={unavailable}
-                        onChange={(event) => updateLayer(control.key, event.target.checked)}
-                      />
-                    </label>
+                    <div key={control.key} className="map-settings-toggle-wrap">
+                      <label className={`map-settings-toggle${unavailable ? ' unavailable' : ''}`}>
+                        <span>
+                          <strong>{control.label}</strong>
+                          <small>{hint}</small>
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={unavailable ? false : settings.layers[control.key]}
+                          disabled={unavailable}
+                          onChange={(event) => updateLayer(control.key, event.target.checked)}
+                        />
+                      </label>
+                      {control.key === 'propagationInsights' && onOpenPropagation && (
+                        <button
+                          type="button"
+                          className="map-settings-inline-action"
+                          onClick={onOpenPropagation}
+                        >
+                          Open history
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
               </div>

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   DEFAULT_MAP_SETTINGS,
+  MAP_SETTINGS_SCHEMA_VERSION,
   MAP_SETTINGS_STORAGE_KEY,
   normalizeMapSettings,
   readStoredMapSettings,
@@ -26,8 +27,9 @@ describe('map settings', () => {
     expect(settings.layers.routeArcs3D).toBe(true);
     expect(settings.layers.packetComets3D).toBe(true);
     expect(settings.layers.buildingExtrusions).toBe(true);
+    expect(settings.layers.terrainHeightmap).toBe(false);
     expect(settings.layers.weatherClouds).toBe(false);
-    expect(settings.layers.propagationInsights).toBe(true);
+    expect(settings.layers.propagationInsights).toBe(false);
     expect(settings.packets.speed).toBe(3);
     expect(settings.packets.brightness).toBe(0.4);
     expect(settings.packets.trail).toBe(2);
@@ -58,6 +60,39 @@ describe('map settings', () => {
     expect(normalizeMapSettings({ layers: { routes: false } }).layers.routes).toBe(false);
   });
 
+  it('turns off legacy 2.8.1 terrain and propagation defaults once', () => {
+    window.localStorage.setItem(MAP_SETTINGS_STORAGE_KEY, JSON.stringify({
+      layers: {
+        routes: true,
+        terrainHeightmap: true,
+        propagationInsights: true,
+        nodeLabels: false
+      },
+      packets: { speed: 2 }
+    }));
+
+    const migrated = readStoredMapSettings();
+    expect(migrated.layers.routes).toBe(true);
+    expect(migrated.layers.nodeLabels).toBe(false);
+    expect(migrated.layers.terrainHeightmap).toBe(false);
+    expect(migrated.layers.propagationInsights).toBe(false);
+    expect(migrated.packets.speed).toBe(2);
+  });
+
+  it('preserves post-2.8.2 explicit terrain and propagation choices', () => {
+    window.localStorage.setItem(MAP_SETTINGS_STORAGE_KEY, JSON.stringify({
+      schemaVersion: MAP_SETTINGS_SCHEMA_VERSION,
+      layers: {
+        terrainHeightmap: true,
+        propagationInsights: true
+      }
+    }));
+
+    const stored = readStoredMapSettings();
+    expect(stored.layers.terrainHeightmap).toBe(true);
+    expect(stored.layers.propagationInsights).toBe(true);
+  });
+
   it('falls back to safe defaults for invalid stored settings', () => {
     const settings = normalizeMapSettings({
       layers: { clusters: 'nope' },
@@ -72,6 +107,7 @@ describe('map settings', () => {
       layers: { ...DEFAULT_MAP_SETTINGS.layers, routes: false },
       packets: { ...DEFAULT_MAP_SETTINGS.packets, speed: 2 }
     });
+    expect(window.localStorage.getItem(MAP_SETTINGS_STORAGE_KEY)).toContain(`"schemaVersion":${MAP_SETTINGS_SCHEMA_VERSION}`);
     expect(window.localStorage.getItem(MAP_SETTINGS_STORAGE_KEY)).toContain('"routes":false');
     expect(readStoredMapSettings().layers.routes).toBe(false);
     expect(readStoredMapSettings().packets.speed).toBe(2);

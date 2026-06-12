@@ -21,9 +21,6 @@ describe('StatusBar', () => {
         coverage={coverage}
         latestPayloadTypeName="TEXT"
         latestPacketID="packet-1"
-        propagationConditions={null}
-        propagationEventCount={0}
-        onOpenPropagation={() => undefined}
       />
     );
 
@@ -32,7 +29,8 @@ describe('StatusBar', () => {
     expect(html).toContain('bursts/min');
     expect(html).toContain('unmapped/min');
     expect(html).toContain('total');
-    expect(html).toContain('quiet');
+    expect(html).not.toContain('tropo');
+    expect(html).not.toContain('long RF');
     expect(html.match(/status-vu/g)).toHaveLength(4);
     expect(html.match(/count-pill/g)).toHaveLength(3);
   });

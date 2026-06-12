@@ -12,7 +12,17 @@ describe('MapSettingsDrawer', () => {
     expect(LAYER_GROUPS.map((group) => group.label)).toEqual(['Base', 'Mesh', 'Live Motion', '3D', 'Analysis']);
     expect(html).toContain('Weather clouds');
     expect(html).toContain('Propagation insights');
+    expect(html).toContain('Terrain relief');
     expect(html).toContain('API key required');
     expect(html).toContain('disabled=""');
+  });
+
+  it('can expose propagation history from settings without enabling it by default', () => {
+    const html = renderToStaticMarkup(
+      <MapSettingsDrawer settings={DEFAULT_MAP_SETTINGS} onChange={() => undefined} onClose={() => undefined} onOpenPropagation={() => undefined} />
+    );
+
+    expect(DEFAULT_MAP_SETTINGS.layers.propagationInsights).toBe(false);
+    expect(html).toContain('Open history');
   });
 });

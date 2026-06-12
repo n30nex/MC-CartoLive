@@ -636,6 +636,7 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       id: HILLSHADE_LAYER,
       type: 'hillshade',
       source: HILLSHADE_SOURCE,
+      layout: { visibility: 'none' },
       paint: terrainHillshadePaint('dark')
     },
     {
@@ -2261,6 +2262,7 @@ function ensureTerrainSources(map: maplibregl.Map, themeMode: MapThemeMode) {
     id: HILLSHADE_LAYER,
     type: 'hillshade',
     source: HILLSHADE_SOURCE,
+    layout: { visibility: 'none' },
     paint
   }, labelLayerID);
 }
@@ -2286,12 +2288,12 @@ function applyTerrainSetting(map: maplibregl.Map, enabled: boolean, themeMode: M
 function terrainHillshadePaint(themeMode: MapThemeMode) {
   return {
     'hillshade-method': 'multidirectional',
-    'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#e2e8f0', '#f1f5f9', '#f8fafc', '#ffffff'],
-    'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#0f172a', '#1e293b', '#334155', '#475569'],
-    'hillshade-accent-color': themeMode === 'light' ? '#f1f5f9' : '#64748b',
+    'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0'],
+    'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#020617', '#0f172a', '#1e293b', '#334155'],
+    'hillshade-accent-color': themeMode === 'light' ? '#f1f5f9' : '#334155',
     'hillshade-illumination-direction': [315],
     'hillshade-illumination-altitude': [45],
-    'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 0.52
+    'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 0.28
   } as any;
 }
 
