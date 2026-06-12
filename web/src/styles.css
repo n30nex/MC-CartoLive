@@ -426,6 +426,7 @@ button {
 .packets-compact-tray,
 .map-settings-drawer,
 .route-gif-export,
+.visitor-guide,
 .vcr-bar {
   position: absolute;
   z-index: 6;
@@ -2406,7 +2407,7 @@ button {
 .status-bar {
   top: 52px;
   left: 10px;
-  right: clamp(344px, 30vw, 430px);
+  right: clamp(420px, 38vw, 600px);
   display: flex;
   flex-wrap: nowrap;
   gap: 5px;
@@ -5492,7 +5493,7 @@ button.status-pill {
   }
 
   .status-bar {
-    right: 210px;
+    display: none;
   }
 
   .link-bar {
@@ -5528,22 +5529,25 @@ button.status-pill {
 
 @media (max-width: 760px) {
   .app-shell {
-    --vcr-bar-height: 56px;
+    --vcr-bar-height: 0px;
+    --mobile-dock-height: 68px;
     --ui-edge-gap: 8px;
   }
 
   .app-shell[data-vcr-layout="open"] {
     --vcr-bar-height: 156px;
+    --mobile-dock-height: 0px;
   }
 
   .app-shell[data-packets-mode="compactTray"] {
     --vcr-bar-height: 126px;
+    --mobile-dock-height: 0px;
   }
 
   .maplibregl-ctrl-bottom-right {
     position: fixed;
     right: calc(8px + var(--ui-safe-right, 0px));
-    bottom: calc(var(--vcr-bar-height, 0px) + 12px + var(--ui-safe-bottom, 0px));
+    bottom: calc(var(--vcr-bar-height, 0px) + var(--mobile-dock-height, 0px) + 12px + var(--ui-safe-bottom, 0px));
     z-index: var(--z-map-chrome, 8);
   }
 
@@ -5552,22 +5556,30 @@ button.status-pill {
     top: calc(8px + var(--ui-safe-top, 0px));
     left: calc(8px + var(--ui-safe-left, 0px));
     right: calc(8px + var(--ui-safe-right, 0px));
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr);
     gap: 6px;
     min-height: 34px;
     padding: 5px 6px;
   }
 
-  .link-bar-build {
-    justify-content: flex-end;
-    gap: 6px;
+  .link-bar-brand {
+    width: 28px;
+    padding: 0 4px;
   }
 
-  .link-bar-build strong {
+  .link-bar-brand span,
+  .link-bar-build > a:not(.link-bar-page),
+  .link-bar-build > span {
     display: none;
   }
 
-  .link-bar-build > span {
+  .link-bar-build {
+    justify-content: flex-end;
+    gap: 6px;
+    overflow: hidden;
+  }
+
+  .link-bar-build strong {
     display: none;
   }
 
@@ -5615,7 +5627,7 @@ button.status-pill {
   .map-settings-drawer {
     top: calc(62px + var(--ui-safe-top, 0px));
     right: calc(8px + var(--ui-safe-right, 0px));
-    bottom: calc(86px + var(--ui-safe-bottom, 0px));
+    bottom: calc(var(--mobile-dock-height, 68px) + 18px + var(--ui-safe-bottom, 0px));
     left: calc(8px + var(--ui-safe-left, 0px));
     width: auto;
     max-height: none;
@@ -5730,6 +5742,13 @@ button.status-pill {
     display: none;
   }
 
+  .app-shell[data-vcr-layout="open"] .mobile-control-dock,
+  .app-shell[data-vcr-layout="open"] .mobile-control-sheet,
+  .app-shell[data-packets-mode="compactTray"] .mobile-control-dock,
+  .app-shell[data-packets-mode="compactTray"] .mobile-control-sheet {
+    display: none;
+  }
+
   .mobile-control-dock {
     position: fixed;
     right: calc(8px + var(--ui-safe-right, 0px));
@@ -5795,20 +5814,22 @@ button.status-pill {
 
   .visitor-guide {
     right: calc(8px + var(--ui-safe-right, 0px));
-    bottom: calc(78px + var(--ui-safe-bottom, 0px));
+    bottom: calc(var(--mobile-dock-height, 68px) + 10px + var(--ui-safe-bottom, 0px));
     left: calc(8px + var(--ui-safe-left, 0px));
     width: auto;
+    max-height: calc(100svh - 116px - var(--mobile-dock-height, 68px) - var(--ui-safe-top, 0px) - var(--ui-safe-bottom, 0px));
+    overflow: auto;
   }
 
   .mobile-control-sheet {
     position: fixed;
     right: calc(8px + var(--ui-safe-right, 0px));
-    bottom: calc(78px + var(--ui-safe-bottom, 0px));
+    bottom: calc(var(--mobile-dock-height, 68px) + 10px + var(--ui-safe-bottom, 0px));
     left: calc(8px + var(--ui-safe-left, 0px));
     z-index: var(--z-popover, 16);
     display: grid;
     gap: 10px;
-    max-height: min(66dvh, 560px);
+    max-height: min(calc(100svh - 116px - var(--mobile-dock-height, 68px) - var(--ui-safe-top, 0px) - var(--ui-safe-bottom, 0px)), 560px);
     padding: 11px;
     overflow: auto;
     color: var(--mc-text, #edf5ff);
@@ -6007,7 +6028,7 @@ button.status-pill {
     left: calc(10px + var(--ui-safe-left, 0px));
     right: calc(10px + var(--ui-safe-right, 0px));
     top: auto;
-    bottom: calc(var(--vcr-bar-height, 0px) + 56px + var(--ui-safe-bottom, 0px));
+    bottom: calc(var(--vcr-bar-height, 0px) + var(--mobile-dock-height, 0px) + 16px + var(--ui-safe-bottom, 0px));
     width: auto;
     max-height: 34vh;
     padding: 12px;
@@ -6017,7 +6038,7 @@ button.status-pill {
     left: calc(10px + var(--ui-safe-left, 0px));
     right: calc(10px + var(--ui-safe-right, 0px));
     top: auto;
-    bottom: calc(var(--vcr-bar-height, 0px) + 56px + var(--ui-safe-bottom, 0px));
+    bottom: calc(var(--vcr-bar-height, 0px) + var(--mobile-dock-height, 0px) + 16px + var(--ui-safe-bottom, 0px));
     gap: 8px;
     align-items: stretch;
     width: auto;
@@ -6104,7 +6125,7 @@ button.status-pill {
     position: fixed;
     left: calc(8px + var(--ui-safe-left, 0px));
     right: calc(8px + var(--ui-safe-right, 0px));
-    bottom: calc(48px + var(--ui-safe-bottom, 0px));
+    bottom: calc(var(--mobile-dock-height, 68px) + 16px + var(--ui-safe-bottom, 0px));
     width: auto;
     max-width: none;
   }
@@ -6119,23 +6140,12 @@ button.status-pill {
   }
 
   .vcr-mini-clock {
-    position: fixed;
-    left: 50%;
-    right: auto;
-    bottom: calc(8px + var(--ui-safe-bottom, 0px));
-    z-index: var(--z-map-chrome, 8);
-    transform: translateX(-50%);
-    max-width: calc(100vw - 16px);
-    min-width: 136px;
-    justify-content: center;
-    min-height: 34px;
-    padding: 0 9px;
-    font-size: 10px;
+    display: none;
   }
 
   .vcr-mini-clock:hover,
   .vcr-mini-clock:focus-visible {
-    transform: translateX(-50%) translateY(-1px);
+    transform: translateY(-1px);
   }
 
   .plot-routes-panel {

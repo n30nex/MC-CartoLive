@@ -148,11 +148,21 @@ type MessageBubble = {
   expiresAt: number;
 };
 
+interface ActivityHeatmapRenderState {
+  lastRenderedAt: number;
+  signature: string;
+  nodes: PublicNode[];
+}
+
+const activityHeatmapRenderState = new WeakMap<maplibregl.Map, ActivityHeatmapRenderState>();
+
 const NODE_SOURCE = 'public-nodes';
 const ROUTE_SOURCE = 'public-routes';
 const ACTIVITY_HEATMAP_SOURCE = 'activity-heatmap';
 const ACTIVITY_HEATMAP_LAYER = 'activity-heatmap-glow';
 const ACTIVITY_SPARKLE_LAYER = 'activity-heatmap-sparkles';
+const ACTIVITY_HEATMAP_REFRESH_MS = 1_500;
+const ACTIVITY_HEATMAP_CHANGED_MIN_MS = 450;
 const CLUSTER_ACTIVITY_SOURCE = 'cluster-activity-glows';
 const CLUSTER_ACTIVITY_AURA_LAYER = 'cluster-activity-aura';
 const CLUSTER_ACTIVITY_RING_LAYER = 'cluster-activity-ring';
@@ -1731,7 +1741,7 @@ function CanadaMap({
         });
       }
       updateNodeRendering(map, nodesRef.current, nodeFocusRef.current, Date.now(), nodeMeshActivityAtRef.current, nodeSourceSignatureRef, true);
-      setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current);
+      setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current, true);
       updateRouteRendering(
         map,
         routesRef.current,
@@ -1917,7 +1927,7 @@ function CanadaMap({
     if (!map || !loadedRef.current) return;
     animatorRef.current?.setLayerSettings(layerSettings);
     applyLayerSettings(map, layerSettings, themeModeRef.current);
-    if (layerSettings.activityHeatmap) setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current);
+    if (layerSettings.activityHeatmap) setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current, true);
     if (!layerSettings.messageBubbles) setMessageBubbles([]);
     updateOpenFreeMap3D();
   }, [layerSettings]);
@@ -3517,10 +3527,39 @@ function setActivityHeatmapSource(
   map: maplibregl.Map,
   nodes: PublicNode[],
   activities: Map<string, NodeActivity>,
-  meshActivityAtByNodeID: Map<string, number>
+  meshActivityAtByNodeID: Map<string, number>,
+  force = false
 ) {
   if (!map.getSource(ACTIVITY_HEATMAP_SOURCE)) return;
+  if (!activityHeatmapVisible(map)) return;
+  const now = performance.now();
+  const signature = activityHeatmapSignature(activities, meshActivityAtByNodeID);
+  const previous = activityHeatmapRenderState.get(map);
+  const nodesChanged = previous?.nodes !== nodes;
+  if (!force && previous && !nodesChanged) {
+    const elapsed = now - previous.lastRenderedAt;
+    if (elapsed < ACTIVITY_HEATMAP_REFRESH_MS && previous.signature === signature) return;
+    if (elapsed < ACTIVITY_HEATMAP_CHANGED_MIN_MS) return;
+  }
+  activityHeatmapRenderState.set(map, { lastRenderedAt: now, signature, nodes });
   setSourceData(map, ACTIVITY_HEATMAP_SOURCE, activityHeatmapToGeoJSON(nodes, activities, meshActivityAtByNodeID));
+}
+
+function activityHeatmapVisible(map: maplibregl.Map): boolean {
+  if (!map.getLayer(ACTIVITY_HEATMAP_LAYER)) return false;
+  return map.getLayoutProperty(ACTIVITY_HEATMAP_LAYER, 'visibility') !== 'none';
+}
+
+function activityHeatmapSignature(activities: Map<string, NodeActivity>, meshActivityAtByNodeID: Map<string, number>): string {
+  let hitCount = 0;
+  let latestActivityAt = 0;
+  for (const activity of activities.values()) {
+    hitCount += activity.hits.length;
+    latestActivityAt = Math.max(latestActivityAt, activity.lastAt);
+  }
+  let latestMeshActivityAt = 0;
+  for (const at of meshActivityAtByNodeID.values()) latestMeshActivityAt = Math.max(latestMeshActivityAt, at);
+  return `${activities.size}:${hitCount}:${Math.round(latestActivityAt)}:${meshActivityAtByNodeID.size}:${Math.round(latestMeshActivityAt)}`;
 }
 
 function updateRouteRendering(

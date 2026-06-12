@@ -1,5 +1,16 @@
-import { describe, expect, it } from 'vitest';
-import { WS_RECONNECT_BASE_MS, WS_RECONNECT_MAX_MS, reconnectDelayMs } from './ws';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { WS_RECONNECT_BASE_MS, WS_RECONNECT_MAX_MS, connectPublicSocket, reconnectDelayMs } from './ws';
+
+const originalWebSocket = window.WebSocket;
+
+afterEach(() => {
+  vi.useRealTimers();
+  Object.defineProperty(window, 'WebSocket', {
+    configurable: true,
+    writable: true,
+    value: originalWebSocket
+  });
+});
 
 describe('public websocket reconnect backoff', () => {
   it('uses capped exponential backoff with bounded jitter', () => {
@@ -8,4 +19,94 @@ describe('public websocket reconnect backoff', () => {
     expect(reconnectDelayMs(20, () => 0)).toBe(WS_RECONNECT_MAX_MS);
     expect(reconnectDelayMs(20, () => 0.99)).toBeLessThan(WS_RECONNECT_MAX_MS + 500);
   });
+
+  it('falls back to recovering when WebSocket construction throws', () => {
+    vi.useFakeTimers();
+    const statuses: string[] = [];
+    class BlockingWebSocket {
+      static readonly OPEN = 1;
+
+      constructor() {
+        throw new Error('blocked');
+      }
+    }
+    Object.defineProperty(window, 'WebSocket', {
+      configurable: true,
+      writable: true,
+      value: BlockingWebSocket
+    });
+
+    const socket = connectPublicSocket(() => undefined, (status) => statuses.push(status));
+
+    expect(statuses).toEqual(['connecting', 'error', 'recovering']);
+    socket.close();
+  });
+
+  it('recovers when a live ping send fails', () => {
+    vi.useFakeTimers();
+    const statuses: string[] = [];
+    const sockets: FakeWebSocket[] = [];
+    class ThrowingPingWebSocket extends FakeWebSocket {
+      override send(data: string) {
+        super.send(data);
+        if (this.sent.length > 1) {
+          throw new Error('send failed');
+        }
+      }
+    }
+    Object.defineProperty(window, 'WebSocket', {
+      configurable: true,
+      writable: true,
+      value: class extends ThrowingPingWebSocket {
+        constructor(url: string) {
+          super(url);
+          sockets.push(this);
+        }
+      }
+    });
+
+    const socket = connectPublicSocket(() => undefined, (status) => statuses.push(status));
+    sockets[0].emit('open');
+    vi.advanceTimersByTime(25_000);
+
+    expect(sockets[0].sent[0]).toContain('"subscribe"');
+    expect(sockets[0].sent[1]).toContain('"ping"');
+    expect(sockets[0].closed).toBe(true);
+    expect(statuses).toEqual(['connecting', 'live', 'error', 'recovering']);
+    socket.close();
+  });
 });
+
+type FakeListener = () => void;
+
+class FakeWebSocket {
+  static readonly OPEN = 1;
+  readonly url: string;
+  readyState = FakeWebSocket.OPEN;
+  sent: string[] = [];
+  closed = false;
+  private listeners = new Map<string, FakeListener[]>();
+
+  constructor(url: string) {
+    this.url = url;
+  }
+
+  addEventListener(type: string, listener: FakeListener) {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  send(data: string) {
+    this.sent.push(data);
+  }
+
+  close() {
+    this.closed = true;
+    this.readyState = 3;
+  }
+
+  emit(type: string) {
+    for (const listener of this.listeners.get(type) ?? []) listener();
+  }
+}

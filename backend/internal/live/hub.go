@@ -35,7 +35,7 @@ type client struct {
 	conn    *websocket.Conn
 	send    chan Envelope
 	created time.Time
-	dropped int
+	dropped atomic.Int64
 }
 
 func NewHub(log *slog.Logger, queueSize int, allowedBaseURLs ...string) *Hub {
@@ -103,10 +103,10 @@ func safeSend(h *Hub, c *client, env Envelope) {
 	select {
 	case c.send <- env:
 	default:
-		c.dropped++
+		dropped := c.dropped.Add(1)
 		h.totalDropped.Add(1)
 		now := time.Now().UnixMilli()
-		lag := Envelope{Version: 1, Type: "lagged", Seq: h.seq.Add(1), ServerTime: now, ReceivedAt: now, DisplayAt: now, DroppedCount: c.dropped, Since: c.created.UnixMilli()}
+		lag := Envelope{Version: 1, Type: "lagged", Seq: h.seq.Add(1), ServerTime: now, ReceivedAt: now, DisplayAt: now, DroppedCount: int(dropped), Since: c.created.UnixMilli()}
 		select {
 		case c.send <- lag:
 		default:
@@ -195,12 +195,17 @@ func (h *Hub) observeQueueDepth(depth int) {
 }
 
 func (h *Hub) remove(c *client) {
+	removed := false
 	h.mu.Lock()
 	if _, ok := h.clients[c]; ok {
 		delete(h.clients, c)
 		close(c.send)
+		removed = true
 	}
 	h.mu.Unlock()
+	if !removed {
+		return
+	}
 	c.conn.WriteControl(websocket.CloseMessage,
 		websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"),
 		time.Now().Add(2*time.Second))

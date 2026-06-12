@@ -4,6 +4,29 @@ This changelog records the public release history at a useful level of detail.
 Detailed patch-by-patch investigation notes and temporary planning material live
 in Git history, not in the active documentation set.
 
+## 2.9.1 - 2026-06-12
+
+- Reduced default live-mode frontend churn by stopping routine full public-state
+  polling while the public WebSocket is healthy.
+- Changed route pulse handling so touched routes update incrementally instead
+  of rebuilding, normalizing, and sorting every public route on each pulse.
+- Gated activity heatmap GeoJSON work when the layer is hidden and throttled
+  visible heatmap source refreshes to reduce MapLibre `setData` pressure.
+- Slowed non-critical node label freshness refreshes and top-level idle clocks
+  while keeping active VCR playback responsive.
+- Stopped polling VCR history summaries while the VCR drawer is closed.
+- Reserved a single mobile bottom-control zone so the dock, replay clock,
+  drawers, MapLibre controls, and export actions no longer overlap on narrow
+  screens.
+- Integrated the PR #5 chrome-overlap fixes so workspace panels suppress
+  floating map panels, PacketTV suppresses the bottom dock, and the mobile
+  release bar stays compact.
+- Hardened public WebSocket recovery on browser construction/send failures,
+  skipped gzip work for already-compressed static assets, and made live hub
+  drop accounting concurrency-safe.
+- Updated in-app release highlights, version metadata, release docs, and
+  validation notes for the 2.9.1 performance patch.
+
 ## 2.9.0 - 2026-06-12
 
 - Shipped the visitor UX rollup on top of the 2.8.x propagation and flat-first

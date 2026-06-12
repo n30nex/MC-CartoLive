@@ -22,10 +22,10 @@ describe('LinkBar', () => {
   });
 
   it('keeps the compact changelog focused on the current release train', () => {
-    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.label)).toEqual(['2.9.0', '2.8.2', '2.8.1']);
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.label)).toEqual(['2.9.1', '2.9.0', '2.8.2']);
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Live map performance');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Visitor UX rollup');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Flat first view');
-    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Propagation tools');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.body).join(' ')).not.toContain('Perf/Guide/Features');
   });
 });

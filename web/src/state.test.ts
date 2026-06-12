@@ -304,6 +304,44 @@ describe('public app state', () => {
     expect(next.stats?.activeRoutes).toBe(1);
   });
 
+  it('keeps untouched route object identity when route pulse buckets do not need global normalization', () => {
+    const state = initialAppState(publicState);
+    const untouchedRoute = {
+      ...state.routes[0],
+      id: 'r-max',
+      packetCount: 100,
+      lastHeard: state.routes[0].lastHeard - 1000,
+      frequencyBucket: 4,
+      from: state.routes[0].to,
+      to: state.routes[0].from
+    };
+    const withMultipleRoutes = { ...state, routes: [state.routes[0], untouchedRoute] };
+
+    const next = applyPublicEnvelope(withMultipleRoutes, {
+      v: 1,
+      type: 'event',
+      event: 'routePulse',
+      serverTime: 1_700_000_030_000,
+      data: {
+        id: 'pulse-identity',
+        payloadTypeName: 'ADVERT',
+        heardAt: 1_700_000_020_000,
+        segments: [
+          {
+            routeId: 'r-ab',
+            from: publicState.routes[0].from,
+            to: publicState.routes[0].to,
+            distanceKm: 93
+          }
+        ]
+      }
+    });
+
+    expect(next.routes[0]).not.toBe(withMultipleRoutes.routes[0]);
+    expect(next.routes[1]).toBe(untouchedRoute);
+    expect(next.routes.map((route) => route.id)).toEqual(['r-ab', 'r-max']);
+  });
+
   it('dedupes live events after websocket reconnect recovery', () => {
     const state = initialAppState(publicState);
     const activityMessage: PublicLiveEnvelope = {

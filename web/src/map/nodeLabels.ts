@@ -1,6 +1,6 @@
 import type { PublicNode } from '../types';
 
-export const NODE_LABEL_UPDATE_MS = 2_000;
+export const NODE_LABEL_UPDATE_MS = 10_000;
 export const NODE_LABEL_MAX_CHARS = 18;
 export const NODE_ACTIVITY_WINDOW_MS = 60_000;
 export const NODE_ACTIVITY_GLOW_MS = 6_500;

@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Check, CloudSun, Columns3, Eye, EyeOff, Layers, LocateFixed, Monitor, Moon, MoreHorizontal, Palette, Pause, Play, RadioTower, RotateCcw, Route, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
+import { Check, CloudSun, Columns3, Eye, EyeOff, History, Layers, LocateFixed, Monitor, Moon, MoreHorizontal, Palette, Pause, Play, RadioTower, RotateCcw, Route, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
 import { fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicPropagation, fetchPublicState } from './api';
 import { connectPublicSocket } from './ws';
 import {
@@ -11,7 +11,8 @@ import {
   isPacketActivity,
   liveCoverageStats,
   summarizeRouteActivity,
-  type AppState
+  type AppState,
+  type RouteActivitySummary
 } from './state';
 import CanadaMap, { type MapAction, type MapBaseMode } from './map/CanadaMap';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -92,7 +93,7 @@ import {
   type ThemeMode,
   type ThemePalette
 } from './theme';
-import type { PublicActivity, PublicHistorySummaryBucket, PublicLiveEnvelope, PublicMapConfig, PublicPacketPath, PublicPropagationConditions, PublicPropagationEvent, PublicRoutePulse } from './types';
+import type { PublicActivity, PublicHistorySummaryBucket, PublicLiveEnvelope, PublicMapConfig, PublicPacketPath, PublicPropagationConditions, PublicPropagationEvent, PublicRoute, PublicRoutePulse } from './types';
 
 const NodeListPanel = lazyWithReload(() => import('./components/NodeListPanel'), 'NodeListPanel');
 const ShortcutHelp = lazyWithReload(() => import('./components/ShortcutHelp'), 'ShortcutHelp');
@@ -119,6 +120,12 @@ const VCR_MAX_REPLAY_EVENTS = 2000;
 const VCR_LASER_MAX_PACKETS = 1600;
 const VCR_LASER_PAGE_LIMIT = 1000;
 const VCR_LASER_MAX_PAGES = 3;
+const PUBLIC_STATE_FALLBACK_POLL_MS = 3_500;
+const LIVE_CLOCK_ACTIVE_MS = 1_000;
+const LIVE_CLOCK_IDLE_MS = 5_000;
+const DERIVED_ACTIVITY_BUCKET_MS = 5_000;
+const EMPTY_ROUTE_ACTIVITY = new Map<string, RouteActivitySummary>();
+const EMPTY_HOT_ROUTES: PublicRoute[] = [];
 
 export default function App() {
   const sharedViewRef = useRef(parseSharedView(window.location.search));
@@ -711,6 +718,7 @@ export default function App() {
   }, [refreshLiveSnapshot]);
 
   useEffect(() => {
+    if (socketStatus === 'live') return;
     let active = true;
     let inFlight = false;
     const refresh = () => {
@@ -737,7 +745,7 @@ export default function App() {
           inFlight = false;
         });
     };
-    const interval = window.setInterval(refresh, socketStatus === 'live' ? 15_000 : 3_500);
+    const interval = window.setInterval(refresh, PUBLIC_STATE_FALLBACK_POLL_MS);
     return () => {
       active = false;
       window.clearInterval(interval);
@@ -760,11 +768,13 @@ export default function App() {
   }, [positionedNodesRendered]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => setLiveClock(Date.now()), 1000);
+    const intervalMs = vcrOpen || vcr.mode !== 'live' ? LIVE_CLOCK_ACTIVE_MS : LIVE_CLOCK_IDLE_MS;
+    const interval = window.setInterval(() => setLiveClock(Date.now()), intervalMs);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [vcr.mode, vcrOpen]);
 
   useEffect(() => {
+    if (!vcrOpen) return;
     let active = true;
     const loadSummary = () => {
       const to = Date.now();
@@ -786,7 +796,7 @@ export default function App() {
       active = false;
       window.clearInterval(interval);
     };
-  }, [vcr.scopeMs]);
+  }, [vcr.scopeMs, vcrOpen]);
 
   useEffect(() => {
     const shouldLoadPropagation = propagationOpen || mapSettings.layers.propagationInsights;
@@ -870,23 +880,31 @@ export default function App() {
     [selectedNode, state.activity, visibleRoutes]
   );
   const activityClock = Math.max(liveClock, state.serverTime, state.activity[0]?.heardAt ?? 0, state.routeTraces.at(-1)?.heardAt ?? 0);
-  const routeActivityByID = useMemo(() => summarizeRouteActivity(state.routeTraces, activityClock), [state.routeTraces, activityClock]);
-  const coverage = useMemo(() => liveCoverageStats(state.activity, activityClock), [state.activity, activityClock]);
+  const activityClockBucket = Math.floor(activityClock / DERIVED_ACTIVITY_BUCKET_MS) * DERIVED_ACTIVITY_BUCKET_MS;
+  const chromeHidden = chromeVisibility.chromeHidden;
+  const chromePanelsMounted = !vcrOpen && !packetsOpen && !netGraphOpen && !chatOpen && !setupOpen && !propagationOpen;
+  const hotRoutesPanelActive = chromePanelsMounted && !chromeHidden && chromeVisibility.panels.hotRoutes;
+  const routeActivityByID = useMemo(
+    () => hotRoutesPanelActive ? summarizeRouteActivity(state.routeTraces, activityClockBucket) : EMPTY_ROUTE_ACTIVITY,
+    [activityClockBucket, hotRoutesPanelActive, state.routeTraces]
+  );
+  const coverage = useMemo(() => liveCoverageStats(state.activity, activityClockBucket), [state.activity, activityClockBucket]);
   const latestPacketActivity = useMemo(() => state.activity.find(isPacketActivity) ?? null, [state.activity]);
   const vcrPlaybackActive = vcr.mode !== 'live';
   const vcrTimelineNow = Math.max(liveClock, state.serverTime, vcr.clock ?? 0);
-  const chromeHidden = chromeVisibility.chromeHidden;
   const loadingPositionedNodes = initialLoadGateOpen && (!initialNodesReceived || !positionedNodesRendered);
   const handlePositionedNodesRendered = useCallback(() => setPositionedNodesRendered(true), []);
   const handleViewChange = useCallback((view: MapViewState) => setMapView(view), []);
   const hotRoutes = useMemo(
-    () =>
-      [...visibleRoutes].sort((a, b) => {
+    () => {
+      if (!hotRoutesPanelActive) return EMPTY_HOT_ROUTES;
+      return [...visibleRoutes].sort((a, b) => {
         const recentDelta = (routeActivityByID.get(b.id)?.total ?? 0) - (routeActivityByID.get(a.id)?.total ?? 0);
         if (recentDelta !== 0) return recentDelta;
         return b.packetCount - a.packetCount || b.lastHeard - a.lastHeard;
-      }),
-    [visibleRoutes, routeActivityByID]
+      });
+    },
+    [hotRoutesPanelActive, visibleRoutes, routeActivityByID]
   );
 
   const dispatchMapAction = useCallback((next: Exclude<MapAction, null>['type'], value?: string) => {
@@ -1238,6 +1256,7 @@ export default function App() {
 
   const showRouteGifExport = Boolean(selectedPacket && !packetsOpen && !netGraphOpen && !chatOpen && !setupOpen && !propagationOpen && !vcrOpen);
   const knownPathwaysOn = mapSettings.layers.routes;
+  const workspaceSurfaceOpen = packetsOpen || netGraphOpen || chatOpen;
   const visitorGuideSuppressed = chromeHidden || packetsOpen || netGraphOpen || chatOpen || setupOpen || propagationOpen || vcrOpen || nodeListOpen || shortcutHelpOpen || mapSettingsOpen || mobileControlsOpen || Boolean(selectedNode || selectedRoute || selectedPacket);
 
   return (
@@ -1538,6 +1557,13 @@ export default function App() {
               {paused ? <Play size={18} /> : <Pause size={18} />}
               <span>{paused ? 'Resume' : 'Pause'}</span>
             </button>
+            <button type="button" onClick={() => {
+              openVcr();
+              setMobileControlsOpen(false);
+            }}>
+              <History size={18} />
+              <span>Replay</span>
+            </button>
             <button type="button" onClick={() => setClearToken((value) => value + 1)}>
               <RotateCcw size={18} />
               <span>Clear</span>
@@ -1683,7 +1709,7 @@ export default function App() {
       {nodeListOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><NodeListPanel nodes={visibleNodes} selectedNodeID={selectedNodeID} onSelectNode={(id) => { selectNode(id); setNodeListOpen(false); }} onClose={() => setNodeListOpen(false)} /></Suspense></ErrorBoundary>}
       {shortcutHelpOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><ShortcutHelp onClose={() => setShortcutHelpOpen(false)} /></Suspense></ErrorBoundary>}
 
-      {!vcrOpen && packetsPanelMode !== 'compactTray' && !netGraphOpen && !chatOpen && !setupOpen && !propagationOpen && (
+      {!vcrOpen && !packetsOpen && !netGraphOpen && !chatOpen && !setupOpen && !propagationOpen && (
         <>
           {!chromeHidden && (
             <div className="bottom-action-dock" aria-label="Map playback and route controls">
@@ -1744,7 +1770,7 @@ export default function App() {
         />
       )}
 
-      {!chromeHidden && (
+      {!chromeHidden && !workspaceSurfaceOpen && (
         <>
           <ChromePanel
             panel="search"

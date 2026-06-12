@@ -1,8 +1,11 @@
 package live
 
 import (
+	"io"
+	"log/slog"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestWebsocketOriginAllowed(t *testing.T) {
@@ -34,5 +37,21 @@ func TestWebsocketOriginAllowed(t *testing.T) {
 				t.Fatalf("websocketOriginAllowed() = %t, want %t", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSafeSendDropAccountingIsAtomic(t *testing.T) {
+	hub := NewHub(slog.New(slog.NewTextHandler(io.Discard, nil)), 1)
+	client := &client{send: make(chan Envelope, 1), created: time.Now()}
+	client.send <- Envelope{Version: 1, Type: "event"}
+
+	safeSend(hub, client, Envelope{Version: 1, Type: "event"})
+	safeSend(hub, client, Envelope{Version: 1, Type: "event"})
+
+	if got := hub.Stats().DroppedMessages; got != 2 {
+		t.Fatalf("dropped messages = %d, want 2", got)
+	}
+	if got := client.dropped.Load(); got != 2 {
+		t.Fatalf("client dropped count = %d, want 2", got)
 	}
 }

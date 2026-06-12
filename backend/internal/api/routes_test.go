@@ -35,6 +35,43 @@ func TestClientIPRequiresTrustedProxyHeaders(t *testing.T) {
 	}
 }
 
+func TestShouldGzipSkipsWebsocketRangeAndCompressedAssets(t *testing.T) {
+	request, err := http.NewRequest(http.MethodGet, "/api/v1/public/state", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Accept-Encoding", "br, gzip")
+	if !shouldGzip(request) {
+		t.Fatalf("json request with gzip support should be compressed")
+	}
+
+	websocketRequest := request.Clone(request.Context())
+	websocketRequest.URL.Path = "/ws/public"
+	websocketRequest.Header.Set("Upgrade", "websocket")
+	if shouldGzip(websocketRequest) {
+		t.Fatalf("websocket upgrade should not be gzipped")
+	}
+
+	rangeRequest := request.Clone(request.Context())
+	rangeRequest.Header.Set("Range", "bytes=0-99")
+	if shouldGzip(rangeRequest) {
+		t.Fatalf("range request should not be gzipped")
+	}
+
+	for _, path := range []string{
+		"/assets/routes_app_icon_192.png",
+		"/assets/photo.webp",
+		"/assets/font.woff2",
+		"/assets/archive.gz",
+	} {
+		assetRequest := request.Clone(request.Context())
+		assetRequest.URL.Path = path
+		if shouldGzip(assetRequest) {
+			t.Fatalf("already-compressed asset %s should not be gzipped", path)
+		}
+	}
+}
+
 func TestHistorySummaryCacheReturnsCopiesAndExpires(t *testing.T) {
 	cache := newHistorySummaryCache(20 * time.Millisecond)
 	response := live.PublicHistorySummaryResponse{

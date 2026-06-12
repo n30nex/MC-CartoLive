@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"path"
 	"runtime"
 	"strconv"
 	"strings"
@@ -2201,6 +2202,10 @@ func shouldGzip(r *http.Request) bool {
 		return false
 	}
 	if r.Header.Get("Range") != "" {
+		return false
+	}
+	switch strings.ToLower(path.Ext(r.URL.Path)) {
+	case ".br", ".gz", ".zip", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".ico", ".woff", ".woff2":
 		return false
 	}
 	return strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")

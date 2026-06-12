@@ -185,27 +185,65 @@ export function filterRoutes(routes: PublicRoute[], visibleNodeIDs: Set<string>,
 }
 
 function upsertPulseRoutes(routes: PublicRoute[], pulse: PublicRoutePulse): PublicRoute[] {
-  const byID = new Map(routes.map((route) => [route.id, { ...route, payloadTypeNames: [...route.payloadTypeNames] }]));
+  if (pulse.segments.length === 0) return routes;
+
+  const touched = new Map<string, { segment: PublicRoutePulse['segments'][number]; hits: number }>();
   for (const segment of pulse.segments) {
-    const existing = byID.get(segment.routeId);
-    if (existing) {
-      existing.packetCount += 1;
-      existing.lastHeard = Math.max(existing.lastHeard, pulse.heardAt);
-      if (!existing.payloadTypeNames.includes(pulse.payloadTypeName)) existing.payloadTypeNames.push(pulse.payloadTypeName);
-    } else {
-      byID.set(segment.routeId, {
+    const existing = touched.get(segment.routeId);
+    touched.set(segment.routeId, { segment, hits: (existing?.hits ?? 0) + 1 });
+  }
+
+  let maxBefore = 1;
+  let maxAfter = 1;
+  let changed = false;
+  let next = routes;
+  for (let index = 0; index < routes.length; index += 1) {
+    const route = routes[index];
+    maxBefore = Math.max(maxBefore, route.packetCount);
+    const update = touched.get(route.id);
+    if (!update) {
+      maxAfter = Math.max(maxAfter, route.packetCount);
+      continue;
+    }
+    if (!changed) next = routes.slice();
+    changed = true;
+    const packetCount = route.packetCount + update.hits;
+    const payloadTypeNames = route.payloadTypeNames.includes(pulse.payloadTypeName)
+      ? route.payloadTypeNames
+      : [...route.payloadTypeNames, pulse.payloadTypeName].sort();
+    next[index] = {
+      ...route,
+      packetCount,
+      lastHeard: Math.max(route.lastHeard, pulse.heardAt),
+      frequencyBucket: frequencyBucket(packetCount, maxBefore),
+      payloadTypeNames
+    };
+    maxAfter = Math.max(maxAfter, packetCount);
+    touched.delete(route.id);
+  }
+
+  if (touched.size > 0) {
+    if (!changed) next = routes.slice();
+    changed = true;
+    for (const { segment, hits } of touched.values()) {
+      const route: PublicRoute = {
         id: segment.routeId,
         from: segment.from,
         to: segment.to,
         distanceKm: segment.distanceKm,
-        packetCount: 1,
+        packetCount: hits,
         lastHeard: pulse.heardAt,
-        frequencyBucket: 0,
+        frequencyBucket: frequencyBucket(hits, Math.max(maxBefore, hits)),
         payloadTypeNames: [pulse.payloadTypeName]
-      });
+      };
+      next.push(route);
+      maxAfter = Math.max(maxAfter, hits);
     }
   }
-  return normalizeRouteBuckets(Array.from(byID.values())).sort((a, b) => b.packetCount - a.packetCount || b.lastHeard - a.lastHeard);
+
+  if (!changed) return routes;
+  if (maxAfter === maxBefore) return next;
+  return normalizeRouteBuckets(next);
 }
 
 function normalizeRouteBuckets(routes: PublicRoute[]): PublicRoute[] {

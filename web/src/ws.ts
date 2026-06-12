@@ -27,22 +27,67 @@ export function connectPublicSocket(onMessage: (message: PublicLiveEnvelope) => 
   let pingTimer: number | undefined;
   let attempts = 0;
 
+  const clearPingTimer = () => {
+    if (pingTimer !== undefined) window.clearInterval(pingTimer);
+    pingTimer = undefined;
+  };
+
+  const scheduleReconnect = () => {
+    if (closed || retryTimer !== undefined) return;
+    onStatus('recovering');
+    attempts += 1;
+    const delay = reconnectDelayMs(attempts);
+    retryTimer = window.setTimeout(() => {
+      retryTimer = undefined;
+      connect();
+    }, delay);
+  };
+
+  const handleSendFailure = () => {
+    clearPingTimer();
+    onStatus('error');
+    const activeSocket = socket;
+    socket = null;
+    try {
+      activeSocket?.close();
+    } catch {
+      // A failed close should still fall back to reconnect scheduling.
+    }
+    scheduleReconnect();
+  };
+
+  const sendJSON = (message: unknown): boolean => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    try {
+      socket.send(JSON.stringify(message));
+      return true;
+    } catch {
+      handleSendFailure();
+      return false;
+    }
+  };
+
   const connect = () => {
     if (closed) return;
     onStatus(attempts === 0 ? 'connecting' : 'recovering');
-    socket = new WebSocket(url);
+    try {
+      socket = new WebSocket(url);
+    } catch {
+      onStatus('error');
+      scheduleReconnect();
+      return;
+    }
     socket.addEventListener('open', () => {
       attempts = 0;
       onStatus('live');
       onOpen?.();
-      socket?.send(JSON.stringify({ v: 1, type: 'subscribe', id: 'public-map' }));
+      if (!sendJSON({ v: 1, type: 'subscribe', id: 'public-map' })) return;
       pingTimer = window.setInterval(() => {
-        socket?.send(JSON.stringify({ type: 'ping' }));
+        sendJSON({ type: 'ping' });
       }, 25_000);
     });
     socket.addEventListener('close', () => {
-      if (pingTimer !== undefined) window.clearInterval(pingTimer);
-      pingTimer = undefined;
+      clearPingTimer();
       if (closed) {
         onStatus('closed');
         return;
@@ -59,24 +104,13 @@ export function connectPublicSocket(onMessage: (message: PublicLiveEnvelope) => 
     });
   };
 
-  const scheduleReconnect = () => {
-    if (closed || retryTimer !== undefined) return;
-    onStatus('recovering');
-    attempts += 1;
-    const delay = reconnectDelayMs(attempts);
-    retryTimer = window.setTimeout(() => {
-      retryTimer = undefined;
-      connect();
-    }, delay);
-  };
-
   connect();
 
   return {
     close: () => {
       closed = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
-      if (pingTimer !== undefined) window.clearInterval(pingTimer);
+      clearPingTimer();
       socket?.close();
     }
   };

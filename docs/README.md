@@ -17,6 +17,9 @@ docs are kept short; historical release evidence is preserved by version.
 
 ## Release Docs
 
+- [2.9.1 release notes](2.9.1/release_notes.md)
+- [2.9.1 validation checklist](2.9.1/validation_checklist.md)
+- [2.9.1 master plan](2.9.1/master_plan.md)
 - [2.9.0 release notes](2.9.0/release_notes.md)
 - [2.9.0 validation checklist](2.9.0/validation_checklist.md)
 - [2.9.0 master plan](2.9.0/master_plan.md)
@@ -30,6 +33,7 @@ These files are intentionally concise archive summaries. Detailed patch history
 belongs in [CHANGELOG.md](../CHANGELOG.md).
 
 - [2.9.0 UX roadmap](2.9.0/roadmap.md)
+- [2.9.0 frontend performance audit](2.9.0/frontend_performance_audit.md)
 - [2.7.5 to 2.7.7 archive](roadmap-2.7.5-to-2.7.7.md)
 - [2.6.3 to 2.6.6 archive](roadmap-2.6.3-to-2.6.6.md)
 - [2.5.2 to 2.6.0 archive](roadmap-2.5.2-to-2.6.0.md)

@@ -6,15 +6,17 @@ in [CHANGELOG.md](../CHANGELOG.md); operator procedures live in
 
 ## Current Baseline
 
-Version `2.9.0` is the current production-ready visitor UX rollup release.
+Version `2.9.1` is the current production-ready live-map performance release.
 
-- Public API shapes are stable across the 2.8.x and 2.9.0 line.
+- Public API shapes are stable across the 2.8.x and 2.9.x line.
 - The default public map is traffic-first: terrain relief, propagation overlays,
   and Known Pathways are opt-in for new visitors.
 - The supported deployment shape is one container with the Go backend serving
   the embedded React frontend and SQLite under `/app/data`.
 - Local release validation uses Podman; the production droplet can continue to
   use Docker Compose.
+- The 2.9.1 frontend reduces live-mode polling, route reducer churn, hidden
+  heatmap source work, and idle UI polling while preserving the 2.9.0 UX.
 
 ## Active Focus
 
