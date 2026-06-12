@@ -1238,6 +1238,7 @@ export default function App() {
 
   const showRouteGifExport = Boolean(selectedPacket && !packetsOpen && !netGraphOpen && !chatOpen && !setupOpen && !propagationOpen && !vcrOpen);
   const knownPathwaysOn = mapSettings.layers.routes;
+  const workspaceSurfaceOpen = packetsOpen || netGraphOpen || chatOpen;
   const visitorGuideSuppressed = chromeHidden || packetsOpen || netGraphOpen || chatOpen || setupOpen || propagationOpen || vcrOpen || nodeListOpen || shortcutHelpOpen || mapSettingsOpen || mobileControlsOpen || Boolean(selectedNode || selectedRoute || selectedPacket);
 
   return (
@@ -1683,7 +1684,7 @@ export default function App() {
       {nodeListOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><NodeListPanel nodes={visibleNodes} selectedNodeID={selectedNodeID} onSelectNode={(id) => { selectNode(id); setNodeListOpen(false); }} onClose={() => setNodeListOpen(false)} /></Suspense></ErrorBoundary>}
       {shortcutHelpOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><ShortcutHelp onClose={() => setShortcutHelpOpen(false)} /></Suspense></ErrorBoundary>}
 
-      {!vcrOpen && packetsPanelMode !== 'compactTray' && !netGraphOpen && !chatOpen && !setupOpen && !propagationOpen && (
+      {!vcrOpen && !packetsOpen && !netGraphOpen && !chatOpen && !setupOpen && !propagationOpen && (
         <>
           {!chromeHidden && (
             <div className="bottom-action-dock" aria-label="Map playback and route controls">
@@ -1744,7 +1745,7 @@ export default function App() {
         />
       )}
 
-      {!chromeHidden && (
+      {!chromeHidden && !workspaceSurfaceOpen && (
         <>
           <ChromePanel
             panel="search"

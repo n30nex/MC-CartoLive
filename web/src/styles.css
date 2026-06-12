@@ -426,6 +426,7 @@ button {
 .packets-compact-tray,
 .map-settings-drawer,
 .route-gif-export,
+.visitor-guide,
 .vcr-bar {
   position: absolute;
   z-index: 6;
@@ -5552,22 +5553,30 @@ button.status-pill {
     top: calc(8px + var(--ui-safe-top, 0px));
     left: calc(8px + var(--ui-safe-left, 0px));
     right: calc(8px + var(--ui-safe-right, 0px));
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr);
     gap: 6px;
     min-height: 34px;
     padding: 5px 6px;
   }
 
-  .link-bar-build {
-    justify-content: flex-end;
-    gap: 6px;
+  .link-bar-brand {
+    width: 28px;
+    padding: 0 4px;
   }
 
-  .link-bar-build strong {
+  .link-bar-brand span,
+  .link-bar-build > a:not(.link-bar-page),
+  .link-bar-build > span {
     display: none;
   }
 
-  .link-bar-build > span {
+  .link-bar-build {
+    justify-content: flex-end;
+    gap: 6px;
+    overflow: hidden;
+  }
+
+  .link-bar-build strong {
     display: none;
   }
 
@@ -5795,7 +5804,7 @@ button.status-pill {
 
   .visitor-guide {
     right: calc(8px + var(--ui-safe-right, 0px));
-    bottom: calc(78px + var(--ui-safe-bottom, 0px));
+    bottom: calc(154px + var(--ui-safe-bottom, 0px));
     left: calc(8px + var(--ui-safe-left, 0px));
     width: auto;
   }
@@ -6122,7 +6131,7 @@ button.status-pill {
     position: fixed;
     left: 50%;
     right: auto;
-    bottom: calc(8px + var(--ui-safe-bottom, 0px));
+    bottom: calc(112px + var(--ui-safe-bottom, 0px));
     z-index: var(--z-map-chrome, 8);
     transform: translateX(-50%);
     max-width: calc(100vw - 16px);
