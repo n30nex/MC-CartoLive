@@ -29,7 +29,7 @@ interface ChatPanelProps {
 const CHAT_PAGE_LIMIT = 200;
 const CHAT_RETAINED_LIMIT = 1000;
 const CHAT_FILTER_DEBOUNCE_MS = 250;
-const CHAT_ROW_HEIGHT = 96;
+const CHAT_ROW_HEIGHT = 108;
 const CHAT_LIST_OVERSCAN = 5;
 
 export default function ChatPanel({
@@ -190,6 +190,7 @@ export default function ChatPanel({
       <header className="chat-panel-header">
         <div>
           <span className="panel-eyebrow">Chat</span>
+          <h2>Public Chat</h2>
           <p>Public messages from map-safe packet fields</p>
         </div>
         <div className="chat-panel-actions">
@@ -257,6 +258,19 @@ export default function ChatPanel({
         </div>
       </div>
 
+      <div className="chat-filter-chips" aria-label="Active chat filters">
+        <span className={autoRefresh ? 'live' : ''}>{autoRefresh ? 'Live refresh' : 'Manual refresh'}</span>
+        <span>{formatWindow(windowInfo, scopeMs)}</span>
+        {filters.region && <span>Region {filters.region}</span>}
+        {filters.channel && <span>Channel {filters.channel}</span>}
+        {filters.query.trim() && <span>Search {filters.query.trim()}</span>}
+        {hasActiveChatFilters(filters) && (
+          <button type="button" onClick={() => setFilters(DEFAULT_CHAT_FILTERS)}>
+            Clear filters
+          </button>
+        )}
+      </div>
+
       {error && <div className="chat-error" role="alert">{error}</div>}
       {loading && initialLoadRef.current && <div className="chat-loading-bar" />}
 
@@ -297,6 +311,7 @@ function ChatRow({ message }: { message: PublicChatMessage }) {
   const payload = safeChatText(message.payloadTypeName, 'Message');
   const endpoints = (message.endpointLabels ?? []).map((label) => safeChatText(label, '')).filter(Boolean);
   const anchorLabel = safeChatText(message.anchor?.label, '');
+  const routeCount = message.routeIds?.length ?? 0;
   return (
     <article className="chat-row" role="listitem">
       <div className="chat-row-top">
@@ -310,6 +325,7 @@ function ChatRow({ message }: { message: PublicChatMessage }) {
         <span>{payload || 'Message'}</span>
         {anchorLabel && <span>{anchorLabel}</span>}
         {endpoints.length > 0 && <span>{endpointSummary(endpoints)}</span>}
+        {routeCount > 0 && <span>{routeCount} route{routeCount === 1 ? '' : 's'}</span>}
       </div>
     </article>
   );

@@ -19,6 +19,7 @@ export interface MapLayerSettings {
   terrainLOS: boolean;
   terrainHeightmap: boolean;
   weatherClouds: boolean;
+  propagationInsights: boolean;
 }
 
 export interface PacketVisualSettings {
@@ -42,7 +43,7 @@ export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   activityHeatmap: true,
   nodes: true,
   nodeLabels: true,
-  routes: true,
+  routes: false,
   analysisPaths: true,
   liveComets: true,
   packetResidue: true,
@@ -54,7 +55,8 @@ export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   buildingExtrusions: true,
   terrainLOS: false,
   terrainHeightmap: true,
-  weatherClouds: false
+  weatherClouds: false,
+  propagationInsights: true
 };
 
 export const DEFAULT_PACKET_VISUAL_SETTINGS: PacketVisualSettings = {
@@ -98,7 +100,8 @@ export function normalizeLayerSettings(input: unknown): MapLayerSettings {
     buildingExtrusions: boolOrDefault(raw.buildingExtrusions, DEFAULT_MAP_LAYER_SETTINGS.buildingExtrusions),
     terrainLOS: boolOrDefault(raw.terrainLOS, DEFAULT_MAP_LAYER_SETTINGS.terrainLOS),
     terrainHeightmap: boolOrDefault(raw.terrainHeightmap, DEFAULT_MAP_LAYER_SETTINGS.terrainHeightmap),
-    weatherClouds: boolOrDefault(raw.weatherClouds, DEFAULT_MAP_LAYER_SETTINGS.weatherClouds)
+    weatherClouds: boolOrDefault(raw.weatherClouds, DEFAULT_MAP_LAYER_SETTINGS.weatherClouds),
+    propagationInsights: boolOrDefault(raw.propagationInsights, DEFAULT_MAP_LAYER_SETTINGS.propagationInsights)
   };
 }
 
@@ -156,7 +159,8 @@ export function layerSettingsSignature(settings: MapLayerSettings): string {
     settings.buildingExtrusions,
     settings.terrainLOS,
     settings.terrainHeightmap,
-    settings.weatherClouds
+    settings.weatherClouds,
+    settings.propagationInsights
   ].map((value) => (value ? '1' : '0')).join('');
 }
 

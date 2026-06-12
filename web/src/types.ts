@@ -201,6 +201,69 @@ export interface PublicPacketsResponse {
   scan?: PublicPacketScan;
 }
 
+export interface PublicPropagationWeatherSummary {
+  source: string;
+  model?: string;
+  sampleTime: number;
+  fetchedAt: number;
+  temperatureC: number;
+  dewPointC: number;
+  relativeHumidityPct: number;
+  pressureHPa: number;
+  cloudCoverPct: number;
+  visibilityM?: number;
+  windSpeedKmh: number;
+  inversionProxy: string;
+}
+
+export interface PublicPropagationSolarSummary {
+  kpIndex: number;
+  kpLabel: string;
+  solarFluxSfu: number;
+  solarFluxLabel: string;
+  geomagActivity: string;
+  fetchedAt: number;
+}
+
+export interface PublicPropagationReplayWindow {
+  from: number;
+  to: number;
+}
+
+export interface PublicPropagationEvent {
+  id: string;
+  at: number;
+  classification: 'tropo_possible' | 'long_distance_event' | string;
+  confidence: string;
+  score: number;
+  distanceKm: number;
+  region?: string;
+  routeIds: string[];
+  endpointLabels: string[];
+  segments: PublicRouteSegment[];
+  reasons: string[];
+  weather?: PublicPropagationWeatherSummary;
+  solar?: PublicPropagationSolarSummary;
+  replayWindow: PublicPropagationReplayWindow;
+}
+
+export interface PublicPropagationConditions {
+  serverTime: number;
+  eventCount: number;
+  latestEvent?: PublicPropagationEvent;
+  weather?: PublicPropagationWeatherSummary;
+  solar?: PublicPropagationSolarSummary;
+  sourceStatus: string;
+}
+
+export interface PublicPropagationResponse {
+  serverTime: number;
+  conditions: PublicPropagationConditions;
+  events: PublicPropagationEvent[];
+  nextCursor?: string;
+  window: PublicHistoryWindow;
+}
+
 export interface PublicChatMessage {
   id: string;
   at: number;

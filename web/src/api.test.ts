@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchPublicChat, fetchPublicPackets } from './api';
+import { fetchPublicChat, fetchPublicPackets, fetchPublicPropagation } from './api';
 
 describe('fetchPublicPackets', () => {
   afterEach(() => {
@@ -163,5 +163,94 @@ describe('fetchPublicChat', () => {
     expect(requestUrl.searchParams.get('limit')).toBe('25');
     expect(requestUrl.searchParams.get('from')).toBe('100');
     expect(requestUrl.searchParams.get('to')).toBe('200');
+  });
+});
+
+describe('fetchPublicPropagation', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('normalizes propagation event payloads and public summaries', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      serverTime: '1700',
+      window: { from: '100', to: '200', count: '1' },
+      nextCursor: 55,
+      conditions: {
+        eventCount: '1',
+        sourceStatus: 'active',
+        weather: {
+          source: 'open-meteo',
+          model: 123,
+          sampleTime: '150',
+          fetchedAt: '160',
+          temperatureC: '12.4',
+          dewPointC: '11.2',
+          relativeHumidityPct: '92',
+          pressureHPa: '1019',
+          cloudCoverPct: '20',
+          visibilityM: '12000',
+          windSpeedKmh: '8',
+          inversionProxy: 'inversion'
+        }
+      },
+      events: [
+        {
+          id: 9,
+          at: '150',
+          classification: 'tropo_possible',
+          confidence: 'high',
+          score: '0.86',
+          distanceKm: '142.5',
+          region: 7,
+          routeIds: [1, true],
+          endpointLabels: ['Toronto', 2],
+          reasons: ['distance threshold met', 'humid air'],
+          replayWindow: { from: '120', to: '180' },
+          segments: [
+            {
+              routeId: 7,
+              from: { nodeId: 12, label: 34, lat: '43.1', lng: -79.4 },
+              to: { nodeId: 'n2', label: 'Bravo', lat: '44', lng: -79.8 },
+              distanceKm: '142.5'
+            }
+          ]
+        },
+        { not: 'event' }
+      ]
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })));
+
+    const parsed = await fetchPublicPropagation({ from: 100, to: 200, limit: 25, region: 'YYZ' });
+    expect(parsed).toMatchObject({
+      serverTime: 1700,
+      nextCursor: '55',
+      window: { from: 100, to: 200, count: 1 },
+      conditions: {
+        eventCount: 1,
+        sourceStatus: 'active',
+        weather: {
+          source: 'open-meteo',
+          model: '123',
+          temperatureC: 12.4,
+          inversionProxy: 'inversion'
+        }
+      }
+    });
+    expect(parsed.events).toHaveLength(1);
+    expect(parsed.events[0]).toMatchObject({
+      id: '9',
+      classification: 'tropo_possible',
+      confidence: 'high',
+      score: 0.86,
+      distanceKm: 142.5,
+      region: '7',
+      routeIds: ['1', 'true'],
+      endpointLabels: ['Toronto', '2'],
+      replayWindow: { from: 120, to: 180 }
+    });
+    expect(parsed.events[0].segments[0].from).toMatchObject({ nodeId: '12', label: '34', lat: 43.1, lng: -79.4 });
   });
 });

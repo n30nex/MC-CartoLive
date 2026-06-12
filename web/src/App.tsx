@@ -1,6 +1,6 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Check, Columns3, Eye, EyeOff, Layers, LocateFixed, Monitor, Moon, Palette, Pause, Play, RadioTower, RotateCcw, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
-import { fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicState } from './api';
+import { Check, Columns3, Eye, EyeOff, Layers, LocateFixed, Monitor, Moon, Palette, Pause, Play, RadioTower, RotateCcw, Route, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
+import { fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicPropagation, fetchPublicState } from './api';
 import { connectPublicSocket } from './ws';
 import {
   applyPublicEnvelope,
@@ -22,6 +22,7 @@ import LinkBar from './components/LinkBar';
 import PlotRoutesPanel, { type PlotMode, type PlotResult } from './components/PlotRoutesPanel';
 import SelectionDrawer from './components/SelectionDrawer';
 import StatusBar from './components/StatusBar';
+import PropagationPanel from './components/PropagationPanel';
 import VcrBar, { MiniLiveClock } from './components/VcrBar';
 import ChromePanel from './components/ChromePanel';
 import { lazyWithReload } from './lazyWithReload';
@@ -77,7 +78,7 @@ import {
 import { buildSharedViewURL, parseSharedView, type MapViewState } from './shareView';
 import { recordLivePendingQueueSize, recordVcrReplayQueueSize, recordVisibilityPause } from './perfDiagnostics';
 import { appendBufferedRoutePulses, routePulseMessages } from './playbackController';
-import { readStoredMapSettings, writeStoredMapSettings, type MapSettings } from './mapSettings';
+import { normalizeMapSettings, readStoredMapSettings, writeStoredMapSettings, type MapSettings } from './mapSettings';
 import {
   THEME_PALETTES,
   applyDocumentTheme,
@@ -90,7 +91,7 @@ import {
   type ThemeMode,
   type ThemePalette
 } from './theme';
-import type { PublicActivity, PublicHistorySummaryBucket, PublicLiveEnvelope, PublicMapConfig, PublicPacketPath } from './types';
+import type { PublicActivity, PublicHistorySummaryBucket, PublicLiveEnvelope, PublicMapConfig, PublicPacketPath, PublicPropagationConditions, PublicPropagationEvent, PublicRoutePulse } from './types';
 
 const NodeListPanel = lazyWithReload(() => import('./components/NodeListPanel'), 'NodeListPanel');
 const ShortcutHelp = lazyWithReload(() => import('./components/ShortcutHelp'), 'ShortcutHelp');
@@ -153,6 +154,11 @@ export default function App() {
   const [netGraphOpen, setNetGraphOpen] = useState(() => window.location.hash === '#/netgraph');
   const [chatOpen, setChatOpen] = useState(() => window.location.hash === '#/chat');
   const [setupOpen, setSetupOpen] = useState(() => window.location.hash === '#/setup');
+  const [propagationOpen, setPropagationOpen] = useState(false);
+  const [propagationEvents, setPropagationEvents] = useState<PublicPropagationEvent[]>([]);
+  const [propagationConditions, setPropagationConditions] = useState<PublicPropagationConditions | null>(null);
+  const [propagationLoading, setPropagationLoading] = useState(true);
+  const [propagationError, setPropagationError] = useState<string | null>(null);
   const [packetsPanelMode, setPacketsPanelMode] = useState<'expanded' | 'compactTray'>('expanded');
   const [workspacePresentation, setWorkspacePresentation] = useState<WorkspacePresentation>('side');
   const [initialLoadGateOpen, setInitialLoadGateOpen] = useState(true);
@@ -779,6 +785,41 @@ export default function App() {
     };
   }, [vcr.scopeMs]);
 
+  useEffect(() => {
+    let active = true;
+    let controller: AbortController | null = null;
+    const loadPropagation = () => {
+      controller?.abort();
+      controller = new AbortController();
+      const requestController = controller;
+      const to = Date.now();
+      const from = Math.max(0, to - 24 * 60 * 60_000);
+      setPropagationLoading(true);
+      fetchPublicPropagation({ from, to, limit: 80, signal: requestController.signal })
+        .then((response) => {
+          if (!active || requestController.signal.aborted) return;
+          setPropagationEvents(response.events);
+          setPropagationConditions(response.conditions);
+          setPropagationError(null);
+        })
+        .catch((error) => {
+          if (!active || requestController.signal.aborted || error?.name === 'AbortError') return;
+          setPropagationError('Propagation history unavailable');
+        })
+        .finally(() => {
+          if (!active || requestController.signal.aborted) return;
+          setPropagationLoading(false);
+        });
+    };
+    loadPropagation();
+    const interval = window.setInterval(loadPropagation, 300_000);
+    return () => {
+      active = false;
+      controller?.abort();
+      window.clearInterval(interval);
+    };
+  }, []);
+
   const debouncedQuery = useDebouncedValue(query, 200);
 
   const visibleNodes = useMemo(() => filterNodes(state.nodes, debouncedQuery), [state.nodes, debouncedQuery]);
@@ -929,6 +970,63 @@ export default function App() {
     });
   }, [applySelection, clearPendingLiveFlush, mapSettings.packets, stopReplay]);
 
+  const focusPropagationEvent = useCallback((event: PublicPropagationEvent) => {
+    setPropagationOpen(true);
+    setPacketsOpen(false);
+    setPacketsPanelMode('expanded');
+    applySelection(clearSelectionState());
+    const token = actionTokenRef.current + 1;
+    actionTokenRef.current = token;
+    setMapAction({ type: 'packet', token, segments: event.segments });
+  }, [applySelection]);
+
+  const replayPropagationEvent = useCallback((event: PublicPropagationEvent) => {
+    if (vcrModeRef.current !== 'live') {
+      stopReplay();
+      clearPendingLiveFlush();
+      pendingMessagesRef.current = [];
+      vcrBufferedMessagesRef.current = [];
+      recordVcrReplayQueueSize(0);
+      setVcr((current) => ({ ...current, mode: 'live', missedCount: 0, scrubAt: null, clock: null, status: 'idle' }));
+    }
+    setPlotMode('off');
+    setPlotFirstNodeID(null);
+    setPlotAreaFirstPoint(null);
+    setFollowTraffic(false);
+    setPaused(true);
+    setPropagationOpen(true);
+    setPacketsOpen(false);
+    setPacketsPanelMode('expanded');
+    applySelection(clearSelectionState());
+    const token = actionTokenRef.current + 1;
+    actionTokenRef.current = token;
+    const travelDurationMs = cinematicPacketReplayDuration(event.segments.length, mapSettings.packets.speed);
+    const pulse: PublicRoutePulse = {
+      id: `propagation:${event.id}:${token}`,
+      region: event.region,
+      payloadTypeName: event.classification === 'tropo_possible' ? 'Tropo possible' : 'Long-distance event',
+      heardAt: event.at,
+      receivedAt: Date.now(),
+      displayAt: Date.now(),
+      segments: event.segments,
+      replayOptions: {
+        force: true,
+        travelDurationMs,
+        brightness: Math.max(1.15, mapSettings.packets.brightness),
+        trailScale: Math.max(1.1, mapSettings.packets.trail),
+        animationStyle: mapSettings.packets.animationStyle
+      }
+    };
+    setMapAction({
+      type: 'packet-replay',
+      token,
+      segments: event.segments,
+      pulse,
+      settleMs: 650,
+      travelDurationMs
+    });
+  }, [applySelection, clearPendingLiveFlush, mapSettings.packets, stopReplay]);
+
   const resumeLiveFromPacketTray = useCallback(() => {
     returnToLive();
     setPaused(false);
@@ -1008,6 +1106,13 @@ export default function App() {
       setPathCopyToast('Copy failed');
     }
     window.setTimeout(() => setPathCopyToast(null), 2200);
+  }, []);
+
+  const toggleKnownPathways = useCallback(() => {
+    setMapSettings((current) => normalizeMapSettings({
+      ...current,
+      layers: { ...current.layers, routes: !current.layers.routes }
+    }));
   }, []);
 
   useEffect(() => {
@@ -1122,7 +1227,8 @@ export default function App() {
     });
   }, [mapSettings.packets, routeGifExport.status, selectedPacket]);
 
-  const showRouteGifExport = Boolean(selectedPacket && !packetsOpen && !netGraphOpen && !chatOpen && !setupOpen && !vcrOpen);
+  const showRouteGifExport = Boolean(selectedPacket && !packetsOpen && !netGraphOpen && !chatOpen && !setupOpen && !propagationOpen && !vcrOpen);
+  const knownPathwaysOn = mapSettings.layers.routes;
 
   return (
     <div
@@ -1141,6 +1247,7 @@ export default function App() {
         routes={visibleRoutes}
         pulses={state.pulses}
         observerBursts={state.observerBursts}
+        propagationEvents={propagationEvents}
         paused={paused || vcr.mode === 'paused'}
         followTraffic={followTraffic && !vcrPlaybackActive}
         clearToken={clearToken}
@@ -1178,6 +1285,9 @@ export default function App() {
           coverage={coverage}
           latestPayloadTypeName={latestPacketActivity?.payloadTypeName ?? null}
           latestPacketID={latestPacketActivity?.id ?? null}
+          propagationConditions={propagationConditions}
+          propagationEventCount={propagationEvents.length}
+          onOpenPropagation={() => setPropagationOpen(true)}
         />
       )}
 
@@ -1239,6 +1349,15 @@ export default function App() {
           }}
         >
           <SlidersHorizontal size={18} />
+        </button>
+        <button
+          className={`icon-button known-pathways-toggle ${knownPathwaysOn ? 'on' : 'off'}`}
+          type="button"
+          aria-pressed={knownPathwaysOn}
+          title={knownPathwaysOn ? 'Known Pathways on' : 'Known Pathways off'}
+          onClick={toggleKnownPathways}
+        >
+          <Route size={18} />
         </button>
         <button
           className={`icon-button theme-mode-toggle ${themeMode}`}
@@ -1340,6 +1459,17 @@ export default function App() {
           onClose={() => setMapSettingsOpen(false)}
         />
       )}
+      {propagationOpen && (
+        <PropagationPanel
+          conditions={propagationConditions}
+          events={propagationEvents}
+          loading={propagationLoading}
+          error={propagationError}
+          onClose={() => setPropagationOpen(false)}
+          onFocus={focusPropagationEvent}
+          onReplay={replayPropagationEvent}
+        />
+      )}
       {packetsOpen && (
         <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}>
           <Suspense fallback={<PanelSkeleton />}>
@@ -1376,7 +1506,7 @@ export default function App() {
       {nodeListOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><NodeListPanel nodes={visibleNodes} selectedNodeID={selectedNodeID} onSelectNode={(id) => { selectNode(id); setNodeListOpen(false); }} onClose={() => setNodeListOpen(false)} /></Suspense></ErrorBoundary>}
       {shortcutHelpOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><ShortcutHelp onClose={() => setShortcutHelpOpen(false)} /></Suspense></ErrorBoundary>}
 
-      {!vcrOpen && packetsPanelMode !== 'compactTray' && !netGraphOpen && !chatOpen && !setupOpen && (
+      {!vcrOpen && packetsPanelMode !== 'compactTray' && !netGraphOpen && !chatOpen && !setupOpen && !propagationOpen && (
         <>
           {!chromeHidden && (
             <div className="bottom-action-dock" aria-label="Map playback and route controls">

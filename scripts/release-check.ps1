@@ -75,6 +75,7 @@ try {
   $packets = Invoke-RestMethod "$BaseUrl/api/v1/public/packets?from=$from&to=$now&limit=25"
   $chat = Invoke-RestMethod "$BaseUrl/api/v1/public/chat?from=$from&to=$now&limit=25"
   $solar = Invoke-RestMethod "$BaseUrl/api/v1/public/solar"
+  $propagation = Invoke-RestMethod "$BaseUrl/api/v1/public/propagation?from=$from&to=$now&limit=25"
   $metrics = Invoke-WebRequest -UseBasicParsing "$BaseUrl/metrics"
   node (Join-Path $root "scripts/check-public-privacy.mjs") $BaseUrl
 
@@ -96,6 +97,8 @@ try {
     PacketPaths = $packets.window.count
     ChatMessages = $chat.window.count
     SolarKp = $solar.kpIndex
+    PropagationEvents = $propagation.window.count
+    PropagationStatus = $propagation.conditions.sourceStatus
     MetricsBytes = $metrics.Content.Length
     PacketIngestState = $health.packetIngestState
     PublicCacheState = $health.publicCacheState

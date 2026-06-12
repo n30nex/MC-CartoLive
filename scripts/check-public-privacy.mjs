@@ -16,7 +16,8 @@ const endpoints = [
   { path: `/api/v1/public/history/summary?from=${from}&to=${now}&bucketMs=60000`, type: 'json' },
   { path: `/api/v1/public/packets?from=${from}&to=${now}&limit=25`, type: 'json' },
   { path: `/api/v1/public/chat?from=${from}&to=${now}&limit=25`, type: 'json' },
-  { path: '/api/v1/public/solar', type: 'json' }
+  { path: '/api/v1/public/solar', type: 'json' },
+  { path: `/api/v1/public/propagation?from=${from}&to=${now}&limit=25`, type: 'json' }
 ];
 
 const forbiddenKeyPatterns = [

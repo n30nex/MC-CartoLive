@@ -59,7 +59,8 @@ export const LAYER_GROUPS: readonly { label: string; controls: readonly LayerCon
     label: 'Analysis',
     controls: [
       { key: 'analysisPaths', label: 'Analysis paths', hint: 'Selected packets and plotted paths' },
-      { key: 'terrainLOS', label: 'Terrain line-of-sight', hint: 'RF terrain clearance color on 3D routes' }
+      { key: 'terrainLOS', label: 'Terrain line-of-sight', hint: 'RF terrain clearance color on 3D routes' },
+      { key: 'propagationInsights', label: 'Propagation insights', hint: 'Long-distance route annotations and replay history' }
     ]
   }
 ];

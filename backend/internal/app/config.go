@@ -52,6 +52,10 @@ type Config struct {
 	PublicPacketPathBackfillEnabled bool
 	PublicPacketPathBackfillBatch   int
 	PublicPacketPathBackfillHours   int
+	PropagationEnabled              bool
+	PropagationMinDistanceKM        float64
+	PropagationFetchIntervalSec     int
+	PropagationEventRetentionDays   int
 	TrustProxyHeaders               bool
 	ConfigYAML                      string
 	FixtureReplayPath               string
@@ -73,7 +77,7 @@ func LoadConfig() (Config, error) {
 	publicRegions := configuredPublicRegions(mapPreset)
 	cfg := Config{
 		ListenAddr:                      envString("LISTEN_ADDR", ":8080"),
-		AppVersion:                      envString("APP_VERSION", "2.8.0"),
+		AppVersion:                      envString("APP_VERSION", "2.8.1"),
 		GitSHA:                          envString("GIT_SHA", envString("VITE_GIT_SHA", "")),
 		BuildTime:                       envString("BUILD_TIME", envString("VITE_BUILD_TIME", "")),
 		PublicBaseURL:                   envString("PUBLIC_BASE_URL", "http://localhost:8080"),
@@ -112,6 +116,10 @@ func LoadConfig() (Config, error) {
 		PublicPacketPathBackfillEnabled: envBool("PUBLIC_PACKET_PATH_BACKFILL_ENABLED", true),
 		PublicPacketPathBackfillBatch:   envInt("PUBLIC_PACKET_PATH_BACKFILL_BATCH", 500),
 		PublicPacketPathBackfillHours:   envInt("PUBLIC_PACKET_PATH_BACKFILL_HOURS", 24),
+		PropagationEnabled:              envBool("PROPAGATION_ENABLED", true),
+		PropagationMinDistanceKM:        envFloat("PROPAGATION_MIN_DISTANCE_KM", 75),
+		PropagationFetchIntervalSec:     envInt("PROPAGATION_FETCH_INTERVAL_SECONDS", 900),
+		PropagationEventRetentionDays:   envInt("PROPAGATION_EVENT_RETENTION_DAYS", 30),
 		TrustProxyHeaders:               envBool("TRUST_PROXY_HEADERS", false),
 		ConfigYAML:                      envString("CONFIG_YAML", "./data/config.yaml"),
 		FixtureReplayPath:               os.Getenv("FIXTURE_REPLAY_PATH"),

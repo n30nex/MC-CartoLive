@@ -9,6 +9,11 @@ import type {
   PublicNode,
   PublicObserverLocation,
   PublicPacketPath,
+  PublicPropagationConditions,
+  PublicPropagationEvent,
+  PublicPropagationResponse,
+  PublicPropagationSolarSummary,
+  PublicPropagationWeatherSummary,
   PublicRoute,
   PublicRouteEndpoint,
   PublicRoutePulse,
@@ -94,6 +99,30 @@ export function fetchPublicPackets({
   return getJSON<PublicPacketsResponse>(`/api/v1/public/packets?${params.toString()}`, signal).then(sanitizePublicPacketsResponse);
 }
 
+export interface PublicPropagationParams extends PublicHistoryParams {
+  iata?: string;
+  region?: string;
+}
+
+export function fetchPublicPropagation({
+  from,
+  to,
+  limit,
+  cursor,
+  iata,
+  region,
+  signal
+}: PublicPropagationParams): Promise<PublicPropagationResponse> {
+  const params = new URLSearchParams({
+    from: Math.round(from).toString(),
+    to: Math.round(to).toString()
+  });
+  if (limit !== undefined) params.set('limit', Math.round(limit).toString());
+  if (cursor) params.set('cursor', cursor);
+  if (region || iata) params.set('region', region ?? iata ?? '');
+  return getJSON<PublicPropagationResponse>(`/api/v1/public/propagation?${params.toString()}`, signal).then(sanitizePublicPropagationResponse);
+}
+
 export interface PublicChatParams extends PublicHistoryParams {
   iata?: string;
   region?: string;
@@ -157,6 +186,14 @@ interface SanitizedPacketsShape {
     filtered?: unknown;
     partial?: unknown;
   };
+  serverTime?: unknown;
+  nextCursor?: unknown;
+}
+
+interface SanitizedPropagationShape {
+  events: unknown[];
+  conditions?: unknown;
+  window: NonNullable<PublicPropagationResponse['window']>;
   serverTime?: unknown;
   nextCursor?: unknown;
 }
@@ -409,6 +446,20 @@ function sanitizePublicPacketsResponse(response: PublicPacketsResponse | unknown
   };
 }
 
+function sanitizePublicPropagationResponse(response: PublicPropagationResponse | unknown): PublicPropagationResponse {
+  const safeResponse = (response ?? {}) as SanitizedPropagationShape;
+  const events = Array.isArray(safeResponse.events)
+    ? safeResponse.events.map(sanitizePublicPropagationEvent).filter((event): event is PublicPropagationEvent => Boolean(event))
+    : [];
+  return {
+    serverTime: sanitizeNumber(safeResponse.serverTime, Date.now()),
+    conditions: sanitizePublicPropagationConditions(safeResponse.conditions, events),
+    events,
+    nextCursor: sanitizeStringOrUndefined(safeResponse.nextCursor),
+    window: sanitizeHistoryWindow(safeResponse.window)
+  };
+}
+
 function sanitizePublicChatResponse(response: PublicChatResponse | unknown): PublicChatResponse {
   const safeResponse = (response ?? {}) as SanitizedChatShape;
   const messages = Array.isArray(safeResponse.messages)
@@ -419,6 +470,88 @@ function sanitizePublicChatResponse(response: PublicChatResponse | unknown): Pub
     messages,
     nextCursor: sanitizeStringOrUndefined(safeResponse.nextCursor),
     window: sanitizeChatWindow(safeResponse.window)
+  };
+}
+
+function sanitizePublicPropagationConditions(value: unknown, events: PublicPropagationEvent[]): PublicPropagationConditions {
+  const item = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const latestEvent = sanitizePublicPropagationEvent(item.latestEvent) ?? events[0];
+  return {
+    serverTime: sanitizeNumber(item.serverTime, Date.now()),
+    eventCount: sanitizeNumber(item.eventCount, events.length),
+    latestEvent,
+    weather: sanitizePublicPropagationWeather(item.weather),
+    solar: sanitizePublicPropagationSolar(item.solar),
+    sourceStatus: sanitizeString(item.sourceStatus, events.length > 0 ? 'active' : 'quiet')
+  };
+}
+
+function sanitizePublicPropagationEvent(event: unknown): PublicPropagationEvent | null {
+  if (!event || typeof event !== 'object') return null;
+  const item = event as Record<string, unknown>;
+  const id = sanitizeString(item.id);
+  if (!id) return null;
+  const segments = Array.isArray(item.segments)
+    ? item.segments.map(sanitizePublicStateSegment).filter((segment): segment is PublicRouteSegment => Boolean(segment))
+    : [];
+  return {
+    id,
+    at: sanitizeNumber(item.at, 0),
+    classification: sanitizeString(item.classification, 'long_distance_event'),
+    confidence: sanitizeString(item.confidence, 'low'),
+    score: sanitizeNumber(item.score, 0),
+    distanceKm: sanitizeNumber(item.distanceKm, 0),
+    region: sanitizeStringOrUndefined(item.region),
+    routeIds: safeStringList(item.routeIds),
+    endpointLabels: safeStringList(item.endpointLabels),
+    segments,
+    reasons: safeStringList(item.reasons).slice(0, 8),
+    weather: sanitizePublicPropagationWeather(item.weather),
+    solar: sanitizePublicPropagationSolar(item.solar),
+    replayWindow: sanitizePropagationReplayWindow(item.replayWindow, sanitizeNumber(item.at, 0))
+  };
+}
+
+function sanitizePublicPropagationWeather(value: unknown): PublicPropagationWeatherSummary | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const item = value as Record<string, unknown>;
+  const source = sanitizeString(item.source, '');
+  if (!source) return undefined;
+  return {
+    source,
+    model: sanitizeStringOrUndefined(item.model),
+    sampleTime: sanitizeNumber(item.sampleTime, 0),
+    fetchedAt: sanitizeNumber(item.fetchedAt, 0),
+    temperatureC: sanitizeNumber(item.temperatureC, 0),
+    dewPointC: sanitizeNumber(item.dewPointC, 0),
+    relativeHumidityPct: sanitizeNumber(item.relativeHumidityPct, 0),
+    pressureHPa: sanitizeNumber(item.pressureHPa, 0),
+    cloudCoverPct: sanitizeNumber(item.cloudCoverPct, 0),
+    visibilityM: sanitizeOptionalNumber(item.visibilityM),
+    windSpeedKmh: sanitizeNumber(item.windSpeedKmh, 0),
+    inversionProxy: sanitizeString(item.inversionProxy, 'unknown')
+  };
+}
+
+function sanitizePublicPropagationSolar(value: unknown): PublicPropagationSolarSummary | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const item = value as Record<string, unknown>;
+  return {
+    kpIndex: sanitizeNumber(item.kpIndex, 0),
+    kpLabel: sanitizeString(item.kpLabel, 'quiet'),
+    solarFluxSfu: sanitizeNumber(item.solarFluxSfu, 0),
+    solarFluxLabel: sanitizeString(item.solarFluxLabel, 'unknown'),
+    geomagActivity: sanitizeString(item.geomagActivity, 'unknown'),
+    fetchedAt: sanitizeNumber(item.fetchedAt, 0)
+  };
+}
+
+function sanitizePropagationReplayWindow(value: unknown, at: number): PublicPropagationEvent['replayWindow'] {
+  if (!value || typeof value !== 'object') return { from: Math.max(0, at - 15 * 60_000), to: at + 15 * 60_000 };
+  const item = value as Record<string, unknown>;
+  return {
+    from: sanitizeNumber(item.from, Math.max(0, at - 15 * 60_000)),
+    to: sanitizeNumber(item.to, at + 15 * 60_000)
   };
 }
 
@@ -477,7 +610,7 @@ function sanitizePublicPacketEndpoint(endpoint: unknown): PublicRouteEndpoint | 
   };
 }
 
-function sanitizePacketsWindow(windowData: unknown): NonNullable<PublicPacketsResponse['window']> {
+function sanitizeHistoryWindow(windowData: unknown): NonNullable<PublicHistoryResponse['window']> {
   if (!windowData || typeof windowData !== 'object') return { from: 0, to: 0, count: 0 };
   const normalized = windowData as Record<string, unknown>;
   return {
@@ -485,6 +618,10 @@ function sanitizePacketsWindow(windowData: unknown): NonNullable<PublicPacketsRe
     to: sanitizeNumber(normalized.to, 0),
     count: sanitizeNumber(normalized.count, 0)
   };
+}
+
+function sanitizePacketsWindow(windowData: unknown): NonNullable<PublicPacketsResponse['window']> {
+  return sanitizeHistoryWindow(windowData);
 }
 
 function sanitizePublicChatMessage(message: unknown): PublicChatMessage | null {
@@ -512,13 +649,7 @@ function sanitizePublicChatMessage(message: unknown): PublicChatMessage | null {
 }
 
 function sanitizeChatWindow(windowData: unknown): NonNullable<PublicChatResponse['window']> {
-  if (!windowData || typeof windowData !== 'object') return { from: 0, to: 0, count: 0 };
-  const normalized = windowData as Record<string, unknown>;
-  return {
-    from: sanitizeNumber(normalized.from, 0),
-    to: sanitizeNumber(normalized.to, 0),
-    count: sanitizeNumber(normalized.count, 0)
-  };
+  return sanitizeHistoryWindow(windowData);
 }
 
 function sanitizeNumericTuple(value: unknown): [number, number] | undefined {

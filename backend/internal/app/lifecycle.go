@@ -16,6 +16,7 @@ import (
 	"meshcore-canada-live-map/backend/internal/live"
 	"meshcore-canada-live-map/backend/internal/meshcore"
 	imqtt "meshcore-canada-live-map/backend/internal/mqtt"
+	"meshcore-canada-live-map/backend/internal/propagation"
 	"meshcore-canada-live-map/backend/internal/resolve"
 	"meshcore-canada-live-map/backend/internal/solar"
 	"meshcore-canada-live-map/backend/internal/store"
@@ -24,16 +25,17 @@ import (
 )
 
 type Application struct {
-	Config      Config
-	Log         *slog.Logger
-	Store       *store.Store
-	Hub         *live.Hub
-	PublicHub   *live.Hub
-	PublicCache *live.PublicStateCache
-	Runtime     *live.RuntimeStats
-	MQTT        *imqtt.Client
-	Resolver    *resolve.Resolver
+	Config        Config
+	Log           *slog.Logger
+	Store         *store.Store
+	Hub           *live.Hub
+	PublicHub     *live.Hub
+	PublicCache   *live.PublicStateCache
+	Runtime       *live.RuntimeStats
+	MQTT          *imqtt.Client
+	Resolver      *resolve.Resolver
 	Solar         *solar.Fetcher
+	Propagation   *propagation.WeatherFetcher
 	solarSnapshot atomic.Pointer[solar.Conditions]
 
 	apiServer *api.Server
@@ -101,7 +103,7 @@ func NewApplication(ctx context.Context, cfg Config, log *slog.Logger) (*Applica
 	publicHub := live.NewHub(log, cfg.WSClientQueueSize, cfg.PublicBaseURL)
 	publicCache := live.NewPublicStateCache(live.NewPublicIATAFilter(publicIATAs(cfg.PublicRegions, yc)))
 	resolver := resolve.New(st, yc.ForwarderRoles)
-	app := &Application{Config: cfg, Log: log, Store: st, Hub: hub, PublicHub: publicHub, PublicCache: publicCache, Runtime: live.NewRuntimeStats(), Resolver: resolver, Solar: solar.NewFetcher(log)}
+	app := &Application{Config: cfg, Log: log, Store: st, Hub: hub, PublicHub: publicHub, PublicCache: publicCache, Runtime: live.NewRuntimeStats(), Resolver: resolver, Solar: solar.NewFetcher(log), Propagation: propagation.NewWeatherFetcher(log)}
 	app.MQTT = imqtt.NewClient(imqtt.ClientConfig{
 		Enabled:   cfg.MQTTEnabled,
 		BrokerURL: cfg.MQTTBrokerURL,
@@ -130,6 +132,8 @@ func (a *Application) Start(ctx context.Context) error {
 		"mqttQueueSize", a.Config.MQTTIngestQueueSize,
 		"mapRegionPreset", a.Config.MapRegionPreset,
 		"mapBounds", a.Config.MapBounds,
+		"propagationEnabled", a.Config.PropagationEnabled,
+		"propagationMinDistanceKm", a.Config.PropagationMinDistanceKM,
 	)
 	if warn := api.StaticWarn(); warn != "" {
 		a.Log.Warn(warn)
@@ -151,6 +155,10 @@ func (a *Application) Start(ctx context.Context) error {
 	go func() { defer a.wg.Done(); a.refreshPublicStateCacheLoop(ctx) }()
 	a.wg.Add(1)
 	go func() { defer a.wg.Done(); a.backfillPublicPacketPathsLoop(ctx) }()
+	if a.Config.PropagationEnabled {
+		a.wg.Add(1)
+		go func() { defer a.wg.Done(); a.propagationLoop(ctx) }()
+	}
 	if err := a.MQTT.Start(ctx); err != nil {
 		a.Log.Error("mqtt start failed", "error", err)
 	}
@@ -805,6 +813,114 @@ func (a *Application) backfillPublicPacketPathsOnce(ctx context.Context, window 
 	return result.Remaining, nil
 }
 
+func (a *Application) propagationLoop(ctx context.Context) {
+	interval := time.Duration(a.Config.PropagationFetchIntervalSec) * time.Second
+	if interval <= 0 {
+		interval = 15 * time.Minute
+	}
+	initialDelay := 8 * time.Second
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(initialDelay):
+	}
+	a.refreshPropagationOnce(ctx)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.refreshPropagationOnce(ctx)
+		}
+	}
+}
+
+func (a *Application) refreshPropagationOnce(ctx context.Context) {
+	if a.Store == nil {
+		return
+	}
+	minDistance := a.Config.PropagationMinDistanceKM
+	if minDistance <= 0 {
+		minDistance = 75
+	}
+	now := time.Now()
+	window := 24 * time.Hour
+	queryCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	candidates, err := a.Store.PropagationCandidatePaths(queryCtx, now.Add(-window).UnixMilli(), now.UnixMilli(), minDistance, 40)
+	if err != nil {
+		a.Log.Warn("propagation candidate query failed", "error", err)
+		return
+	}
+	if len(candidates) == 0 {
+		return
+	}
+	classifier := propagation.Classifier{MinDistanceKM: minDistance}
+	created := 0
+	for _, packet := range candidates {
+		if queryCtx.Err() != nil {
+			break
+		}
+		region := strings.ToUpper(strings.TrimSpace(packet.Region))
+		if region == "" {
+			region = strings.ToUpper(strings.TrimSpace(packet.IATA))
+		}
+		if region != "" && a.PublicCache != nil && !a.PublicCache.AllowsIATA(region) {
+			continue
+		}
+		lat, lng, ok := propagation.RouteMidpoint(packet)
+		if !ok {
+			continue
+		}
+		var weather *propagation.WeatherSample
+		fetcher := a.Propagation
+		if fetcher == nil {
+			fetcher = propagation.NewWeatherFetcher(a.Log)
+		}
+		weatherCtx, weatherCancel := context.WithTimeout(queryCtx, 15*time.Second)
+		sample, fetchErr := fetcher.Fetch(weatherCtx, lat, lng)
+		weatherCancel()
+		if fetchErr != nil {
+			a.Log.Warn("propagation weather fetch failed", "packet", packet.ID, "error", fetchErr)
+		} else {
+			weather = &sample
+			if _, insertErr := a.Store.InsertPropagationWeatherSnapshot(queryCtx, propagationWeatherSnapshot(sample)); insertErr != nil {
+				a.Log.Warn("propagation weather snapshot insert failed", "error", insertErr)
+			}
+		}
+		burstCount, burstErr := a.Store.PropagationRouteBurstCount(queryCtx, packet.RouteIDs, packet.At-int64(time.Hour/time.Millisecond), packet.At+int64(time.Hour/time.Millisecond), minDistance)
+		if burstErr != nil {
+			a.Log.Warn("propagation burst count failed", "packet", packet.ID, "error", burstErr)
+		}
+		event, ok := classifier.Classify(packet, weather, a.solarSnapshot.Load(), burstCount, now)
+		if !ok {
+			continue
+		}
+		if err := a.Store.UpsertPropagationEvent(queryCtx, event); err != nil {
+			a.Log.Warn("propagation event insert failed", "event", event.ID, "error", err)
+			continue
+		}
+		created++
+	}
+	if created > 0 {
+		a.Log.Info("propagation events refreshed", "created", created, "candidates", len(candidates), "minDistanceKm", minDistance)
+	}
+}
+
+func propagationWeatherSnapshot(sample propagation.WeatherSample) store.PropagationWeatherSnapshot {
+	return store.PropagationWeatherSnapshot{
+		Latitude:               sample.Latitude,
+		Longitude:              sample.Longitude,
+		WindDirectionDeg:       sample.WindDirectionDeg,
+		Temperature950HPaC:     sample.Temperature950HPaC,
+		DewPoint950HPaC:        sample.DewPoint950HPaC,
+		RelativeHumidity950HPa: sample.RelativeHumidity950HPa,
+		Summary:                sample.Summary,
+	}
+}
+
 func loadYAMLConfig(path string, log *slog.Logger) yamlConfig {
 	cfg := yamlConfig{ForwarderRoles: []string{"repeater", "room_server"}}
 	if path == "" {
@@ -919,7 +1035,6 @@ func redactedURL(in string) string {
 	return in
 }
 
-
 func (a *Application) pruneLoop(ctx context.Context) {
 	retentionDays := a.Config.DataRetentionDays
 	if retentionDays < 0 {
@@ -940,6 +1055,13 @@ func (a *Application) pruneLoop(ctx context.Context) {
 				a.Log.Warn("data prune failed", "error", err)
 			} else {
 				a.Log.Debug("data pruned", "beforeMs", beforeMs)
+			}
+			propagationRetentionDays := a.Config.PropagationEventRetentionDays
+			if propagationRetentionDays > 0 && propagationRetentionDays != retentionDays {
+				propagationBeforeMs := time.Now().AddDate(0, 0, -propagationRetentionDays).UnixMilli()
+				if err := a.Store.PrunePropagationData(ctx, propagationBeforeMs); err != nil {
+					a.Log.Warn("propagation prune failed", "error", err)
+				}
 			}
 		}
 	}

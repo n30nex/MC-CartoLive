@@ -42,10 +42,12 @@ func TestMigrateUpgradesOldSchemaColumns(t *testing.T) {
 	}
 
 	for table, columns := range map[string][]string{
-		"nodes":               {"supports_multibyte"},
-		"packet_observations": {"message_sender", "message_text"},
-		"live_edge_events":    {"message_sender", "message_text", "message_anchor_json"},
-		"public_packet_paths": {"mappable", "region", "route_ids_json", "endpoint_labels_json", "search_text", "message_sender", "message_text"},
+		"nodes":                         {"supports_multibyte"},
+		"packet_observations":           {"message_sender", "message_text"},
+		"live_edge_events":              {"message_sender", "message_text", "message_anchor_json"},
+		"public_packet_paths":           {"mappable", "region", "route_ids_json", "endpoint_labels_json", "search_text", "message_sender", "message_text"},
+		"propagation_weather_snapshots": {"fetched_at_ms", "pressure_hpa", "inversion_proxy"},
+		"propagation_events":            {"public_id", "classification", "weather_json", "solar_json"},
 	} {
 		for _, column := range columns {
 			if !testColumnExists(t, ctx, s, table, column) {

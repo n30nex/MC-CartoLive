@@ -83,6 +83,7 @@ describe('OpenFreeMap 3D layer helpers', () => {
     const now = 1_700_000_000_000;
     const input = updateInput({
       selectedRouteID: 'focused-route',
+      layerSettings: { ...DEFAULT_MAP_LAYER_SETTINGS, routes: true },
       routes: [
         route('visible-old', 43.6, -79.4, 43.7, -79.5, now - 20 * 60_000),
         route('fresh-offscreen', 48, -90, 48.5, -90.5, now - 10_000),

@@ -11,6 +11,7 @@ describe('MapSettingsDrawer', () => {
 
     expect(LAYER_GROUPS.map((group) => group.label)).toEqual(['Base', 'Mesh', 'Live Motion', '3D', 'Analysis']);
     expect(html).toContain('Weather clouds');
+    expect(html).toContain('Propagation insights');
     expect(html).toContain('API key required');
     expect(html).toContain('disabled=""');
   });

@@ -3,8 +3,8 @@ import { mapOverlayStyle } from './CanadaMap';
 import { DETAIL_MIN_ZOOM } from './zoomMode';
 
 describe('map zoom layer consistency', () => {
-  it('keeps idle routes, route focus glow, nodes, and observers behind the same detail zoom gate', () => {
-    for (const id of ['route-focus-glow', 'route-lines', 'selected-node-halo', 'node-symbols', 'observer-symbols']) {
+  it('keeps idle routes, route focus glow, nodes, labels, and observers behind the same detail zoom gate', () => {
+    for (const id of ['route-focus-glow', 'route-lines', 'selected-node-halo', 'node-symbols', 'node-map-labels', 'observer-symbols', 'observer-map-labels']) {
       expect(layer(id)?.minzoom).toBe(DETAIL_MIN_ZOOM);
     }
   });
@@ -19,6 +19,13 @@ describe('map zoom layer consistency', () => {
     expect(mapOverlayStyle.sources['analysis-route-paths']).toBeTruthy();
   });
 
+  it('adds propagation insight layers at detail zoom with a dedicated public source', () => {
+    expect(mapOverlayStyle.sources['propagation-events']).toBeTruthy();
+    expect(layer('propagation-event-glow')?.minzoom).toBe(DETAIL_MIN_ZOOM);
+    expect(layer('propagation-event-line')?.minzoom).toBe(DETAIL_MIN_ZOOM);
+    expect(layer('propagation-event-labels')?.minzoom).toBe(DETAIL_MIN_ZOOM);
+  });
+
   it('keeps all cluster-only layers below detail mode', () => {
     for (const item of mapOverlayStyle.layers) {
       if (item.id === 'node-clusters' || item.id === 'node-cluster-counts' || item.id.startsWith('node-cluster-role-') || item.id.startsWith('cluster-activity-')) {
@@ -30,6 +37,8 @@ describe('map zoom layer consistency', () => {
   it('uses restrained OpenFreeMap terrain and keeps 3D buildings out of low zoom', () => {
     const hillshade = layer('meshcore-topographic-hillshade') as any;
     expect(hillshade?.paint?.['hillshade-exaggeration']).toBeLessThanOrEqual(0.54);
+    expect((mapOverlayStyle.sources['meshcore-terrain-dem'] as any).encoding).toBe('terrarium');
+    expect((mapOverlayStyle.sources['meshcore-hillshade-dem'] as any).attribution).toContain('Elevation tiles');
   });
 
   it('aggregates role counts on the clustered node source', () => {

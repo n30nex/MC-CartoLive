@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import maplibregl from 'maplibre-gl';
-import type { PublicMapConfig, PublicMessageAnchor, PublicNode, PublicObserverBurst, PublicRoute, PublicRoutePulse } from '../types';
+import type { PublicMapConfig, PublicMessageAnchor, PublicNode, PublicObserverBurst, PublicPropagationEvent, PublicRoute, PublicRoutePulse } from '../types';
 import { parseSharedView, type MapViewState, type SharedViewState } from '../shareView';
 import { payloadVisual } from '../payloadVisuals';
 import { NODE_ROLE_VISUALS, OBSERVER_NODE_VISUAL, nodeMapImageID, nodeRoleColor } from '../nodeVisuals';
@@ -28,7 +28,6 @@ import {
   NODE_ACTIVITY_UPDATE_MS,
   NODE_ACTIVITY_WINDOW_MS,
   NODE_LABEL_UPDATE_MS,
-  nodeLabelActivityProgress,
   nodeActivityGlow,
   nodeActivityHeat,
   nodeEffectiveActivityAt,
@@ -92,6 +91,7 @@ interface Props {
   routes: PublicRoute[];
   pulses: PublicRoutePulse[];
   observerBursts: PublicObserverBurst[];
+  propagationEvents: PublicPropagationEvent[];
   paused: boolean;
   followTraffic: boolean;
   clearToken: number;
@@ -135,21 +135,6 @@ type HoveredNodeToast = {
   lastHeardAt: number;
 };
 
-type ScreenNodeLabel = {
-  id: string;
-  name: string;
-  x: number;
-  y: number;
-  selected: boolean;
-  neighbour: boolean;
-  path: boolean;
-  observer: boolean;
-  recentActive: boolean;
-  color: string;
-  opacity: number;
-  glow: number;
-};
-
 type MessageBubble = {
   id: string;
   sender: string;
@@ -178,11 +163,16 @@ const ROUTE_GLOW_LAYER = 'route-focus-glow';
 const ANALYSIS_ROUTE_SOURCE = 'analysis-route-paths';
 export const ANALYSIS_ROUTE_GLOW_LAYER = 'analysis-route-overview-glow';
 export const ANALYSIS_ROUTE_LAYER = 'analysis-route-overview-line';
+const PROPAGATION_SOURCE = 'propagation-events';
+const PROPAGATION_GLOW_LAYER = 'propagation-event-glow';
+const PROPAGATION_LINE_LAYER = 'propagation-event-line';
+const PROPAGATION_LABEL_LAYER = 'propagation-event-labels';
 const ROUTE_PAYLOAD_GLOW_SOURCE = 'route-payload-glows';
 const ROUTE_PAYLOAD_GLOW_LAYER = 'route-payload-glow';
 const NODE_HALO_LAYER = 'selected-node-halo';
 const NODE_LAYER = 'node-symbols';
 const NODE_ICON_LAYER = 'node-role-icons';
+const NODE_LABEL_LAYER = 'node-map-labels';
 const OBSERVER_LAYER = 'observer-symbols';
 const ROUTE_LAYER = 'route-lines';
 const CARTO_DARK_SOURCE = 'carto-dark-tiles';
@@ -198,7 +188,6 @@ const OBSERVER_LABEL_LAYER = 'observer-map-labels';
 const WEATHER_CLOUD_SOURCE = 'meshcore-weather-clouds';
 const WEATHER_CLOUD_LAYER = 'meshcore-weather-cloud-overlay';
 const NODE_ACTIVE_LABEL_VISIBLE_MS = 24_000;
-const NODE_LABEL_RECENT_VISIBLE_MS = 90_000;
 const MESSAGE_BUBBLE_LIFETIME_MS = 7_200;
 const MESSAGE_BUBBLE_MAX_WIDTH_PX = 440;
 const MESSAGE_BUBBLE_EDGE_PADDING_PX = 16;
@@ -215,6 +204,8 @@ const DEFAULT_OPENFREEMAP_MAP_BEARING = -11;
 const DEFAULT_OPENFREEMAP_STYLE_URL = '';
 const DEFAULT_OPENFREEMAP_TILEJSON_URL = 'https://tiles.openfreemap.org/planet';
 const DEFAULT_TERRAIN_TILE_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
+const DEM_ATTRIBUTION = 'Elevation tiles &copy; AWS Open Data / Mapzen Terrain Tiles / Tilezen / Joerd';
+const WEATHER_CLOUD_FADE_END_ZOOM = DETAIL_MIN_ZOOM;
 const DEFAULT_WORLD_CENTER = { lat: 20, lng: 0, z: 1.8 };
 const OPENFREEMAP_STYLE_URL = envURL('VITE_OPENFREEMAP_STYLE_URL', DEFAULT_OPENFREEMAP_STYLE_URL);
 const OPENFREEMAP_TILEJSON_URL = envURL('VITE_OPENFREEMAP_TILEJSON_URL', DEFAULT_OPENFREEMAP_TILEJSON_URL);
@@ -232,6 +223,17 @@ type ClusterRoleBadge = {
   color: string;
   translate: [number, number];
 };
+
+function terrainDemSource(): maplibregl.RasterDEMSourceSpecification {
+  return {
+    type: 'raster-dem',
+    tiles: [TERRAIN_TILE_URL],
+    encoding: 'terrarium',
+    tileSize: 256,
+    maxzoom: 15,
+    attribution: DEM_ATTRIBUTION
+  };
+}
 
 const CLUSTER_ROLE_BADGES: ClusterRoleBadge[] = [
   { key: 'repeater', property: 'repeaterCount', color: '#26E07F', translate: [-20, 15] },
@@ -331,6 +333,62 @@ function activityHeatmapLayers(): maplibregl.LayerSpecification[] {
         'circle-blur': 0.55,
         'circle-opacity': ['*', ['coalesce', ['get', 'spark'], 0], 0.58],
         'circle-stroke-width': 0
+      }
+    }
+  ];
+}
+
+function propagationLayers(): maplibregl.LayerSpecification[] {
+  return [
+    {
+      id: PROPAGATION_GLOW_LAYER,
+      type: 'line',
+      source: PROPAGATION_SOURCE,
+      minzoom: DETAIL_MIN_ZOOM,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': ['interpolate', ['linear'], ['zoom'], 7, 9, 12, 16, 16, 24],
+        'line-blur': ['interpolate', ['linear'], ['zoom'], 7, 5, 13, 8],
+        'line-opacity': ['case', ['==', ['get', 'classification'], 'tropo_possible'], 0.28, 0.18]
+      }
+    },
+    {
+      id: PROPAGATION_LINE_LAYER,
+      type: 'line',
+      source: PROPAGATION_SOURCE,
+      minzoom: DETAIL_MIN_ZOOM,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': ['interpolate', ['linear'], ['zoom'], 7, 2.2, 12, 3.6, 16, 5.2],
+        'line-dasharray': ['case', ['==', ['get', 'classification'], 'tropo_possible'], ['literal', [1, 0]], ['literal', [2.4, 1.4]]],
+        'line-opacity': ['case', ['==', ['get', 'classification'], 'tropo_possible'], 0.88, 0.68]
+      }
+    },
+    {
+      id: PROPAGATION_LABEL_LAYER,
+      type: 'symbol',
+      source: PROPAGATION_SOURCE,
+      minzoom: DETAIL_MIN_ZOOM,
+      layout: {
+        'symbol-placement': 'line-center',
+        'text-field': ['get', 'label'],
+        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 7, 10, 12, 12],
+        'text-max-width': 12,
+        'text-anchor': 'center',
+        'text-allow-overlap': false,
+        'text-ignore-placement': false,
+        'text-rotation-alignment': 'viewport',
+        'text-pitch-alignment': 'viewport'
+      },
+      paint: {
+        'text-color': ['get', 'color'],
+        'text-halo-color': 'rgba(2, 6, 23, 0.9)',
+        'text-halo-width': 1.7,
+        'text-halo-blur': 0.45,
+        'text-opacity': ['case', ['==', ['get', 'classification'], 'tropo_possible'], 0.92, 0.74]
       }
     }
   ];
@@ -456,20 +514,8 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       type: 'vector',
       url: OPENFREEMAP_TILEJSON_URL
     },
-    [TERRAIN_SOURCE]: {
-      type: 'raster-dem',
-      tiles: [TERRAIN_TILE_URL],
-      encoding: 'terrarium',
-      tileSize: 256,
-      maxzoom: 15
-    },
-    [HILLSHADE_SOURCE]: {
-      type: 'raster-dem',
-      tiles: [TERRAIN_TILE_URL],
-      encoding: 'terrarium',
-      tileSize: 256,
-      maxzoom: 15
-    },
+    [TERRAIN_SOURCE]: terrainDemSource(),
+    [HILLSHADE_SOURCE]: terrainDemSource(),
     [NODE_SOURCE]: {
       type: 'geojson',
       data: emptyCollection() as any,
@@ -487,6 +533,10 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       data: emptyCollection() as any
     },
     [ANALYSIS_ROUTE_SOURCE]: {
+      type: 'geojson',
+      data: emptyCollection() as any
+    },
+    [PROPAGATION_SOURCE]: {
       type: 'geojson',
       data: emptyCollection() as any
     },
@@ -586,15 +636,7 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       id: HILLSHADE_LAYER,
       type: 'hillshade',
       source: HILLSHADE_SOURCE,
-      paint: {
-        'hillshade-method': 'multidirectional',
-      'hillshade-highlight-color': ['#e2e8f0', '#f1f5f9', '#f8fafc', '#ffffff'],
-      'hillshade-shadow-color': ['#0f172a', '#1e293b', '#334155', '#475569'],
-      'hillshade-accent-color': '#64748b',
-      'hillshade-illumination-direction': [315],
-      'hillshade-illumination-altitude': [45],
-      'hillshade-exaggeration': 0.44
-      } as any
+      paint: terrainHillshadePaint('dark')
     },
     {
       id: 'dark-boundary',
@@ -702,6 +744,7 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
         'line-opacity': ['coalesce', ['get', 'opacity'], 0.86]
       }
     },
+    ...propagationLayers(),
     ...activityHeatmapLayers(),
     {
       id: ROUTE_GLOW_LAYER,
@@ -928,6 +971,32 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       }
     },
     {
+      id: NODE_LABEL_LAYER,
+      type: 'symbol',
+      source: NODE_SOURCE,
+      minzoom: DETAIL_MIN_ZOOM,
+      filter: ['all', ['!', ['has', 'point_count']], ['!=', ['get', 'observer'], true]],
+      layout: {
+        'text-field': ['get', 'mapLabel'],
+        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 7, 9.5, 11, 11.5, 15, 13],
+        'text-anchor': 'top',
+        'text-offset': [0, 1.18],
+        'text-max-width': 9,
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+        'text-rotation-alignment': 'viewport',
+        'text-pitch-alignment': 'viewport'
+      },
+      paint: {
+        'text-color': ['case', ['==', ['get', 'selected'], true], '#ffffff', ['==', ['get', 'path'], true], '#facc15', ['==', ['get', 'neighbor'], true], '#67e8f9', '#dbeafe'],
+        'text-halo-color': 'rgba(2, 6, 23, 0.88)',
+        'text-halo-width': 1.35,
+        'text-halo-blur': 0.42,
+        'text-opacity': ['case', ['==', ['get', 'dimmed'], true], 0.22, ['==', ['get', 'selected'], true], 0.96, ['==', ['get', 'path'], true], 0.86, ['==', ['get', 'neighbor'], true], 0.76, ['==', ['get', 'staleLevel'], 2], 0.28, 0.62]
+      }
+    },
+    {
       id: OBSERVER_LAYER,
       type: 'symbol',
       source: NODE_SOURCE,
@@ -1054,7 +1123,7 @@ function lightOverlayLayer(layer: maplibregl.LayerSpecification): maplibregl.Lay
     case HILLSHADE_LAYER:
       next.paint['hillshade-highlight-color'] = ['#ffffff', '#f8fafc', '#dbeafe', '#bfdbfe'];
       next.paint['hillshade-shadow-color'] = ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'];
-      next.paint['hillshade-exaggeration'] = 0.44;
+      next.paint['hillshade-exaggeration'] = 0.42;
       break;
     case 'dark-boundary':
       next.paint['line-color'] = '#64748b';
@@ -1126,6 +1195,7 @@ function CanadaMap({
   routes,
   pulses,
   observerBursts,
+  propagationEvents,
   paused,
   followTraffic,
   clearToken,
@@ -1152,7 +1222,6 @@ function CanadaMap({
   onClearSelection
 }: Props) {
   const [hoveredNode, setHoveredNode] = useState<HoveredNodeToast | null>(null);
-  const [screenNodeLabels, setScreenNodeLabels] = useState<ScreenNodeLabel[]>([]);
   const [messageBubbles, setMessageBubbles] = useState<MessageBubble[]>([]);
   const initialDefaultView = defaultMapViewFromConfig(mapConfig);
   const [mapZoom, setMapZoom] = useState(initialDefaultView.z);
@@ -1204,6 +1273,7 @@ function CanadaMap({
   const baseModeRef = useRef<MapBaseMode>(baseMode);
   const nodesRef = useRef(nodes);
   const routesRef = useRef(routes);
+  const propagationEventsRef = useRef(propagationEvents);
   const selectedNodeIDRef = useRef(selectedNodeID);
   const selectedRouteIDRef = useRef(selectedRouteID);
   const nodeFocusRef = useRef(nodeFocus);
@@ -1212,6 +1282,7 @@ function CanadaMap({
   const packetVisualSettingsRef = useRef(packetVisualSettings);
   const routeSourceSignatureRef = useRef('');
   const analysisRouteSignatureRef = useRef('');
+  const propagationSourceSignatureRef = useRef('');
   const replayActionTimerRef = useRef<number | null>(null);
   const replayChaseTimerRef = useRef<number | null>(null);
   const replayChaseCleanupRef = useRef<(() => void) | null>(null);
@@ -1390,7 +1461,6 @@ function CanadaMap({
       if (shouldAnimate && layerSettingsRef.current.observerBursts && addPulseClusterActivityGlow(map, clusterActivityGlowRef.current, pulse)) {
         startClusterActivityGlowTimer(map, clusterActivityGlowRef, clusterActivityGlowTimerRef);
       }
-      setScreenNodeLabels([]);
       return;
     }
     if (renderComet && !addPulseTo3D(map, pulse)) animatorRef.current?.add(pulse);
@@ -1398,9 +1468,6 @@ function CanadaMap({
       addPulseRoutePayloadGlow(routePayloadGlowRef.current, pulse);
       setRoutePayloadGlowSource(map, routesRef.current, routePayloadGlowRef.current, selectedRouteIDRef.current, nodeFocusRef.current);
       startRoutePayloadGlowTimer(map, routesRef, routePayloadGlowRef, selectedRouteIDRef, nodeFocusRef, routePayloadGlowTimerRef);
-    }
-    if (layerSettingsRef.current.nodeLabels) {
-      setScreenNodeLabels(projectNodeLabels(map, nodesRef.current, nodeFocusRef.current, pulse.heardAt, nodeMeshActivityAtRef.current, nodeActivityRef.current));
     }
     startNodeActivityTimer(map, nodeActivityRef, nodeActivityTimerRef, nodesRef, nodeMeshActivityAtRef);
   };
@@ -1466,6 +1533,10 @@ function CanadaMap({
   useEffect(() => {
     routesRef.current = routes;
   }, [routes]);
+
+  useEffect(() => {
+    propagationEventsRef.current = propagationEvents;
+  }, [propagationEvents]);
 
   useEffect(() => {
     selectedNodeIDRef.current = selectedNodeID;
@@ -1547,7 +1618,7 @@ function CanadaMap({
     (window as any).__meshcoreMapStyle = initialStyle;
     mapRef.current = map;
     animatorRef.current = new PacketAnimator(map, canvasRef.current, {
-      maskLayerIDs: [CLUSTER_LAYER, NODE_HALO_LAYER, NODE_LAYER, NODE_ICON_LAYER, OBSERVER_LAYER],
+      maskLayerIDs: [CLUSTER_LAYER, NODE_HALO_LAYER, NODE_LAYER, NODE_ICON_LAYER, NODE_LABEL_LAYER, OBSERVER_LAYER, OBSERVER_LABEL_LAYER],
       layerSettings: layerSettingsRef.current,
       visualSettings: packetVisualSettingsRef.current
     });
@@ -1572,14 +1643,8 @@ function CanadaMap({
         animatorRef
       );
       if (mode === 'cluster') {
-        setScreenNodeLabels([]);
         setMessageBubbles([]);
         return;
-      }
-      if (layerSettingsRef.current.nodeLabels) {
-        setScreenNodeLabels(projectNodeLabels(map, nodesRef.current, nodeFocusRef.current, Date.now(), nodeMeshActivityAtRef.current, nodeActivityRef.current));
-      } else {
-        setScreenNodeLabels([]);
       }
       if (layerSettingsRef.current.messageBubbles) {
         setMessageBubbles((current) => projectMessageBubbles(map, current, performance.now()));
@@ -1638,7 +1703,7 @@ function CanadaMap({
       }
       try {
         addPublicLayers(map);
-        applyLayerSettings(map, layerSettingsRef.current);
+        applyLayerSettings(map, layerSettingsRef.current, themeModeRef.current);
         if (!layerEventsBoundRef.current) {
           bindLayerEvents(map, nodesRef, nodeMeshActivityAtRef, selectedNodeRef, plotModeRef, plotNodePickRef, plotMapPointRef, clearSelectionRef, setHoveredNode);
           layerEventsBoundRef.current = true;
@@ -1687,6 +1752,7 @@ function CanadaMap({
         themeModeRef.current,
         true
       );
+      updatePropagationRendering(map, propagationEventsRef.current, propagationSourceSignatureRef, true);
       updateOpenFreeMap3D();
       publishView();
       updateMapOverlays();
@@ -1749,8 +1815,8 @@ function CanadaMap({
     nodeSourceSignatureRef.current = '';
     routeSourceSignatureRef.current = '';
     routeColorSignatureRef.current = '';
+    propagationSourceSignatureRef.current = '';
     setMapInitError('');
-    setScreenNodeLabels([]);
     setMessageBubbles([]);
     animatorRef.current?.clear();
 
@@ -1786,14 +1852,8 @@ function CanadaMap({
       const map = mapRef.current;
       if (!map) return;
       if (isClusterMode(map)) {
-        setScreenNodeLabels([]);
         setMessageBubbles([]);
         return;
-      }
-      if (layerSettingsRef.current.nodeLabels) {
-        setScreenNodeLabels(projectNodeLabels(map, nodesRef.current, nodeFocusRef.current, Date.now(), nodeMeshActivityAtRef.current, nodeActivityRef.current));
-      } else {
-        setScreenNodeLabels([]);
       }
       if (layerSettingsRef.current.messageBubbles) {
         setMessageBubbles((current) => projectMessageBubbles(map, current, performance.now()));
@@ -1810,17 +1870,11 @@ function CanadaMap({
     if (loadedRef.current) updateNodeRendering(map, nodes, nodeFocus, nodeLabelClock, nodeMeshActivityAtRef.current, nodeSourceSignatureRef);
     if (loadedRef.current) setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
     if (isClusterMode(map)) {
-      setScreenNodeLabels([]);
       stopNodeActivityTimer(nodeActivityTimerRef);
       clearNodeActivityStates(map, nodeActivityRef.current);
       if (loadedRef.current) setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
       markPositionedNodesReady(map, nodes, fitInitialNodesRef, positionedNodesReadyRef, positionedNodesRenderedRef);
       return;
-    }
-    if (layerSettings.nodeLabels) {
-      setScreenNodeLabels(projectNodeLabels(map, nodes, nodeFocus, nodeLabelClock, nodeMeshActivityAtRef.current, nodeActivityRef.current));
-    } else {
-      setScreenNodeLabels([]);
     }
     if (addChangedNodeActivity(map, nodeActivityRef.current, nodeTelemetryRef.current, nodeMeshActivityAtRef.current, nodes)) {
       setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
@@ -1846,6 +1900,12 @@ function CanadaMap({
   }, [routes, selectedRouteID, nodeFocus, analysisSegments]);
 
   useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current) return;
+    updatePropagationRendering(map, propagationEvents, propagationSourceSignatureRef);
+  }, [propagationEvents]);
+
+  useEffect(() => {
     pausedRef.current = paused;
     animatorRef.current?.setPaused(paused || pageHiddenRef.current);
     openFreeMap3DRef.current?.setPaused(paused || pageHiddenRef.current);
@@ -1855,10 +1915,9 @@ function CanadaMap({
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
     animatorRef.current?.setLayerSettings(layerSettings);
-    applyLayerSettings(map, layerSettings);
+    applyLayerSettings(map, layerSettings, themeModeRef.current);
     if (layerSettings.activityHeatmap) setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current);
     if (!layerSettings.messageBubbles) setMessageBubbles([]);
-    if (!layerSettings.nodeLabels) setScreenNodeLabels([]);
     updateOpenFreeMap3D();
   }, [layerSettings]);
 
@@ -2085,7 +2144,7 @@ function CanadaMap({
       data-map-center-lat={mapCenter.lat}
       data-map-center-lng={mapCenter.lng}
       data-node-ref-count={nodesRef.current.length}
-      data-label-count={screenNodeLabels.length}
+      data-label-count={layerSettings.nodeLabels ? nodesRef.current.filter((node) => isMappableNode(node) && !node.isObserver).length : 0}
       data-map-init-error={mapInitError}
     >
       <div
@@ -2108,22 +2167,6 @@ function CanadaMap({
       )}
       <div className="map-vignette" />
       <canvas ref={canvasRef} className="rf-canvas" />
-      <div className="node-label-overlay" aria-hidden="true">
-        {layerSettings.nodeLabels && screenNodeLabels.map((label) => (
-          <div
-            key={label.id}
-            className={`node-screen-label ${label.selected ? 'selected' : ''} ${label.neighbour ? 'neighbor' : ''} ${label.path ? 'path' : ''} ${label.observer ? 'observer' : ''} ${label.recentActive ? 'active' : ''}`}
-            style={{
-              '--node-label-color': label.color,
-              '--node-label-opacity': label.opacity,
-              '--node-label-glow': label.glow,
-              transform: `translate3d(${Math.round(label.x)}px, ${Math.round(label.y)}px, 0) translate(-50%, 0)`
-            } as CSSProperties}
-          >
-            <span className="node-screen-label-name">{label.name}</span>
-          </div>
-        ))}
-      </div>
       <div className="packet-message-overlay" aria-hidden="true">
         {layerSettings.messageBubbles && messageBubbles.map((bubble) => (
           <div
@@ -2201,26 +2244,34 @@ function addOpenFreeMap3DBase(map: maplibregl.Map, themeMode: MapThemeMode) {
 
 function ensureTerrainSources(map: maplibregl.Map, themeMode: MapThemeMode) {
   if (!map.getSource(TERRAIN_SOURCE)) {
-    map.addSource(TERRAIN_SOURCE, { type: 'raster-dem', tiles: [TERRAIN_TILE_URL], encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
+    map.addSource(TERRAIN_SOURCE, terrainDemSource());
   }
   if (!map.getSource(HILLSHADE_SOURCE)) {
-    map.addSource(HILLSHADE_SOURCE, { type: 'raster-dem', tiles: [TERRAIN_TILE_URL], encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
+    map.addSource(HILLSHADE_SOURCE, terrainDemSource());
   }
   const labelLayerID = firstTextSymbolLayerID(map);
+  const paint = terrainHillshadePaint(themeMode);
+  if (map.getLayer(HILLSHADE_LAYER)) {
+    for (const [key, value] of Object.entries(paint)) {
+      map.setPaintProperty(HILLSHADE_LAYER, key, value as any);
+    }
+    return;
+  }
   addLayerIfMissing(map, {
     id: HILLSHADE_LAYER,
     type: 'hillshade',
     source: HILLSHADE_SOURCE,
-    paint: {
-      'hillshade-method': 'multidirectional',
-      'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#e2e8f0', '#f1f5f9', '#f8fafc', '#ffffff'],
-      'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#0f172a', '#1e293b', '#334155', '#475569'],
-      'hillshade-accent-color': themeMode === 'light' ? '#f1f5f9' : '#64748b',
-      'hillshade-illumination-direction': [315],
-      'hillshade-illumination-altitude': [45],
-      'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 1.8
-    } as any
+    paint
   }, labelLayerID);
+}
+
+function applyTerrainSetting(map: maplibregl.Map, enabled: boolean, themeMode: MapThemeMode) {
+  ensureTerrainSources(map, themeMode);
+  setLayerVisibility(map, HILLSHADE_LAYER, enabled);
+  if (!enabled) {
+    clearMapTerrain(map);
+    return;
+  }
   map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: TERRAIN_EXAGGERATION });
   map.setSky({
     'sky-color': themeMode === 'light' ? '#dbeafe' : '#0f172a',
@@ -2230,6 +2281,18 @@ function ensureTerrainSources(map: maplibregl.Map, themeMode: MapThemeMode) {
     'horizon-fog-blend': themeMode === 'light' ? 0.18 : 0.34,
     'fog-ground-blend': themeMode === 'light' ? 0.08 : 0.18
   });
+}
+
+function terrainHillshadePaint(themeMode: MapThemeMode) {
+  return {
+    'hillshade-method': 'multidirectional',
+    'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#e2e8f0', '#f1f5f9', '#f8fafc', '#ffffff'],
+    'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#0f172a', '#1e293b', '#334155', '#475569'],
+    'hillshade-accent-color': themeMode === 'light' ? '#f1f5f9' : '#64748b',
+    'hillshade-illumination-direction': [315],
+    'hillshade-illumination-altitude': [45],
+    'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 0.52
+  } as any;
 }
 
 function clearMapTerrain(map: maplibregl.Map) {
@@ -2246,9 +2309,6 @@ function clearMapTerrain(map: maplibregl.Map) {
 }
 
 function ensureHillshadeLayer(map: maplibregl.Map, themeMode: MapThemeMode) {
-  if (!map.getSource(HILLSHADE_SOURCE)) {
-    map.addSource(HILLSHADE_SOURCE, { type: 'raster-dem', tiles: [TERRAIN_TILE_URL], encoding: 'terrarium', tileSize: 256, maxzoom: 15 });
-  }
   const basemapID = themeMode === 'light' ? CARTO_LIGHT_LAYER : CARTO_DARK_LAYER;
   const layers = map.getStyle().layers ?? [];
   const basemapIdx = layers.findIndex((l) => l.id === basemapID);
@@ -2265,25 +2325,7 @@ function ensureHillshadeLayer(map: maplibregl.Map, themeMode: MapThemeMode) {
       }
     }, afterBasemapID);
   }
-  if (map.getLayer(HILLSHADE_LAYER)) {
-    map.setPaintProperty(HILLSHADE_LAYER, 'hillshade-exaggeration', themeMode === 'light' ? 0.42 : 2.0);
-    map.setPaintProperty(HILLSHADE_LAYER, 'hillshade-accent-color', themeMode === 'light' ? '#f1f5f9' : '#94a3b8');
-    return;
-  }
-  map.addLayer({
-    id: HILLSHADE_LAYER,
-    type: 'hillshade',
-    source: HILLSHADE_SOURCE,
-    paint: {
-      'hillshade-method': 'multidirectional',
-      'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#e2e8f0', '#f1f5f9', '#f8fafc', '#ffffff'],
-      'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#0f172a', '#1e293b', '#334155', '#475569'],
-      'hillshade-accent-color': themeMode === 'light' ? '#f1f5f9' : '#94a3b8',
-      'hillshade-illumination-direction': [315],
-      'hillshade-illumination-altitude': [45],
-      'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 2.0
-    } as any
-  }, afterBasemapID);
+  ensureTerrainSources(map, themeMode);
 }
 
 function ensureBuildingExtrusions(map: maplibregl.Map, themeMode: MapThemeMode) {
@@ -2356,9 +2398,9 @@ function ensureWeatherCloudLayer(map: maplibregl.Map) {
     type: 'raster',
     source: WEATHER_CLOUD_SOURCE,
     minzoom: 0,
-    maxzoom: 12,
+    maxzoom: WEATHER_CLOUD_FADE_END_ZOOM,
     paint: {
-      'raster-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.48, 3, 0.38, 5, 0.22, 7, 0.08, 8, 0],
+      'raster-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.5, 3, 0.42, 5.5, 0.22, 6.85, 0.06, WEATHER_CLOUD_FADE_END_ZOOM, 0],
       'raster-fade-duration': 300
     }
   });
@@ -2391,6 +2433,12 @@ function addPublicLayers(map: maplibregl.Map) {
   }
   if (!map.getSource(ANALYSIS_ROUTE_SOURCE)) {
     map.addSource(ANALYSIS_ROUTE_SOURCE, {
+      type: 'geojson',
+      data: emptyCollection() as any
+    });
+  }
+  if (!map.getSource(PROPAGATION_SOURCE)) {
+    map.addSource(PROPAGATION_SOURCE, {
       type: 'geojson',
       data: emptyCollection() as any
     });
@@ -2432,6 +2480,8 @@ function addPublicLayers(map: maplibregl.Map) {
       'line-opacity': ['coalesce', ['get', 'opacity'], 0.86]
     }
   });
+
+  for (const layer of propagationLayers()) addLayerIfMissing(map, layer);
 
   for (const layer of activityHeatmapLayers()) addLayerIfMissing(map, layer);
 
@@ -2672,6 +2722,33 @@ function addPublicLayers(map: maplibregl.Map) {
   });
 
   addLayerIfMissing(map, {
+    id: NODE_LABEL_LAYER,
+    type: 'symbol',
+    source: NODE_SOURCE,
+    minzoom: DETAIL_MIN_ZOOM,
+    filter: ['all', ['!', ['has', 'point_count']], ['!=', ['get', 'observer'], true]],
+    layout: {
+      'text-field': ['get', 'mapLabel'],
+      'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 7, 9.5, 11, 11.5, 15, 13],
+      'text-anchor': 'top',
+      'text-offset': [0, 1.18],
+      'text-max-width': 9,
+      'text-allow-overlap': true,
+      'text-ignore-placement': true,
+      'text-rotation-alignment': 'viewport',
+      'text-pitch-alignment': 'viewport'
+    },
+    paint: {
+      'text-color': ['case', ['==', ['get', 'selected'], true], '#ffffff', ['==', ['get', 'path'], true], '#facc15', ['==', ['get', 'neighbor'], true], '#67e8f9', '#dbeafe'],
+      'text-halo-color': 'rgba(2, 6, 23, 0.88)',
+      'text-halo-width': 1.35,
+      'text-halo-blur': 0.42,
+      'text-opacity': ['case', ['==', ['get', 'dimmed'], true], 0.22, ['==', ['get', 'selected'], true], 0.96, ['==', ['get', 'path'], true], 0.86, ['==', ['get', 'neighbor'], true], 0.76, ['==', ['get', 'staleLevel'], 2], 0.28, 0.62]
+    }
+  });
+
+  addLayerIfMissing(map, {
     id: OBSERVER_LAYER,
     type: 'symbol',
     source: NODE_SOURCE,
@@ -2721,25 +2798,29 @@ function addLayerIfMissing(map: maplibregl.Map, layer: maplibregl.LayerSpecifica
   else map.addLayer(layer);
 }
 
-function applyLayerSettings(map: maplibregl.Map, settings: MapLayerSettings) {
+function applyLayerSettings(map: maplibregl.Map, settings: MapLayerSettings, themeMode: MapThemeMode) {
   const clusterLayers = [
     CLUSTER_LAYER,
     CLUSTER_COUNT_LAYER,
     ...CLUSTER_ROLE_BADGES.flatMap((badge) => [`${CLUSTER_ROLE_BADGE_LAYER_PREFIX}-${badge.key}-dot`, `${CLUSTER_ROLE_BADGE_LAYER_PREFIX}-${badge.key}-count`])
   ];
   const activityHeatmapLayers = [ACTIVITY_HEATMAP_LAYER, ACTIVITY_SPARKLE_LAYER];
-  const nodeLayers = [NODE_HALO_LAYER, NODE_LAYER, NODE_ICON_LAYER, OBSERVER_LAYER, OBSERVER_LABEL_LAYER];
+  const nodeLayers = [NODE_HALO_LAYER, NODE_LAYER, NODE_ICON_LAYER, OBSERVER_LAYER];
+  const nodeLabelLayers = [NODE_LABEL_LAYER, OBSERVER_LABEL_LAYER];
   const routeLayers = [ROUTE_LAYER];
   const analysisLayers = [ROUTE_GLOW_LAYER, ROUTE_PAYLOAD_GLOW_LAYER, ANALYSIS_ROUTE_GLOW_LAYER, ANALYSIS_ROUTE_LAYER];
+  const propagationLayers = [PROPAGATION_GLOW_LAYER, PROPAGATION_LINE_LAYER, PROPAGATION_LABEL_LAYER];
   const observerBurstLayers = [CLUSTER_ACTIVITY_AURA_LAYER, CLUSTER_ACTIVITY_RING_LAYER];
   for (const layerID of clusterLayers) setLayerVisibility(map, layerID, settings.clusters);
   for (const layerID of activityHeatmapLayers) setLayerVisibility(map, layerID, settings.activityHeatmap);
   for (const layerID of nodeLayers) setLayerVisibility(map, layerID, settings.nodes);
+  for (const layerID of nodeLabelLayers) setLayerVisibility(map, layerID, settings.nodes && settings.nodeLabels);
   for (const layerID of routeLayers) setLayerVisibility(map, layerID, settings.routes);
   for (const layerID of analysisLayers) setLayerVisibility(map, layerID, settings.analysisPaths);
+  for (const layerID of propagationLayers) setLayerVisibility(map, layerID, settings.propagationInsights);
   for (const layerID of observerBurstLayers) setLayerVisibility(map, layerID, settings.observerBursts);
   setLayerVisibility(map, BUILDINGS_3D_LAYER, settings.buildingExtrusions);
-  setLayerVisibility(map, HILLSHADE_LAYER, settings.terrainHeightmap);
+  applyTerrainSetting(map, settings.terrainHeightmap, themeMode);
   setLayerVisibility(map, WEATHER_CLOUD_LAYER, settings.weatherClouds);
 }
 
@@ -2758,102 +2839,6 @@ function mapStyleSourcesReady(map: maplibregl.Map): boolean {
   } catch {
     return false;
   }
-}
-
-function projectNodeLabels(
-  map: maplibregl.Map,
-  nodes: PublicNode[],
-  focus: NodeFocus,
-  now: number,
-  meshActivityAtByNodeID: Map<string, number>,
-  recentActivityByNodeID: Map<string, NodeActivity>
-): ScreenNodeLabel[] {
-  const { width, height } = mapViewportSize(map);
-  if (!isDetailMode(map)) {
-    return [];
-  }
-  const maxLabels = 40;
-  const margin = 80;
-
-  const projected = nodes
-    .filter(isMappableNode)
-    .filter((node) => !node.isObserver)
-    .map((node) => {
-      const point = projectLngLat(map, node.longitude, node.latitude);
-      const activityAt = meshActivityAtByNodeID.get(node.id);
-      const ageMs = activityAt ? Math.max(0, now - activityAt) : Number.POSITIVE_INFINITY;
-      const recentActive = ageMs <= NODE_LABEL_RECENT_VISIBLE_MS;
-      const selected = node.id === focus.selectedNodeID;
-      const neighbour = focus.neighbourNodeIDs.has(node.id);
-      const path = focus.pathNodeIDs.has(node.id);
-      const observer = node.isObserver === true;
-      const recentActivity = recentActivityByNodeID.get(node.id);
-      const frequencyHeat = nodeActivityHeat(recentActivity?.hits.length ?? 0);
-      const activityProgress = recentActive ? nodeLabelActivityProgress(ageMs, NODE_LABEL_RECENT_VISIBLE_MS) : 0;
-      const pulseGlow = activityProgress * 0.05;
-      const glow = selected
-        ? Math.max(0.58, pulseGlow)
-        : path
-          ? Math.max(0.46, pulseGlow)
-        : neighbour
-          ? Math.max(0.3, pulseGlow)
-          : Math.max(0.32, pulseGlow);
-      const activeOpacity = recentActive ? 0.78 + activityProgress * 0.04 : 0.7;
-      const opacity = selected
-        ? 1
-        : path
-          ? 0.9
-        : neighbour
-          ? 0.88
-          : activeOpacity;
-      const color = selected
-        ? '#ffffff'
-        : path
-          ? '#facc15'
-        : neighbour
-          ? '#67e8f9'
-          : '#fbbf24';
-      return {
-        id: node.id,
-        name: compactNodeLabel(node.label, 20),
-        x: point.x,
-        y: point.y + 12,
-        selected,
-        neighbour,
-        path,
-        observer,
-        recentActive,
-        color,
-        opacity,
-        glow,
-        rank: (selected ? 1_000_000 : 0)
-          + (neighbour ? 850_000 : 0)
-          + (path ? 760_000 : 0)
-          + (observer ? 520_000 : 0)
-          + (recentActive ? 240_000 : 0)
-          + Math.round(frequencyHeat * 2_500)
-          + node.activityCount
-      };
-    });
-  const inView = projected.filter((label) => label.x >= -margin && label.x <= width + margin && label.y >= -margin && label.y <= height + margin);
-  const visible = inView.filter((label) => label.opacity > 0);
-  return visible
-    .sort((a, b) => b.rank - a.rank)
-    .slice(0, maxLabels)
-    .map((label) => ({
-      id: label.id,
-      name: label.name,
-      x: label.x,
-      y: label.y,
-      selected: label.selected,
-      neighbour: label.neighbour,
-      path: label.path,
-      observer: label.observer,
-      recentActive: label.recentActive,
-      color: label.color,
-      opacity: label.opacity,
-      glow: label.glow
-    }));
 }
 
 function projectLngLat(map: maplibregl.Map, lng: number, lat: number): { x: number; y: number } {
@@ -3575,6 +3560,83 @@ function updateAnalysisRouteRendering(
   if (!force && signature === signatureRef.current) return;
   signatureRef.current = signature;
   setSourceData(map, ANALYSIS_ROUTE_SOURCE, analysisRoutesToGeoJSON(routes, selectedRouteID, focus, analysisSegments, themeMode));
+}
+
+function updatePropagationRendering(
+  map: maplibregl.Map,
+  events: PublicPropagationEvent[],
+  signatureRef: MutableRefObject<string>,
+  force = false
+) {
+  const signature = propagationEventsSignature(events);
+  if (!force && signature === signatureRef.current) return;
+  signatureRef.current = signature;
+  setSourceData(map, PROPAGATION_SOURCE, propagationEventsToGeoJSON(events));
+}
+
+function propagationEventsToGeoJSON(events: PublicPropagationEvent[]): FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: events.flatMap((event) => {
+      const labelSegmentIndex = longestPropagationSegmentIndex(event);
+      return event.segments.map((segment, index) => ({
+        type: 'Feature',
+        id: `${event.id}:${index}`,
+        properties: {
+          id: event.id,
+          routeId: segment.routeId,
+          classification: event.classification,
+          confidence: event.confidence,
+          score: event.score,
+          distanceKm: event.distanceKm,
+          color: propagationEventColor(event),
+          label: index === labelSegmentIndex ? propagationEventLabel(event) : ''
+        },
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [segment.from.lng, segment.from.lat],
+            [segment.to.lng, segment.to.lat]
+          ]
+        }
+      }));
+    })
+  };
+}
+
+function propagationEventsSignature(events: PublicPropagationEvent[]): string {
+  return events
+    .map((event) => `${event.id}:${event.at}:${event.classification}:${event.score.toFixed(2)}:${event.segments.length}`)
+    .join('|');
+}
+
+function propagationEventColor(event: PublicPropagationEvent): string {
+  if (event.classification === 'tropo_possible') return '#34d399';
+  if (event.confidence === 'medium') return '#fbbf24';
+  return '#fb7185';
+}
+
+function propagationEventLabel(event: PublicPropagationEvent): string {
+  const label = event.classification === 'tropo_possible' ? 'Tropo possible' : 'Long-distance event';
+  const distance = formatDistanceKm(event.distanceKm);
+  return distance ? `${label} ${distance}` : label;
+}
+
+function longestPropagationSegmentIndex(event: PublicPropagationEvent): number {
+  let index = 0;
+  let distance = -1;
+  event.segments.forEach((segment, candidateIndex) => {
+    if (segment.distanceKm > distance) {
+      index = candidateIndex;
+      distance = segment.distanceKm;
+    }
+  });
+  return index;
+}
+
+function formatDistanceKm(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '';
+  return `${Math.round(value).toLocaleString()} km`;
 }
 
 function analysisRouteSignature(routes: PublicRoute[], selectedRouteID: string | null, focus: NodeFocus, analysisSegments: PublicRoutePulse['segments']): string {

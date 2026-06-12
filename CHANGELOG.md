@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.8.1 - 2026-06-11
+
+- Added public-safe propagation insights for already-public high-confidence RF paths, including `/api/v1/public/propagation`, SQLite retention, cautious weather-supported scoring, and replay/focus actions.
+- Added Open-Meteo weather-model context and NOAA SWPC solar context while keeping labels probabilistic: `Tropo possible` or `Long-distance event`.
+- Changed first-run map defaults so Known Pathways are off by default, added a prominent red/green toolbar toggle, and added a default-on propagation insights layer.
+- Improved map zoom-through behavior by fading cloud cover out before the detail route/label boundary.
+- Replaced jitter-prone DOM node labels with viewport-aligned MapLibre symbol labels anchored to node geometry.
+- Repaired DEM terrain behavior with separate terrain/hillshade raster-dem sources, actual MapLibre terrain toggling, and restrained hillshade.
+- Redesigned the Chat workspace with a clearer operations header, filter chips, compact stats, richer route context, and mobile-friendly dense rows.
+- Updated release checks, privacy scans, version metadata, and documentation for the 2.8.1 Podman validation path.
+
 ## 2.8.0 - 2026-06-11
 
 - Promoted the `dev/deepseek-v4` feature line to production-ready World Release 2.

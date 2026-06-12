@@ -198,3 +198,51 @@ CREATE TABLE IF NOT EXISTS solar_snapshots (
   geomag_activity TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_solar_snapshots_recent ON solar_snapshots(fetched_at_ms DESC);
+
+CREATE TABLE IF NOT EXISTS propagation_weather_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fetched_at_ms INTEGER NOT NULL,
+  sample_time_ms INTEGER NOT NULL,
+  source TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  latitude REAL NOT NULL DEFAULT 0,
+  longitude REAL NOT NULL DEFAULT 0,
+  temperature_c REAL NOT NULL DEFAULT 0,
+  dew_point_c REAL NOT NULL DEFAULT 0,
+  relative_humidity_pct REAL NOT NULL DEFAULT 0,
+  pressure_hpa REAL NOT NULL DEFAULT 0,
+  cloud_cover_pct REAL NOT NULL DEFAULT 0,
+  visibility_m REAL NOT NULL DEFAULT 0,
+  wind_speed_kmh REAL NOT NULL DEFAULT 0,
+  wind_direction_deg REAL NOT NULL DEFAULT 0,
+  temperature_950hpa_c REAL,
+  dew_point_950hpa_c REAL,
+  relative_humidity_950hpa REAL,
+  inversion_proxy TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_propagation_weather_snapshots_recent ON propagation_weather_snapshots(fetched_at_ms DESC);
+CREATE INDEX IF NOT EXISTS idx_propagation_weather_snapshots_sample ON propagation_weather_snapshots(sample_time_ms DESC, latitude, longitude);
+
+CREATE TABLE IF NOT EXISTS propagation_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  public_id TEXT NOT NULL UNIQUE,
+  edge_id INTEGER NOT NULL UNIQUE,
+  at_ms INTEGER NOT NULL,
+  region TEXT NOT NULL DEFAULT '',
+  classification TEXT NOT NULL DEFAULT '',
+  confidence TEXT NOT NULL DEFAULT '',
+  score REAL NOT NULL DEFAULT 0,
+  distance_km REAL NOT NULL DEFAULT 0,
+  route_ids_json TEXT NOT NULL DEFAULT '[]',
+  endpoint_labels_json TEXT NOT NULL DEFAULT '[]',
+  segments_json TEXT NOT NULL DEFAULT '[]',
+  reasons_json TEXT NOT NULL DEFAULT '[]',
+  weather_json TEXT NOT NULL DEFAULT '',
+  solar_json TEXT NOT NULL DEFAULT '',
+  replay_from_ms INTEGER NOT NULL DEFAULT 0,
+  replay_to_ms INTEGER NOT NULL DEFAULT 0,
+  created_at_ms INTEGER NOT NULL,
+  FOREIGN KEY(edge_id) REFERENCES public_packet_paths(edge_id)
+);
+CREATE INDEX IF NOT EXISTS idx_propagation_events_recent ON propagation_events(at_ms DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_propagation_events_region_recent ON propagation_events(region, at_ms DESC, id DESC);

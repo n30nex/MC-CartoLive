@@ -1,11 +1,11 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Database, MapPin, Route, Shield, Sparkles, Sun, Zap } from 'lucide-react';
+import { CloudSun, Database, MapPin, Route, Shield, Sparkles, Sun, Zap } from 'lucide-react';
 import { fetchSolarConditions } from '../api';
 import { isAbortError } from '../lib/isAbortError';
 import { payloadVisual } from '../payloadVisuals';
 import type { LiveCoverageStats } from '../state';
-import type { PublicStats, SolarConditions } from '../types';
+import type { PublicPropagationConditions, PublicStats, SolarConditions } from '../types';
 import { formatPacketsTotal, serverStatus } from './statusDisplay';
 
 interface Props {
@@ -16,9 +16,12 @@ interface Props {
   coverage: LiveCoverageStats;
   latestPayloadTypeName: string | null;
   latestPacketID: string | null;
+  propagationConditions: PublicPropagationConditions | null;
+  propagationEventCount: number;
+  onOpenPropagation: () => void;
 }
 
-export default memo(function StatusBar({ stats, socketStatus, nodeCount, routeCount, coverage, latestPayloadTypeName, latestPacketID }: Props) {
+export default memo(function StatusBar({ stats, socketStatus, nodeCount, routeCount, coverage, latestPayloadTypeName, latestPacketID, propagationConditions, propagationEventCount, onOpenPropagation }: Props) {
   const status = serverStatus(stats, socketStatus, coverage);
   const latestPayload = payloadVisual(latestPayloadTypeName);
   const perMinuteMax = Math.max(1, coverage.receivedPerMinute, coverage.routeAnimatedPerMinute, coverage.observerBurstPerMinute, coverage.unmappedPerMinute);
@@ -49,6 +52,7 @@ export default memo(function StatusBar({ stats, socketStatus, nodeCount, routeCo
       <StatusMetric className="pulse-rate" title={`${coverage.receivedPerMinute} packets received per minute`} icon={<Zap size={14} />} value={formatStatusNumber(coverage.receivedPerMinute)} label="rx/min" meterLevel={metricMeterLevel(coverage.receivedPerMinute, perMinuteMax)} />
       <StatusMetric className="route routed-rate" title={`${coverage.routeAnimatedPerMinute} routed packet comets per minute`} icon={<Route size={14} />} value={formatStatusNumber(coverage.routeAnimatedPerMinute)} label="route/min" meterLevel={metricMeterLevel(coverage.routeAnimatedPerMinute, perMinuteMax)} />
       <StatusMetric className="observer" title={`${coverage.observerBurstPerMinute} observer bursts per minute`} icon={<Sparkles size={14} />} value={formatStatusNumber(coverage.observerBurstPerMinute)} label="bursts/min" meterLevel={metricMeterLevel(coverage.observerBurstPerMinute, perMinuteMax)} />
+      <PropagationIndicator conditions={propagationConditions} eventCount={propagationEventCount} onOpen={onOpenPropagation} />
       <span className="status-secondary">
         <StatusMetric className="unmapped" title={`${coverage.unmappedPerMinute} unresolved packets per minute`} icon={<MapPin size={14} />} value={formatStatusNumber(coverage.unmappedPerMinute)} label="unmapped/min" meterLevel={metricMeterLevel(coverage.unmappedPerMinute, perMinuteMax)} />
         <StatusMetric className="count-pill node-count" title={`${nodeCount.toLocaleString()} positioned public nodes`} icon={<Shield size={14} />} value={formatStatusNumber(nodeCount)} label="nodes" />
@@ -58,6 +62,24 @@ export default memo(function StatusBar({ stats, socketStatus, nodeCount, routeCo
     </header>
   );
 });
+
+function PropagationIndicator({ conditions, eventCount, onOpen }: { conditions: PublicPropagationConditions | null; eventCount: number; onOpen: () => void }) {
+  const latest = conditions?.latestEvent;
+  const active = eventCount > 0;
+  const label = latest?.classification === 'tropo_possible' ? 'tropo' : active ? 'long RF' : 'quiet';
+  const title = active
+    ? `${eventCount.toLocaleString()} public long-distance propagation event${eventCount === 1 ? '' : 's'}`
+    : 'No public long-distance propagation events in the current window';
+  return (
+    <button type="button" className={`status-pill status-metric propagation-indicator ${active ? 'active' : 'quiet'}`} title={title} onClick={onOpen}>
+      <CloudSun size={14} />
+      <span className="status-pill-text">
+        <span className="status-pill-value">{formatStatusNumber(eventCount)}</span>
+        <span className="status-pill-label">{label}</span>
+      </span>
+    </button>
+  );
+}
 
 function SolarIndicator() {
   const [solar, setSolar] = useState<SolarConditions | null>(null);

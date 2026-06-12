@@ -154,6 +154,69 @@ type PublicPacketsResponse struct {
 	Scan       PublicPacketScan    `json:"scan,omitempty"`
 }
 
+type PublicPropagationWeatherSummary struct {
+	Source              string  `json:"source"`
+	Model               string  `json:"model,omitempty"`
+	SampleTime          int64   `json:"sampleTime"`
+	FetchedAt           int64   `json:"fetchedAt"`
+	TemperatureC        float64 `json:"temperatureC"`
+	DewPointC           float64 `json:"dewPointC"`
+	RelativeHumidityPct float64 `json:"relativeHumidityPct"`
+	PressureHPa         float64 `json:"pressureHPa"`
+	CloudCoverPct       float64 `json:"cloudCoverPct"`
+	VisibilityM         float64 `json:"visibilityM,omitempty"`
+	WindSpeedKmh        float64 `json:"windSpeedKmh"`
+	InversionProxy      string  `json:"inversionProxy"`
+}
+
+type PublicPropagationSolarSummary struct {
+	KpIndex        float64 `json:"kpIndex"`
+	KpLabel        string  `json:"kpLabel"`
+	SolarFluxSfu   float64 `json:"solarFluxSfu"`
+	SolarFluxLabel string  `json:"solarFluxLabel"`
+	GeomagActivity string  `json:"geomagActivity"`
+	FetchedAt      int64   `json:"fetchedAt"`
+}
+
+type PublicPropagationReplayWindow struct {
+	From int64 `json:"from"`
+	To   int64 `json:"to"`
+}
+
+type PublicPropagationEvent struct {
+	ID             string                           `json:"id"`
+	At             int64                            `json:"at"`
+	Classification string                           `json:"classification"`
+	Confidence     string                           `json:"confidence"`
+	Score          float64                          `json:"score"`
+	DistanceKM     float64                          `json:"distanceKm"`
+	Region         string                           `json:"region,omitempty"`
+	RouteIDs       []string                         `json:"routeIds"`
+	EndpointLabels []string                         `json:"endpointLabels"`
+	Segments       []PublicRouteSegment             `json:"segments"`
+	Reasons        []string                         `json:"reasons"`
+	Weather        *PublicPropagationWeatherSummary `json:"weather,omitempty"`
+	Solar          *PublicPropagationSolarSummary   `json:"solar,omitempty"`
+	ReplayWindow   PublicPropagationReplayWindow    `json:"replayWindow"`
+}
+
+type PublicPropagationConditions struct {
+	ServerTime   int64                            `json:"serverTime"`
+	EventCount   int                              `json:"eventCount"`
+	LatestEvent  *PublicPropagationEvent          `json:"latestEvent,omitempty"`
+	Weather      *PublicPropagationWeatherSummary `json:"weather,omitempty"`
+	Solar        *PublicPropagationSolarSummary   `json:"solar,omitempty"`
+	SourceStatus string                           `json:"sourceStatus"`
+}
+
+type PublicPropagationResponse struct {
+	ServerTime int64                       `json:"serverTime"`
+	Conditions PublicPropagationConditions `json:"conditions"`
+	Events     []PublicPropagationEvent    `json:"events"`
+	NextCursor string                      `json:"nextCursor,omitempty"`
+	Window     PublicHistoryWindow         `json:"window"`
+}
+
 type PublicPacketScan struct {
 	EventsScanned int  `json:"eventsScanned"`
 	ScanLimit     int  `json:"scanLimit"`

@@ -189,6 +189,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/public/packets", s.rateLimited(s.publicPackets))
 	mux.HandleFunc("GET /api/v1/public/chat", s.rateLimited(s.publicChat))
 	mux.HandleFunc("GET /api/v1/public/solar", s.rateLimited(s.publicSolar))
+	mux.HandleFunc("GET /api/v1/public/propagation", s.rateLimited(s.publicPropagation))
 	mux.Handle("GET /ws/public", s.PublicHub)
 	if !s.Config.PublicMode {
 		mux.HandleFunc("GET /api/v1/live/state", s.liveState)
@@ -549,25 +550,27 @@ func (s *Server) publicMapConfig() live.PublicMapConfig {
 }
 
 const (
-	publicHistoryDefaultWindowMs = int64(time.Hour / time.Millisecond)
-	publicHistoryMaxWindowMs     = int64(24 * time.Hour / time.Millisecond)
-	publicHistoryMaxLimit        = 2000
-	publicHistoryDefaultLimit    = 1000
-	publicChatMaxLimit           = 400
-	publicChatDefaultLimit       = 100
-	publicChatMaxRawScan         = 2500
-	publicChatDedupeWindowMs     = publicHistoryMaxWindowMs
-	publicChatTextDedupeWindowMs = int64(10 * time.Minute / time.Millisecond)
-	publicPacketsMaxLimit        = 1000
-	publicPacketsDefaultLimit    = 250
-	publicPacketsMaxRawScan      = 2500
-	publicHistoryTargetBuckets   = 96
-	publicHistoryMaxBuckets      = 288
-	publicHistoryLocationTTL     = 60 * time.Second
-	publicHistorySummaryRoundMs  = int64(30 * time.Second / time.Millisecond)
-	publicHistoryRequestTimeout  = 10 * time.Second
-	publicChatRequestTimeout     = 12 * time.Second
-	publicPacketsRequestTimeout  = 12 * time.Second
+	publicHistoryDefaultWindowMs  = int64(time.Hour / time.Millisecond)
+	publicHistoryMaxWindowMs      = int64(24 * time.Hour / time.Millisecond)
+	publicHistoryMaxLimit         = 2000
+	publicHistoryDefaultLimit     = 1000
+	publicChatMaxLimit            = 400
+	publicChatDefaultLimit        = 100
+	publicChatMaxRawScan          = 2500
+	publicChatDedupeWindowMs      = publicHistoryMaxWindowMs
+	publicChatTextDedupeWindowMs  = int64(10 * time.Minute / time.Millisecond)
+	publicPacketsMaxLimit         = 1000
+	publicPacketsDefaultLimit     = 250
+	publicPacketsMaxRawScan       = 2500
+	publicPropagationMaxLimit     = 200
+	publicPropagationDefaultLimit = 50
+	publicHistoryTargetBuckets    = 96
+	publicHistoryMaxBuckets       = 288
+	publicHistoryLocationTTL      = 60 * time.Second
+	publicHistorySummaryRoundMs   = int64(30 * time.Second / time.Millisecond)
+	publicHistoryRequestTimeout   = 10 * time.Second
+	publicChatRequestTimeout      = 12 * time.Second
+	publicPacketsRequestTimeout   = 12 * time.Second
 )
 
 type historyLocationCache struct {
@@ -920,6 +923,124 @@ func (s *Server) publicSolar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, *cond)
+}
+
+func (s *Server) publicPropagation(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	failed := true
+	defer func() {
+		s.logAPI("public_propagation", time.Since(start), failed)
+	}()
+	if s.Store == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("store is not available"))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), publicHistoryRequestTimeout)
+	defer cancel()
+	now := time.Now().UnixMilli()
+	from, to := publicHistoryWindow(r, now)
+	limit := queryInt(r, "limit", publicPropagationDefaultLimit)
+	if limit <= 0 {
+		limit = publicPropagationDefaultLimit
+	}
+	if limit > publicPropagationMaxLimit {
+		limit = publicPropagationMaxLimit
+	}
+	region := firstUpperQuery(r.URL.Query(), "region", "iata")
+	if region != "" && !s.allowsPublicIATA(region) {
+		writeJSON(w, http.StatusOK, live.PublicPropagationResponse{
+			ServerTime: now,
+			Conditions: live.PublicPropagationConditions{
+				ServerTime:   now,
+				SourceStatus: "restricted",
+			},
+			Events: []live.PublicPropagationEvent{},
+			Window: live.PublicHistoryWindow{From: from, To: to, Count: 0},
+		})
+		failed = false
+		return
+	}
+	cursor, err := decodeHistoryCursor(r.URL.Query().Get("cursor"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	events, next, err := s.publicAllowedPropagationEvents(ctx, from, to, limit, cursor, region)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	conditions := live.PublicPropagationConditions{
+		ServerTime:   now,
+		EventCount:   len(events),
+		SourceStatus: "no_recent_events",
+	}
+	if len(events) > 0 {
+		latest := events[0]
+		conditions.LatestEvent = &latest
+		conditions.Weather = latest.Weather
+		conditions.Solar = latest.Solar
+		conditions.SourceStatus = "ready"
+	} else if region == "" && !s.Config.PublicRegionRestricted && !s.Config.PublicIATARestricted {
+		if latest, err := s.Store.LatestPropagationConditions(ctx, from, to); err == nil {
+			latest.ServerTime = now
+			conditions = latest
+		}
+	}
+	writeJSON(w, http.StatusOK, live.PublicPropagationResponse{
+		ServerTime: now,
+		Conditions: conditions,
+		Events:     events,
+		NextCursor: propagationNextCursorToken(next),
+		Window: live.PublicHistoryWindow{
+			From:  from,
+			To:    to,
+			Count: len(events),
+		},
+	})
+	failed = false
+}
+
+func (s *Server) publicAllowedPropagationEvents(ctx context.Context, from int64, to int64, limit int, cursor *store.HistoryCursor, region string) ([]live.PublicPropagationEvent, *store.HistoryCursor, error) {
+	events := make([]live.PublicPropagationEvent, 0, limit)
+	nextCursor := cursor
+	scanned := 0
+	for len(events) < limit && scanned < 1000 {
+		rawLimit := min(max((limit-len(events))*2, 50), 200)
+		rawEvents, next, err := s.Store.PublicPropagationEvents(ctx, store.PublicPropagationEventQuery{
+			From:        from,
+			To:          to,
+			Limit:       rawLimit,
+			Cursor:      nextCursor,
+			NewestFirst: true,
+			Region:      region,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		scanned += len(rawEvents)
+		for _, event := range rawEvents {
+			if event.Region != "" && !s.allowsPublicIATA(event.Region) {
+				continue
+			}
+			events = append(events, event)
+			if len(events) >= limit {
+				break
+			}
+		}
+		nextCursor = next
+		if next == nil || len(rawEvents) == 0 {
+			break
+		}
+	}
+	return events, nextCursor, nil
+}
+
+func propagationNextCursorToken(cursor *store.HistoryCursor) string {
+	if cursor == nil {
+		return ""
+	}
+	return encodeHistoryCursor(*cursor)
 }
 
 func (s *Server) publicChat(w http.ResponseWriter, r *http.Request) {

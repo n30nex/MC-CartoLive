@@ -52,6 +52,7 @@ curl -fsS "$BASE_URL/api/v1/public/history/summary?from=$FROM&to=$NOW&bucketMs=6
 curl -fsS "$BASE_URL/api/v1/public/packets?from=$FROM&to=$NOW&limit=25" >/tmp/mc-cartolive-packets.json
 curl -fsS "$BASE_URL/api/v1/public/chat?from=$FROM&to=$NOW&limit=25" >/tmp/mc-cartolive-chat.json
 curl -fsS "$BASE_URL/api/v1/public/solar" >/tmp/mc-cartolive-solar.json
+curl -fsS "$BASE_URL/api/v1/public/propagation?from=$FROM&to=$NOW&limit=25" >/tmp/mc-cartolive-propagation.json
 curl -fsS "$BASE_URL/metrics" >/tmp/mc-cartolive-metrics.txt
 node "$ROOT/scripts/check-public-privacy.mjs" "$BASE_URL"
 
@@ -69,6 +70,7 @@ echo "summary: /tmp/mc-cartolive-history-summary.json"
 echo "packets: /tmp/mc-cartolive-packets.json"
 echo "chat:    /tmp/mc-cartolive-chat.json"
 echo "solar:   /tmp/mc-cartolive-solar.json"
+echo "propagation: /tmp/mc-cartolive-propagation.json"
 echo "metrics: /tmp/mc-cartolive-metrics.txt"
 echo "live confidence:"
 grep -Eo '"(packetIngestState|publicCacheState|mapMotionState|liveConfidenceState)":"[^"]+"' /tmp/mc-cartolive-health.json || true

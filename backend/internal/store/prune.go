@@ -12,6 +12,8 @@ func (s *Store) PruneOldData(ctx context.Context, beforeMs int64) error {
 		{"packet_observations", "heard_at_ms"},
 		{"observer_status", "received_at_ms"},
 		{"solar_snapshots", "fetched_at_ms"},
+		{"propagation_events", "at_ms"},
+		{"propagation_weather_snapshots", "fetched_at_ms"},
 	}
 	for _, t := range tables {
 		for {
@@ -36,6 +38,27 @@ func (s *Store) PruneOldData(ctx context.Context, beforeMs int64) error {
 		affected, _ := result.RowsAffected()
 		if affected == 0 {
 			break
+		}
+	}
+	return nil
+}
+
+func (s *Store) PrunePropagationData(ctx context.Context, beforeMs int64) error {
+	for _, t := range []struct{ name, column string }{
+		{"propagation_events", "at_ms"},
+		{"propagation_weather_snapshots", "fetched_at_ms"},
+	} {
+		for {
+			result, err := s.db.ExecContext(ctx,
+				fmt.Sprintf("DELETE FROM %s WHERE rowid IN (SELECT rowid FROM %s WHERE %s < ? LIMIT 1000)", t.name, t.name, t.column),
+				beforeMs)
+			if err != nil {
+				return fmt.Errorf("prune %s: %w", t.name, err)
+			}
+			affected, _ := result.RowsAffected()
+			if affected == 0 {
+				break
+			}
 		}
 	}
 	return nil

@@ -5,29 +5,30 @@ in `CHANGELOG.md`; operator procedures belong in `docs/operator-runbook.md`.
 
 ## Current Baseline
 
-Version `2.8.0` is the current production-ready world operations release.
+Version `2.8.1` is the current production-ready propagation and operations UI release.
 
 - Detailed next-phase plan: [2.7.5 to 2.7.7](roadmap-2.7.5-to-2.7.7.md).
 - Public map behavior remains stable while package installs support
   worldwide/private brokers through configurable region labels and map bounds.
-- Current release focus: 2.8.0 production stabilization is complete; the next
-  patches should build diagnostics, observer-quality, route-confidence, and
-  propagation-analysis features on top of the stable public-safe release.
+- Current release focus: 2.8.1 adds public-safe propagation insights, repaired
+  terrain, stable MapLibre labels, first-run Known Pathways defaults, and a
+  denser Chat workspace on top of the stable 2.8.0 public release.
 - Public packet/path data remains sanitized and schema-compatible.
 - The supported runtime is the main Docker Compose service or the published
   GHCR image. OpenFreeMap is an in-app map toggle, not a separate stack.
-- Release readiness is verified with backend tests, frontend tests/build, Docker
+- Release readiness is verified with backend tests, frontend tests/build, Podman
   build, packaged-image smoke, live smoke, and privacy checks.
 
 ## Active Maintenance Focus
 
-- Keep `2.8.0` as the production-ready baseline: Packets, Chat, NetGraph,
+- Keep `2.8.1` as the production-ready baseline: Packets, Chat, NetGraph,
   OpenFreeMap/3D, service-worker cleanup, migrations, projection fallback,
-  release checks, and deployment rollback are release-critical surfaces.
-- Make `2.8.1` the public-safe diagnostics pass for projection/cache/MQTT
-  readiness and browser-side release health.
-- Make `2.8.2` the observer-quality and route-confidence overlay pass.
-- Make `2.8.3` the SNR/RSSI heatmap and terrain/RF analysis pass for verified
+  propagation insights, release checks, and deployment rollback are
+  release-critical surfaces.
+- Make `2.8.2` the public-safe diagnostics pass for projection/cache/MQTT
+  readiness, observer-quality, and browser-side release health.
+- Make `2.8.3` the route-confidence overlay pass.
+- Make `2.8.4` the SNR/RSSI heatmap and terrain/RF analysis pass for verified
   public pathways only.
 - Keep packet ingest, public cache, WebSocket fanout, public history, and public
   packet paths observable through public-safe health/readiness counters.

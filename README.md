@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.8.0
+# MeshCore MQTT Live Map v2.8.1
 
 Also known as **MC-CartoLive**.
 
@@ -23,26 +23,23 @@ Real public map data from the production UI:
 
 ![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
 
-### v2.8.0 Feature Gallery
+### v2.8.1 Feature Gallery
 
-Version 2.8.0 is the production-ready World Release 2 line with stabilized
-Packets, Chat, NetGraph, OpenFreeMap/3D layers, safe SQLite migrations,
-projection fallback hardening, service-worker cleanup, and deployment rollback
-guardrails.
+Version 2.8.1 adds the propagation and operations UI pass on top of the
+production-ready World Release 2 line: long-distance RF route annotations,
+weather-model context, cautious replay history, cloud-to-detail zoom fading,
+stable MapLibre node labels, repaired DEM terrain, and a denser Chat workspace.
 Canada-scoped, while packaged installs support worldwide/private brokers
 through configurable map bounds, generic region labels, first-run setup, and
 region-first diagnostics.
 
-The 2.8.0 release keeps the public-safe Packets Explorer, VCR replay, Chat,
+The 2.8.1 release keeps the public-safe Packets Explorer, VCR replay, Chat,
 NetGraph, OpenFreeMap 3D route arcs/models/comets, palette/theme controls, and
-browser smoke coverage for desktop and 390px mobile. Packets and Chat open as
-Google Maps-style side panels on desktop, can expand to fullscreen, and still
-return cleanly to the full map. Selecting a packet route from Packets closes
-back to the map, highlights the full public RF path, and offers a glowing
-`Export as GIF` action for downloading an animated replay captured from the
-actual live map viewport, with the packet comet moving across the fitted
-visible route and a compact public-safe details HUD that lists each hop with
-distance.
+browser smoke coverage for desktop and 390px mobile. Known Pathways are off for
+first-run visitors so live comets and fading trails stand out, with a prominent
+top-bar toggle to bring route history back instantly. Propagation insights label
+only already-public high-confidence RF paths as probabilistic context, never as
+confirmed causation.
 
 Version 2.5.50 hardened the package release gate: `scripts/package-smoke.mjs`
 now runs a built or published image through both the synthetic hosted-style
@@ -309,23 +306,23 @@ ghcr.io/n30nex/mc-cartolive:latest
 Run the published image in credential-free demo mode:
 
 ```bash
-docker run --rm -p 8080:8080 \
+podman run --rm -p 8080:8080 \
   -e MQTT_ENABLED=false \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.8.0
+  ghcr.io/n30nex/mc-cartolive:2.8.1
 ```
 
 For a real public deployment, mount persistent data and provide private MQTT
 credentials through environment variables or an env file:
 
 ```bash
-docker run -d --name mc-cartolive \
+podman run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.8.0
+  ghcr.io/n30nex/mc-cartolive:2.8.1
 ```
 
 The image includes the synthetic demo fixture, runs as non-root `appuser`, and
@@ -447,7 +444,7 @@ Container image:
 podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
 ```
 
-Browser layout smoke for the 2.8.0 release gate:
+Browser layout smoke for the 2.8.1 release gate:
 
 ```powershell
 npm --prefix web exec playwright install chromium
@@ -458,10 +455,10 @@ The smoke checks desktop `1920x1080` and mobile `390px` layouts for the live
 map, Packets, Chat, and NetGraph. Screenshots are written to
 `artifacts/browser-smoke` by default.
 
-Packaged image smoke for the 2.8.0 release gate:
+Packaged image smoke for the 2.8.1 release gate:
 
 ```powershell
-node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:2.8.0 --pull
+node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:2.8.1 --pull
 ```
 
 The local release helpers auto-prefer Podman when it is installed. Set
@@ -473,7 +470,7 @@ privacy scanner against both temporary containers.
 
 ## Production Hosting
 
-The recommended v2.8.0 release path is clone + Docker Compose on a VPS or local
+The recommended v2.8.1 release path is clone + Compose on a VPS or local
 host, optionally behind Cloudflare Tunnel or another HTTPS reverse proxy.
 
 For a public site:
