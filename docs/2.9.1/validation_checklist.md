@@ -64,7 +64,19 @@
 
 ## Deployment
 
-- [ ] `main` pushed to GitHub.
-- [ ] 2.9.1 deployed to the droplet.
-- [ ] Live smoke run against `https://carto.canadaverse.org`.
-- [ ] Deployed public privacy scan passed.
+- [x] `main` pushed to GitHub.
+- [x] 2.9.1 deployed to the droplet.
+- [x] Live smoke run against `https://carto.canadaverse.org`.
+- [x] Deployed public privacy scan passed.
+
+## Deployed Evidence
+
+- Production deploy completed on the Canada droplet from pushed `main`.
+- Public health and readiness reported version `2.9.1`, fresh ingest, fresh
+  public cache, and the expected release Git metadata.
+- Live smoke passed against `https://carto.canadaverse.org`: public state,
+  history, packets, chat, WebSocket hello, Docker health, and `mc-diagnose`
+  for region `YTR`.
+- Deployed public privacy scan passed at `https://carto.canadaverse.org`.
+- Deployed static asset smoke confirmed PNG assets keep immutable caching
+  without gzip content encoding.
