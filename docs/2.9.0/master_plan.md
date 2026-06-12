@@ -23,19 +23,19 @@ understand on first load and easier to operate on desktop and mobile.
 - Updated version metadata, changelog, roadmap, release notes, and validation
   checklist for 2.9.0.
 
-## Validation Plan
+## Validation
 
-- `cd backend && go test ./...`
-- `cd web && npm test -- --run`
-- `cd web && npm run build`
-- `node scripts/check-version-sync.mjs`
-- `podman build --format docker -t mc-cartolive-meshcore-live-map:2.9.0 .`
-- Podman package smoke.
-- Local and deployed public privacy scans.
-- Codex in-app Browser smoke for desktop `1920x1080` and mobile `390x844`.
+- Backend tests passed with `cd backend && go test ./...`.
+- Frontend tests passed with `cd web && npm test -- --run`.
+- Production frontend build passed with `cd web && npm run build`.
+- Version sync passed with `node scripts/check-version-sync.mjs`.
+- Podman image build passed for `mc-cartolive-meshcore-live-map:2.9.0`.
+- Podman package smoke passed.
+- Local and deployed public privacy scans passed.
+- Codex in-app Browser smoke covered desktop `1920x1080` and mobile `390x844`.
 
-## Merge And Deploy
+## Release Status
 
-Merge `codex/2.9.0-ux-roadmap` into `main` after validation, push `main`,
-delete the feature branch if it is no longer needed, deploy from the pushed
-`main` SHA, and run live smoke against `https://carto.canadaverse.org`.
+The release branch was merged into `main`, pushed to GitHub, deleted after
+merge, deployed to the droplet from the pushed `main` SHA, and live-smoked
+against `https://carto.canadaverse.org`.

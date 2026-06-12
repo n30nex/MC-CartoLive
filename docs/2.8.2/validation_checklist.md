@@ -37,10 +37,10 @@
 
 ## Deployment
 
-- [x] Merge validated feature branch into `main`.
-- [x] Push `main` to GitHub.
-- [x] Delete the feature branch if it is no longer needed.
-- [x] Deploy 2.8.2 to the droplet.
+- [x] Release branch merged into `main`.
+- [x] `main` pushed to GitHub.
+- [x] Feature branch deleted after merge.
+- [x] 2.8.2 deployed to the droplet.
 - [x] Run live smoke and record deployed version, Git SHA, and ready status.
 
 ## Deployment Evidence

@@ -54,9 +54,8 @@
   settings, Known Pathways toggle, propagation drawer, cloud fade, desktop
   `1920x1080`, and mobile `390x844`.
 
-## Merge And Deploy
+## Release Status
 
-After validation, merge `codex/2.8.1-propagation-ui` into `main`, push `main`,
-delete the feature branch if no longer needed, and deploy the 2.8.1 image to
-the droplet. Run live smoke after deployment and record the deployed version and
-Git SHA.
+The 2.8.1 work was merged into the production release line and carried forward
+through the 2.8.2 and 2.9.0 deployments. Current production validation belongs
+in the latest release checklist.

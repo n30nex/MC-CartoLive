@@ -30,8 +30,8 @@ makes the first map view flatter, quieter, and easier to control on mobile.
 - Local and deployed public privacy scans.
 - Codex in-app Browser smoke for desktop `1920x1080` and mobile `390x844`.
 
-## Merge And Deploy
+## Release Status
 
-Merge `codex/2.8.2-map-ui-polish` into `main` after validation, push `main`,
-delete the feature branch, deploy from the pushed `main` SHA, and run live
-smoke against `https://carto.canadaverse.org`.
+The 2.8.2 work was merged into `main`, deployed to the droplet, and carried
+forward into the 2.9.0 baseline. Current production validation belongs in the
+latest release checklist.
