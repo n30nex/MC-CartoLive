@@ -3449,6 +3449,10 @@ button.status-pill {
   text-overflow: ellipsis;
 }
 
+.status-secondary {
+  display: contents;
+}
+
 .noc-summary {
   position: absolute;
   z-index: 12;
