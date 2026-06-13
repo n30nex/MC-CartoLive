@@ -38,6 +38,7 @@ const SetupPanel = lazyWithReload(() => import('./components/SetupPanel'), 'Setu
 import MapSettingsDrawer from './components/MapSettingsDrawer';
 import RouteGifExportButton, { type RouteGifExportStatus } from './components/RouteGifExportButton';
 import type { WorkspacePresentation } from './components/workspacePanel';
+import { DEFAULT_LAB_EXPERIMENT_ID, labExperimentIDFromHash, labExperimentPath, type LabExperimentID } from './lab';
 import {
   DEFAULT_CHROME_PANEL_ANCHORS,
   INITIAL_CHROME_PANEL_VISIBILITY,
@@ -165,7 +166,8 @@ export default function App() {
   const [packetsOpen, setPacketsOpen] = useState(() => window.location.hash === '#/packets');
   const [netGraphOpen, setNetGraphOpen] = useState(() => window.location.hash === '#/netgraph');
   const [chatOpen, setChatOpen] = useState(() => window.location.hash === '#/chat');
-  const [labOpen, setLabOpen] = useState(() => window.location.hash === '#/lab');
+  const [labOpen, setLabOpen] = useState(() => isLabRoute(window.location.hash));
+  const [labExperimentID, setLabExperimentID] = useState<LabExperimentID>(() => isLabRoute(window.location.hash) ? labExperimentIDFromHash(window.location.hash) : DEFAULT_LAB_EXPERIMENT_ID);
   const [setupOpen, setSetupOpen] = useState(() => window.location.hash === '#/setup');
   const [propagationOpen, setPropagationOpen] = useState(false);
   const [propagationEvents, setPropagationEvents] = useState<PublicPropagationEvent[]>([]);
@@ -185,7 +187,7 @@ export default function App() {
   const [nodeLoadFailed, setNodeLoadFailed] = useState(false);
   const [vcrOpen, setVcrOpen] = useState(false);
   const [laserShowActive, setLaserShowActive] = useState(false);
-  const [nodeListOpen, setNodeListOpen] = useState(false);
+  const [nodeListOpen, setNodeListOpen] = useState(() => window.location.hash === '#/nodes');
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [chromeVisibility, setChromeVisibility] = useState<ChromeVisibilityState>({
     chromeHidden: false,
@@ -235,14 +237,19 @@ export default function App() {
       const nextPacketsOpen = hash === '#/packets';
       const nextNetGraphOpen = hash === '#/netgraph';
       const nextChatOpen = hash === '#/chat';
-      const nextLabOpen = hash === '#/lab';
+      const nextLabOpen = isLabRoute(hash);
       const nextSetupOpen = hash === '#/setup';
+      const nextNodeListOpen = hash === '#/nodes';
       setPacketsOpen(nextPacketsOpen);
       setNetGraphOpen(nextNetGraphOpen);
       setChatOpen(nextChatOpen);
       setLabOpen(nextLabOpen);
+      setLabExperimentID(nextLabOpen ? labExperimentIDFromHash(hash) : DEFAULT_LAB_EXPERIMENT_ID);
       setSetupOpen(nextSetupOpen);
-      if (nextPacketsOpen || nextChatOpen || nextLabOpen) {
+      setNodeListOpen(nextNodeListOpen);
+      if (nextLabOpen || nextNodeListOpen) {
+        setWorkspacePresentation('fullscreen');
+      } else if (nextPacketsOpen || nextChatOpen) {
         setWorkspacePresentation('side');
       }
       if (nextPacketsOpen || nextNetGraphOpen || nextChatOpen || nextLabOpen || nextSetupOpen) {
@@ -284,10 +291,15 @@ export default function App() {
   }, []);
 
   const closeLab = useCallback(() => {
-    if (window.location.hash === '#/lab') {
+    if (isLabRoute(window.location.hash)) {
       window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
     }
     setLabOpen(false);
+    setLabExperimentID(DEFAULT_LAB_EXPERIMENT_ID);
+  }, []);
+
+  const selectLabExperiment = useCallback((experimentID: LabExperimentID) => {
+    window.location.hash = labExperimentPath(experimentID);
   }, []);
 
   const closeSetup = useCallback(() => {
@@ -295,6 +307,17 @@ export default function App() {
       window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
     }
     setSetupOpen(false);
+  }, []);
+
+  const openNodeList = useCallback(() => {
+    window.location.hash = '#/nodes';
+  }, []);
+
+  const closeNodeList = useCallback(() => {
+    if (window.location.hash === '#/nodes') {
+      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
+    }
+    setNodeListOpen(false);
   }, []);
 
   useEffect(() => {
@@ -981,6 +1004,11 @@ export default function App() {
     applySelection(selectNodeSelection(nodeID));
   }, [applySelection]);
 
+  const selectNodeFromList = useCallback((id: string) => {
+    selectNode(id);
+    closeNodeList();
+  }, [closeNodeList, selectNode]);
+
   const selectRoute = useCallback((routeID: string) => {
     setSelectedPacket(null);
     applySelection(selectRouteSelection(routeID));
@@ -1305,7 +1333,8 @@ export default function App() {
 
   const showRouteGifExport = Boolean(selectedPacket && !packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen && !vcrOpen);
   const knownPathwaysOn = mapSettings.layers.routes;
-  const workspaceSurfaceOpen = packetsOpen || netGraphOpen || chatOpen || labOpen;
+  const workspaceSurfaceOpen = packetsOpen || netGraphOpen || chatOpen || labOpen || nodeListOpen;
+  const nocSummaryVisible = !chromeHidden && !workspaceSurfaceOpen && !setupOpen && !propagationOpen && !nodeListOpen && !shortcutHelpOpen && !mapSettingsOpen && !vcrOpen && !mobileControlsOpen;
   const visitorGuideSuppressed = chromeHidden || packetsOpen || netGraphOpen || chatOpen || labOpen || setupOpen || propagationOpen || vcrOpen || nodeListOpen || shortcutHelpOpen || mapSettingsOpen || mobileControlsOpen || Boolean(selectedNode || selectedRoute || selectedPacket);
 
   return (
@@ -1353,7 +1382,7 @@ export default function App() {
         />
       </ErrorBoundary>
       {loadingPositionedNodes && <NodeLoadingToast failed={nodeLoadFailed} drawing={initialNodesReceived} />}
-      <LinkBar packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} chatOpen={chatOpen} labOpen={labOpen} />
+      <LinkBar packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} chatOpen={chatOpen} labOpen={labOpen} activeLabExperimentID={labExperimentID} />
       {!chromeHidden && (
         <>
           <StatusBar
@@ -1365,7 +1394,7 @@ export default function App() {
             latestPayloadTypeName={latestPacketActivity?.payloadTypeName ?? null}
             latestPacketID={latestPacketActivity?.id ?? null}
           />
-          <NocSummary />
+          {nocSummaryVisible && <NocSummary />}
         </>
       )}
 
@@ -1511,7 +1540,7 @@ export default function App() {
         <button className="icon-button" type="button" title="Share this view" onClick={shareView}>
           <Share2 size={18} />
         </button>
-        <button className="icon-button" type="button" title="Open node list" onClick={() => setNodeListOpen(true)}>
+        <button className="icon-button" type="button" title="Open node list" onClick={openNodeList}>
           <RadioTower size={18} />
         </button>
         <button className="icon-button" type="button" title="Reset map" onClick={() => dispatchMapAction('reset')}>
@@ -1637,7 +1666,7 @@ export default function App() {
               <span>Share</span>
             </button>
             <button type="button" onClick={() => {
-              setNodeListOpen(true);
+              openNodeList();
               setMobileControlsOpen(false);
             }}>
               <RadioTower size={18} />
@@ -1758,8 +1787,8 @@ export default function App() {
         </ErrorBoundary>
       )}
       {chatOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><ChatPanel presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onClose={closeChat} /></Suspense></ErrorBoundary>}
-      {labOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><LabPanel state={state} socketStatus={socketStatus} presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onClose={closeLab} /></Suspense></ErrorBoundary>}
-      {nodeListOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><NodeListPanel nodes={visibleNodes} selectedNodeID={selectedNodeID} onSelectNode={(id) => { selectNode(id); setNodeListOpen(false); }} onClose={() => setNodeListOpen(false)} /></Suspense></ErrorBoundary>}
+      {labOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><LabPanel state={state} socketStatus={socketStatus} experimentID={labExperimentID} presentation={workspacePresentation} onExperimentChange={selectLabExperiment} onPresentationChange={setWorkspacePresentation} onClose={closeLab} /></Suspense></ErrorBoundary>}
+      {nodeListOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><NodeListPanel nodes={visibleNodes} selectedNodeID={selectedNodeID} presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onSelectNode={selectNodeFromList} onClose={closeNodeList} /></Suspense></ErrorBoundary>}
       {shortcutHelpOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><ShortcutHelp onClose={() => setShortcutHelpOpen(false)} /></Suspense></ErrorBoundary>}
 
       {!vcrOpen && !packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen && (
@@ -1941,6 +1970,10 @@ function paletteSwatchStyle(palette: ThemePalette): CSSProperties {
     '--swatch-secondary': palette.vars['--palette-secondary'],
     '--swatch-surface': palette.vars['--palette-bg-raised']
   } as CSSProperties;
+}
+
+function isLabRoute(hash: string): boolean {
+  return hash === '#/lab' || hash.startsWith('#/lab/');
 }
 
 function NodeLoadingToast({ failed, drawing }: { failed: boolean; drawing: boolean }) {

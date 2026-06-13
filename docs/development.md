@@ -158,6 +158,11 @@ podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
 The release helpers auto-prefer Podman when it is installed. Set
 `CONTAINER_RUNTIME=docker` only on Docker hosts.
 
+On Windows Podman/WSL, published ports may be reachable through the Podman
+machine IP before they are reachable on `127.0.0.1`. `package-smoke` accepts
+`--host <podman-machine-ip>` or `PACKAGE_SMOKE_HOST=<podman-machine-ip>` for
+that case.
+
 Smoke check a built container:
 
 ```bash
@@ -185,7 +190,7 @@ Use overrides when testing a branch, alternate host, expected build, or another
 diagnostic region:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.9.3 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.9.4 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
 Scan public JSON surfaces for privacy-boundary regressions while the app is

@@ -4,6 +4,24 @@ This changelog records the public release history at a useful level of detail.
 Detailed patch-by-patch investigation notes and temporary planning material live
 in Git history, not in the active documentation set.
 
+## 2.9.4 - 2026-06-13
+
+- Promoted Labs into routed experiment pages under `#/lab/*`, with a top-bar
+  Labs dropdown for RF Synth, Packet Waterfall, Live Sequencer, Route Organism,
+  RF Constellation, Propagation Aurora, Packet DJ Booth, Network Weather Radar,
+  and Message Fireflies.
+- Reworked Labs as a fullscreen workbench by default, with responsive
+  experiment cards, signal context, cue chips, inspector metrics, and
+  unclipped canvas sizing across desktop and mobile browser-smoke viewports.
+- Fixed the Open Node List control by routing it to `#/nodes` and replacing the
+  old panel with a searchable, filterable, fullscreen public node browser.
+- Added per-experiment accent styling and canvas polish while keeping all Labs
+  inputs derived from existing sanitized public state.
+- Fixed the weather cloud overlay so it stays subtle, desaturated, and fully
+  fades before detail-mode zoom instead of tinting the default map.
+- Updated focused Labs, top-bar, zoom/weather, browser-smoke, release metadata,
+  and operator documentation for the polish release.
+
 ## 2.9.3 - 2026-06-13
 
 - Added the `#/lab` workspace with RF Synth, Packet Waterfall, Live Sequencer,

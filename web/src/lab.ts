@@ -18,19 +18,127 @@ export interface LabExperiment {
   label: string;
   shortLabel: string;
   mode: 'audio' | 'visual' | 'hybrid';
+  path: string;
+  accent: string;
+  tagline: string;
+  detail: string;
+  signal: string;
+  cues: readonly string[];
 }
 
 export const LAB_EXPERIMENTS: readonly LabExperiment[] = [
-  { id: 'synth', label: 'RF Synth', shortLabel: 'Synth', mode: 'hybrid' },
-  { id: 'waterfall', label: 'Packet Waterfall', shortLabel: 'Waterfall', mode: 'visual' },
-  { id: 'sequencer', label: 'Live Sequencer', shortLabel: 'Sequence', mode: 'hybrid' },
-  { id: 'organism', label: 'Route Organism', shortLabel: 'Organism', mode: 'visual' },
-  { id: 'constellation', label: 'RF Constellation', shortLabel: 'Stars', mode: 'visual' },
-  { id: 'aurora', label: 'Propagation Aurora', shortLabel: 'Aurora', mode: 'hybrid' },
-  { id: 'dj', label: 'Packet DJ Booth', shortLabel: 'DJ', mode: 'hybrid' },
-  { id: 'radar', label: 'Network Weather Radar', shortLabel: 'Radar', mode: 'visual' },
-  { id: 'fireflies', label: 'Message Fireflies', shortLabel: 'Fireflies', mode: 'visual' }
+  {
+    id: 'synth',
+    label: 'RF Synth',
+    shortLabel: 'Synth',
+    mode: 'hybrid',
+    path: '#/lab/synth',
+    accent: '#38bdf8',
+    tagline: 'Packets become pitch, pan, and pulse.',
+    detail: 'Live routed and observer events drive an opt-in Web Audio voice plus orbital packet particles.',
+    signal: 'Payload type, route distance, hop count, region, and route confidence.',
+    cues: ['Enable audio for tones', 'Watch routed pulses orbit wider', 'Observer packets sound sharper']
+  },
+  {
+    id: 'waterfall',
+    label: 'Packet Waterfall',
+    shortLabel: 'Waterfall',
+    mode: 'visual',
+    path: '#/lab/waterfall',
+    accent: '#22c55e',
+    tagline: 'A rolling signal scope for public packet flow.',
+    detail: 'Payload lanes reveal bursts, long paths, observer-only packets, and quiet gaps at a glance.',
+    signal: 'Payload labels over the last live minute, colored by public packet class.',
+    cues: ['Lane density shows bursts', 'Long streaks mean longer paths', 'Quiet lanes expose payload gaps']
+  },
+  {
+    id: 'sequencer',
+    label: 'Live Sequencer',
+    shortLabel: 'Sequence',
+    mode: 'hybrid',
+    path: '#/lab/sequencer',
+    accent: '#facc15',
+    tagline: 'The network plays a 16-step pattern.',
+    detail: 'Packet density fills steps while routed, observer, and message events change the rhythm.',
+    signal: 'Minute buckets, payload mix, routed/observer balance, and message hits.',
+    cues: ['Active step follows the beat', 'Payload mix colors the groove', 'Messages add accents']
+  },
+  {
+    id: 'organism',
+    label: 'Route Organism',
+    shortLabel: 'Organism',
+    mode: 'visual',
+    path: '#/lab/organism',
+    accent: '#a78bfa',
+    tagline: 'Routes breathe like living tissue.',
+    detail: 'High-confidence public routes flex with recent activity without exposing raw paths.',
+    signal: 'Public route endpoints, packet counts, distance, and recent route events.',
+    cues: ['Thicker fibers are busier', 'Fresh paths flex harder', 'Nodes glow with route energy']
+  },
+  {
+    id: 'constellation',
+    label: 'RF Constellation',
+    shortLabel: 'Stars',
+    mode: 'visual',
+    path: '#/lab/constellation',
+    accent: '#67e8f9',
+    tagline: 'A sky chart of active RF nodes.',
+    detail: 'Nodes become stars, routes become faint constellations, and fresh packets ripple through the field.',
+    signal: 'Public nodes, roles, route frequency buckets, and routed event pulses.',
+    cues: ['Repeaters glow warm', 'Observers glow rose', 'Fresh routed events ripple']
+  },
+  {
+    id: 'aurora',
+    label: 'Propagation Aurora',
+    shortLabel: 'Aurora',
+    mode: 'hybrid',
+    path: '#/lab/aurora',
+    accent: '#a3e635',
+    tagline: 'Long hops shimmer as RF weather.',
+    detail: 'Distance and hop count shape slow bands and gentle tones for unusual public route motion.',
+    signal: 'Long-distance routed packets, multi-hop events, and live packet energy.',
+    cues: ['Long routes raise the bands', 'Multi-hop packets thicken color', 'Audio is deliberately slow']
+  },
+  {
+    id: 'dj',
+    label: 'Packet DJ Booth',
+    shortLabel: 'DJ Booth',
+    mode: 'hybrid',
+    path: '#/lab/dj',
+    accent: '#fb7185',
+    tagline: 'Payload mix becomes a live equalizer.',
+    detail: 'The packet type distribution drives bars, arcs, and sharper percussive audio gestures.',
+    signal: 'Payload mix, packet rate, event intensity, and route-vs-observer balance.',
+    cues: ['Top payload becomes Deck A', 'Packet rate maps to BPM', 'Routed events add saw bite']
+  },
+  {
+    id: 'radar',
+    label: 'Network Weather Radar',
+    shortLabel: 'Radar',
+    mode: 'visual',
+    path: '#/lab/radar',
+    accent: '#2dd4bf',
+    tagline: 'Regions scan like storm cells.',
+    detail: 'Public region/IATA buckets become radar returns so operators can see where activity is clustering.',
+    signal: 'Region counts, routed events, observer events, and public message density.',
+    cues: ['Large cells are busy regions', 'Sweep line shows live scan', 'Message density adds glow']
+  },
+  {
+    id: 'fireflies',
+    label: 'Message Fireflies',
+    shortLabel: 'Fireflies',
+    mode: 'visual',
+    path: '#/lab/fireflies',
+    accent: '#f97316',
+    tagline: 'Public text events drift through the RF field.',
+    detail: 'Sanitized public message anchors become soft moving lights without exposing private packet data.',
+    signal: 'Public-safe message sender labels, sanitized text presence, region, and observer/routed anchors.',
+    cues: ['Only public text events appear', 'Anchored messages drift locally', 'Quiet means no recent public text']
+  }
 ] as const;
+
+export const DEFAULT_LAB_EXPERIMENT_ID: LabExperimentID = 'synth';
+export const LAB_EXPERIMENT_PATH_PREFIX = '#/lab/';
 
 export interface LabPoint {
   lat: number;
@@ -122,6 +230,23 @@ export interface LabRegionCell {
 const LAB_EVENT_LIMIT = 260;
 const LAB_WINDOW_MS = 60_000;
 const ACTIVE_REGION_LIMIT = 6;
+
+const LAB_EXPERIMENT_IDS = new Set<LabExperimentID>(LAB_EXPERIMENTS.map((experiment) => experiment.id));
+
+export function isLabExperimentID(value: string): value is LabExperimentID {
+  return LAB_EXPERIMENT_IDS.has(value as LabExperimentID);
+}
+
+export function labExperimentPath(id: LabExperimentID): string {
+  return experimentByID(id).path;
+}
+
+export function labExperimentIDFromHash(hash: string): LabExperimentID {
+  if (hash === '#/lab') return DEFAULT_LAB_EXPERIMENT_ID;
+  if (!hash.startsWith(LAB_EXPERIMENT_PATH_PREFIX)) return DEFAULT_LAB_EXPERIMENT_ID;
+  const id = hash.slice(LAB_EXPERIMENT_PATH_PREFIX.length).split(/[/?#]/)[0];
+  return isLabExperimentID(id) ? id : DEFAULT_LAB_EXPERIMENT_ID;
+}
 
 export function labEventsFromState(state: Pick<AppState, 'activity' | 'pulses'>, limit = LAB_EVENT_LIMIT): LabEvent[] {
   const byKey = new Map<string, LabEvent>();

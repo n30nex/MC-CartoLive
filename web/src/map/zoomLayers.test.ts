@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapOverlayStyle } from './CanadaMap';
+import { mapOverlayStyle, WEATHER_CLOUD_FADE_END_ZOOM, WEATHER_CLOUD_OPACITY, weatherCloudRasterLayer } from './CanadaMap';
 import { DETAIL_MIN_ZOOM } from './zoomMode';
 
 describe('map zoom layer consistency', () => {
@@ -40,6 +40,18 @@ describe('map zoom layer consistency', () => {
     expect(hillshade?.paint?.['hillshade-exaggeration']).toBeLessThanOrEqual(0.34);
     expect((mapOverlayStyle.sources['meshcore-terrain-dem'] as any).encoding).toBe('terrarium');
     expect((mapOverlayStyle.sources['meshcore-hillshade-dem'] as any).attribution).toContain('Elevation tiles');
+  });
+
+  it('keeps weather clouds subtle and gone before detail zoom', () => {
+    const weather = weatherCloudRasterLayer() as any;
+    expect(WEATHER_CLOUD_FADE_END_ZOOM).toBeLessThan(DETAIL_MIN_ZOOM);
+    expect(weather.maxzoom).toBe(WEATHER_CLOUD_FADE_END_ZOOM);
+    expect(weather.paint['raster-opacity']).toBe(WEATHER_CLOUD_OPACITY);
+    expect(weather.paint['raster-saturation']).toBeLessThan(0);
+    expect(weather.paint['raster-fade-duration']).toBe(0);
+    expect(WEATHER_CLOUD_OPACITY.at(-1)).toBe(0);
+    const opacityStops = WEATHER_CLOUD_OPACITY.slice(3).filter((_: unknown, index: number) => index % 2 === 1) as number[];
+    expect(Math.max(...opacityStops)).toBeLessThanOrEqual(0.28);
   });
 
   it('aggregates role counts on the clustered node source', () => {

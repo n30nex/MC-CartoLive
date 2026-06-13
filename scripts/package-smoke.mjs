@@ -13,6 +13,7 @@ const version = String(args.version ?? process.env.PACKAGE_SMOKE_VERSION ?? (awa
 const image = String(args.image ?? process.env.PACKAGE_SMOKE_IMAGE ?? `ghcr.io/n30nex/mc-cartolive:${version}`);
 const mode = String(args.mode ?? process.env.PACKAGE_SMOKE_MODE ?? 'all');
 const containerRuntime = String(args.runtime ?? process.env.PACKAGE_SMOKE_RUNTIME ?? process.env.CONTAINER_RUNTIME ?? 'docker');
+const smokeHost = String(args.host ?? process.env.PACKAGE_SMOKE_HOST ?? '127.0.0.1');
 const shouldPull = args.pull !== undefined || process.env.PACKAGE_SMOKE_PULL === '1';
 const keepContainers = args.keep !== undefined || process.env.PACKAGE_SMOKE_KEEP === '1';
 const privacy = args.privacy !== '0' && process.env.PACKAGE_SMOKE_PRIVACY !== '0';
@@ -80,7 +81,7 @@ console.log(JSON.stringify({
 console.log(`package smoke ok: ${image}`);
 
 async function runScenario(scenario) {
-  const baseUrl = `http://127.0.0.1:${scenario.port}`;
+  const baseUrl = `http://${formatHost(smokeHost)}:${scenario.port}`;
   cleanup(scenario.container);
   const envArgs = [];
   for (const [key, value] of Object.entries(scenario.env)) {
@@ -255,6 +256,12 @@ function assert(condition, message) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatHost(host) {
+  const trimmed = host.trim();
+  if (trimmed.startsWith('[') || !trimmed.includes(':')) return trimmed;
+  return `[${trimmed}]`;
 }
 
 async function readVersion() {

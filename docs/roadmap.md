@@ -6,7 +6,7 @@ in [CHANGELOG.md](../CHANGELOG.md); operator procedures live in
 
 ## Current Baseline
 
-Version `2.9.3` is the current Labs release on the public-safe event,
+Version `2.9.4` is the current Labs polish release on the public-safe event,
 operations, and map-runtime foundation.
 
 - Public API shapes are stable across the 2.8.x and 2.9.x line.
@@ -16,8 +16,8 @@ operations, and map-runtime foundation.
   the embedded React frontend and SQLite under `/app/data`.
 - Local release validation uses Podman; the production droplet can continue to
   use Docker Compose.
-- The 2.9.3 frontend adds Labs for opt-in packet sonification and live
-  audio/visual experiments while preserving the 2.9.x visitor UX.
+- The 2.9.4 frontend gives each Labs experiment its own routed page, dropdown
+  entry, polished workbench layout, and public-safe inspector context.
 
 ## Active Focus
 

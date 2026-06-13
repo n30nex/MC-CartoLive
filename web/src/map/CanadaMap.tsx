@@ -215,7 +215,22 @@ const DEFAULT_OPENFREEMAP_STYLE_URL = '';
 const DEFAULT_OPENFREEMAP_TILEJSON_URL = 'https://tiles.openfreemap.org/planet';
 const DEFAULT_TERRAIN_TILE_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
 const DEM_ATTRIBUTION = 'Elevation tiles &copy; AWS Open Data / Mapzen Terrain Tiles / Tilezen / Joerd';
-const WEATHER_CLOUD_FADE_END_ZOOM = DETAIL_MIN_ZOOM;
+export const WEATHER_CLOUD_FADE_END_ZOOM = DETAIL_MIN_ZOOM - 0.42;
+export const WEATHER_CLOUD_OPACITY: any = [
+  'interpolate',
+  ['linear'],
+  ['zoom'],
+  0,
+  0.28,
+  3,
+  0.2,
+  5.4,
+  0.08,
+  6.35,
+  0.018,
+  WEATHER_CLOUD_FADE_END_ZOOM,
+  0
+];
 const DEFAULT_WORLD_CENTER = { lat: 20, lng: 0, z: 1.8 };
 const OPENFREEMAP_STYLE_URL = envURL('VITE_OPENFREEMAP_STYLE_URL', DEFAULT_OPENFREEMAP_STYLE_URL);
 const OPENFREEMAP_TILEJSON_URL = envURL('VITE_OPENFREEMAP_TILEJSON_URL', DEFAULT_OPENFREEMAP_TILEJSON_URL);
@@ -1674,11 +1689,16 @@ function CanadaMap({
       animatorRef.current?.resize();
       scheduleMapOverlays();
     };
+    const updateWeatherCloudVisibility = () => {
+      applyWeatherCloudSetting(map, layerSettingsRef.current);
+    };
     const publishView = () => viewChangeRef.current(mapViewFromMap(map));
     const recordMapError = (event: { error?: Error }) => {
       if (!loadedRef.current) setMapInitError(event.error?.message ?? 'map style error');
     };
     map.on('resize', resizeOverlay);
+    map.on('zoom', updateWeatherCloudVisibility);
+    map.on('zoomend', updateWeatherCloudVisibility);
     map.on('moveend', scheduleMapOverlays);
     map.on('moveend', publishView);
     map.on('error', recordMapError);
@@ -1778,6 +1798,8 @@ function CanadaMap({
       if (initializeRetry !== null) window.clearTimeout(initializeRetry);
       window.removeEventListener('resize', resizeMap);
       map.off('resize', resizeOverlay);
+      map.off('zoom', updateWeatherCloudVisibility);
+      map.off('zoomend', updateWeatherCloudVisibility);
       map.off('moveend', scheduleMapOverlays);
       map.off('moveend', publishView);
       map.off('error', recordMapError);
@@ -2405,17 +2427,25 @@ function ensureWeatherCloudLayer(map: maplibregl.Map) {
       attribution: '&copy; OpenWeatherMap'
     });
   }
-  addLayerIfMissing(map, {
+  addLayerIfMissing(map, weatherCloudRasterLayer());
+}
+
+export function weatherCloudRasterLayer(): maplibregl.RasterLayerSpecification {
+  return {
     id: WEATHER_CLOUD_LAYER,
     type: 'raster',
     source: WEATHER_CLOUD_SOURCE,
     minzoom: 0,
     maxzoom: WEATHER_CLOUD_FADE_END_ZOOM,
     paint: {
-      'raster-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.5, 3, 0.42, 5.5, 0.22, 6.85, 0.06, WEATHER_CLOUD_FADE_END_ZOOM, 0],
-      'raster-fade-duration': 300
+      'raster-opacity': WEATHER_CLOUD_OPACITY,
+      'raster-saturation': -0.78,
+      'raster-contrast': -0.08,
+      'raster-brightness-min': 0.04,
+      'raster-brightness-max': 0.72,
+      'raster-fade-duration': 0
     }
-  });
+  };
 }
 
 function addPublicLayers(map: maplibregl.Map) {
@@ -2833,12 +2863,19 @@ function applyLayerSettings(map: maplibregl.Map, settings: MapLayerSettings, the
   for (const layerID of observerBurstLayers) setLayerVisibility(map, layerID, settings.observerBursts);
   setLayerVisibility(map, BUILDINGS_3D_LAYER, settings.buildingExtrusions);
   applyTerrainSetting(map, settings.terrainHeightmap, themeMode);
-  setLayerVisibility(map, WEATHER_CLOUD_LAYER, settings.weatherClouds);
+  applyWeatherCloudSetting(map, settings);
 }
 
 function setLayerVisibility(map: maplibregl.Map, layerID: string, visible: boolean) {
   if (!map.getLayer(layerID)) return;
   map.setLayoutProperty(layerID, 'visibility', visible ? 'visible' : 'none');
+}
+
+function applyWeatherCloudSetting(map: maplibregl.Map, settings: MapLayerSettings) {
+  if (!map.getLayer(WEATHER_CLOUD_LAYER)) return;
+  const visible = settings.weatherClouds && map.getZoom() < WEATHER_CLOUD_FADE_END_ZOOM;
+  map.setLayoutProperty(WEATHER_CLOUD_LAYER, 'visibility', visible ? 'visible' : 'none');
+  map.setPaintProperty(WEATHER_CLOUD_LAYER, 'raster-opacity', visible ? WEATHER_CLOUD_OPACITY : 0);
 }
 
 function firstTextSymbolLayerID(map: maplibregl.Map): string | undefined {

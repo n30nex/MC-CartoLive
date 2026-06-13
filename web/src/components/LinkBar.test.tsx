@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import LinkBar, { LATEST_RELEASE_HIGHLIGHTS } from './LinkBar';
+import { LAB_EXPERIMENTS } from '../lab';
 
 describe('LinkBar', () => {
   it('renders NetGraph beside the existing top-bar pages and marks it active', () => {
@@ -8,7 +9,7 @@ describe('LinkBar', () => {
     expect(html).toContain('#/packets');
     expect(html).toContain('#/netgraph');
     expect(html).toContain('#/chat');
-    expect(html).toContain('#/lab');
+    expect(html).toContain('aria-haspopup="menu"');
     expect(html).toContain('NetGraph');
     expect(html).toContain('Chat');
     expect(html).toContain('Labs');
@@ -23,11 +24,24 @@ describe('LinkBar', () => {
     expect(html).toContain('Changelog');
   });
 
+  it('opens Labs as a routed experiment dropdown', () => {
+    const html = renderToStaticMarkup(<LinkBar labOpen activeLabExperimentID="radar" />);
+    expect(html).toContain('Open Labs: Network Weather Radar');
+    expect(html).toContain('class="link-bar-page active"');
+  });
+
   it('keeps the compact changelog focused on the current release train', () => {
-    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.label)).toEqual(['2.9.3', '2.9.2', '2.9.1']);
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.label)).toEqual(['2.9.4', '2.9.3', '2.9.2']);
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Labs Polish');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Live RF Labs');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Durable public live');
-    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Live map performance');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.body).join(' ')).not.toContain('Perf/Guide/Features');
+  });
+
+  it('defines a public route for every Labs experiment', () => {
+    for (const experiment of LAB_EXPERIMENTS) {
+      expect(experiment.path).toBe(`#/lab/${experiment.id}`);
+      expect(experiment.tagline.length).toBeGreaterThan(8);
+    }
   });
 });

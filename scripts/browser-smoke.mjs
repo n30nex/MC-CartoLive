@@ -26,8 +26,8 @@ const scenarios = [
     waitFor: '.maplibregl-canvas',
     checks: [
       { selector: '.link-bar', label: 'top project bar' },
-      { selector: '.top-actions', label: 'top map actions' },
-      { selector: '.vcr-mini-clock', label: 'mini live clock' },
+      { selector: '.top-actions', label: 'top map actions', desktopOnly: true },
+      { selector: '.vcr-mini-clock', label: 'mini live clock', desktopOnly: true },
       { selector: '.maplibregl-ctrl-bottom-right', label: 'map controls' }
     ],
     actions: [smokeLiveMapControls]
@@ -70,9 +70,22 @@ const scenarios = [
     checks: [
       { selector: '.link-bar', label: 'top project bar' },
       { selector: '.lab-panel', label: 'Labs panel' },
+      { selector: '.lab-signal-strip', label: 'Labs signal strip' },
       { selector: '.lab-canvas', label: 'Labs canvas' }
     ],
     actions: [smokeLabsPanel]
+  },
+  {
+    name: 'nodes',
+    hash: '#/nodes',
+    waitFor: '.node-list-panel',
+    checks: [
+      { selector: '.link-bar', label: 'top project bar' },
+      { selector: '.node-list-panel', label: 'Node List panel' },
+      { selector: '.node-list-search', label: 'Node List search' },
+      { selector: '.node-list-table-wrap', label: 'Node List table' }
+    ],
+    actions: [smokeNodeListPanel]
   },
   {
     name: 'netgraph',
@@ -180,6 +193,7 @@ async function runScenario(browser, viewport, scenario) {
     await page.waitForTimeout(900);
 
     for (const check of scenario.checks) {
+      if (check.desktopOnly && viewport.isMobile) continue;
       await assertVisibleInViewport(page, check.selector, check.label, viewport);
     }
 
@@ -217,10 +231,14 @@ async function runScenario(browser, viewport, scenario) {
 }
 
 async function smokeLiveMapControls(page, viewport) {
+  if (viewport.isMobile) {
+    await assertVisibleInViewport(page, '.mobile-control-dock', 'mobile control dock', viewport);
+    return;
+  }
   await smokeOpenFreeMapToggle(page, viewport);
   await smokePalettePicker(page, viewport);
   await smokeMapSettings(page, viewport);
-  await smokeVcr(page, viewport);
+  if (!viewport.isMobile) await smokeVcr(page, viewport);
   await smokeTopInfoPanels(page, viewport);
 }
 
@@ -394,13 +412,26 @@ async function smokeChatPanel(page) {
 }
 
 async function smokeLabsPanel(page, viewport) {
-  const buttons = page.locator('.lab-toolbar button');
-  const count = await buttons.count();
+  const links = page.locator('.lab-toolbar a');
+  const count = await links.count();
   if (count < 9) throw new Error(`Labs toolbar has too few experiments: ${count}`);
-  for (const label of ['Waterfall', 'Sequence', 'Fireflies']) {
-    const button = page.getByRole('button', { name: new RegExp(label, 'i') }).first();
-    await button.scrollIntoViewIfNeeded();
-    await button.click();
+  const experiments = [
+    ['synth', 'Synth'],
+    ['waterfall', 'Waterfall'],
+    ['sequencer', 'Sequence'],
+    ['organism', 'Organism'],
+    ['constellation', 'Stars'],
+    ['aurora', 'Aurora'],
+    ['dj', 'DJ Booth'],
+    ['radar', 'Radar'],
+    ['fireflies', 'Fireflies']
+  ];
+  for (const [id, label] of experiments) {
+    await page.evaluate((experimentID) => { window.location.hash = `#/lab/${experimentID}`; }, id);
+    await page.waitForURL(new RegExp(`#\\/lab\\/${id}$`), { timeout: 5_000 });
+    await page.waitForSelector('.lab-panel', { state: 'visible', timeout: 8_000 });
+    const link = page.getByRole('link', { name: new RegExp(label, 'i') }).first();
+    await link.scrollIntoViewIfNeeded();
     await page.waitForTimeout(350);
     await assertVisibleInViewport(page, '.lab-canvas', `Labs ${label} canvas`, viewport);
     await assertCanvasHasPixels(page, '.lab-canvas', `Labs ${label} canvas`);
@@ -409,8 +440,23 @@ async function smokeLabsPanel(page, viewport) {
   await setRangeInputValue(volume, 0.18);
   const reducedMotion = page.locator('.lab-toggle-row input').first();
   await reducedMotion.check();
-  await page.getByRole('button', { name: /Synth/i }).first().click();
+  await page.evaluate(() => { window.location.hash = '#/lab/synth'; });
   await assertCanvasHasPixels(page, '.lab-canvas', 'Labs RF Synth canvas');
+}
+
+async function smokeNodeListPanel(page, viewport) {
+  await page.waitForSelector('.node-list-panel', { state: 'visible', timeout: 12_000 });
+  const nocCount = await page.locator('.noc-summary').count();
+  if (nocCount > 0) throw new Error(`Node List should suppress NOC summary, found ${nocCount}`);
+  const search = page.locator('.node-list-search input').first();
+  await search.fill('repeater');
+  await page.waitForTimeout(250);
+  await assertVisibleInViewport(page, '.node-list-panel', 'Node List panel after search', viewport);
+  const rowCount = await page.locator('.node-list-table tbody tr').count();
+  if (rowCount < 1) throw new Error('Node List search returned no rows for repeater');
+  await search.fill('');
+  await page.locator('.node-list-toolbar select').nth(1).selectOption('recent').catch(() => {});
+  await page.waitForTimeout(150);
 }
 
 async function smokeNetGraphPanel(page, viewport) {
@@ -569,7 +615,7 @@ async function smokeTopInfoPanels(page, viewport) {
 
   await clickTopInfoButton(page, /Changelog/i, '.link-bar-info-popover', 'latest changelog popover', viewport);
   await clickTopInfoButton(page, /Features/i, '.link-bar-info-popover', 'feature list popover', viewport);
-  await clickTopInfoButton(page, /Guide/i, '.guide-overlay', 'guide overlay', viewport);
+  await clickTopInfoButton(page, /Guide/i, '.visitor-guide', 'guide panel', viewport);
 }
 
 async function clickTopInfoButton(page, name, selector, label, viewport) {
@@ -616,15 +662,15 @@ async function dismissWelcome(page) {
     await start.click();
     return;
   }
-  const close = page.locator('.welcome-guide-close').first();
+  const close = page.locator('.welcome-guide-close, .visitor-guide-close').first();
   if (await close.isVisible({ timeout: 500 }).catch(() => false)) {
     await close.click();
     return;
   }
-  const visibleGuide = page.locator('.welcome-guide-popover, .guide-overlay').first();
+  const visibleGuide = page.locator('.welcome-guide-popover, .visitor-guide').first();
   if (await visibleGuide.isVisible({ timeout: 500 }).catch(() => false)) {
     await page.keyboard.press('Escape').catch(() => {});
-    await page.locator('.welcome-guide-popover, .guide-overlay').first().evaluate((node) => {
+    await page.locator('.welcome-guide-popover, .visitor-guide').first().evaluate((node) => {
       if (node instanceof HTMLElement) node.style.display = 'none';
     }).catch(() => {});
   }

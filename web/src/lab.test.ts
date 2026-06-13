@@ -4,6 +4,8 @@ import {
   buildSequencerPattern,
   eventPitchHz,
   eventStereoPan,
+  labExperimentIDFromHash,
+  labExperimentPath,
   labEventsFromState,
   labMetrics,
   regionCells,
@@ -20,6 +22,8 @@ describe('labs data helpers', () => {
     const events = labEventsFromState(state);
 
     expect(LAB_EXPERIMENTS.map((item) => item.id)).toContain('fireflies');
+    expect(LAB_EXPERIMENTS.every((item) => item.path === `#/lab/${item.id}`)).toBe(true);
+    expect(LAB_EXPERIMENTS.every((item) => item.tagline.length > 8 && item.signal.length > 8 && item.cues.length === 3)).toBe(true);
     expect(events.map((event) => event.kind)).toEqual(expect.arrayContaining(['routed', 'observer']));
     expect(events[0].displayAt).toBeGreaterThanOrEqual(events.at(-1)?.displayAt ?? 0);
     expect(events.find((event) => event.source === 'routePulse')?.distanceKm).toBeCloseTo(42.5);
@@ -50,6 +54,13 @@ describe('labs data helpers', () => {
     expect(eventPitchHz(event)).toBeLessThanOrEqual(1440);
     expect(eventStereoPan(event)).toBeGreaterThanOrEqual(-0.9);
     expect(eventStereoPan(event)).toBeLessThanOrEqual(0.9);
+  });
+
+  it('parses routed lab experiment hashes safely', () => {
+    expect(labExperimentPath('radar')).toBe('#/lab/radar');
+    expect(labExperimentIDFromHash('#/lab/fireflies')).toBe('fireflies');
+    expect(labExperimentIDFromHash('#/lab/nope')).toBe('synth');
+    expect(labExperimentIDFromHash('#/packets')).toBe('synth');
   });
 });
 

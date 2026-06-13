@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ExternalLink, FlaskConical, Github, History, List, MessageSquareText, Network, X } from 'lucide-react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { ChevronDown, ExternalLink, FlaskConical, Github, History, List, MessageSquareText, Network, X } from 'lucide-react';
 import { appBrandLogo, appBrandName, appBrandURL, appVersion, buildNumber, buildTime, gitSha, releaseURL } from '../buildInfo';
 import { routeAssetIcons } from '../assets/routes/assets';
+import { DEFAULT_LAB_EXPERIMENT_ID, LAB_EXPERIMENTS, type LabExperimentID } from '../lab';
 import {
   GITHUB_REPO_API_URL,
   GITHUB_REPO_URL,
@@ -19,6 +20,11 @@ type InfoPanel = 'changelog' | null;
 
 export const LATEST_RELEASE_HIGHLIGHTS = [
   {
+    label: '2.9.4',
+    title: 'Labs Polish',
+    body: 'Every Labs experiment gets a routed page, a dropdown entry, clearer live signal context, stronger controls, and tuned visual polish.'
+  },
+  {
     label: '2.9.3',
     title: 'Live RF Labs',
     body: 'Labs turns sanitized public packets into opt-in sound, visual sequencers, waterfalls, constellations, radar, and message fireflies.'
@@ -27,11 +33,6 @@ export const LATEST_RELEASE_HIGHLIGHTS = [
     label: '2.9.2',
     title: 'Durable public live',
     body: 'Public event sequences, reconnect backfill, NOC status, public schema, and map-runtime foundations move the release train forward safely.'
-  },
-  {
-    label: '2.9.1',
-    title: 'Live map performance',
-    body: 'Healthy WebSocket sessions avoid full-state polling, route pulses update less state, and map heat/activity layers refresh at calmer cadences.'
   }
 ];
 
@@ -40,12 +41,14 @@ interface LinkBarProps {
   netGraphOpen?: boolean;
   chatOpen?: boolean;
   labOpen?: boolean;
+  activeLabExperimentID?: LabExperimentID;
 }
 
-export default function LinkBar({ packetsOpen = false, netGraphOpen = false, chatOpen = false, labOpen = false }: LinkBarProps) {
+export default function LinkBar({ packetsOpen = false, netGraphOpen = false, chatOpen = false, labOpen = false, activeLabExperimentID = DEFAULT_LAB_EXPERIMENT_ID }: LinkBarProps) {
   const [now, setNow] = useState(() => Date.now());
   const [repoStats, setRepoStats] = useState<RepoStats | null>(() => readCachedRepoStats(browserStorage()));
   const [activeInfoPanel, setActiveInfoPanel] = useState<InfoPanel>(null);
+  const [labsMenuOpen, setLabsMenuOpen] = useState(false);
   const brandName = appBrandName.trim() || 'MC-CartoLive';
   const brandURL = appBrandURL.trim() || GITHUB_REPO_URL;
   const brandLogo = appBrandLogo.trim() || routeAssetIcons.app;
@@ -54,6 +57,7 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
   const commitURL = commitURLForSha(gitSha || buildNumber);
   const parsedBuildTime = parseBuildTime(buildTime);
   const buildDate = Number.isFinite(parsedBuildTime) ? new Date(parsedBuildTime).toLocaleString() : 'Build time unavailable';
+  const activeLabExperiment = LAB_EXPERIMENTS.find((item) => item.id === activeLabExperimentID) ?? LAB_EXPERIMENTS[0];
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -110,10 +114,44 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
           <MessageSquareText size={13} />
           <span>Chat</span>
         </a>
-        <a className={`link-bar-page ${labOpen ? 'active' : ''}`} href="#/lab" title="Open live RF labs">
-          <FlaskConical size={13} />
-          <span>Labs</span>
-        </a>
+        <div className={`link-bar-labs-menu ${labsMenuOpen ? 'open' : ''}`}>
+          <button
+            type="button"
+            className={`link-bar-page ${labOpen ? 'active' : ''}`}
+            aria-haspopup="menu"
+            aria-expanded={labsMenuOpen}
+            title={`Open Labs: ${activeLabExperiment.label}`}
+            onClick={() => {
+              setLabsMenuOpen((value) => !value);
+              setActiveInfoPanel(null);
+            }}
+          >
+            <FlaskConical size={13} />
+            <span>Labs</span>
+            <ChevronDown size={12} />
+          </button>
+          {labsMenuOpen && (
+            <div className="link-bar-labs-popover" role="menu" aria-label="Labs experiments">
+              {LAB_EXPERIMENTS.map((experiment) => (
+                <a
+                  key={experiment.id}
+                  className={experiment.id === activeLabExperimentID ? 'active' : ''}
+                  href={experiment.path}
+                  role="menuitem"
+                  title={experiment.detail}
+                  style={{ '--lab-accent': experiment.accent } as CSSProperties}
+                  onClick={() => setLabsMenuOpen(false)}
+                >
+                  <span className="lab-menu-dot" />
+                  <span>
+                    <strong>{experiment.label}</strong>
+                    <em>{experiment.tagline}</em>
+                  </span>
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       <div className="link-bar-right">
         <div className="link-bar-info-actions" aria-label="Project information">
@@ -122,7 +160,10 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
             type="button"
             aria-pressed={activeInfoPanel === 'changelog'}
             title="Latest changelog"
-            onClick={() => setActiveInfoPanel((panel) => panel === 'changelog' ? null : 'changelog')}
+            onClick={() => {
+              setActiveInfoPanel((panel) => panel === 'changelog' ? null : 'changelog');
+              setLabsMenuOpen(false);
+            }}
           >
             <History size={13} />
             <span>Changelog</span>

@@ -14,6 +14,7 @@ import {
   Zap
 } from 'lucide-react';
 import {
+  DEFAULT_LAB_EXPERIMENT_ID,
   LAB_EXPERIMENTS,
   buildSequencerPattern,
   eventIntensity,
@@ -41,7 +42,9 @@ import { toggleWorkspacePresentation, workspacePresentationTitle, type Workspace
 interface LabPanelProps {
   state: Pick<AppState, 'activity' | 'pulses' | 'nodes' | 'routes' | 'stats' | 'serverTime'>;
   socketStatus: string;
+  experimentID?: LabExperimentID;
   presentation?: WorkspacePresentation;
+  onExperimentChange?: (experimentID: LabExperimentID) => void;
   onPresentationChange?: (presentation: WorkspacePresentation) => void;
   onClose: () => void;
 }
@@ -54,11 +57,13 @@ const SEQUENCER_STEP_COUNT = 16;
 export default function LabPanel({
   state,
   socketStatus,
+  experimentID,
   presentation = 'side',
+  onExperimentChange,
   onPresentationChange,
   onClose
 }: LabPanelProps) {
-  const [activeExperiment, setActiveExperiment] = useState<LabExperimentID>('synth');
+  const [fallbackExperiment, setFallbackExperiment] = useState<LabExperimentID>(experimentID ?? DEFAULT_LAB_EXPERIMENT_ID);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [volume, setVolume] = useState(0.32);
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -76,7 +81,9 @@ export default function LabPanel({
   const sequence = useMemo(() => buildSequencerPattern(events, now, SEQUENCER_STEP_COUNT), [events, now]);
   const organismRoutes = useMemo(() => routeOrganismRoutes(state.routes, events, now), [events, now, state.routes]);
   const radarCells = useMemo(() => regionCells(events, now), [events, now]);
+  const activeExperiment = experimentID ?? fallbackExperiment;
   const experiment = experimentByID(activeExperiment);
+  const stageStyle = { '--lab-accent': experiment.accent } as CSSProperties;
 
   const audio = useLabAudio({
     activeExperiment,
@@ -133,14 +140,20 @@ export default function LabPanel({
     setAudioEnabled(false);
   }, [audio]);
 
+  const selectExperiment = useCallback((next: LabExperimentID) => {
+    setFallbackExperiment(next);
+    onExperimentChange?.(next);
+  }, [onExperimentChange]);
+
   const activeStep = sequence.steps[sequencerStep] ?? sequence.steps[0];
 
   return (
-    <section className={`lab-panel workspace-panel workspace-${presentation}`} aria-label="Labs">
+    <section className={`lab-panel workspace-panel workspace-${presentation}`} aria-label={`${experiment.label} Labs`} style={stageStyle}>
       <header className="lab-panel-header">
         <div>
-          <span className="panel-eyebrow">2.9.3 Labs</span>
-          <h2>Live RF Labs</h2>
+          <span className="panel-eyebrow">2.9.4 Labs</span>
+          <h2>{experiment.label}</h2>
+          <p>{experiment.tagline}</p>
         </div>
         <div className="lab-panel-actions">
           {onPresentationChange && (
@@ -169,19 +182,23 @@ export default function LabPanel({
         </div>
       </header>
 
-      <div className="lab-toolbar" aria-label="Lab experiments">
+      <div className="lab-toolbar" aria-label="Lab experiment pages">
         {LAB_EXPERIMENTS.map((item) => (
-          <button
+          <a
             key={item.id}
-            type="button"
+            href={item.path}
             className={item.id === activeExperiment ? 'active' : ''}
-            aria-pressed={item.id === activeExperiment}
+            aria-current={item.id === activeExperiment ? 'page' : undefined}
             title={item.label}
-            onClick={() => setActiveExperiment(item.id)}
+            style={{ '--lab-card-accent': item.accent } as CSSProperties}
+            onClick={() => selectExperiment(item.id)}
           >
             {labIcon(item.id)}
-            <span>{item.shortLabel}</span>
-          </button>
+            <span>
+              <strong>{item.shortLabel}</strong>
+              <em>{item.mode}</em>
+            </span>
+          </a>
         ))}
       </div>
 
@@ -190,8 +207,16 @@ export default function LabPanel({
           <div>
             <span className="panel-eyebrow">{experiment.mode}</span>
             <strong>{experiment.label}</strong>
+            <p>{experiment.detail}</p>
           </div>
           <LiveBadge status={socketStatus} energy={metrics.liveEnergy} audioStatus={audio.status} audioEnabled={audioEnabled} />
+        </div>
+        <div className="lab-signal-strip" aria-label="Experiment signal source">
+          <span>Signal</span>
+          <strong>{experiment.signal}</strong>
+        </div>
+        <div className="lab-cue-strip" aria-label="Experiment cues">
+          {experiment.cues.map((cue) => <span key={cue}>{cue}</span>)}
         </div>
         <canvas ref={canvasRef} className="lab-canvas" />
       </div>
@@ -228,6 +253,14 @@ export default function LabPanel({
         </section>
 
         <MetricsPanel metrics={metrics} activeStep={activeStep} />
+        <ExperimentInspector
+          experimentID={activeExperiment}
+          metrics={metrics}
+          activeStep={activeStep}
+          events={events}
+          organismRoutes={organismRoutes}
+          radarCells={radarCells}
+        />
         <PayloadPanel mix={metrics.payloadMix} />
       </div>
     </section>
@@ -242,6 +275,99 @@ function MetricsPanel({ metrics, activeStep }: { metrics: LabMetrics; activeStep
       <Metric icon={<Waves size={15} />} label="Observers" value={`${metrics.observerPerMinute}/min`} />
       <Metric icon={<Zap size={15} />} label="Energy" value={`${Math.round(metrics.liveEnergy * 100)}%`} />
       <Metric icon={<Sparkles size={15} />} label="Step" value={`${activeStep.count} hits`} />
+    </section>
+  );
+}
+
+function ExperimentInspector({
+  experimentID,
+  metrics,
+  activeStep,
+  events,
+  organismRoutes,
+  radarCells
+}: {
+  experimentID: LabExperimentID;
+  metrics: LabMetrics;
+  activeStep: LabSequencerStep;
+  events: LabEvent[];
+  organismRoutes: LabRouteOrganismRoute[];
+  radarCells: LabRegionCell[];
+}) {
+  const routed = events.filter((event) => event.kind === 'routed').length;
+  const observer = events.filter((event) => event.kind === 'observer').length;
+  const messages = events.filter((event) => event.messageText).length;
+  const busiestRegion = radarCells[0]?.region || metrics.activeRegions[0] || 'quiet';
+  const topPayload = metrics.payloadMix[0]?.label || 'none';
+  const cards = (() => {
+    switch (experimentID) {
+      case 'synth':
+        return [
+          ['Voice', `${topPayload} lead`],
+          ['Pan field', `${metrics.activeRegionCount} regions`],
+          ['Pitch lift', `${metrics.averageHopCount.toFixed(1)} hops`]
+        ];
+      case 'waterfall':
+        return [
+          ['Lanes', `${metrics.payloadMix.length || 0}`],
+          ['Trail window', '90 sec'],
+          ['Burst bias', `${routed}/${observer}`]
+        ];
+      case 'sequencer':
+        return [
+          ['Step', `${activeStep.index + 1}/16`],
+          ['Hits', `${activeStep.count}`],
+          ['Messages', `${activeStep.message}`]
+        ];
+      case 'organism':
+        return [
+          ['Living routes', `${organismRoutes.length}`],
+          ['Longest span', `${Math.round(metrics.longestDistanceKm)} km`],
+          ['Pulse energy', `${Math.round(metrics.liveEnergy * 100)}%`]
+        ];
+      case 'constellation':
+        return [
+          ['Stars', `${metrics.eventCount}`],
+          ['Routed ripples', `${routed}`],
+          ['Fresh regions', `${metrics.activeRegionCount}`]
+        ];
+      case 'aurora':
+        return [
+          ['Long hop', `${Math.round(metrics.longestDistanceKm)} km`],
+          ['DX events', `${events.filter((event) => event.distanceKm >= 180 || event.hopCount >= 4).length}`],
+          ['Band energy', `${Math.round(metrics.liveEnergy * 100)}%`]
+        ];
+      case 'dj':
+        return [
+          ['Deck A', topPayload],
+          ['Deck B', metrics.payloadMix[1]?.label || 'waiting'],
+          ['BPM', `${Math.max(48, metrics.packetRatePerMinute)}`]
+        ];
+      case 'radar':
+        return [
+          ['Cells', `${radarCells.length}`],
+          ['Hot zone', busiestRegion.toUpperCase()],
+          ['Observer rain', `${metrics.observerPerMinute}/min`]
+        ];
+      case 'fireflies':
+        return [
+          ['Messages', `${messages}`],
+          ['Anchors', `${events.filter((event) => event.messageText && event.points.length > 0).length}`],
+          ['Glow field', busiestRegion.toUpperCase()]
+        ];
+      default:
+        return [['Events', `${metrics.eventCount}`], ['Energy', `${Math.round(metrics.liveEnergy * 100)}%`], ['Payload', topPayload]];
+    }
+  })();
+
+  return (
+    <section className="lab-inspector" aria-label="Experiment inspector">
+      {cards.map(([label, value]) => (
+        <div key={label} className="lab-inspector-card">
+          <span>{label}</span>
+          <strong>{value}</strong>
+        </div>
+      ))}
     </section>
   );
 }
@@ -494,7 +620,7 @@ function drawLabCanvas(canvas: HTMLCanvasElement, input: {
   const width = canvas.width;
   const height = canvas.height;
   const t = input.reducedMotion ? 0 : input.clock / 1000;
-  paintBackdrop(ctx, width, height, input.metrics.liveEnergy, t);
+  paintBackdrop(ctx, width, height, input.metrics.liveEnergy, t, experimentByID(input.activeExperiment).accent);
 
   switch (input.activeExperiment) {
     case 'synth':
@@ -545,16 +671,17 @@ function prepareCanvas(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   return ctx;
 }
 
-function paintBackdrop(ctx: CanvasRenderingContext2D, width: number, height: number, energy: number, t: number) {
+function paintBackdrop(ctx: CanvasRenderingContext2D, width: number, height: number, energy: number, t: number, accent: string) {
+  const rgb = hexToRgb(accent) ?? { r: 56, g: 189, b: 248 };
   const gradient = ctx.createLinearGradient(0, 0, width, height);
   gradient.addColorStop(0, '#06111c');
-  gradient.addColorStop(0.48, '#0b1620');
+  gradient.addColorStop(0.48, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.16)`);
   gradient.addColorStop(1, '#111827');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
   ctx.save();
   ctx.globalAlpha = 0.18 + energy * 0.16;
-  ctx.strokeStyle = '#64748b';
+  ctx.strokeStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.48)`;
   ctx.lineWidth = 1;
   const gap = Math.max(34, Math.min(68, width / 16));
   for (let x = (t * 8) % gap; x < width; x += gap) {
@@ -588,6 +715,10 @@ function drawSynth(ctx: CanvasRenderingContext2D, width: number, height: number,
 
 function drawWaterfall(ctx: CanvasRenderingContext2D, width: number, height: number, events: LabEvent[], t: number) {
   const lanes = [...new Set(events.map((event) => event.payloadLabel))].slice(0, 9);
+  if (lanes.length === 0) {
+    drawCenterText(ctx, width / 2, height / 2, 'FLOW', 'quiet');
+    return;
+  }
   const laneCount = Math.max(1, lanes.length);
   const top = height * 0.12;
   const laneHeight = (height * 0.76) / laneCount;
@@ -653,6 +784,10 @@ function drawSequencer(ctx: CanvasRenderingContext2D, width: number, height: num
 }
 
 function drawOrganism(ctx: CanvasRenderingContext2D, width: number, height: number, routes: LabRouteOrganismRoute[], t: number) {
+  if (routes.length === 0) {
+    drawCenterText(ctx, width / 2, height / 2, 'ROUTE', 'quiet');
+    return;
+  }
   const points = routes.flatMap((route) => [route.from, route.to]);
   const project = projector(points, width, height);
   routes.forEach((route, index) => {
@@ -675,6 +810,10 @@ function drawOrganism(ctx: CanvasRenderingContext2D, width: number, height: numb
 }
 
 function drawConstellation(ctx: CanvasRenderingContext2D, width: number, height: number, nodes: PublicNode[], routes: PublicRoute[], events: LabEvent[], t: number) {
+  if (nodes.length === 0) {
+    drawCenterText(ctx, width / 2, height / 2, 'STAR', 'quiet');
+    return;
+  }
   const points: LabPoint[] = nodes.map((node) => ({ lat: node.latitude, lng: node.longitude, label: node.label }));
   const project = projector(points, width, height);
   routes.slice(0, 120).forEach((route) => {
@@ -779,6 +918,11 @@ function drawRadar(ctx: CanvasRenderingContext2D, width: number, height: number,
   ctx.moveTo(cx, cy);
   ctx.lineTo(cx + Math.cos(t) * maxRadius, cy + Math.sin(t) * maxRadius);
   ctx.stroke();
+  if (cells.length === 0) {
+    drawCenterText(ctx, cx, cy, 'RAD', 'quiet');
+    ctx.globalAlpha = 1;
+    return;
+  }
   cells.forEach((cell, index) => {
     const angle = index / Math.max(1, cells.length) * Math.PI * 2 + (stableHash(cell.region) % 60) / 100;
     const radius = maxRadius * (0.28 + (index % 5) * 0.14);
@@ -896,6 +1040,16 @@ function compactText(value: string, maxLength: number): string {
   const trimmed = value.trim();
   if (trimmed.length <= maxLength) return trimmed;
   return `${trimmed.slice(0, Math.max(1, maxLength - 3))}...`;
+}
+
+function hexToRgb(value: string): { r: number; g: number; b: number } | null {
+  const hex = value.trim().replace(/^#/, '');
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return null;
+  return {
+    r: Number.parseInt(hex.slice(0, 2), 16),
+    g: Number.parseInt(hex.slice(2, 4), 16),
+    b: Number.parseInt(hex.slice(4, 6), 16)
+  };
 }
 
 function stableHash(value: string): number {
