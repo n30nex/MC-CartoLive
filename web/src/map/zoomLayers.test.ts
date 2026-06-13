@@ -34,10 +34,18 @@ describe('map zoom layer consistency', () => {
     }
   });
 
-  it('uses restrained OpenFreeMap terrain and keeps 3D buildings out of low zoom', () => {
+  it('uses restrained OpenFreeMap terrain relief and keeps 3D buildings out of low zoom', () => {
+    const colorRelief = layer('meshcore-elevation-color-relief') as any;
     const hillshade = layer('meshcore-topographic-hillshade') as any;
+    expect(colorRelief?.type).toBe('color-relief');
+    expect(colorRelief?.layout?.visibility).toBe('none');
+    expect(JSON.stringify(colorRelief?.paint?.['color-relief-color'])).toContain('elevation');
+    expect(maxExpressionNumber(colorRelief?.paint?.['color-relief-opacity'])).toBeLessThanOrEqual(0.12);
     expect(hillshade?.layout?.visibility).toBe('none');
-    expect(hillshade?.paint?.['hillshade-exaggeration']).toBeLessThanOrEqual(0.34);
+    expect(hillshade?.paint?.['hillshade-illumination-anchor']).toBe('map');
+    expect(hillshade?.paint?.['hillshade-exaggeration']).toBeLessThanOrEqual(0.46);
+    expect(layerIndex('meshcore-elevation-color-relief')).toBeLessThan(layerIndex('meshcore-topographic-hillshade'));
+    expect(layerIndex('meshcore-topographic-hillshade')).toBeLessThan(layerIndex('dark-road'));
     expect((mapOverlayStyle.sources['meshcore-terrain-dem'] as any).encoding).toBe('terrarium');
     expect((mapOverlayStyle.sources['meshcore-hillshade-dem'] as any).attribution).toContain('Elevation tiles');
   });
@@ -69,4 +77,13 @@ describe('map zoom layer consistency', () => {
 
 function layer(id: string) {
   return mapOverlayStyle.layers.find((item) => item.id === id);
+}
+
+function layerIndex(id: string) {
+  return mapOverlayStyle.layers.findIndex((item) => item.id === id);
+}
+
+function maxExpressionNumber(value: unknown): number {
+  if (!Array.isArray(value)) return Number.NaN;
+  return Math.max(...value.slice(3).filter((item: unknown, index: number) => index % 2 === 1 && typeof item === 'number') as number[]);
 }

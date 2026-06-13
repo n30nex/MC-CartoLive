@@ -13,9 +13,10 @@ choices, offline tile hooks, and more configurable 3D RF presentation.
 - Added a toolbar quick cycle for the operational modes visitors are most likely
   to switch between: Classic Dark, OpenFreeMap 3D, Topo RF, NOC Wallboard, and
   Low Bandwidth.
-- Added controls for basemap dimming, label density, terrain lift, building
+- Added controls for basemap dimming, label density, terrain clarity, building
   opacity, node model style, node model scale, antenna height, and route arc
-  height.
+  height. Terrain clarity now balances mesh lift, hillshade, and subtle height
+  tint so local topography reads without burying street detail.
 - Added optional PMTiles protocol support for operator-supplied offline basemaps
   while keeping graceful local fallback when no archive URL is configured.
 - Upgraded 3D node models with role towers, signal beacons, minimal pins, focus

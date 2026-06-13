@@ -266,7 +266,7 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
             </button>
           ))}
         </div>
-        <Slider label="Terrain lift" value={settings.style.terrainExaggeration} min={0.2} max={3} step={0.05} suffix="x" onChange={(value) => updateStyle('terrainExaggeration', value)} />
+        <Slider label="Terrain clarity" value={settings.style.terrainClarity} min={0} max={100} step={1} suffix="%" onChange={(value) => updateStyle('terrainClarity', value)} />
         <Slider label="Building opacity" value={settings.style.buildingOpacity} min={0} max={1} step={0.05} suffix="x" onChange={(value) => updateStyle('buildingOpacity', value)} />
         <Slider label="Node model scale" value={settings.style.nodeModelScale} min={0.55} max={1.8} step={0.05} suffix="x" onChange={(value) => updateStyle('nodeModelScale', value)} />
         <Slider label="Antenna height" value={settings.style.nodeAltitudeMeters} min={0} max={120} step={2} suffix=" m" onChange={(value) => updateStyle('nodeAltitudeMeters', value)} />
@@ -304,11 +304,12 @@ function Slider({
   suffix: string;
   onChange: (value: number) => void;
 }) {
+  const displayValue = suffix === '%' ? value.toFixed(0) : value.toFixed(value < 1 ? 2 : 1);
   return (
     <label className="map-settings-slider">
       <span>
         <strong>{label}</strong>
-        <em>{value.toFixed(value < 1 ? 2 : 1)}{suffix}</em>
+        <em>{displayValue}{suffix}</em>
       </span>
       <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
     </label>

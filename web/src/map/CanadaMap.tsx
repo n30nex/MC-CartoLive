@@ -198,6 +198,8 @@ const OPENFREEMAP_SOURCE = 'openfreemap-planet';
 const TERRAIN_SOURCE = 'meshcore-terrain-dem';
 const HILLSHADE_SOURCE = 'meshcore-hillshade-dem';
 const HILLSHADE_LAYER = 'meshcore-topographic-hillshade';
+const COLOR_RELIEF_LAYER = 'meshcore-elevation-color-relief';
+const OFFLINE_TERRAIN_SOURCE = 'offline-terrain';
 const BUILDINGS_3D_LAYER = 'openfreemap-3d-buildings';
 const OBSERVER_LABEL_LAYER = 'observer-map-labels';
 const WEATHER_CLOUD_SOURCE = 'meshcore-weather-clouds';
@@ -665,11 +667,18 @@ export const mapOverlayStyle: maplibregl.StyleSpecification = {
       }
     },
     {
+      id: COLOR_RELIEF_LAYER,
+      type: 'color-relief' as any,
+      source: HILLSHADE_SOURCE,
+      layout: { visibility: 'none' },
+      paint: terrainColorReliefPaint('dark', DEFAULT_MAP_STYLE_SETTINGS, 'openfreemap-dark')
+    },
+    {
       id: HILLSHADE_LAYER,
       type: 'hillshade',
       source: HILLSHADE_SOURCE,
       layout: { visibility: 'none' },
-      paint: terrainHillshadePaint('dark')
+      paint: terrainHillshadePaint('dark', DEFAULT_MAP_STYLE_SETTINGS, 'openfreemap-dark')
     },
     {
       id: 'dark-boundary',
@@ -1125,7 +1134,7 @@ function mapStyleForProfile(profileID: MapStyleProfileID, themeMode: MapThemeMod
 
 function mapBaseModeForProfile(profileID: MapStyleProfileID): MapBaseMode {
   const profile = mapStyleProfileByID(profileID);
-  return profile.baseMode === 'raster' && !profile.supports3D && !profile.supportsTerrain ? 'original' : 'openfreemap';
+  return profile.baseMode === 'raster' ? 'original' : 'openfreemap';
 }
 
 function mapThemeModeForProfile(profileID: MapStyleProfileID, fallback: MapThemeMode): MapThemeMode {
@@ -1151,7 +1160,7 @@ function pmtilesBaseMapStyle(profileID: MapStyleProfileID): maplibregl.StyleSpec
     } as any
   };
   if (PMTILES_TERRAIN_URL) {
-    sources['offline-terrain'] = {
+    sources[OFFLINE_TERRAIN_SOURCE] = {
       type: 'raster-dem',
       url: `pmtiles://${PMTILES_TERRAIN_URL}`,
       encoding: 'terrarium',
@@ -1209,7 +1218,7 @@ function pmtilesBaseMapStyle(profileID: MapStyleProfileID): maplibregl.StyleSpec
         }
       }
     ],
-    ...(PMTILES_TERRAIN_URL ? { terrain: { source: 'offline-terrain', exaggeration: 1 } } : {})
+    ...(PMTILES_TERRAIN_URL ? { terrain: { source: OFFLINE_TERRAIN_SOURCE, exaggeration: 1 } } : {})
   };
 }
 
@@ -1276,10 +1285,11 @@ function lightOverlayLayer(layer: maplibregl.LayerSpecification): maplibregl.Lay
       next.paint['line-color'] = '#60a5ca';
       next.paint['line-opacity'] = 0.78;
       break;
+    case COLOR_RELIEF_LAYER:
+      next.paint = terrainColorReliefPaint('light', DEFAULT_MAP_STYLE_SETTINGS, 'openfreemap-light');
+      break;
     case HILLSHADE_LAYER:
-      next.paint['hillshade-highlight-color'] = ['#ffffff', '#f8fafc', '#dbeafe', '#bfdbfe'];
-      next.paint['hillshade-shadow-color'] = ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'];
-      next.paint['hillshade-exaggeration'] = 0.42;
+      next.paint = terrainHillshadePaint('light', DEFAULT_MAP_STYLE_SETTINGS, 'openfreemap-light');
       break;
     case 'dark-boundary':
       next.paint['line-color'] = '#64748b';
@@ -2433,38 +2443,64 @@ function addOpenFreeMap3DBase(map: maplibregl.Map, themeMode: MapThemeMode) {
   }, firstTextSymbolLayerID(map));
 }
 
-function ensureTerrainSources(map: maplibregl.Map, themeMode: MapThemeMode) {
-  if (!map.getSource(TERRAIN_SOURCE)) {
+function ensureTerrainSources(map: maplibregl.Map, themeMode: MapThemeMode, styleSettings: MapStyleSettings = DEFAULT_MAP_STYLE_SETTINGS, profileID: MapStyleProfileID = styleSettings.profileID) {
+  if (!terrainAvailableForProfile(map, profileID)) return null;
+  const terrainSourceID = terrainSourceIDForProfile(map, profileID);
+  if (terrainSourceID === TERRAIN_SOURCE && !map.getSource(TERRAIN_SOURCE)) {
     map.addSource(TERRAIN_SOURCE, terrainDemSource());
   }
-  if (!map.getSource(HILLSHADE_SOURCE)) {
+  const reliefSourceID = terrainSourceID === OFFLINE_TERRAIN_SOURCE ? OFFLINE_TERRAIN_SOURCE : HILLSHADE_SOURCE;
+  if (reliefSourceID === HILLSHADE_SOURCE && !map.getSource(HILLSHADE_SOURCE)) {
     map.addSource(HILLSHADE_SOURCE, terrainDemSource());
   }
+
   const labelLayerID = firstTextSymbolLayerID(map);
-  const paint = terrainHillshadePaint(themeMode);
+  const colorPaint = terrainColorReliefPaint(themeMode, styleSettings, profileID);
+  const hillshadePaint = terrainHillshadePaint(themeMode, styleSettings, profileID);
+
+  ensureTerrainLayerSource(map, COLOR_RELIEF_LAYER, reliefSourceID);
+  if (map.getLayer(COLOR_RELIEF_LAYER)) {
+    for (const [key, value] of Object.entries(colorPaint)) {
+      map.setPaintProperty(COLOR_RELIEF_LAYER, key, value as any);
+    }
+  } else {
+    addLayerIfMissing(map, {
+      id: COLOR_RELIEF_LAYER,
+      type: 'color-relief' as any,
+      source: reliefSourceID,
+      layout: { visibility: 'none' },
+      paint: colorPaint
+    } as any, labelLayerID);
+  }
+
+  ensureTerrainLayerSource(map, HILLSHADE_LAYER, reliefSourceID);
   if (map.getLayer(HILLSHADE_LAYER)) {
-    for (const [key, value] of Object.entries(paint)) {
+    for (const [key, value] of Object.entries(hillshadePaint)) {
       map.setPaintProperty(HILLSHADE_LAYER, key, value as any);
     }
-    return;
+  } else {
+    addLayerIfMissing(map, {
+      id: HILLSHADE_LAYER,
+      type: 'hillshade',
+      source: reliefSourceID,
+      layout: { visibility: 'none' },
+      paint: hillshadePaint
+    }, labelLayerID);
   }
-  addLayerIfMissing(map, {
-    id: HILLSHADE_LAYER,
-    type: 'hillshade',
-    source: HILLSHADE_SOURCE,
-    layout: { visibility: 'none' },
-    paint
-  }, labelLayerID);
+
+  return terrainSourceID;
 }
 
-function applyTerrainSetting(map: maplibregl.Map, enabled: boolean, themeMode: MapThemeMode, styleSettings: MapStyleSettings = DEFAULT_MAP_STYLE_SETTINGS) {
-  ensureTerrainSources(map, themeMode);
-  setLayerVisibility(map, HILLSHADE_LAYER, enabled);
-  if (!enabled) {
+function applyTerrainSetting(map: maplibregl.Map, enabled: boolean, themeMode: MapThemeMode, styleSettings: MapStyleSettings = DEFAULT_MAP_STYLE_SETTINGS, profileID: MapStyleProfileID = styleSettings.profileID) {
+  const terrainSourceID = ensureTerrainSources(map, themeMode, styleSettings, profileID);
+  const shouldEnable = enabled && Boolean(terrainSourceID);
+  setLayerVisibility(map, COLOR_RELIEF_LAYER, shouldEnable);
+  setLayerVisibility(map, HILLSHADE_LAYER, shouldEnable);
+  if (!shouldEnable || !terrainSourceID) {
     clearMapTerrain(map);
     return;
   }
-  map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: styleSettings.terrainExaggeration || TERRAIN_EXAGGERATION });
+  map.setTerrain({ source: terrainSourceID, exaggeration: terrainExaggerationForClarity(styleSettings.terrainClarity) || TERRAIN_EXAGGERATION });
   map.setSky({
     'sky-color': themeMode === 'light' ? '#dbeafe' : '#0f172a',
     'horizon-color': themeMode === 'light' ? '#bfdbfe' : '#172554',
@@ -2475,16 +2511,128 @@ function applyTerrainSetting(map: maplibregl.Map, enabled: boolean, themeMode: M
   });
 }
 
-function terrainHillshadePaint(themeMode: MapThemeMode) {
+function terrainAvailableForProfile(map: maplibregl.Map, profileID: MapStyleProfileID): boolean {
+  const profile = mapStyleProfileByID(profileID);
+  if (!profile.supportsTerrain) return false;
+  if (profile.baseMode !== 'pmtiles') return true;
+  return Boolean(PMTILES_TERRAIN_URL && map.getSource(OFFLINE_TERRAIN_SOURCE));
+}
+
+function terrainSourceIDForProfile(map: maplibregl.Map, profileID: MapStyleProfileID): string {
+  const profile = mapStyleProfileByID(profileID);
+  if (profile.baseMode === 'pmtiles' && PMTILES_TERRAIN_URL && map.getSource(OFFLINE_TERRAIN_SOURCE)) return OFFLINE_TERRAIN_SOURCE;
+  return TERRAIN_SOURCE;
+}
+
+function ensureTerrainLayerSource(map: maplibregl.Map, layerID: string, sourceID: string) {
+  const layer = (map.getStyle().layers ?? []).find((item) => item.id === layerID) as any;
+  if (layer && layer.source !== sourceID) {
+    try {
+      map.removeLayer(layerID);
+    } catch {
+      // Style switches can temporarily remove terrain layers before this refresh runs.
+    }
+  }
+}
+
+function terrainExaggerationForClarity(terrainClarity: number): number {
+  const clarity = terrainClarityUnit(terrainClarity);
+  return 0.35 + clarity * 1.45;
+}
+
+function terrainHillshadePaint(themeMode: MapThemeMode, styleSettings: MapStyleSettings = DEFAULT_MAP_STYLE_SETTINGS, profileID: MapStyleProfileID = styleSettings.profileID) {
+  const tone = terrainToneForProfile(profileID, themeMode);
+  const clarity = terrainClarityUnit(styleSettings.terrainClarity);
+  const exaggeration = terrainHillshadeIntensity(tone, clarity);
+  const highlight = tone === 'raster-dark'
+    ? ['rgba(148, 163, 184, 0.32)', 'rgba(203, 213, 225, 0.36)', 'rgba(226, 232, 240, 0.42)', 'rgba(248, 250, 252, 0.5)']
+    : tone === 'raster-light'
+      ? ['rgba(255, 255, 255, 0.28)', 'rgba(248, 250, 252, 0.34)', 'rgba(226, 232, 240, 0.38)', 'rgba(203, 213, 225, 0.46)']
+      : themeMode === 'light'
+        ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1']
+        : ['#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0'];
+  const shadow = tone === 'raster-dark'
+    ? ['rgba(2, 6, 23, 0.18)', 'rgba(15, 23, 42, 0.22)', 'rgba(30, 41, 59, 0.28)', 'rgba(51, 65, 85, 0.32)']
+    : tone === 'raster-light'
+      ? ['rgba(71, 85, 105, 0.2)', 'rgba(100, 116, 139, 0.24)', 'rgba(148, 163, 184, 0.28)', 'rgba(203, 213, 225, 0.32)']
+      : themeMode === 'light'
+        ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb']
+        : ['#020617', '#0f172a', '#1e293b', '#334155'];
   return {
     'hillshade-method': 'multidirectional',
-    'hillshade-highlight-color': themeMode === 'light' ? ['#ffffff', '#f8fafc', '#e2e8f0', '#cbd5e1'] : ['#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0'],
-    'hillshade-shadow-color': themeMode === 'light' ? ['#94a3b8', '#cbd5e1', '#d1d5db', '#e5e7eb'] : ['#020617', '#0f172a', '#1e293b', '#334155'],
-    'hillshade-accent-color': themeMode === 'light' ? '#f1f5f9' : '#334155',
+    'hillshade-highlight-color': highlight,
+    'hillshade-shadow-color': shadow,
+    'hillshade-accent-color': themeMode === 'light' ? 'rgba(241, 245, 249, 0.6)' : 'rgba(51, 65, 85, 0.62)',
     'hillshade-illumination-direction': [315],
     'hillshade-illumination-altitude': [45],
-    'hillshade-exaggeration': themeMode === 'light' ? 0.42 : 0.28
+    'hillshade-illumination-anchor': 'map',
+    'hillshade-exaggeration': exaggeration
   } as any;
+}
+
+function terrainColorReliefPaint(themeMode: MapThemeMode, styleSettings: MapStyleSettings = DEFAULT_MAP_STYLE_SETTINGS, profileID: MapStyleProfileID = styleSettings.profileID) {
+  const tone = terrainToneForProfile(profileID, themeMode);
+  const opacity = terrainColorReliefOpacity(tone, terrainClarityUnit(styleSettings.terrainClarity));
+  return {
+    'color-relief-opacity': ['interpolate', ['linear'], ['zoom'], 2, opacity * 0.38, 6, opacity * 0.78, 9, opacity, 12, opacity * 0.82, 15, opacity * 0.52],
+    'color-relief-color': terrainElevationColorRamp(tone)
+  } as any;
+}
+
+function terrainClarityUnit(terrainClarity: number): number {
+  return Math.max(0, Math.min(1, Number.isFinite(terrainClarity) ? terrainClarity / 100 : DEFAULT_MAP_STYLE_SETTINGS.terrainClarity / 100));
+}
+
+function terrainToneForProfile(profileID: MapStyleProfileID, themeMode: MapThemeMode): 'vector-dark' | 'vector-light' | 'raster-dark' | 'raster-light' | 'topo' | 'noc' {
+  const profile = mapStyleProfileByID(profileID);
+  if (profile.theme === 'noc') return 'noc';
+  if (profile.theme === 'topo') return 'topo';
+  if (profile.baseMode === 'raster') return themeMode === 'light' ? 'raster-light' : 'raster-dark';
+  return themeMode === 'light' ? 'vector-light' : 'vector-dark';
+}
+
+function terrainHillshadeIntensity(tone: ReturnType<typeof terrainToneForProfile>, clarity: number): number {
+  switch (tone) {
+    case 'topo':
+      return 0.2 + clarity * 0.42;
+    case 'vector-light':
+      return 0.16 + clarity * 0.28;
+    case 'vector-dark':
+      return 0.18 + clarity * 0.34;
+    case 'raster-light':
+      return 0.1 + clarity * 0.18;
+    case 'raster-dark':
+      return 0.12 + clarity * 0.2;
+    case 'noc':
+      return 0.12 + clarity * 0.16;
+  }
+}
+
+function terrainColorReliefOpacity(tone: ReturnType<typeof terrainToneForProfile>, clarity: number): number {
+  switch (tone) {
+    case 'topo':
+      return 0.04 + clarity * 0.13;
+    case 'vector-light':
+      return 0.025 + clarity * 0.075;
+    case 'vector-dark':
+      return 0.03 + clarity * 0.09;
+    case 'raster-light':
+      return 0.012 + clarity * 0.04;
+    case 'raster-dark':
+      return 0.016 + clarity * 0.052;
+    case 'noc':
+      return 0.025 + clarity * 0.06;
+  }
+}
+
+function terrainElevationColorRamp(tone: ReturnType<typeof terrainToneForProfile>): any {
+  if (tone === 'noc') {
+    return ['interpolate', ['linear'], ['elevation'], -100, '#00131d', 0, '#06291f', 300, '#164b32', 700, '#536b2f', 1200, '#8b733a', 1900, '#a66d4a', 2800, '#c2a675', 4200, '#e5d7b2'];
+  }
+  if (tone === 'raster-light' || tone === 'vector-light') {
+    return ['interpolate', ['linear'], ['elevation'], -100, '#d6edf7', 0, '#d8ead1', 300, '#d3dfb0', 700, '#d7c987', 1200, '#cda173', 1900, '#b98b80', 2800, '#c7b7a1', 4200, '#eee5d6'];
+  }
+  return ['interpolate', ['linear'], ['elevation'], -100, '#17324a', 0, '#224334', 300, '#3e5736', 700, '#665d35', 1200, '#806044', 1900, '#8a625b', 2800, '#a79377', 4200, '#d8c9a8'];
 }
 
 function clearMapTerrain(map: maplibregl.Map) {

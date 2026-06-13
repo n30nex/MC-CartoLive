@@ -33,7 +33,7 @@ describe('map settings', () => {
     expect(settings.layers.routeArcs3D).toBe(true);
     expect(settings.layers.packetComets3D).toBe(true);
     expect(settings.layers.buildingExtrusions).toBe(true);
-    expect(settings.layers.terrainHeightmap).toBe(false);
+    expect(settings.layers.terrainHeightmap).toBe(true);
     expect(settings.layers.weatherClouds).toBe(false);
     expect(settings.layers.propagationInsights).toBe(false);
     expect(settings.packets.speed).toBe(3);
@@ -50,7 +50,7 @@ describe('map settings', () => {
         profileID: 'openfreemap-3d',
         basemapDim: 2,
         labelDensity: -1,
-        terrainExaggeration: 9,
+        terrainClarity: 200,
         buildingOpacity: -4,
         nodeModelStyle: 'signal-beacons',
         nodeModelScale: '1.35',
@@ -62,12 +62,20 @@ describe('map settings', () => {
     expect(settings.style.profileID).toBe('openfreemap-3d');
     expect(settings.style.basemapDim).toBe(0.78);
     expect(settings.style.labelDensity).toBe(0);
-    expect(settings.style.terrainExaggeration).toBe(3);
+    expect(settings.style.terrainClarity).toBe(100);
     expect(settings.style.buildingOpacity).toBe(0);
     expect(settings.style.nodeModelStyle).toBe('signal-beacons');
     expect(settings.style.nodeModelScale).toBe(1.35);
     expect(settings.style.nodeAltitudeMeters).toBe(120);
     expect(settings.style.routeArcAltitudeScale).toBe(0.35);
+  });
+
+  it('migrates legacy terrain lift into terrain clarity', () => {
+    const settings = normalizeMapSettings({
+      style: { terrainExaggeration: 1.25 }
+    });
+
+    expect(settings.style.terrainClarity).toBeCloseTo(DEFAULT_MAP_STYLE_SETTINGS.terrainClarity, 0);
   });
 
   it('normalizes persisted OpenFreeMap 3D layer toggles', () => {
@@ -135,7 +143,7 @@ describe('map settings', () => {
     expect(analysis.layers.routes).toBe(true);
     expect(analysis.layers.propagationInsights).toBe(true);
     expect(analysis.layers.terrainLOS).toBe(true);
-    expect(analysis.layers.terrainHeightmap).toBe(false);
+    expect(analysis.layers.terrainHeightmap).toBe(true);
     expect(analysis.packets.speed).toBe(2);
     expect(analysis.packets.animationStyle).toBe('pulse');
 
@@ -161,7 +169,14 @@ describe('map settings', () => {
     expect(low.style.profileID).toBe('low-bandwidth');
     expect(low.layers.activityHeatmap).toBe(false);
     expect(low.layers.nodeModels3D).toBe(false);
+    expect(low.layers.terrainHeightmap).toBe(false);
     expect(low.packets.renderQuality).toBe('smooth');
+
+    const classicLight = applyMapStyleProfile(base, 'classic-light');
+    expect(classicLight.layers.terrainHeightmap).toBe(true);
+
+    const noc = applyMapStyleProfile(base, 'noc');
+    expect(noc.layers.terrainHeightmap).toBe(true);
   });
 
   it('identifies exact layer preset matches', () => {

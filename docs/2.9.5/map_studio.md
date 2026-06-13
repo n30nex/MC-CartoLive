@@ -14,9 +14,10 @@ schemas.
   cleaner light, general-purpose, and muted review views.
 - `OpenFreeMap 3D`: pitched vector terrain, buildings, route arcs, packet
   comets, and node models.
-- `Topo RF`: terrain-first RF planning defaults with routes, terrain, and
-  propagation context enabled.
-- `NOC Wallboard`: low-clutter operations display for wall screens.
+- `Topo RF`: terrain-first RF planning defaults with routes, shaded relief,
+  height tint, and propagation context enabled.
+- `NOC Wallboard`: low-clutter operations display for wall screens with
+  restrained relief context.
 - `Offline PMTiles` and `Field Offline`: operator-supplied PMTiles basemap
   profiles with local fallback when no archive URL is configured.
 - `Accessibility`: higher label visibility and calmer motion defaults.
@@ -29,7 +30,8 @@ The 3D And RF section controls the node and route presentation:
 - `Role Towers`: mast-like node models with role-specific accents.
 - `Beacons`: vertical markers with signal rings for a more animated RF look.
 - `Pins`: compact low-cost 3D markers for dense map review.
-- `Terrain lift`: scales the OpenFreeMap terrain exaggeration.
+- `Terrain clarity`: controls terrain mesh lift, hillshade intensity, and subtle
+  height tint together.
 - `Building opacity`: adjusts 3D building visibility without hiding routes.
 - `Node model scale`: grows or shrinks all 3D node models.
 - `Antenna height`: lifts nodes above the terrain surface in meters.
@@ -46,8 +48,9 @@ VITE_PMTILES_BASEMAP_URL=/tiles/canada.pmtiles npm run build
 ```
 
 For Docker/Compose builds, set the same variable in `.env` so it is passed as a
-frontend build arg. `VITE_PMTILES_TERRAIN_URL` is reserved for future terrain
-archive support and is currently documented as an operator-facing placeholder.
+frontend build arg. `VITE_PMTILES_TERRAIN_URL` can point at a compatible
+Terrarium DEM PMTiles archive; when it is blank, offline profiles stay flat
+instead of fetching external terrain tiles.
 
 ## Validation
 

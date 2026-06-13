@@ -23,7 +23,8 @@ Date: 2026-06-13
 - [x] Offline PMTiles and Field Offline profiles render a usable fallback when
   no archive URL is configured.
 - [x] 3D role towers, signal beacons, minimal pins, route arc height, building
-  opacity, and terrain lift remain configurable without exposing private data.
+  opacity, and terrain clarity remain configurable without exposing private
+  data.
 
 ## Package Gates
 

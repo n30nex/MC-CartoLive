@@ -14,6 +14,8 @@ describe('MapSettingsDrawer', () => {
     expect(html).toContain('Propagation insights');
     expect(html).toContain('Terrain relief');
     expect(html).toContain('Map Studio');
+    expect(html).toContain('Terrain clarity');
+    expect(html).not.toContain('Terrain lift');
     expect(html).toContain('OpenFreeMap 3D');
     expect(html).toContain('Offline PMTiles');
     expect(html).toContain('API key required');
@@ -43,7 +45,7 @@ describe('MapSettingsDrawer', () => {
     expect(html).toContain('Role Towers');
     expect(html).toContain('aria-pressed="true"');
     expect(DEFAULT_MAP_SETTINGS.layers.routes).toBe(false);
-    expect(DEFAULT_MAP_SETTINGS.layers.terrainHeightmap).toBe(false);
+    expect(DEFAULT_MAP_SETTINGS.layers.terrainHeightmap).toBe(true);
     expect(DEFAULT_MAP_SETTINGS.layers.propagationInsights).toBe(false);
   });
 });

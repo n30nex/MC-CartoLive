@@ -38,7 +38,7 @@ export interface MapStyleSettings {
   profileID: MapStyleProfileID;
   basemapDim: number;
   labelDensity: number;
-  terrainExaggeration: number;
+  terrainClarity: number;
   buildingOpacity: number;
   nodeModelStyle: NodeModelStyle;
   nodeModelScale: number;
@@ -62,7 +62,7 @@ export interface MapLayerPreset {
 }
 
 export const MAP_SETTINGS_STORAGE_KEY = 'mc-cartolive-map-settings';
-export const MAP_SETTINGS_SCHEMA_VERSION = 4;
+export const MAP_SETTINGS_SCHEMA_VERSION = 5;
 
 export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   clusters: true,
@@ -80,7 +80,7 @@ export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   packetComets3D: true,
   buildingExtrusions: true,
   terrainLOS: false,
-  terrainHeightmap: false,
+  terrainHeightmap: true,
   weatherClouds: false,
   propagationInsights: false
 };
@@ -98,7 +98,7 @@ export const DEFAULT_MAP_STYLE_SETTINGS: MapStyleSettings = {
   profileID: 'classic-dark',
   basemapDim: 0.08,
   labelDensity: 0.72,
-  terrainExaggeration: 1.25,
+  terrainClarity: 62,
   buildingOpacity: 0.62,
   nodeModelStyle: 'role-towers',
   nodeModelScale: 1,
@@ -133,7 +133,8 @@ export const MAP_LAYER_PRESETS: readonly MapLayerPreset[] = [
       nodeModels3D: false,
       routeArcs3D: false,
       packetComets3D: false,
-      buildingExtrusions: false
+      buildingExtrusions: false,
+      terrainHeightmap: false
     }
   },
   {
@@ -180,7 +181,7 @@ export function normalizeStyleSettings(input: unknown): MapStyleSettings {
     profileID: mapStyleProfileByID(typeof raw.profileID === 'string' ? raw.profileID : undefined, DEFAULT_MAP_STYLE_SETTINGS.profileID).id,
     basemapDim: clampNumber(raw.basemapDim, 0, 0.78, DEFAULT_MAP_STYLE_SETTINGS.basemapDim),
     labelDensity: clampNumber(raw.labelDensity, 0, 1.4, DEFAULT_MAP_STYLE_SETTINGS.labelDensity),
-    terrainExaggeration: clampNumber(raw.terrainExaggeration, 0.2, 3, DEFAULT_MAP_STYLE_SETTINGS.terrainExaggeration),
+    terrainClarity: normalizeTerrainClarity(raw),
     buildingOpacity: clampNumber(raw.buildingOpacity, 0, 1, DEFAULT_MAP_STYLE_SETTINGS.buildingOpacity),
     nodeModelStyle: isNodeModelStyle(raw.nodeModelStyle) ? raw.nodeModelStyle : DEFAULT_MAP_STYLE_SETTINGS.nodeModelStyle,
     nodeModelScale: clampNumber(raw.nodeModelScale, 0.55, 1.8, DEFAULT_MAP_STYLE_SETTINGS.nodeModelScale),
@@ -258,6 +259,10 @@ export function applyMapStyleProfile(settings: MapSettings, profileID: MapStyleP
     ...settings,
     style: { ...settings.style, profileID: profile.id }
   });
+  next.layers = {
+    ...next.layers,
+    terrainHeightmap: profile.terrainDefault
+  };
   if (profile.id === 'openfreemap-3d') {
     next.layers = {
       ...next.layers,
@@ -265,15 +270,13 @@ export function applyMapStyleProfile(settings: MapSettings, profileID: MapStyleP
       nodeModels3D: true,
       routeArcs3D: true,
       packetComets3D: true,
-      buildingExtrusions: true,
-      terrainHeightmap: true
+      buildingExtrusions: true
     };
   } else if (profile.id === 'topo-rf') {
     next.layers = {
       ...next.layers,
       routes: true,
       terrainLOS: true,
-      terrainHeightmap: true,
       propagationInsights: true
     };
   } else if (profile.lowBandwidth) {
@@ -286,7 +289,6 @@ export function applyMapStyleProfile(settings: MapSettings, profileID: MapStyleP
       nodeModels3D: false,
       routeArcs3D: false,
       packetComets3D: false,
-      terrainHeightmap: false,
       weatherClouds: false
     };
     next.packets = { ...next.packets, renderQuality: 'smooth', animationStyle: next.packets.animationStyle === 'minimal' ? 'minimal' : 'pulse' };
@@ -319,7 +321,7 @@ export function mapStyleSettingsSignature(settings: MapStyleSettings): string {
     settings.profileID,
     settings.basemapDim.toFixed(2),
     settings.labelDensity.toFixed(2),
-    settings.terrainExaggeration.toFixed(2),
+    Math.round(settings.terrainClarity),
     settings.buildingOpacity.toFixed(2),
     settings.nodeModelStyle,
     settings.nodeModelScale.toFixed(2),
@@ -357,6 +359,15 @@ export function packetVisualSignature(settings: PacketVisualSettings): string {
 
 function boolOrDefault(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
+}
+
+function normalizeTerrainClarity(raw: Record<string, unknown>): number {
+  if ('terrainClarity' in raw) {
+    return clampNumber(raw.terrainClarity, 0, 100, DEFAULT_MAP_STYLE_SETTINGS.terrainClarity);
+  }
+  const legacyExaggeration = clampNumber(raw.terrainExaggeration, 0.2, 3, Number.NaN);
+  if (!Number.isFinite(legacyExaggeration)) return DEFAULT_MAP_STYLE_SETTINGS.terrainClarity;
+  return clampNumber(((legacyExaggeration - 0.35) / 1.45) * 100, 0, 100, DEFAULT_MAP_STYLE_SETTINGS.terrainClarity);
 }
 
 function normalizeStoredMapSettings(input: unknown): MapSettings {
