@@ -24,7 +24,6 @@ import LinkBar from './components/LinkBar';
 import PlotRoutesPanel, { type PlotMode, type PlotResult } from './components/PlotRoutesPanel';
 import SelectionDrawer from './components/SelectionDrawer';
 import StatusBar from './components/StatusBar';
-import NocSummary from './components/NocSummary';
 import PropagationPanel from './components/PropagationPanel';
 import VisitorGuide from './components/VisitorGuide';
 import VcrBar, { MiniLiveClock } from './components/VcrBar';
@@ -1335,7 +1334,6 @@ export default function App() {
   const showRouteGifExport = Boolean(selectedPacket && !packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen && !vcrOpen);
   const knownPathwaysOn = mapSettings.layers.routes;
   const workspaceSurfaceOpen = packetsOpen || netGraphOpen || chatOpen || labOpen || nodeListOpen;
-  const nocSummaryVisible = !chromeHidden && !workspaceSurfaceOpen && !setupOpen && !propagationOpen && !nodeListOpen && !shortcutHelpOpen && !mapSettingsOpen && !vcrOpen && !mobileControlsOpen;
   const visitorGuideSuppressed = chromeHidden || packetsOpen || netGraphOpen || chatOpen || labOpen || setupOpen || propagationOpen || vcrOpen || nodeListOpen || shortcutHelpOpen || mapSettingsOpen || mobileControlsOpen || Boolean(selectedNode || selectedRoute || selectedPacket);
 
   return (
@@ -1386,18 +1384,15 @@ export default function App() {
       {loadingPositionedNodes && <NodeLoadingToast failed={nodeLoadFailed} drawing={initialNodesReceived} />}
       <LinkBar packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} chatOpen={chatOpen} labOpen={labOpen} nodeListOpen={nodeListOpen} activeLabExperimentID={labExperimentID} />
       {!chromeHidden && (
-        <>
-          <StatusBar
-            stats={state.stats}
-            socketStatus={socketStatus}
-            nodeCount={visibleNodes.length}
-            routeCount={visibleRoutes.length}
-            coverage={coverage}
-            latestPayloadTypeName={latestPacketActivity?.payloadTypeName ?? null}
-            latestPacketID={latestPacketActivity?.id ?? null}
-          />
-          {nocSummaryVisible && <NocSummary />}
-        </>
+        <StatusBar
+          stats={state.stats}
+          socketStatus={socketStatus}
+          nodeCount={visibleNodes.length}
+          routeCount={visibleRoutes.length}
+          coverage={coverage}
+          latestPayloadTypeName={latestPacketActivity?.payloadTypeName ?? null}
+          latestPacketID={latestPacketActivity?.id ?? null}
+        />
       )}
 
       <div className="top-actions operator-toolbar" aria-label="Map actions">

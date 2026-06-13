@@ -232,6 +232,7 @@ async function runScenario(browser, viewport, scenario) {
 }
 
 async function smokeLiveMapControls(page, viewport) {
+  await assertNoNocSummary(page);
   if (viewport.isMobile) {
     await assertVisibleInViewport(page, '.mobile-control-dock', 'mobile control dock', viewport);
     return;
@@ -241,6 +242,11 @@ async function smokeLiveMapControls(page, viewport) {
   await smokeMapSettings(page, viewport);
   if (!viewport.isMobile) await smokeVcr(page, viewport);
   await smokeTopInfoPanels(page, viewport);
+}
+
+async function assertNoNocSummary(page) {
+  const nocCount = await page.locator('.noc-summary').count();
+  if (nocCount > 0) throw new Error(`NOC summary chrome should not render, found ${nocCount}`);
 }
 
 async function smokeOpenFreeMapToggle(page, viewport) {
@@ -463,8 +469,7 @@ async function smokeLabsPanel(page, viewport) {
 
 async function smokeNodeListPanel(page, viewport) {
   await page.waitForSelector('.node-list-panel', { state: 'visible', timeout: 12_000 });
-  const nocCount = await page.locator('.noc-summary').count();
-  if (nocCount > 0) throw new Error(`Node List should suppress NOC summary, found ${nocCount}`);
+  await assertNoNocSummary(page);
   const search = page.locator('.node-list-search input').first();
   await search.fill('repeater');
   await page.waitForTimeout(250);
