@@ -37,7 +37,7 @@ const SetupPanel = lazyWithReload(() => import('./components/SetupPanel'), 'Setu
 import MapSettingsDrawer from './components/MapSettingsDrawer';
 import RouteGifExportButton, { type RouteGifExportStatus } from './components/RouteGifExportButton';
 import type { WorkspacePresentation } from './components/workspacePanel';
-import { DEFAULT_LAB_EXPERIMENT_ID, labExperimentIDFromHash, labExperimentPath, type LabExperimentID } from './lab';
+import { DEFAULT_LAB_EXPERIMENT_ID, canonicalLabHash, labExperimentIDFromHash, labExperimentPath, type LabExperimentID } from './lab';
 import {
   DEFAULT_CHROME_PANEL_ANCHORS,
   INITIAL_CHROME_PANEL_VISIBILITY,
@@ -233,6 +233,11 @@ export default function App() {
       if (hash === '#/perf') {
         window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
         hash = '';
+      }
+      const canonicalLabRoute = canonicalLabHash(hash);
+      if (canonicalLabRoute && hash !== canonicalLabRoute) {
+        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${canonicalLabRoute}`);
+        hash = canonicalLabRoute;
       }
       const nextPacketsOpen = hash === '#/packets';
       const nextNetGraphOpen = hash === '#/netgraph';

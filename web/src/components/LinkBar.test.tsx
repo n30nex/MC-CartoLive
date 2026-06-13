@@ -21,27 +21,26 @@ describe('LinkBar', () => {
   });
 
   it('marks Labs through the workspace menu trigger', () => {
-    const html = renderToStaticMarkup(<LinkBar labOpen activeLabExperimentID="radar" />);
+    const html = renderToStaticMarkup(<LinkBar labOpen activeLabExperimentID="waterfall" />);
     expect(html).toContain('class="link-bar-page active"');
   });
 
   it('keeps the compact changelog focused on the current release train', () => {
-    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.label)).toEqual(['2.9.5', '2.9.4', '2.9.3']);
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.label)).toEqual(['2.9.6', '2.9.5', '2.9.4']);
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Waterfall Labs');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Map Studio');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Labs Polish');
-    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Live RF Labs');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.body).join(' ')).not.toContain('Perf/Guide/Features');
   });
 
   it('defines the operator-simple workspace menu entries', () => {
     expect(WORKSPACE_LINKS.map((item) => item.label)).toEqual(['Packets', 'Nodes', 'Chat', 'NetGraph', 'Labs']);
-    expect(WORKSPACE_LINKS.map((item) => item.href)).toEqual(['#/packets', '#/nodes', '#/chat', '#/netgraph', '#/lab']);
+    expect(WORKSPACE_LINKS.map((item) => item.href)).toEqual(['#/packets', '#/nodes', '#/chat', '#/netgraph', '#/lab/waterfall']);
   });
 
-  it('defines a public route for every Labs experiment', () => {
-    for (const experiment of LAB_EXPERIMENTS) {
-      expect(experiment.path).toBe(`#/lab/${experiment.id}`);
-      expect(experiment.tagline.length).toBeGreaterThan(8);
-    }
+  it('defines only the Waterfall Labs experiment route', () => {
+    expect(LAB_EXPERIMENTS.map((experiment) => experiment.id)).toEqual(['waterfall']);
+    expect(LAB_EXPERIMENTS[0].path).toBe('#/lab/waterfall');
+    expect(LAB_EXPERIMENTS[0].tagline.length).toBeGreaterThan(8);
   });
 });

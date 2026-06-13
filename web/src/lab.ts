@@ -1,23 +1,14 @@
 import { normalizePayloadType, payloadVisual } from './payloadVisuals';
 import type { AppState } from './state';
-import type { PublicActivity, PublicMessageAnchor, PublicNode, PublicObserverLocation, PublicRoute, PublicRouteEndpoint, PublicRoutePulse } from './types';
+import type { PublicActivity, PublicMessageAnchor, PublicObserverLocation, PublicRoutePulse } from './types';
 
-export type LabExperimentID =
-  | 'synth'
-  | 'waterfall'
-  | 'sequencer'
-  | 'organism'
-  | 'constellation'
-  | 'aurora'
-  | 'dj'
-  | 'radar'
-  | 'fireflies';
+export type LabExperimentID = 'waterfall';
 
 export interface LabExperiment {
   id: LabExperimentID;
   label: string;
   shortLabel: string;
-  mode: 'audio' | 'visual' | 'hybrid';
+  mode: 'hybrid';
   path: string;
   accent: string;
   tagline: string;
@@ -25,120 +16,6 @@ export interface LabExperiment {
   signal: string;
   cues: readonly string[];
 }
-
-export const LAB_EXPERIMENTS: readonly LabExperiment[] = [
-  {
-    id: 'synth',
-    label: 'RF Synth',
-    shortLabel: 'Synth',
-    mode: 'hybrid',
-    path: '#/lab/synth',
-    accent: '#38bdf8',
-    tagline: 'Packets become pitch, pan, and pulse.',
-    detail: 'Live routed and observer events drive an opt-in Web Audio voice plus orbital packet particles.',
-    signal: 'Payload type, route distance, hop count, region, and route confidence.',
-    cues: ['Enable audio for tones', 'Watch routed pulses orbit wider', 'Observer packets sound sharper']
-  },
-  {
-    id: 'waterfall',
-    label: 'Packet Waterfall',
-    shortLabel: 'Waterfall',
-    mode: 'visual',
-    path: '#/lab/waterfall',
-    accent: '#22c55e',
-    tagline: 'A rolling signal scope for public packet flow.',
-    detail: 'Payload lanes reveal bursts, long paths, observer-only packets, and quiet gaps at a glance.',
-    signal: 'Payload labels over the last live minute, colored by public packet class.',
-    cues: ['Lane density shows bursts', 'Long streaks mean longer paths', 'Quiet lanes expose payload gaps']
-  },
-  {
-    id: 'sequencer',
-    label: 'Live Sequencer',
-    shortLabel: 'Sequence',
-    mode: 'hybrid',
-    path: '#/lab/sequencer',
-    accent: '#facc15',
-    tagline: 'The network plays a 16-step pattern.',
-    detail: 'Packet density fills steps while routed, observer, and message events change the rhythm.',
-    signal: 'Minute buckets, payload mix, routed/observer balance, and message hits.',
-    cues: ['Active step follows the beat', 'Payload mix colors the groove', 'Messages add accents']
-  },
-  {
-    id: 'organism',
-    label: 'Route Organism',
-    shortLabel: 'Organism',
-    mode: 'visual',
-    path: '#/lab/organism',
-    accent: '#a78bfa',
-    tagline: 'Routes breathe like living tissue.',
-    detail: 'High-confidence public routes flex with recent activity without exposing raw paths.',
-    signal: 'Public route endpoints, packet counts, distance, and recent route events.',
-    cues: ['Thicker fibers are busier', 'Fresh paths flex harder', 'Nodes glow with route energy']
-  },
-  {
-    id: 'constellation',
-    label: 'RF Constellation',
-    shortLabel: 'Stars',
-    mode: 'visual',
-    path: '#/lab/constellation',
-    accent: '#67e8f9',
-    tagline: 'A sky chart of active RF nodes.',
-    detail: 'Nodes become stars, routes become faint constellations, and fresh packets ripple through the field.',
-    signal: 'Public nodes, roles, route frequency buckets, and routed event pulses.',
-    cues: ['Repeaters glow warm', 'Observers glow rose', 'Fresh routed events ripple']
-  },
-  {
-    id: 'aurora',
-    label: 'Propagation Aurora',
-    shortLabel: 'Aurora',
-    mode: 'hybrid',
-    path: '#/lab/aurora',
-    accent: '#a3e635',
-    tagline: 'Long hops shimmer as RF weather.',
-    detail: 'Distance and hop count shape slow bands and gentle tones for unusual public route motion.',
-    signal: 'Long-distance routed packets, multi-hop events, and live packet energy.',
-    cues: ['Long routes raise the bands', 'Multi-hop packets thicken color', 'Audio is deliberately slow']
-  },
-  {
-    id: 'dj',
-    label: 'Packet DJ Booth',
-    shortLabel: 'DJ Booth',
-    mode: 'hybrid',
-    path: '#/lab/dj',
-    accent: '#fb7185',
-    tagline: 'Payload mix becomes a live equalizer.',
-    detail: 'The packet type distribution drives bars, arcs, and sharper percussive audio gestures.',
-    signal: 'Payload mix, packet rate, event intensity, and route-vs-observer balance.',
-    cues: ['Top payload becomes Deck A', 'Packet rate maps to BPM', 'Routed events add saw bite']
-  },
-  {
-    id: 'radar',
-    label: 'Network Weather Radar',
-    shortLabel: 'Radar',
-    mode: 'visual',
-    path: '#/lab/radar',
-    accent: '#2dd4bf',
-    tagline: 'Regions scan like storm cells.',
-    detail: 'Public region/IATA buckets become radar returns so operators can see where activity is clustering.',
-    signal: 'Region counts, routed events, observer events, and public message density.',
-    cues: ['Large cells are busy regions', 'Sweep line shows live scan', 'Message density adds glow']
-  },
-  {
-    id: 'fireflies',
-    label: 'Message Fireflies',
-    shortLabel: 'Fireflies',
-    mode: 'visual',
-    path: '#/lab/fireflies',
-    accent: '#f97316',
-    tagline: 'Public text events drift through the RF field.',
-    detail: 'Sanitized public message anchors become soft moving lights without exposing private packet data.',
-    signal: 'Public-safe message sender labels, sanitized text presence, region, and observer/routed anchors.',
-    cues: ['Only public text events appear', 'Anchored messages drift locally', 'Quiet means no recent public text']
-  }
-] as const;
-
-export const DEFAULT_LAB_EXPERIMENT_ID: LabExperimentID = 'synth';
-export const LAB_EXPERIMENT_PATH_PREFIX = '#/lab/';
 
 export interface LabPoint {
   lat: number;
@@ -189,63 +66,77 @@ export interface LabMetrics {
   messageCount: number;
 }
 
-export interface LabSequencerStep {
-  index: number;
-  start: number;
-  end: number;
+export interface LabWaterfallLane {
+  payloadTypeName: string;
+  label: string;
+  color: string;
   count: number;
   routed: number;
   observer: number;
-  message: number;
-  payloads: LabPayloadMix[];
+  messages: number;
   energy: number;
 }
 
-export interface LabSequencerPattern {
-  from: number;
-  to: number;
-  steps: LabSequencerStep[];
-}
-
-export interface LabRouteOrganismRoute {
-  id: string;
-  from: LabPoint;
-  to: LabPoint;
-  packetCount: number;
-  distanceKm: number;
-  activity: number;
-  color: string;
-}
-
-export interface LabRegionCell {
-  region: string;
-  count: number;
-  routed: number;
-  observer: number;
-  message: number;
-  energy: number;
-  color: string;
-}
-
-const LAB_EVENT_LIMIT = 260;
+const LAB_EVENT_LIMIT = 360;
 const LAB_WINDOW_MS = 60_000;
 const ACTIVE_REGION_LIMIT = 6;
+export const DEFAULT_LAB_EXPERIMENT_ID: LabExperimentID = 'waterfall';
+export const LAB_EXPERIMENT_PATH_PREFIX = '#/lab/';
+export const WATERFALL_LAB_PATH = '#/lab/waterfall';
+export const LEGACY_LAB_EXPERIMENT_IDS = [
+  'synth',
+  'sequencer',
+  'organism',
+  'constellation',
+  'aurora',
+  'dj',
+  'radar',
+  'fireflies'
+] as const;
 
-const LAB_EXPERIMENT_IDS = new Set<LabExperimentID>(LAB_EXPERIMENTS.map((experiment) => experiment.id));
+export const LAB_EXPERIMENTS: readonly LabExperiment[] = [
+  {
+    id: 'waterfall',
+    label: 'Packet Waterfall',
+    shortLabel: 'Waterfall',
+    mode: 'hybrid',
+    path: WATERFALL_LAB_PATH,
+    accent: '#22d3ee',
+    tagline: 'Packets fall through a cinematic RF cascade and play the live network.',
+    detail: 'Public packet activity becomes luminous falling streams, splashes, mist, route ribbons, and opt-in ambient music.',
+    signal: 'Payload type, route state, packet density, hop count, public regions, message presence, and route distance.',
+    cues: ['Falling packet streams', 'Ambient packet voices', 'Live RF intensity']
+  }
+] as const;
+
+export const WATERFALL_BACKGROUND_SRC = '/labs/waterfall/rf-waterfall-bg.png';
+export const WATERFALL_MIST_SRC = '/labs/waterfall/rf-waterfall-mist.png';
 
 export function isLabExperimentID(value: string): value is LabExperimentID {
-  return LAB_EXPERIMENT_IDS.has(value as LabExperimentID);
+  return value === DEFAULT_LAB_EXPERIMENT_ID;
 }
 
-export function labExperimentPath(id: LabExperimentID): string {
-  return experimentByID(id).path;
+export function labExperimentPath(_id: LabExperimentID = DEFAULT_LAB_EXPERIMENT_ID): string {
+  return WATERFALL_LAB_PATH;
+}
+
+export function canonicalLabHash(hash: string): string | null {
+  if (hash === '#/lab' || hash === WATERFALL_LAB_PATH) return WATERFALL_LAB_PATH;
+  if (!hash.startsWith(LAB_EXPERIMENT_PATH_PREFIX)) return null;
+  return WATERFALL_LAB_PATH;
 }
 
 export function labExperimentIDFromHash(hash: string): LabExperimentID {
-  if (hash === '#/lab') return DEFAULT_LAB_EXPERIMENT_ID;
-  if (!hash.startsWith(LAB_EXPERIMENT_PATH_PREFIX)) return DEFAULT_LAB_EXPERIMENT_ID;
-  const id = hash.slice(LAB_EXPERIMENT_PATH_PREFIX.length).split(/[/?#]/)[0];
-  return isLabExperimentID(id) ? id : DEFAULT_LAB_EXPERIMENT_ID;
+  return canonicalLabHash(hash) ? DEFAULT_LAB_EXPERIMENT_ID : DEFAULT_LAB_EXPERIMENT_ID;
+}
+
+export function isLegacyLabExperimentHash(hash: string): boolean {
+  if (!hash.startsWith(LAB_EXPERIMENT_PATH_PREFIX)) return false;
+  return hash !== WATERFALL_LAB_PATH;
+}
+
+export function experimentByID(_id: string | undefined): LabExperiment {
+  return LAB_EXPERIMENTS[0];
 }
 
 export function labEventsFromState(state: Pick<AppState, 'activity' | 'pulses'>, limit = LAB_EVENT_LIMIT): LabEvent[] {
@@ -267,9 +158,9 @@ export function labEventsFromState(state: Pick<AppState, 'activity' | 'pulses'>,
     .slice(0, Math.max(1, limit));
 }
 
-export function labMetrics(events: LabEvent[], nodes: PublicNode[] = [], routes: PublicRoute[] = [], now = Date.now()): LabMetrics {
-  const recent = events.filter((event) => event.displayAt >= now - LAB_WINDOW_MS && event.displayAt <= now + 5_000);
-  const payloadMix = payloadMixForEvents(recent.length > 0 ? recent : events, 8);
+export function labMetrics(events: LabEvent[], now = Date.now(), windowMs = LAB_WINDOW_MS): LabMetrics {
+  const recent = recentLabEvents(events, now, windowMs);
+  const payloadMix = payloadMixForEvents(recent.length > 0 ? recent : events, 9);
   const regions = [...new Set(recent.map((event) => event.region || event.iata).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b))
     .slice(0, ACTIVE_REGION_LIMIT);
@@ -277,12 +168,13 @@ export function labMetrics(events: LabEvent[], nodes: PublicNode[] = [], routes:
   const routedPerMinute = recent.filter((event) => event.kind === 'routed').length;
   const observerPerMinute = recent.filter((event) => event.kind === 'observer').length;
   const unmappedPerMinute = recent.filter((event) => event.kind === 'unmapped').length;
-  const densityBoost = Math.min(0.35, routes.length / Math.max(24, nodes.length * 3));
-  const liveEnergy = clamp01(recent.length / 32 + routedPerMinute / 44 + observerPerMinute / 60 + densityBoost);
+  const messageCount = recent.filter((event) => Boolean(event.messageText)).length;
+  const density = recent.length / Math.max(16, windowMs / 3_000);
+  const liveEnergy = clamp01(density + routedPerMinute / 42 + observerPerMinute / 58 + messageCount / 28);
 
   return {
     eventCount: events.length,
-    packetRatePerMinute: recent.length,
+    packetRatePerMinute: Math.round(recent.length * (60_000 / Math.max(1, windowMs))),
     routedPerMinute,
     observerPerMinute,
     unmappedPerMinute,
@@ -292,94 +184,59 @@ export function labMetrics(events: LabEvent[], nodes: PublicNode[] = [], routes:
     activeRegionCount: regions.length,
     activeRegions: regions,
     payloadMix,
-    messageCount: recent.filter((event) => Boolean(event.messageText)).length
+    messageCount
   };
 }
 
-export function buildSequencerPattern(events: LabEvent[], now = Date.now(), stepCount = 16, windowMs = LAB_WINDOW_MS): LabSequencerPattern {
-  const safeStepCount = Math.max(4, Math.min(32, Math.floor(stepCount)));
-  const from = now - Math.max(5_000, windowMs);
-  const to = now;
-  const stepMs = (to - from) / safeStepCount;
-  const steps: LabSequencerStep[] = Array.from({ length: safeStepCount }, (_, index) => {
-    const start = from + index * stepMs;
-    const end = index === safeStepCount - 1 ? to + 1 : start + stepMs;
-    const stepEvents = events.filter((event) => event.displayAt >= start && event.displayAt < end);
-    return {
-      index,
-      start,
-      end,
-      count: stepEvents.length,
-      routed: stepEvents.filter((event) => event.kind === 'routed').length,
-      observer: stepEvents.filter((event) => event.kind === 'observer').length,
-      message: stepEvents.filter((event) => Boolean(event.messageText)).length,
-      payloads: payloadMixForEvents(stepEvents, 4),
-      energy: clamp01(stepEvents.length / 6 + stepEvents.reduce((sum, event) => sum + Math.min(1, event.distanceKm / 900), 0) / 12)
-    };
-  });
-  return { from, to, steps };
+export function recentLabEvents(events: LabEvent[], now = Date.now(), windowMs = LAB_WINDOW_MS): LabEvent[] {
+  const start = now - Math.max(5_000, windowMs);
+  return events.filter((event) => event.displayAt >= start && event.displayAt <= now + 5_000);
 }
 
-export function routeOrganismRoutes(routes: PublicRoute[], events: LabEvent[], now = Date.now(), limit = 96): LabRouteOrganismRoute[] {
-  const activityByRoute = new Map<string, number>();
-  for (const event of events) {
-    const ageMs = Math.max(0, now - event.displayAt);
-    const weight = Math.exp(-ageMs / LAB_WINDOW_MS) * (event.kind === 'routed' ? 1 : 0.25);
-    for (const routeId of event.routeIds) {
-      activityByRoute.set(routeId, (activityByRoute.get(routeId) ?? 0) + weight);
-    }
-  }
-  return routes
-    .map((route) => {
-      const visual = payloadVisual(route.payloadTypeNames?.[0]);
-      return {
-        id: route.id,
-        from: endpointToPoint(route.from),
-        to: endpointToPoint(route.to),
-        packetCount: Math.max(0, route.packetCount),
-        distanceKm: Math.max(0, route.distanceKm),
-        activity: clamp01((activityByRoute.get(route.id) ?? 0) / 5 + freshness(route.lastHeard, now) * 0.4),
-        color: visual.color
-      };
-    })
-    .sort((a, b) => b.activity - a.activity || b.packetCount - a.packetCount || a.id.localeCompare(b.id))
-    .slice(0, Math.max(1, limit));
-}
-
-export function regionCells(events: LabEvent[], now = Date.now(), limit = 12): LabRegionCell[] {
-  const cells = new Map<string, LabRegionCell>();
-  for (const event of events) {
-    const region = event.region || event.iata || 'unknown';
-    const visual = payloadVisual(event.payloadTypeName);
-    const existing = cells.get(region) ?? {
-      region,
+export function waterfallLanes(events: LabEvent[], now = Date.now(), windowMs = LAB_WINDOW_MS, limit = 9): LabWaterfallLane[] {
+  const recent = recentLabEvents(events, now, windowMs);
+  const source = recent.length > 0 ? recent : events;
+  const lanes = new Map<string, LabWaterfallLane>();
+  for (const event of source) {
+    const payloadTypeName = normalizePayloadType(event.payloadTypeName);
+    const visual = payloadVisual(payloadTypeName);
+    const lane = lanes.get(payloadTypeName) ?? {
+      payloadTypeName,
+      label: visual.shortLabel,
+      color: visual.color,
       count: 0,
       routed: 0,
       observer: 0,
-      message: 0,
-      energy: 0,
-      color: visual.color
+      messages: 0,
+      energy: 0
     };
-    existing.count += 1;
-    if (event.kind === 'routed') existing.routed += 1;
-    if (event.kind === 'observer') existing.observer += 1;
-    if (event.messageText) existing.message += 1;
-    existing.energy += freshness(event.displayAt, now) * (event.kind === 'routed' ? 1 : 0.65);
-    cells.set(region, existing);
+    lane.count += 1;
+    if (event.kind === 'routed') lane.routed += 1;
+    if (event.kind === 'observer') lane.observer += 1;
+    if (event.messageText) lane.messages += 1;
+    lane.energy += eventIntensity(event) * freshness(event.displayAt, now);
+    lanes.set(payloadTypeName, lane);
   }
-  return [...cells.values()]
-    .map((cell) => ({ ...cell, energy: clamp01(cell.energy / Math.max(3, cell.count)) }))
-    .sort((a, b) => b.energy - a.energy || b.count - a.count || a.region.localeCompare(b.region))
+  return [...lanes.values()]
+    .map((lane) => ({ ...lane, energy: clamp01(lane.energy / Math.max(1, lane.count / 2)) }))
+    .sort((a, b) => b.count - a.count || b.energy - a.energy || a.payloadTypeName.localeCompare(b.payloadTypeName))
     .slice(0, Math.max(1, limit));
 }
 
-export function eventPitchHz(event: Pick<LabEvent, 'payloadTypeName' | 'hopCount' | 'distanceKm' | 'kind'>): number {
+export function filterLabEventsByPayload(events: LabEvent[], payloadTypeName: string): LabEvent[] {
+  if (!payloadTypeName || payloadTypeName === 'all') return events;
+  const normalized = normalizePayloadType(payloadTypeName);
+  return events.filter((event) => normalizePayloadType(event.payloadTypeName) === normalized);
+}
+
+export function eventPitchHz(event: Pick<LabEvent, 'payloadTypeName' | 'hopCount' | 'distanceKm' | 'kind' | 'messageText'>): number {
   const payload = normalizePayloadType(event.payloadTypeName);
-  const root = 164.81 + (stableHash(payload) % 7) * 24.5;
-  const hopLift = Math.min(9, Math.max(0, event.hopCount)) * 18;
-  const distanceLift = Math.log10(Math.max(1, event.distanceKm + 1)) * 68;
-  const kindShift = event.kind === 'observer' ? -36 : event.kind === 'unmapped' ? -72 : 0;
-  return Math.round(Math.max(80, Math.min(1440, root + hopLift + distanceLift + kindShift)));
+  const root = 174.61 + (stableHash(payload) % 9) * 21.25;
+  const hopLift = Math.min(10, Math.max(0, event.hopCount)) * 16;
+  const distanceLift = Math.log10(Math.max(1, event.distanceKm + 1)) * 58;
+  const kindShift = event.kind === 'observer' ? -42 : event.kind === 'unmapped' ? -78 : 0;
+  const messageLift = event.messageText ? 72 : 0;
+  return Math.round(Math.max(72, Math.min(1760, root + hopLift + distanceLift + kindShift + messageLift)));
 }
 
 export function eventStereoPan(event: Pick<LabEvent, 'region' | 'iata' | 'points'>): number {
@@ -390,12 +247,22 @@ export function eventStereoPan(event: Pick<LabEvent, 'region' | 'iata' | 'points
   return clamp(hash / 100 - 1, -0.75, 0.75);
 }
 
-export function eventIntensity(event: Pick<LabEvent, 'distanceKm' | 'hopCount' | 'kind'>): number {
-  return clamp01(0.22 + Math.min(0.46, event.distanceKm / 1_200) + Math.min(0.24, event.hopCount / 22) + (event.kind === 'routed' ? 0.12 : 0));
+export function eventIntensity(event: Pick<LabEvent, 'distanceKm' | 'hopCount' | 'kind' | 'messageText'>): number {
+  return clamp01(
+    0.2 +
+    Math.min(0.34, event.distanceKm / 1_500) +
+    Math.min(0.22, event.hopCount / 18) +
+    (event.kind === 'routed' ? 0.18 : event.kind === 'observer' ? 0.08 : 0) +
+    (event.messageText ? 0.12 : 0)
+  );
 }
 
-export function experimentByID(id: string | undefined): LabExperiment {
-  return LAB_EXPERIMENTS.find((experiment) => experiment.id === id) ?? LAB_EXPERIMENTS[0];
+export function stableHash(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index++) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
 }
 
 function routePulseToLabEvent(pulse: PublicRoutePulse): LabEvent {
@@ -472,7 +339,7 @@ function payloadMixForEvents(events: LabEvent[], limit: number): LabPayloadMix[]
     .slice(0, Math.max(1, limit));
 }
 
-function endpointToPoint(endpoint: PublicRouteEndpoint): LabPoint {
+function endpointToPoint(endpoint: { lat: number; lng: number; label: string; nodeId?: string }): LabPoint {
   return {
     lat: safeNumber(endpoint.lat),
     lng: safeNumber(endpoint.lng),
@@ -518,14 +385,6 @@ function safeOptionalText(value: unknown): string | undefined {
 function freshness(at: number, now: number): number {
   if (!Number.isFinite(at) || at <= 0) return 0;
   return clamp01(1 - Math.max(0, now - at) / LAB_WINDOW_MS);
-}
-
-function stableHash(value: string): number {
-  let hash = 0;
-  for (let index = 0; index < value.length; index++) {
-    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
-  }
-  return hash;
 }
 
 function clamp01(value: number): number {

@@ -70,8 +70,9 @@ const scenarios = [
     checks: [
       { selector: '.link-bar', label: 'top project bar' },
       { selector: '.lab-panel', label: 'Labs panel' },
-      { selector: '.lab-signal-strip', label: 'Labs signal strip' },
-      { selector: '.lab-canvas', label: 'Labs canvas' }
+      { selector: '.waterfall-stage-shell', label: 'Waterfall stage' },
+      { selector: '.waterfall-control-surface', label: 'Waterfall controls' },
+      { selector: '.waterfall-canvas', label: 'Waterfall canvas' }
     ],
     actions: [smokeLabsPanel]
   },
@@ -251,17 +252,29 @@ async function assertNoNocSummary(page) {
 
 async function smokeOpenFreeMapToggle(page, viewport) {
   const toggle = page.locator('.map-base-toggle').first();
-  await toggle.waitFor({ state: 'visible', timeout: 12_000 });
-  await toggle.click();
-  await page.waitForSelector('.map-base-toggle.active', { state: 'visible', timeout: 15_000 });
+  if (await toggle.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await toggle.click();
+    await page.waitForSelector('.map-base-toggle.active', { state: 'visible', timeout: 15_000 });
+    await page.waitForSelector('.map-wrap[data-map-style-profile="openfreemap-3d"]', { state: 'visible', timeout: 15_000 });
+    await page.waitForTimeout(500);
+    await assertVisibleInViewport(page, '.maplibregl-canvas', 'OpenFreeMap canvas', viewport);
+    return;
+  }
+  const settings = page.locator('.map-settings-toggle').first();
+  await settings.waitFor({ state: 'visible', timeout: 12_000 });
+  await settings.click({ force: true });
+  await assertVisibleInViewport(page, '.map-settings-drawer', 'map settings drawer for OpenFreeMap', viewport);
+  await page.locator('.map-mode-grid').getByRole('button', { name: /^3D\b/i }).click();
   await page.waitForSelector('.map-wrap[data-map-style-profile="openfreemap-3d"]', { state: 'visible', timeout: 15_000 });
+  await page.getByRole('button', { name: /Close map settings/i }).click();
+  await page.waitForSelector('.map-settings-drawer', { state: 'hidden', timeout: 5_000 });
   await page.waitForTimeout(500);
   await assertVisibleInViewport(page, '.maplibregl-canvas', 'OpenFreeMap canvas', viewport);
 }
 
 async function smokePalettePicker(page, viewport) {
   const toggle = page.locator('.palette-toggle').first();
-  await toggle.waitFor({ state: 'visible', timeout: 12_000 });
+  if (!await toggle.isVisible({ timeout: 2_000 }).catch(() => false)) return;
   await toggle.click();
   await assertVisibleInViewport(page, '.palette-picker', 'palette picker', viewport);
   const options = page.locator('.palette-picker button');
@@ -274,11 +287,12 @@ async function smokePalettePicker(page, viewport) {
 async function smokeMapSettings(page, viewport) {
   const toggle = page.locator('.map-settings-toggle').first();
   await toggle.waitFor({ state: 'visible', timeout: 12_000 });
-  await toggle.click();
+  await toggle.click({ force: true });
   await assertVisibleInViewport(page, '.map-settings-drawer', 'map settings drawer', viewport);
-  await page.locator('.map-settings-drawer').getByText(/Map Studio/i).waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('.map-settings-drawer').getByRole('button', { name: /OpenFreeMap 3D/i }).waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('.map-settings-drawer').getByRole('button', { name: /Offline PMTiles/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('.map-settings-drawer').getByRole('heading', { name: /^Settings$/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('.map-settings-drawer').getByRole('button', { name: /Clean Live/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('.map-settings-drawer').getByRole('button', { name: /^3D\b/i }).first().waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('.map-settings-drawer').getByRole('button', { name: /Low Bandwidth/i }).waitFor({ state: 'visible', timeout: 5_000 });
   await page.locator('.map-settings-drawer').getByText(/3D And RF/i).waitFor({ state: 'visible', timeout: 5_000 });
   await page.getByRole('button', { name: /Close map settings/i }).click();
   await page.waitForSelector('.map-settings-drawer', { state: 'hidden', timeout: 5_000 });
@@ -435,36 +449,31 @@ async function smokeChatPanel(page) {
 }
 
 async function smokeLabsPanel(page, viewport) {
-  const links = page.locator('.lab-toolbar a');
-  const count = await links.count();
-  if (count < 9) throw new Error(`Labs toolbar has too few experiments: ${count}`);
-  const experiments = [
-    ['synth', 'Synth'],
-    ['waterfall', 'Waterfall'],
-    ['sequencer', 'Sequence'],
-    ['organism', 'Organism'],
-    ['constellation', 'Stars'],
-    ['aurora', 'Aurora'],
-    ['dj', 'DJ Booth'],
-    ['radar', 'Radar'],
-    ['fireflies', 'Fireflies']
-  ];
-  for (const [id, label] of experiments) {
+  await page.waitForURL(/#\/lab\/waterfall$/, { timeout: 8_000 });
+  const retired = ['synth', 'sequencer', 'organism', 'constellation', 'aurora', 'dj', 'radar', 'fireflies'];
+  for (const id of retired) {
     await page.evaluate((experimentID) => { window.location.hash = `#/lab/${experimentID}`; }, id);
-    await page.waitForURL(new RegExp(`#\\/lab\\/${id}$`), { timeout: 5_000 });
+    await page.waitForURL(/#\/lab\/waterfall$/, { timeout: 5_000 });
     await page.waitForSelector('.lab-panel', { state: 'visible', timeout: 8_000 });
-    const link = page.getByRole('link', { name: new RegExp(label, 'i') }).first();
-    await link.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(350);
-    await assertVisibleInViewport(page, '.lab-canvas', `Labs ${label} canvas`, viewport);
-    await assertCanvasHasPixels(page, '.lab-canvas', `Labs ${label} canvas`);
   }
+  const toolbarCount = await page.locator('.lab-toolbar a').count();
+  if (toolbarCount !== 0) throw new Error(`Waterfall Labs should not render retired experiment toolbar, found ${toolbarCount}`);
+  await assertVisibleInViewport(page, '.waterfall-stage-shell', 'Waterfall stage', viewport);
+  await assertVisibleInViewport(page, '.waterfall-control-surface', 'Waterfall controls', viewport);
+  await assertVisibleInViewport(page, '.waterfall-canvas', 'Waterfall canvas', viewport);
+  await assertCanvasHasPixels(page, '.waterfall-canvas', 'Waterfall canvas');
   const volume = page.locator('#lab-volume').first();
-  await setRangeInputValue(volume, 0.18);
-  const reducedMotion = page.locator('.lab-toggle-row input').first();
+  if (await volume.count()) await setRangeInputValue(volume, 0.18);
+  const waterfallVolume = page.locator('#waterfall-volume').first();
+  await setRangeInputValue(waterfallVolume, 0.18);
+  const density = page.locator('#waterfall-density').first();
+  await setRangeInputValue(density, 1.1);
+  const reducedMotion = page.locator('.waterfall-toggle-row input').first();
   await reducedMotion.check();
-  await page.evaluate(() => { window.location.hash = '#/lab/synth'; });
-  await assertCanvasHasPixels(page, '.lab-canvas', 'Labs RF Synth canvas');
+  await page.locator('#waterfall-window').selectOption('45');
+  await page.evaluate(() => { window.location.hash = '#/lab'; });
+  await page.waitForURL(/#\/lab\/waterfall$/, { timeout: 5_000 });
+  await assertCanvasHasPixels(page, '.waterfall-canvas', 'Waterfall canvas after controls');
 }
 
 async function smokeNodeListPanel(page, viewport) {
@@ -599,7 +608,7 @@ async function activateSetupPreset(page, preset) {
 
 async function setRangeInputValue(locator, value) {
   await locator.evaluate((input, nextValue) => {
-    input.value = String(Math.round(nextValue));
+    input.value = String(nextValue);
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }, value);

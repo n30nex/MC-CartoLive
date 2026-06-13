@@ -17,6 +17,10 @@ docs are kept short; historical release evidence is preserved by version.
 
 ## Release Docs
 
+- [2.9.6 release notes](2.9.6/release_notes.md)
+- [2.9.6 operator notes](2.9.6/operator_notes.md)
+- [2.9.6 Waterfall Labs notes](2.9.6/waterfall_labs.md)
+- [2.9.6 validation checklist](2.9.6/validation_checklist.md)
 - [2.9.5 release notes](2.9.5/release_notes.md)
 - [2.9.5 operator notes](2.9.5/operator_notes.md)
 - [2.9.5 Map Studio notes](2.9.5/map_studio.md)

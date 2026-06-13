@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MAP_STYLE_PROFILES, mapStyleProfileByID, publicStyleProfileIDs } from './styleRegistry';
 
 describe('styleRegistry', () => {
-  it('contains the 2.9.5 public style profiles', () => {
+  it('contains the 2.9.6 public style profiles', () => {
     expect(publicStyleProfileIDs()).toEqual([
       'classic-dark',
       'classic-light',

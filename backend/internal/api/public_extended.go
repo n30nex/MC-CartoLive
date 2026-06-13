@@ -526,7 +526,7 @@ func publicOpenAPISchema() map[string]any {
 		"openapi": "3.1.0",
 		"info": map[string]any{
 			"title":   "MC-CartoLive Public API",
-			"version": "2.9.5",
+			"version": "2.9.6",
 		},
 		"paths": map[string]any{
 			"/api/v1/public/state":                       map[string]any{"get": publicSchemaOperation("Public live state")},

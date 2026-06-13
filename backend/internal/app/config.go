@@ -86,7 +86,7 @@ func LoadConfig() (Config, error) {
 	publicRegions := configuredPublicRegions(mapPreset)
 	cfg := Config{
 		ListenAddr:                      envString("LISTEN_ADDR", ":8080"),
-		AppVersion:                      envString("APP_VERSION", "2.9.5"),
+		AppVersion:                      envString("APP_VERSION", "2.9.6"),
 		GitSHA:                          envString("GIT_SHA", envString("VITE_GIT_SHA", "")),
 		BuildTime:                       envString("BUILD_TIME", envString("VITE_BUILD_TIME", "")),
 		PublicBaseURL:                   envString("PUBLIC_BASE_URL", "http://localhost:8080"),

@@ -20,6 +20,11 @@ type InfoPanel = 'changelog' | null;
 
 export const LATEST_RELEASE_HIGHLIGHTS = [
   {
+    label: '2.9.6',
+    title: 'Waterfall Labs',
+    body: 'Labs is now a single cinematic Packet Waterfall with generated RF-waterfall art, richer falling packet motion, and opt-in ambient packet music.'
+  },
+  {
     label: '2.9.5',
     title: 'Map Studio',
     body: 'Map Studio adds more basemap profiles, optional PMTiles offline views, and richer configurable 3D node and route rendering.'
@@ -28,11 +33,6 @@ export const LATEST_RELEASE_HIGHLIGHTS = [
     label: '2.9.4',
     title: 'Labs Polish',
     body: 'Every Labs experiment gets a routed page, a dropdown entry, clearer live signal context, stronger controls, and tuned visual polish.'
-  },
-  {
-    label: '2.9.3',
-    title: 'Live RF Labs',
-    body: 'Labs turns sanitized public packets into opt-in sound, visual sequencers, waterfalls, constellations, radar, and message fireflies.'
   }
 ];
 
@@ -41,7 +41,7 @@ export const WORKSPACE_LINKS = [
   { id: 'nodes', label: 'Nodes', href: '#/nodes' },
   { id: 'chat', label: 'Chat', href: '#/chat' },
   { id: 'netgraph', label: 'NetGraph', href: '#/netgraph' },
-  { id: 'labs', label: 'Labs', href: '#/lab' }
+  { id: 'labs', label: 'Labs', href: '#/lab/waterfall' }
 ] as const;
 
 interface LinkBarProps {

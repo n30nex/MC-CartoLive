@@ -6,7 +6,7 @@ in [CHANGELOG.md](../CHANGELOG.md); operator procedures live in
 
 ## Current Baseline
 
-Version `2.9.5` is the current Map Studio release on the public-safe event,
+Version `2.9.6` is the current Waterfall Labs release on the public-safe event,
 operations, Labs, and map-runtime foundation.
 
 - Public API shapes are stable across the 2.8.x and 2.9.x line.
@@ -16,9 +16,9 @@ operations, Labs, and map-runtime foundation.
   the embedded React frontend and SQLite under `/app/data`.
 - Local release validation uses Podman; the production droplet can continue to
   use Docker Compose.
-- The 2.9.5 frontend gives users a richer style registry, optional PMTiles
-  profiles, and configurable 3D node/route presentation without changing public
-  API shapes.
+- The 2.9.6 frontend keeps the Map Studio foundation and turns Labs into one
+  single Packet Waterfall with generated artwork, richer packet motion, and
+  opt-in ambient audio without changing public API shapes.
 
 ## Active Focus
 
@@ -26,7 +26,7 @@ operations, Labs, and map-runtime foundation.
   traffic.
 - Keep Packets, Chat, NetGraph, Replay, NodeList, propagation history, Map Studio,
   and 3D optional but easy to discover.
-- Keep Labs fun, browser-safe, and strictly derived from public DTOs.
+- Keep Waterfall Labs fun, browser-safe, and strictly derived from public DTOs.
 - Improve map, offline tile, 3D, and panel UX through small API-compatible
   2.9.x patches.
 - Keep release evidence concise and current instead of adding more planning
@@ -37,8 +37,8 @@ operations, Labs, and map-runtime foundation.
 ## Candidate 2.9.x Work
 
 - Expand the new public event log into more history/replay workflows.
-- Iterate on Labs with workerized transforms, exportable clips, and deeper
-  replay sampling once the public event log grows.
+- Iterate on Waterfall Labs with workerized transforms, exportable clips, and
+  deeper replay sampling once the public event log grows.
 - Continue extracting CanadaMap into runtime overlays using the new registry
   contracts.
 - Add importer tooling for coarse coverage cells and Canada CDEM LOS samples.

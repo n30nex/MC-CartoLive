@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.9.5
+# MeshCore MQTT Live Map v2.9.6
 
 Also known as **MC-CartoLive**.
 
@@ -12,22 +12,23 @@ Public instance: [carto.canadaverse.org](https://carto.canadaverse.org/).
 
 ## Current Release
 
-Version 2.9.5 is the Map Studio release on the public-safe 2.9 foundation. It
+Version 2.9.6 is the Waterfall Labs release on the public-safe 2.9 foundation. It
 keeps the one-container SQLite deployment shape while adding:
 
-- a Map Studio drawer with Classic, OpenFreeMap, Topo RF, NOC, offline PMTiles,
-  accessibility, and low-bandwidth style profiles
-- quick toolbar cycling through the most operationally useful map modes while
-  keeping the full style catalog in settings
-- optional operator-supplied PMTiles basemap support for offline or field use
-- basemap dimming, label-density, terrain-lift, building-opacity, antenna-height,
-  node-model-scale, and route-arc-height controls
-- upgraded 3D node models with role towers, signal beacons, minimal pins,
-  selected/path focus columns, and terrain-aware placement
-- focused tests, browser-smoke coverage, and release documentation for map
-  customization and 3D improvements
+- a single `/#/lab/waterfall` Labs workspace that replaces the retired
+  multi-page experiment suite
+- generated cinematic RF-waterfall artwork and mist assets for the Waterfall
+  stage
+- falling packet streams, payload lanes, route ribbons, splashes, and live
+  traffic intensity overlays
+- opt-in ambient generative Web Audio with packet bells, glass pads, bass swells,
+  and shimmer voices
+- browser-local Waterfall controls for volume, motion, density, time window,
+  payload focus, and reduced motion
+- focused tests, browser-smoke coverage, and release documentation for the
+  single-Waterfall Labs upgrade
 
-The recommended v2.9.5 release path is clone + Compose on a VPS or local host,
+The recommended v2.9.6 release path is clone + Compose on a VPS or local host,
 optionally behind Cloudflare Tunnel, Caddy, nginx, or another HTTPS reverse
 proxy.
 
@@ -74,7 +75,7 @@ podman run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.9.5
+  ghcr.io/n30nex/mc-cartolive:2.9.6
 ```
 
 For a persistent deployment:
@@ -84,7 +85,7 @@ podman run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.9.5
+  ghcr.io/n30nex/mc-cartolive:2.9.6
 ```
 
 The production droplet currently uses Docker Compose; local release validation
@@ -136,13 +137,13 @@ Release hygiene:
 node scripts/check-version-sync.mjs
 node scripts/check-public-privacy.mjs http://127.0.0.1:39476
 podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
-node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:2.9.5 --pull
+node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:2.9.6 --pull
 ```
 
 Live post-deploy smoke:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.9.5 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.9.6 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
 ## Documentation
@@ -154,8 +155,9 @@ Live post-deploy smoke:
 - [Privacy model](docs/privacy.md)
 - [Roadmap](docs/roadmap.md)
 - [Changelog](CHANGELOG.md)
+- [2.9.6 release notes](docs/2.9.6/release_notes.md)
+- [2.9.6 validation checklist](docs/2.9.6/validation_checklist.md)
 - [2.9.5 release notes](docs/2.9.5/release_notes.md)
-- [2.9.5 validation checklist](docs/2.9.5/validation_checklist.md)
 - [2.9.4 release notes](docs/2.9.4/release_notes.md)
 - [2.9.3 release notes](docs/2.9.3/release_notes.md)
 

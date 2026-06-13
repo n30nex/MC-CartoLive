@@ -63,7 +63,7 @@ podman run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.9.5
+  ghcr.io/n30nex/mc-cartolive:2.9.6
 ```
 
 Persistent deployment:
@@ -73,7 +73,7 @@ podman run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.9.5
+  ghcr.io/n30nex/mc-cartolive:2.9.6
 ```
 
 The image runs as non-root `appuser`, includes the bundled `mc-diagnose`
@@ -104,7 +104,7 @@ rebuild, readiness wait, and rollback on failure.
 
 ## Runtime Notes
 
-- Version 2.9.5 exposes app version, Git SHA, build number, and build time in
+- Version 2.9.6 exposes app version, Git SHA, build number, and build time in
   the top project bar and in health/readiness responses.
 - `/healthz` is cheap liveness. `/readyz` checks DB, static assets, public state
   readiness, cache freshness, and public-safe runtime status.
@@ -121,8 +121,8 @@ rebuild, readiness wait, and rollback on failure.
   output. The Map drawer opens Clean Live, Terrain/Topo, 3D, and Low Bandwidth
   mode cards before advanced controls.
 - OpenFreeMap/3D, terrain, PMTiles profiles, propagation history, Packets,
-  Chat, NetGraph, and Replay use sanitized public APIs and public
-  WebSocket/history data.
+  Chat, NetGraph, Replay, and Waterfall Labs use sanitized public APIs and
+  public WebSocket/history data.
 - Optional PMTiles basemaps are build-time frontend URLs. Prefer same-origin
   files such as `/tiles/canada.pmtiles`; external HTTPS PMTiles hosts must also
   be allowed by the deployment CSP.

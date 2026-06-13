@@ -4,6 +4,23 @@ This changelog records the public release history at a useful level of detail.
 Detailed patch-by-patch investigation notes and temporary planning material live
 in Git history, not in the active documentation set.
 
+## 2.9.6 - 2026-06-13
+
+- Collapsed Labs to a single Packet Waterfall experience at `#/lab/waterfall`,
+  with old experiment URLs redirecting to the Waterfall route.
+- Added generated cinematic RF-waterfall and mist artwork under
+  `web/public/labs/waterfall/` for the new Labs stage.
+- Rebuilt the Waterfall canvas with falling packet streams, payload lanes,
+  route ribbons, splashes, message sparkles, mist, and live intensity overlays.
+- Replaced the old multi-experiment toolbar with browser-local Waterfall
+  controls for volume, motion, density, time window, payload focus, reduced
+  motion, and reset.
+- Upgraded opt-in Web Audio with packet bell, glass pad, shimmer, and bass swell
+  voices through a compressed master output so faster packet bursts become more
+  musical.
+- Updated Labs tests, LinkBar release highlights, browser smoke, release
+  metadata, and operator documentation for the single-Waterfall release.
+
 ## 2.9.5 - 2026-06-13
 
 - Added Map Studio to Map Settings with Classic, OpenFreeMap Dark/Light,
