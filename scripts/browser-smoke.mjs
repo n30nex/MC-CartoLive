@@ -64,6 +64,17 @@ const scenarios = [
     actions: [smokeChatPanel]
   },
   {
+    name: 'labs',
+    hash: '#/lab',
+    waitFor: '.lab-panel',
+    checks: [
+      { selector: '.link-bar', label: 'top project bar' },
+      { selector: '.lab-panel', label: 'Labs panel' },
+      { selector: '.lab-canvas', label: 'Labs canvas' }
+    ],
+    actions: [smokeLabsPanel]
+  },
+  {
     name: 'netgraph',
     hash: '#/netgraph',
     waitFor: '.netgraph-panel',
@@ -382,6 +393,26 @@ async function smokeChatPanel(page) {
   }
 }
 
+async function smokeLabsPanel(page, viewport) {
+  const buttons = page.locator('.lab-toolbar button');
+  const count = await buttons.count();
+  if (count < 9) throw new Error(`Labs toolbar has too few experiments: ${count}`);
+  for (const label of ['Waterfall', 'Sequence', 'Fireflies']) {
+    const button = page.getByRole('button', { name: new RegExp(label, 'i') }).first();
+    await button.scrollIntoViewIfNeeded();
+    await button.click();
+    await page.waitForTimeout(350);
+    await assertVisibleInViewport(page, '.lab-canvas', `Labs ${label} canvas`, viewport);
+    await assertCanvasHasPixels(page, '.lab-canvas', `Labs ${label} canvas`);
+  }
+  const volume = page.locator('#lab-volume').first();
+  await setRangeInputValue(volume, 0.18);
+  const reducedMotion = page.locator('.lab-toggle-row input').first();
+  await reducedMotion.check();
+  await page.getByRole('button', { name: /Synth/i }).first().click();
+  await assertCanvasHasPixels(page, '.lab-canvas', 'Labs RF Synth canvas');
+}
+
 async function smokeNetGraphPanel(page, viewport) {
   const search = page.locator('.netgraph-search input').first();
   await search.waitFor({ state: 'visible', timeout: 12_000 });
@@ -406,6 +437,27 @@ async function smokeNetGraphPanel(page, viewport) {
   const box = await page.locator('.netgraph-canvas').first().boundingBox();
   if (box) {
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  }
+}
+
+async function assertCanvasHasPixels(page, selector, label) {
+  const canvasState = await page.locator(selector).first().evaluate((canvas) => {
+    if (!(canvas instanceof HTMLCanvasElement)) return null;
+    const box = canvas.getBoundingClientRect();
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return { cssWidth: box.width, cssHeight: box.height, width: canvas.width, height: canvas.height, colored: 0 };
+    const width = Math.max(1, canvas.width);
+    const height = Math.max(1, canvas.height);
+    const sample = ctx.getImageData(Math.floor(width * 0.2), Math.floor(height * 0.2), Math.max(1, Math.floor(width * 0.6)), Math.max(1, Math.floor(height * 0.6))).data;
+    let colored = 0;
+    for (let index = 0; index < sample.length; index += 16) {
+      if (sample[index] > 4 || sample[index + 1] > 4 || sample[index + 2] > 4 || sample[index + 3] > 4) colored += 1;
+      if (colored > 40) break;
+    }
+    return { cssWidth: box.width, cssHeight: box.height, width: canvas.width, height: canvas.height, colored };
+  });
+  if (!canvasState || canvasState.cssWidth < 50 || canvasState.cssHeight < 50 || canvasState.width < 50 || canvasState.height < 50 || canvasState.colored <= 40) {
+    throw new Error(`${label} invalid or blank: ${JSON.stringify(canvasState)}`);
   }
 }
 

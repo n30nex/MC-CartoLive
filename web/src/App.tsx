@@ -33,6 +33,7 @@ import { lazyWithReload } from './lazyWithReload';
 const PacketsPanel = lazyWithReload(() => import('./components/PacketsPanel'), 'PacketsPanel');
 const NetGraphPanel = lazyWithReload(() => import('./components/NetGraphPanel'), 'NetGraphPanel');
 const ChatPanel = lazyWithReload(() => import('./components/ChatPanel'), 'ChatPanel');
+const LabPanel = lazyWithReload(() => import('./components/LabPanel'), 'LabPanel');
 const SetupPanel = lazyWithReload(() => import('./components/SetupPanel'), 'SetupPanel');
 import MapSettingsDrawer from './components/MapSettingsDrawer';
 import RouteGifExportButton, { type RouteGifExportStatus } from './components/RouteGifExportButton';
@@ -164,6 +165,7 @@ export default function App() {
   const [packetsOpen, setPacketsOpen] = useState(() => window.location.hash === '#/packets');
   const [netGraphOpen, setNetGraphOpen] = useState(() => window.location.hash === '#/netgraph');
   const [chatOpen, setChatOpen] = useState(() => window.location.hash === '#/chat');
+  const [labOpen, setLabOpen] = useState(() => window.location.hash === '#/lab');
   const [setupOpen, setSetupOpen] = useState(() => window.location.hash === '#/setup');
   const [propagationOpen, setPropagationOpen] = useState(false);
   const [propagationEvents, setPropagationEvents] = useState<PublicPropagationEvent[]>([]);
@@ -233,15 +235,17 @@ export default function App() {
       const nextPacketsOpen = hash === '#/packets';
       const nextNetGraphOpen = hash === '#/netgraph';
       const nextChatOpen = hash === '#/chat';
+      const nextLabOpen = hash === '#/lab';
       const nextSetupOpen = hash === '#/setup';
       setPacketsOpen(nextPacketsOpen);
       setNetGraphOpen(nextNetGraphOpen);
       setChatOpen(nextChatOpen);
+      setLabOpen(nextLabOpen);
       setSetupOpen(nextSetupOpen);
-      if (nextPacketsOpen || nextChatOpen) {
+      if (nextPacketsOpen || nextChatOpen || nextLabOpen) {
         setWorkspacePresentation('side');
       }
-      if (nextPacketsOpen || nextNetGraphOpen || nextChatOpen || nextSetupOpen) {
+      if (nextPacketsOpen || nextNetGraphOpen || nextChatOpen || nextLabOpen || nextSetupOpen) {
         setPaletteMenuOpen(false);
         setPanelsMenuOpen(false);
         setMapSettingsOpen(false);
@@ -277,6 +281,13 @@ export default function App() {
       window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
     }
     setChatOpen(false);
+  }, []);
+
+  const closeLab = useCallback(() => {
+    if (window.location.hash === '#/lab') {
+      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
+    }
+    setLabOpen(false);
   }, []);
 
   const closeSetup = useCallback(() => {
@@ -920,7 +931,7 @@ export default function App() {
   const activityClock = Math.max(liveClock, state.serverTime, state.activity[0]?.heardAt ?? 0, state.routeTraces.at(-1)?.heardAt ?? 0);
   const activityClockBucket = Math.floor(activityClock / DERIVED_ACTIVITY_BUCKET_MS) * DERIVED_ACTIVITY_BUCKET_MS;
   const chromeHidden = chromeVisibility.chromeHidden;
-  const chromePanelsMounted = !vcrOpen && !packetsOpen && !netGraphOpen && !chatOpen && !setupOpen && !propagationOpen;
+  const chromePanelsMounted = !vcrOpen && !packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen;
   const hotRoutesPanelActive = chromePanelsMounted && !chromeHidden && chromeVisibility.panels.hotRoutes;
   const routeActivityByID = useMemo(
     () => hotRoutesPanelActive ? summarizeRouteActivity(state.routeTraces, activityClockBucket) : EMPTY_ROUTE_ACTIVITY,
@@ -1292,10 +1303,10 @@ export default function App() {
     });
   }, [mapSettings.packets, routeGifExport.status, selectedPacket]);
 
-  const showRouteGifExport = Boolean(selectedPacket && !packetsOpen && !netGraphOpen && !chatOpen && !setupOpen && !propagationOpen && !vcrOpen);
+  const showRouteGifExport = Boolean(selectedPacket && !packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen && !vcrOpen);
   const knownPathwaysOn = mapSettings.layers.routes;
-  const workspaceSurfaceOpen = packetsOpen || netGraphOpen || chatOpen;
-  const visitorGuideSuppressed = chromeHidden || packetsOpen || netGraphOpen || chatOpen || setupOpen || propagationOpen || vcrOpen || nodeListOpen || shortcutHelpOpen || mapSettingsOpen || mobileControlsOpen || Boolean(selectedNode || selectedRoute || selectedPacket);
+  const workspaceSurfaceOpen = packetsOpen || netGraphOpen || chatOpen || labOpen;
+  const visitorGuideSuppressed = chromeHidden || packetsOpen || netGraphOpen || chatOpen || labOpen || setupOpen || propagationOpen || vcrOpen || nodeListOpen || shortcutHelpOpen || mapSettingsOpen || mobileControlsOpen || Boolean(selectedNode || selectedRoute || selectedPacket);
 
   return (
     <div
@@ -1342,7 +1353,7 @@ export default function App() {
         />
       </ErrorBoundary>
       {loadingPositionedNodes && <NodeLoadingToast failed={nodeLoadFailed} drawing={initialNodesReceived} />}
-      <LinkBar packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} chatOpen={chatOpen} />
+      <LinkBar packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} chatOpen={chatOpen} labOpen={labOpen} />
       {!chromeHidden && (
         <>
           <StatusBar
@@ -1747,10 +1758,11 @@ export default function App() {
         </ErrorBoundary>
       )}
       {chatOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><ChatPanel presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onClose={closeChat} /></Suspense></ErrorBoundary>}
+      {labOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><LabPanel state={state} socketStatus={socketStatus} presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onClose={closeLab} /></Suspense></ErrorBoundary>}
       {nodeListOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><NodeListPanel nodes={visibleNodes} selectedNodeID={selectedNodeID} onSelectNode={(id) => { selectNode(id); setNodeListOpen(false); }} onClose={() => setNodeListOpen(false)} /></Suspense></ErrorBoundary>}
       {shortcutHelpOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><ShortcutHelp onClose={() => setShortcutHelpOpen(false)} /></Suspense></ErrorBoundary>}
 
-      {!vcrOpen && !packetsOpen && !netGraphOpen && !chatOpen && !setupOpen && !propagationOpen && (
+      {!vcrOpen && !packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen && (
         <>
           {!chromeHidden && (
             <div className="bottom-action-dock" aria-label="Map playback and route controls">

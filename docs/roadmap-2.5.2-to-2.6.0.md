@@ -1,6 +1,6 @@
 # Archived Roadmap: 2.5.2 To 2.6.0
 
-Baseline audited: `v2.9.2` is the current production baseline. This file is
+Baseline audited: `v2.9.3` is the current production baseline. This file is
 kept as a concise archive for the old 2.5.x to 2.6.0 planning track and for the
 version-sync guard.
 
@@ -21,7 +21,7 @@ Detailed patch-by-patch history now belongs in [CHANGELOG.md](../CHANGELOG.md).
 
 ## Current Guidance
 
-- Treat 2.9.2 as the supported baseline.
+- Treat 2.9.3 as the supported baseline.
 - Keep public API shapes stable unless a future major release explicitly changes
   them.
 - Keep route truth RF-only and evidence-based.

@@ -8,8 +8,10 @@ describe('LinkBar', () => {
     expect(html).toContain('#/packets');
     expect(html).toContain('#/netgraph');
     expect(html).toContain('#/chat');
+    expect(html).toContain('#/lab');
     expect(html).toContain('NetGraph');
     expect(html).toContain('Chat');
+    expect(html).toContain('Labs');
     expect(html).not.toContain('Open first-run setup');
     expect(html).not.toContain('#/setup');
     expect(html).not.toContain('#/perf');
@@ -22,10 +24,10 @@ describe('LinkBar', () => {
   });
 
   it('keeps the compact changelog focused on the current release train', () => {
-    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.label)).toEqual(['2.9.2', '2.9.1', '2.9.0']);
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.label)).toEqual(['2.9.3', '2.9.2', '2.9.1']);
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Live RF Labs');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Durable public live');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Live map performance');
-    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Visitor UX rollup');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.body).join(' ')).not.toContain('Perf/Guide/Features');
   });
 });

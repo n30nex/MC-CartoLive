@@ -4,6 +4,19 @@ This changelog records the public release history at a useful level of detail.
 Detailed patch-by-patch investigation notes and temporary planning material live
 in Git history, not in the active documentation set.
 
+## 2.9.3 - 2026-06-13
+
+- Added the `#/lab` workspace with RF Synth, Packet Waterfall, Live Sequencer,
+  Route Organism, RF Constellation, Propagation Aurora, Packet DJ Booth,
+  Network Weather Radar, and Message Fireflies experiments.
+- Added opt-in browser Web Audio sonification for public packet events, with
+  volume control, mute state, and autoplay-safe user activation.
+- Added public-safe lab selectors/metrics that derive all audio and visual
+  inputs from existing sanitized frontend state.
+- Added Labs navigation beside Packets, NetGraph, and Chat in the top project
+  bar, with docked and fullscreen workspace presentation support.
+- Added focused Labs helper/component tests and release documentation.
+
 ## 2.9.2 - 2026-06-12
 
 - Added durable public event storage with monotonic sequences, `/api/v1/public/events`,

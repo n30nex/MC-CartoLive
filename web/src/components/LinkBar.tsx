@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ExternalLink, Github, History, List, MessageSquareText, Network, X } from 'lucide-react';
+import { ExternalLink, FlaskConical, Github, History, List, MessageSquareText, Network, X } from 'lucide-react';
 import { appBrandLogo, appBrandName, appBrandURL, appVersion, buildNumber, buildTime, gitSha, releaseURL } from '../buildInfo';
 import { routeAssetIcons } from '../assets/routes/assets';
 import {
@@ -19,6 +19,11 @@ type InfoPanel = 'changelog' | null;
 
 export const LATEST_RELEASE_HIGHLIGHTS = [
   {
+    label: '2.9.3',
+    title: 'Live RF Labs',
+    body: 'Labs turns sanitized public packets into opt-in sound, visual sequencers, waterfalls, constellations, radar, and message fireflies.'
+  },
+  {
     label: '2.9.2',
     title: 'Durable public live',
     body: 'Public event sequences, reconnect backfill, NOC status, public schema, and map-runtime foundations move the release train forward safely.'
@@ -27,11 +32,6 @@ export const LATEST_RELEASE_HIGHLIGHTS = [
     label: '2.9.1',
     title: 'Live map performance',
     body: 'Healthy WebSocket sessions avoid full-state polling, route pulses update less state, and map heat/activity layers refresh at calmer cadences.'
-  },
-  {
-    label: '2.9.0',
-    title: 'Visitor UX rollup',
-    body: 'Layer presets, clearer map settings, first-visit orientation, and denser selection summaries polish the live map without public API changes.'
   }
 ];
 
@@ -39,9 +39,10 @@ interface LinkBarProps {
   packetsOpen?: boolean;
   netGraphOpen?: boolean;
   chatOpen?: boolean;
+  labOpen?: boolean;
 }
 
-export default function LinkBar({ packetsOpen = false, netGraphOpen = false, chatOpen = false }: LinkBarProps) {
+export default function LinkBar({ packetsOpen = false, netGraphOpen = false, chatOpen = false, labOpen = false }: LinkBarProps) {
   const [now, setNow] = useState(() => Date.now());
   const [repoStats, setRepoStats] = useState<RepoStats | null>(() => readCachedRepoStats(browserStorage()));
   const [activeInfoPanel, setActiveInfoPanel] = useState<InfoPanel>(null);
@@ -108,6 +109,10 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
         <a className={`link-bar-page ${chatOpen ? 'active' : ''}`} href="#/chat" title="Open public chat history">
           <MessageSquareText size={13} />
           <span>Chat</span>
+        </a>
+        <a className={`link-bar-page ${labOpen ? 'active' : ''}`} href="#/lab" title="Open live RF labs">
+          <FlaskConical size={13} />
+          <span>Labs</span>
         </a>
       </div>
       <div className="link-bar-right">
