@@ -3456,7 +3456,7 @@ button.status-pill {
 .noc-summary {
   position: absolute;
   z-index: 12;
-  top: 90px;
+  top: 112px;
   right: 10px;
   left: auto;
   display: grid;
