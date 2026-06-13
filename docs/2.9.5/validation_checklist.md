@@ -34,10 +34,10 @@ Date: 2026-06-13
 
 ## Deployment Gates
 
-- [ ] Pushed commit is deployed on the Canada droplet.
-- [ ] `/healthz` reports version `2.9.5`.
-- [ ] Live smoke passes against `https://carto.canadaverse.org`.
-- [ ] Live browser smoke passes against `https://carto.canadaverse.org`.
+- [x] Pushed commit is deployed on the Canada droplet.
+- [x] `/healthz` reports version `2.9.5`.
+- [x] Live smoke passes against `https://carto.canadaverse.org`.
+- [x] Live browser smoke passes against `https://carto.canadaverse.org`.
 
 ## Notes
 
@@ -45,3 +45,5 @@ Date: 2026-06-13
 - No database migration is required.
 - PMTiles URLs are optional build-time inputs; blank values use local fallback
   styles for the offline profiles.
+- Droplet cleanup retained only the latest completed SQLite backup and cleared
+  Docker build cache after deploy.

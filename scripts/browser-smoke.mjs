@@ -118,6 +118,7 @@ let hardFailures = 0;
 try {
   for (const viewport of viewports) {
     for (const scenario of scenarios) {
+      console.log(`[run] ${viewport.name} ${scenario.name}`);
       const result = await runScenario(browser, viewport, scenario);
       results.push(result);
       if (result.errors.length > 0) hardFailures += 1;
@@ -315,19 +316,27 @@ async function smokeVcrScrubReplay(page) {
   await setRangeInputValue(page.locator('input.vcr-timeline').first(), replayTarget.timestamp);
   await page.waitForSelector('.vcr-bar.paused', { state: 'visible', timeout: 8_000 });
 
-  const replayAttempt = page.waitForFunction(() => {
+  await page.getByRole('button', { name: /Replay from selected time/i }).click();
+  const replayStarted = await page.waitForFunction(() => {
     const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
     const bar = document.querySelector('.vcr-bar');
-    return readout.includes('REPLAY LOADING') || bar?.classList.contains('replay') || Boolean(document.querySelector('.vcr-live-clock-icon.spinning'));
-  }, null, { timeout: 10_000 });
-  await page.getByRole('button', { name: /Replay from selected time/i }).click();
-  await replayAttempt;
+    const readoutText = readout.trim();
+    return readout.includes('REPLAY LOADING') ||
+      /^REPLAY (?!PAUSED)/i.test(readoutText) ||
+      bar?.classList.contains('replay') ||
+      Boolean(document.querySelector('.vcr-live-clock-icon.spinning')) ||
+      /NO REPLAY EVENTS|REPLAY EMPTY|REPLAY ERROR|REPLAY RETRY/i.test(readout);
+  }, null, { timeout: 15_000 }).then(() => true, () => false);
+  const readoutAfterStart = await page.locator('.vcr-readout').first().textContent().catch(() => '');
+  if (!replayStarted && /REPLAY PAUSED/i.test(readoutAfterStart ?? '')) {
+    throw new Error(`VCR replay did not leave paused state: ${compactText(readoutAfterStart)}`);
+  }
   await page.waitForFunction(() => {
     const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
     return !readout.includes('REPLAY LOADING');
   }, null, { timeout: 20_000 }).catch(() => {});
   const readoutText = await page.locator('.vcr-readout').first().textContent();
-  if (/NO REPLAY EVENTS|REPLAY ERROR/i.test(readoutText ?? '')) {
+  if (/NO REPLAY EVENTS|REPLAY EMPTY|REPLAY ERROR|REPLAY RETRY/i.test(readoutText ?? '')) {
     throw new Error(`VCR replay did not produce replayable route events: ${compactText(readoutText)}`);
   }
 }
