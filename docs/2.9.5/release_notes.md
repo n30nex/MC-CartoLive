@@ -19,6 +19,10 @@ free of terrain color tint by default.
 - Replaced the long top action row with a compact `Live`, `Focus`, `Routes`,
   `Map`, and `More` toolbar. Workspaces now live under a `Workspaces` menu, and
   build/changelog/GitHub details moved under `About`.
+- Tuned Clean Live defaults so new users start with routes and clusters off,
+  labels/live packets/activity heat/nodes/trails/observer bursts/message
+  bubbles/buildings on, terrain and propagation analysis off, and weather clouds
+  on when configured.
 - Changed flat map styles so Classic, NOC, Accessibility, and normal
   OpenFreeMap styles do not enable terrain by default. If terrain is manually
   enabled on those maps, it uses hillshade only; the height color tint is

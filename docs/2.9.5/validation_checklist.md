@@ -22,7 +22,11 @@ Date: 2026-06-13
   default; Topo RF and OpenFreeMap 3D enable terrain by default.
 - [x] Flat maps do not apply height color-relief tint; Topo RF remains the only
   color-relief terrain profile.
-- [x] Weather clouds remain disabled by default and hidden before detail zoom.
+- [x] Clean Live defaults keep routes/clusters/terrain/propagation analysis off
+  while live packets, labels, activity heat, nodes, trails, observer bursts,
+  message bubbles, buildings, and configured weather clouds are on.
+- [x] Weather clouds stay hidden before detail zoom and remain unavailable when
+  no weather API key is configured.
 - [x] Offline PMTiles and Field Offline profiles render a usable fallback when
   no archive URL is configured.
 - [x] 3D role towers, signal beacons, minimal pins, route arc height, building

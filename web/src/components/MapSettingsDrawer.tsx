@@ -100,7 +100,7 @@ const COMMON_LAYER_CONTROLS: readonly LayerControl[] = [
 ];
 
 const MODE_CARDS: readonly { id: string; label: string; profileID: MapStyleProfileID; presetID: MapLayerPresetID; hint: string }[] = [
-  { id: 'clean-live', label: 'Clean Live', profileID: 'classic-dark', presetID: 'clean', hint: 'Flat street map with live traffic' },
+  { id: 'clean-live', label: 'Clean Live', profileID: 'classic-dark', presetID: 'live', hint: 'Flat street map with live traffic' },
   { id: 'terrain-topo', label: 'Terrain/Topo', profileID: 'topo-rf', presetID: 'analysis', hint: 'Topo relief for RF review' },
   { id: '3d', label: '3D', profileID: 'openfreemap-3d', presetID: '3d', hint: 'Pitched map with route arcs' },
   { id: 'low-bandwidth', label: 'Low Bandwidth', profileID: 'low-bandwidth', presetID: 'clean', hint: 'Quiet view for weak clients' }

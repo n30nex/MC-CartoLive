@@ -10,6 +10,9 @@ no database migration.
 - The main toolbar is now `Live`, `Focus`, `Routes`, `Map`, and `More`.
 - `Map` opens mode cards for Clean Live, Terrain/Topo, 3D, and Low Bandwidth;
   advanced style, layer, packet, weather, and RF controls are collapsed.
+- Clean Live keeps routes off while enabling labels, live packets, activity
+  heat, nodes, packet trails, observer bursts, message bubbles, 3D buildings,
+  and configured weather clouds by default.
 - Classic, NOC, Accessibility, and standard OpenFreeMap styles stay flat by
   default. OpenFreeMap 3D and Topo RF automatically enable terrain.
 - Offline PMTiles and Field Offline profiles use `VITE_PMTILES_BASEMAP_URL`

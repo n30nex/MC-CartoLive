@@ -65,7 +65,7 @@ export const MAP_SETTINGS_STORAGE_KEY = 'mc-cartolive-map-settings';
 export const MAP_SETTINGS_SCHEMA_VERSION = 6;
 
 export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
-  clusters: true,
+  clusters: false,
   activityHeatmap: true,
   nodes: true,
   nodeLabels: true,
@@ -81,7 +81,7 @@ export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   buildingExtrusions: true,
   terrainLOS: false,
   terrainHeightmap: false,
-  weatherClouds: false,
+  weatherClouds: true,
   propagationInsights: false
 };
 

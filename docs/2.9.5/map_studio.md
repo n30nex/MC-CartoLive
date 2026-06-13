@@ -35,6 +35,11 @@ and `More`. `Map` opens four mode cards: `Clean Live`, `Terrain/Topo`, `3D`,
 and `Low Bandwidth`. Common toggles stay visible; detailed layer, style,
 packet, weather, and 3D/RF tuning controls live in collapsed Advanced sections.
 
+`Clean Live` starts route-quiet with labels, live packets, activity heat, nodes,
+packet trails, observer bursts, message bubbles, 3D buildings, and configured
+weather clouds on; clusters, terrain relief, terrain line-of-sight, and
+propagation insights stay off.
+
 Weather clouds stay hidden unless a weather API key is configured, and they are
 low-zoom only.
 

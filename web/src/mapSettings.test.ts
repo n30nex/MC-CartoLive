@@ -34,7 +34,7 @@ describe('map settings', () => {
     expect(settings.layers.packetComets3D).toBe(true);
     expect(settings.layers.buildingExtrusions).toBe(true);
     expect(settings.layers.terrainHeightmap).toBe(false);
-    expect(settings.layers.weatherClouds).toBe(false);
+    expect(settings.layers.weatherClouds).toBe(true);
     expect(settings.layers.propagationInsights).toBe(false);
     expect(settings.packets.speed).toBe(3);
     expect(settings.packets.brightness).toBe(0.4);
@@ -166,6 +166,27 @@ describe('map settings', () => {
     const threeD = applyMapLayerPreset(base, '3d');
     expect(threeD.layers.terrainHeightmap).toBe(true);
     expect(threeD.layers.routeArcs3D).toBe(true);
+  });
+
+  it('keeps Clean Live defaults route-quiet but live-layer rich', () => {
+    const cleanLive = applyMapLayerPreset(DEFAULT_MAP_SETTINGS, 'live').layers;
+
+    expect(cleanLive).toMatchObject({
+      routes: false,
+      nodeLabels: true,
+      liveComets: true,
+      activityHeatmap: true,
+      terrainHeightmap: false,
+      buildingExtrusions: true,
+      weatherClouds: true,
+      clusters: false,
+      nodes: true,
+      packetResidue: true,
+      observerBursts: true,
+      messageBubbles: true,
+      terrainLOS: false,
+      propagationInsights: false
+    });
   });
 
   it('applies map style profiles with workflow-safe defaults', () => {
