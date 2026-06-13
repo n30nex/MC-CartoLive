@@ -6,9 +6,12 @@ schemas.
 
 ## Style Profiles
 
-- `Classic Dark` and `Classic Light`: CARTO raster basemaps for the familiar
-  traffic-first view. They stay flat by default and keep terrain relief behind
-  the explicit `Terrain relief` toggle.
+- `Classic Dark`: local black traffic-first canvas for maximum route contrast.
+  It stays flat by default and keeps terrain relief behind the explicit
+  `Terrain relief` toggle.
+- `Classic Light`: CARTO raster basemap for the familiar bright daytime view.
+  It stays flat by default and keeps terrain relief behind the explicit
+  `Terrain relief` toggle.
 - `OpenFreeMap Dark` and `OpenFreeMap Light`: bundled vector styles tuned for
   RF overlays and 3D readiness. They also default to clean flat maps.
 - `Positron`, `Liberty`, and `Fiord`: OpenFreeMap-hosted style presets for

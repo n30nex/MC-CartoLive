@@ -3,8 +3,9 @@
 2.9.5 is the Map Studio release. It expands the public map from a small
 dark/light/3D toggle into a browser-local style workspace with richer basemap
 choices, offline tile hooks, and more configurable 3D RF presentation.
-The latest 2.9.5 update also cleans up the first-view operator UI and keeps
-flat street maps free of terrain color tint by default.
+The latest 2.9.5 update also cleans up the first-view operator UI, changes the
+default dark map to a black route-contrast canvas, and keeps flat street maps
+free of terrain color tint by default.
 
 ## Highlights
 

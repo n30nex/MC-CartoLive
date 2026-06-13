@@ -96,7 +96,7 @@ export const DEFAULT_PACKET_VISUAL_SETTINGS: PacketVisualSettings = {
 
 export const DEFAULT_MAP_STYLE_SETTINGS: MapStyleSettings = {
   profileID: 'classic-dark',
-  basemapDim: 0.08,
+  basemapDim: 0,
   labelDensity: 0.72,
   terrainClarity: 62,
   buildingOpacity: 0.62,

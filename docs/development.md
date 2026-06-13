@@ -10,8 +10,8 @@ podman run --rm --name mc-cartolive -p 39476:8080 --env-file .env mc-cartolive-m
 
 Open `http://localhost:39476`.
 
-The default public dashboard uses the MapLibre/CARTO dark map on this same
-port. Use the in-app map base toggle to switch to OpenFreeMap 3D without
+The default public dashboard uses a tint-free black MapLibre canvas on this
+same port. Use the in-app map base toggle to switch to OpenFreeMap 3D without
 starting a second service.
 OpenFreeMap 3D is frontend-only: Three.js is lazy-loaded for the custom 3D
 layer, and the existing 2D MapLibre sources still handle labels, hit testing,

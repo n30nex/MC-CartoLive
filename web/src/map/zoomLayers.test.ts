@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapOverlayStyle, terrainUsesColorRelief, WEATHER_CLOUD_FADE_END_ZOOM, WEATHER_CLOUD_OPACITY, weatherCloudRasterLayer, weatherCloudsVisibleAtZoom } from './CanadaMap';
+import { mapOverlayStyle, originalMapStyle, terrainUsesColorRelief, WEATHER_CLOUD_FADE_END_ZOOM, WEATHER_CLOUD_OPACITY, weatherCloudRasterLayer, weatherCloudsVisibleAtZoom } from './CanadaMap';
 import { DETAIL_MIN_ZOOM } from './zoomMode';
 
 describe('map zoom layer consistency', () => {
@@ -17,6 +17,13 @@ describe('map zoom layer consistency', () => {
     expect(layer('analysis-route-overview-glow')?.minzoom).toBeUndefined();
     expect(layer('analysis-route-overview-line')?.minzoom).toBeUndefined();
     expect(mapOverlayStyle.sources['analysis-route-paths']).toBeTruthy();
+  });
+
+  it('keeps the default dark map on a tint-free black canvas', () => {
+    const background = originalMapStyle.layers.find((item) => item.id === 'map-background') as any;
+    expect(originalMapStyle.sources).toEqual({});
+    expect(background?.paint?.['background-color']).toBe('#000000');
+    expect(JSON.stringify(originalMapStyle)).not.toContain('dark_all');
   });
 
   it('adds propagation insight layers at detail zoom with a dedicated public source', () => {

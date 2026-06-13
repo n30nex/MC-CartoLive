@@ -192,7 +192,11 @@ button {
 }
 
 .map-container {
-  background: var(--mc-bg, #05070b);
+  background: #000;
+}
+
+.map-wrap[data-map-theme-mode="light"] .map-container {
+  background: #eef5fb;
 }
 
 .rf-canvas {
