@@ -41,6 +41,18 @@ git fetch origin "$BRANCH"
 git checkout "$BRANCH"
 git reset --hard "origin/$BRANCH"
 
+DEPLOY_SHA="$(git rev-parse HEAD)"
+DEPLOY_SHORT_SHA="$(git rev-parse --short HEAD)"
+DEPLOY_VERSION="$(tr -d '\r\n' < VERSION)"
+export APP_VERSION="$DEPLOY_VERSION"
+export GIT_SHA="$DEPLOY_SHA"
+export BUILD_TIME="$STAMP"
+export VITE_GIT_SHA="$DEPLOY_SHA"
+export VITE_BUILD_TIME="$STAMP"
+export VITE_BUILD_NUMBER="$DEPLOY_SHORT_SHA"
+
+echo "Release metadata: version=$APP_VERSION sha=$DEPLOY_SHORT_SHA buildTime=$BUILD_TIME"
+
 echo "Building and starting containers"
 docker compose up --build -d --remove-orphans
 
