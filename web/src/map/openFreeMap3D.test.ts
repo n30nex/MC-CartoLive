@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_MAP_LAYER_SETTINGS, DEFAULT_PACKET_VISUAL_SETTINGS } from '../mapSettings';
+import { DEFAULT_MAP_LAYER_SETTINGS, DEFAULT_MAP_STYLE_SETTINGS, DEFAULT_PACKET_VISUAL_SETTINGS } from '../mapSettings';
 import type { PublicNode, PublicRoute } from '../types';
 import { emptyNodeFocus } from './nodeFocus';
 import {
@@ -152,6 +152,7 @@ function updateInput(overrides: Partial<OpenFreeMap3DUpdate> = {}): OpenFreeMap3
     focus: emptyNodeFocus(),
     selectedRouteID: null,
     analysisSegments: [],
+    styleSettings: DEFAULT_MAP_STYLE_SETTINGS,
     layerSettings: DEFAULT_MAP_LAYER_SETTINGS,
     packetVisualSettings: DEFAULT_PACKET_VISUAL_SETTINGS,
     themeMode: 'dark',

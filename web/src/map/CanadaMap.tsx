@@ -22,7 +22,7 @@ import {
 import { nodeFocusFromRoutes, type NodeFocus } from './nodeFocus';
 import { nodeSourceSignature } from './nodeSource';
 import { PacketAnimator } from './packetAnimator';
-import { DEFAULT_MAP_LAYER_SETTINGS, DEFAULT_PACKET_VISUAL_SETTINGS, type MapLayerSettings, type PacketVisualSettings } from '../mapSettings';
+import { DEFAULT_MAP_LAYER_SETTINGS, DEFAULT_MAP_STYLE_SETTINGS, DEFAULT_PACKET_VISUAL_SETTINGS, normalizeStyleSettings, type MapLayerSettings, type MapStyleSettings, type PacketVisualSettings } from '../mapSettings';
 import {
   compactNodeLabel,
   NODE_ACTIVITY_UPDATE_MS,
@@ -76,6 +76,8 @@ import {
   type FollowTrafficState
 } from './followTraffic';
 import type { OpenFreeMap3DController } from './openFreeMap3D';
+import { installPMTilesProtocol } from './styles/pmtiles';
+import { mapStyleProfileByID, type MapStyleProfileID } from './styles/styleRegistry';
 
 export type MapAction =
   | { type: 'reset'; token: number }
@@ -100,12 +102,13 @@ interface Props {
   highlightedPathRouteIDs: Set<string>;
   highlightedPathNodeIDs: Set<string>;
   analysisSegments: PublicRoutePulse['segments'];
+  styleProfileID: MapStyleProfileID;
+  styleSettings: MapStyleSettings;
   layerSettings: MapLayerSettings;
   packetVisualSettings: PacketVisualSettings;
   plotMode: 'off' | 'node' | 'area';
   mapAction: MapAction;
   routeGifExportRequest: RouteMapGifExportRequest | null;
-  baseMode: MapBaseMode;
   themeMode: MapThemeMode;
   initialView: SharedViewState | null;
   mapConfig?: PublicMapConfig | null;
@@ -179,6 +182,8 @@ const PROPAGATION_LINE_LAYER = 'propagation-event-line';
 const PROPAGATION_LABEL_LAYER = 'propagation-event-labels';
 const ROUTE_PAYLOAD_GLOW_SOURCE = 'route-payload-glows';
 const ROUTE_PAYLOAD_GLOW_LAYER = 'route-payload-glow';
+const BASEMAP_DIM_SOURCE = 'meshcore-basemap-dim';
+const BASEMAP_DIM_LAYER = 'meshcore-basemap-dim';
 const NODE_HALO_LAYER = 'selected-node-halo';
 const NODE_LAYER = 'node-symbols';
 const NODE_ICON_LAYER = 'node-role-icons';
@@ -236,6 +241,8 @@ const OPENFREEMAP_STYLE_URL = envURL('VITE_OPENFREEMAP_STYLE_URL', DEFAULT_OPENF
 const OPENFREEMAP_TILEJSON_URL = envURL('VITE_OPENFREEMAP_TILEJSON_URL', DEFAULT_OPENFREEMAP_TILEJSON_URL);
 const TERRAIN_TILE_URL = envURL('VITE_TERRAIN_TILE_URL', DEFAULT_TERRAIN_TILE_URL);
 const TERRAIN_EXAGGERATION = envFloat('VITE_TERRAIN_EXAGGERATION', 1.25);
+const PMTILES_BASEMAP_URL = envURL('VITE_PMTILES_BASEMAP_URL', '');
+const PMTILES_TERRAIN_URL = envURL('VITE_PMTILES_TERRAIN_URL', '');
 const WEATHER_API_KEY = (import.meta.env['VITE_OPENWEATHERMAP_API_KEY'] as string | undefined)?.trim() || '';
 
 export type MapBaseMode = 'original' | 'openfreemap';
@@ -1070,6 +1077,31 @@ export const lightMapOverlayStyle: maplibregl.StyleSpecification = {
   layers: mapOverlayStyle.layers.map(lightOverlayLayer)
 };
 
+export const lowBandwidthMapStyle: maplibregl.StyleSpecification = {
+  version: 8,
+  projection: { type: 'mercator' },
+  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+  sources: {},
+  layers: [
+    {
+      id: 'map-background',
+      type: 'background',
+      paint: { 'background-color': '#020617' }
+    }
+  ]
+};
+
+export const nocMapStyle: maplibregl.StyleSpecification = {
+  ...lowBandwidthMapStyle,
+  layers: [
+    {
+      id: 'map-background',
+      type: 'background',
+      paint: { 'background-color': '#00040a' }
+    }
+  ]
+};
+
 export const openFreeMapStyle: string | maplibregl.StyleSpecification = OPENFREEMAP_STYLE_URL || mapOverlayStyle;
 export const mapStyle: string | maplibregl.StyleSpecification = originalMapStyle;
 
@@ -1078,9 +1110,107 @@ function openFreeMapStyleForTheme(themeMode: MapThemeMode): string | maplibregl.
   return themeMode === 'light' ? lightMapOverlayStyle : mapOverlayStyle;
 }
 
-function mapStyleForMode(mode: MapBaseMode, themeMode: MapThemeMode): string | maplibregl.StyleSpecification {
-  if (mode === 'openfreemap') return openFreeMapStyleForTheme(themeMode);
-  return themeMode === 'light' ? lightOriginalMapStyle : originalMapStyle;
+function mapStyleForProfile(profileID: MapStyleProfileID, themeMode: MapThemeMode): string | maplibregl.StyleSpecification {
+  const profile = mapStyleProfileByID(profileID);
+  if (profile.id === 'classic-dark') return originalMapStyle;
+  if (profile.id === 'classic-light' || profile.id === 'accessibility') return lightOriginalMapStyle;
+  if (profile.id === 'noc') return nocMapStyle;
+  if (profile.id === 'low-bandwidth') return lowBandwidthMapStyle;
+  if ((profile.id === 'offline-pmtiles' || profile.id === 'field-offline') && PMTILES_BASEMAP_URL) return pmtilesBaseMapStyle(profile.id);
+  if (profile.id === 'offline-pmtiles' || profile.id === 'field-offline') return lowBandwidthMapStyle;
+  if (profile.style) return profile.style;
+  if (profile.id === 'topo-rf') return openFreeMapStyleForTheme('dark');
+  return openFreeMapStyleForTheme(profile.theme === 'light' ? 'light' : themeMode);
+}
+
+function mapBaseModeForProfile(profileID: MapStyleProfileID): MapBaseMode {
+  const profile = mapStyleProfileByID(profileID);
+  return profile.baseMode === 'raster' && !profile.supports3D && !profile.supportsTerrain ? 'original' : 'openfreemap';
+}
+
+function mapThemeModeForProfile(profileID: MapStyleProfileID, fallback: MapThemeMode): MapThemeMode {
+  const theme = mapStyleProfileByID(profileID).theme;
+  return theme === 'light' ? 'light' : theme === 'dark' || theme === 'noc' || theme === 'topo' ? 'dark' : fallback;
+}
+
+function defaultPitchForProfile(profileID: MapStyleProfileID): number {
+  return mapStyleProfileByID(profileID).defaultPitch;
+}
+
+function defaultBearingForProfile(profileID: MapStyleProfileID): number {
+  return mapStyleProfileByID(profileID).defaultBearing;
+}
+
+function pmtilesBaseMapStyle(profileID: MapStyleProfileID): maplibregl.StyleSpecification {
+  const light = profileID === 'field-offline';
+  const sources: maplibregl.StyleSpecification['sources'] = {
+    'offline-basemap': {
+      type: 'vector',
+      url: `pmtiles://${PMTILES_BASEMAP_URL}`,
+      attribution: '&copy; OpenStreetMap contributors'
+    } as any
+  };
+  if (PMTILES_TERRAIN_URL) {
+    sources['offline-terrain'] = {
+      type: 'raster-dem',
+      url: `pmtiles://${PMTILES_TERRAIN_URL}`,
+      encoding: 'terrarium',
+      attribution: DEM_ATTRIBUTION
+    } as any;
+  }
+  return {
+    version: 8,
+    projection: { type: 'mercator' },
+    glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+    sources,
+    layers: [
+      {
+        id: 'map-background',
+        type: 'background',
+        paint: { 'background-color': light ? '#e5edf5' : '#07111f' }
+      },
+      {
+        id: 'offline-land',
+        type: 'fill',
+        source: 'offline-basemap',
+        'source-layer': 'landcover',
+        paint: { 'fill-color': light ? '#e3eadf' : '#122033', 'fill-opacity': 0.7 }
+      },
+      {
+        id: 'offline-water',
+        type: 'fill',
+        source: 'offline-basemap',
+        'source-layer': 'water',
+        paint: { 'fill-color': light ? '#bfd8f4' : '#0b3047', 'fill-opacity': 0.82 }
+      },
+      {
+        id: 'offline-roads',
+        type: 'line',
+        source: 'offline-basemap',
+        'source-layer': 'transportation',
+        paint: { 'line-color': light ? '#94a3b8' : '#334155', 'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.25, 12, 1.4] }
+      },
+      {
+        id: 'offline-place-labels',
+        type: 'symbol',
+        source: 'offline-basemap',
+        'source-layer': 'place',
+        minzoom: 4,
+        layout: {
+          'text-field': ['coalesce', ['get', 'name'], ''],
+          'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 4, 9, 10, 12],
+          'text-allow-overlap': false
+        },
+        paint: {
+          'text-color': light ? '#334155' : '#cbd5e1',
+          'text-halo-color': light ? '#f8fafc' : '#020617',
+          'text-halo-width': 1.2
+        }
+      }
+    ],
+    ...(PMTILES_TERRAIN_URL ? { terrain: { source: 'offline-terrain', exaggeration: 1 } } : {})
+  };
 }
 
 function ensureMercatorProjection(map: maplibregl.Map) {
@@ -1200,14 +1330,6 @@ function lightOverlayLayer(layer: maplibregl.LayerSpecification): maplibregl.Lay
   return next as maplibregl.LayerSpecification;
 }
 
-function defaultPitchForMode(mode: MapBaseMode): number {
-  return mode === 'openfreemap' ? DEFAULT_OPENFREEMAP_MAP_PITCH : DEFAULT_ORIGINAL_MAP_PITCH;
-}
-
-function defaultBearingForMode(mode: MapBaseMode): number {
-  return mode === 'openfreemap' ? DEFAULT_OPENFREEMAP_MAP_BEARING : DEFAULT_ORIGINAL_MAP_BEARING;
-}
-
 function defaultMapViewFromConfig(config?: PublicMapConfig | null): MapViewState {
   const center = config?.defaultCenter;
   const lng = Array.isArray(center) && Number.isFinite(center[0]) ? center[0] : DEFAULT_WORLD_CENTER.lng;
@@ -1230,12 +1352,13 @@ function CanadaMap({
   highlightedPathRouteIDs,
   highlightedPathNodeIDs,
   analysisSegments,
+  styleProfileID,
+  styleSettings = DEFAULT_MAP_STYLE_SETTINGS,
   layerSettings = DEFAULT_MAP_LAYER_SETTINGS,
   packetVisualSettings = DEFAULT_PACKET_VISUAL_SETTINGS,
   plotMode,
   mapAction,
   routeGifExportRequest,
-  baseMode,
   themeMode,
   initialView,
   mapConfig,
@@ -1296,7 +1419,9 @@ function CanadaMap({
   const initialViewRef = useRef(initialView);
   const mapConfigRef = useRef(mapConfig);
   const mapConfigAppliedRef = useRef(false);
-  const baseModeRef = useRef<MapBaseMode>(baseMode);
+  const styleProfileIDRef = useRef<MapStyleProfileID>(styleProfileID);
+  const styleSettingsRef = useRef<MapStyleSettings>(normalizeStyleSettings(styleSettings));
+  const baseModeRef = useRef<MapBaseMode>(mapBaseModeForProfile(styleProfileID));
   const nodesRef = useRef(nodes);
   const routesRef = useRef(routes);
   const propagationEventsRef = useRef(propagationEvents);
@@ -1354,6 +1479,7 @@ function CanadaMap({
         focus: nodeFocusRef.current,
         selectedRouteID: selectedRouteIDRef.current,
         analysisSegments: analysisSegmentsRef.current,
+        styleSettings: styleSettingsRef.current,
         layerSettings: layerSettingsRef.current,
         packetVisualSettings: packetVisualSettingsRef.current,
         themeMode: themeModeRef.current
@@ -1622,14 +1748,17 @@ function CanadaMap({
     if (startupView) initialViewRef.current = startupView;
     if (startupView) fitInitialNodesRef.current = true;
     setMapZoom(Number((startupView?.z ?? defaultView.z).toFixed(2)));
-    const initialStyle = mapStyleForMode(baseModeRef.current, themeModeRef.current);
+    if (mapStyleProfileByID(styleProfileIDRef.current).baseMode === 'pmtiles') {
+      installPMTilesProtocol(maplibregl, true);
+    }
+    const initialStyle = mapStyleForProfile(styleProfileIDRef.current, themeModeRef.current);
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: initialStyle,
       center: startupView ? [startupView.lng, startupView.lat] : [defaultView.lng, defaultView.lat],
       zoom: startupView?.z ?? defaultView.z,
-      pitch: startupView?.pitch ?? defaultPitchForMode(baseModeRef.current),
-      bearing: startupView?.bearing ?? defaultBearingForMode(baseModeRef.current),
+      pitch: startupView?.pitch ?? defaultPitchForProfile(styleProfileIDRef.current),
+      bearing: startupView?.bearing ?? defaultBearingForProfile(styleProfileIDRef.current),
       minZoom: 2.4,
       maxZoom: 18,
       maxPitch: 85,
@@ -1709,6 +1838,7 @@ function CanadaMap({
     const initializeMapLayers = () => {
       if (loadedRef.current) return;
       if (!mapStyleSourcesReady(map)) {
+        if (initializeRetry !== null) window.clearTimeout(initializeRetry);
         initializeRetry = window.setTimeout(initializeMapLayers, 250);
         return;
       }
@@ -1734,7 +1864,7 @@ function CanadaMap({
       }
       try {
         addPublicLayers(map);
-        applyLayerSettings(map, layerSettingsRef.current, themeModeRef.current);
+        applyLayerSettings(map, layerSettingsRef.current, themeModeRef.current, styleSettingsRef.current);
         if (!layerEventsBoundRef.current) {
           bindLayerEvents(map, nodesRef, nodeMeshActivityAtRef, selectedNodeRef, plotModeRef, plotNodePickRef, plotMapPointRef, clearSelectionRef, setHoveredNode);
           layerEventsBoundRef.current = true;
@@ -1756,8 +1886,8 @@ function CanadaMap({
         map.jumpTo({
           center: [initialViewRef.current.lng, initialViewRef.current.lat],
           zoom: initialViewRef.current.z,
-          pitch: initialViewRef.current.pitch ?? defaultPitchForMode(baseModeRef.current),
-          bearing: initialViewRef.current.bearing ?? defaultBearingForMode(baseModeRef.current)
+          pitch: initialViewRef.current.pitch ?? defaultPitchForProfile(styleProfileIDRef.current),
+          bearing: initialViewRef.current.bearing ?? defaultBearingForProfile(styleProfileIDRef.current)
         });
       }
       updateNodeRendering(map, nodesRef.current, nodeFocusRef.current, Date.now(), nodeMeshActivityAtRef.current, nodeSourceSignatureRef, true);
@@ -1792,7 +1922,6 @@ function CanadaMap({
     map.on('load', initializeMapLayers);
     map.on('style.load', initializeMapLayers);
     map.on('styledata', initializeMapLayers);
-    initializeRetry = window.setTimeout(initializeMapLayers, 250);
 
     return () => {
       if (initializeRetry !== null) window.clearTimeout(initializeRetry);
@@ -1838,9 +1967,27 @@ function CanadaMap({
   }, []);
 
   useEffect(() => {
-    if (baseModeRef.current === baseMode && themeModeRef.current === themeMode) return;
-    baseModeRef.current = baseMode;
-    themeModeRef.current = themeMode;
+    const normalizedStyleSettings = normalizeStyleSettings(styleSettings);
+    styleSettingsRef.current = normalizedStyleSettings;
+    const nextBaseMode = mapBaseModeForProfile(styleProfileID);
+    const nextThemeMode = mapThemeModeForProfile(styleProfileID, themeMode);
+    if (
+      styleProfileIDRef.current === styleProfileID
+      && baseModeRef.current === nextBaseMode
+      && themeModeRef.current === nextThemeMode
+    ) {
+      const map = mapRef.current;
+      if (map) {
+        if (loadedRef.current) {
+          applyLayerSettings(map, layerSettingsRef.current, nextThemeMode, normalizedStyleSettings);
+          updateOpenFreeMap3D();
+        }
+      }
+      return;
+    }
+    styleProfileIDRef.current = styleProfileID;
+    baseModeRef.current = nextBaseMode;
+    themeModeRef.current = nextThemeMode;
     const map = mapRef.current;
     if (!map) return;
 
@@ -1862,18 +2009,28 @@ function CanadaMap({
     destroyOpenFreeMap3D();
     layerEventsBoundRef.current = false;
 
-    const nextStyle = mapStyleForMode(baseMode, themeMode);
-    (window as any).__meshcoreMapStyle = nextStyle;
-    map.setStyle(nextStyle);
-    if (baseMode === 'openfreemap') ensureMercatorProjection(map);
-    map.once('style.load', () => {
-      map.easeTo({
-        pitch: defaultPitchForMode(baseMode),
-        bearing: defaultBearingForMode(baseMode),
-        duration: 500
+    const applyStyle = () => {
+      const profile = mapStyleProfileByID(styleProfileID);
+      if (profile.baseMode === 'pmtiles') {
+        const status = installPMTilesProtocol(maplibregl, true);
+        if (!status.installed && PMTILES_BASEMAP_URL) {
+          setMapInitError(`PMTiles unavailable: ${status.reason ?? 'not installed'}`);
+        }
+      }
+      const nextStyle = mapStyleForProfile(styleProfileID, nextThemeMode);
+      (window as any).__meshcoreMapStyle = nextStyle;
+      map.setStyle(nextStyle);
+      if (nextBaseMode === 'openfreemap') ensureMercatorProjection(map);
+      map.once('style.load', () => {
+        map.easeTo({
+          pitch: defaultPitchForProfile(styleProfileID),
+          bearing: defaultBearingForProfile(styleProfileID),
+          duration: 500
+        });
       });
-    });
-  }, [baseMode, themeMode]);
+    };
+    applyStyle();
+  }, [styleProfileID, styleSettings, themeMode]);
 
   useEffect(() => {
     const interval = window.setInterval(() => setNodeLabelClock(Date.now()), NODE_LABEL_UPDATE_MS);
@@ -1948,7 +2105,7 @@ function CanadaMap({
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
     animatorRef.current?.setLayerSettings(layerSettings);
-    applyLayerSettings(map, layerSettings, themeModeRef.current);
+    applyLayerSettings(map, layerSettings, themeModeRef.current, styleSettingsRef.current);
     if (layerSettings.activityHeatmap) setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current, true);
     if (!layerSettings.messageBubbles) setMessageBubbles([]);
     updateOpenFreeMap3D();
@@ -2172,8 +2329,9 @@ function CanadaMap({
     <div
       className={`map-wrap ${loading ? 'loading' : ''}`}
       data-map-zoom={mapZoom}
-      data-map-base-mode={baseMode}
-      data-map-theme-mode={themeMode}
+      data-map-base-mode={baseModeRef.current}
+      data-map-style-profile={styleProfileID}
+      data-map-theme-mode={themeModeRef.current}
       data-map-center-lat={mapCenter.lat}
       data-map-center-lng={mapCenter.lng}
       data-node-ref-count={nodesRef.current.length}
@@ -2299,14 +2457,14 @@ function ensureTerrainSources(map: maplibregl.Map, themeMode: MapThemeMode) {
   }, labelLayerID);
 }
 
-function applyTerrainSetting(map: maplibregl.Map, enabled: boolean, themeMode: MapThemeMode) {
+function applyTerrainSetting(map: maplibregl.Map, enabled: boolean, themeMode: MapThemeMode, styleSettings: MapStyleSettings = DEFAULT_MAP_STYLE_SETTINGS) {
   ensureTerrainSources(map, themeMode);
   setLayerVisibility(map, HILLSHADE_LAYER, enabled);
   if (!enabled) {
     clearMapTerrain(map);
     return;
   }
-  map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: TERRAIN_EXAGGERATION });
+  map.setTerrain({ source: TERRAIN_SOURCE, exaggeration: styleSettings.terrainExaggeration || TERRAIN_EXAGGERATION });
   map.setSky({
     'sky-color': themeMode === 'light' ? '#dbeafe' : '#0f172a',
     'horizon-color': themeMode === 'light' ? '#bfdbfe' : '#172554',
@@ -2497,6 +2655,29 @@ function addPublicLayers(map: maplibregl.Map) {
       data: emptyCollection() as any
     });
   }
+  if (!map.getSource(BASEMAP_DIM_SOURCE)) {
+    map.addSource(BASEMAP_DIM_SOURCE, {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'Polygon', coordinates: [[[-180, -85], [-180, 85], [180, 85], [180, -85], [-180, -85]]] }
+        }]
+      } as any
+    });
+  }
+
+  addLayerIfMissing(map, {
+    id: BASEMAP_DIM_LAYER,
+    type: 'fill',
+    source: BASEMAP_DIM_SOURCE,
+    paint: {
+      'fill-color': '#020617',
+      'fill-opacity': 0
+    }
+  });
 
   addLayerIfMissing(map, {
     id: ANALYSIS_ROUTE_GLOW_LAYER,
@@ -2840,7 +3021,7 @@ function addLayerIfMissing(map: maplibregl.Map, layer: maplibregl.LayerSpecifica
   else map.addLayer(layer);
 }
 
-function applyLayerSettings(map: maplibregl.Map, settings: MapLayerSettings, themeMode: MapThemeMode) {
+function applyLayerSettings(map: maplibregl.Map, settings: MapLayerSettings, themeMode: MapThemeMode, styleSettings: MapStyleSettings = DEFAULT_MAP_STYLE_SETTINGS) {
   const clusterLayers = [
     CLUSTER_LAYER,
     CLUSTER_COUNT_LAYER,
@@ -2862,8 +3043,52 @@ function applyLayerSettings(map: maplibregl.Map, settings: MapLayerSettings, the
   for (const layerID of propagationLayers) setLayerVisibility(map, layerID, settings.propagationInsights);
   for (const layerID of observerBurstLayers) setLayerVisibility(map, layerID, settings.observerBursts);
   setLayerVisibility(map, BUILDINGS_3D_LAYER, settings.buildingExtrusions);
-  applyTerrainSetting(map, settings.terrainHeightmap, themeMode);
+  applyStyleSettings(map, styleSettings, themeMode);
+  applyTerrainSetting(map, settings.terrainHeightmap, themeMode, styleSettings);
   applyWeatherCloudSetting(map, settings);
+}
+
+function applyStyleSettings(map: maplibregl.Map, settings: MapStyleSettings, themeMode: MapThemeMode) {
+  if (map.getLayer(BASEMAP_DIM_LAYER)) {
+    const color = themeMode === 'light' ? '#f8fafc' : '#020617';
+    map.setPaintProperty(BASEMAP_DIM_LAYER, 'fill-color', color);
+    map.setPaintProperty(BASEMAP_DIM_LAYER, 'fill-opacity', settings.basemapDim);
+  }
+  const labelOpacity = nodeLabelOpacityExpression(settings.labelDensity);
+  for (const layerID of [NODE_LABEL_LAYER, OBSERVER_LABEL_LAYER]) {
+    if (map.getLayer(layerID)) map.setPaintProperty(layerID, 'text-opacity', labelOpacity);
+  }
+  if (map.getLayer(BUILDINGS_3D_LAYER)) {
+    map.setPaintProperty(BUILDINGS_3D_LAYER, 'fill-extrusion-opacity', buildingOpacityExpression(settings.buildingOpacity, themeMode));
+  }
+}
+
+function nodeLabelOpacityExpression(labelDensity: number): any {
+  const density = Math.max(0, Math.min(1.4, Number.isFinite(labelDensity) ? labelDensity : DEFAULT_MAP_STYLE_SETTINGS.labelDensity));
+  return [
+    '*',
+    density,
+    [
+      'case',
+      ['==', ['get', 'dimmed'], true],
+      0.22,
+      ['==', ['get', 'selected'], true],
+      0.96,
+      ['==', ['get', 'path'], true],
+      0.86,
+      ['==', ['get', 'neighbor'], true],
+      0.76,
+      ['==', ['get', 'staleLevel'], 2],
+      0.28,
+      0.62
+    ]
+  ];
+}
+
+function buildingOpacityExpression(opacity: number, themeMode: MapThemeMode): any {
+  const max = Math.max(0, Math.min(1, Number.isFinite(opacity) ? opacity : DEFAULT_MAP_STYLE_SETTINGS.buildingOpacity));
+  const base = themeMode === 'light' ? Math.min(max, 0.72) : max;
+  return ['interpolate', ['linear'], ['zoom'], 14.2, base * 0.26, 15.5, base];
 }
 
 function setLayerVisibility(map: maplibregl.Map, layerID: string, visible: boolean) {
@@ -2884,7 +3109,7 @@ function firstTextSymbolLayerID(map: maplibregl.Map): string | undefined {
 
 function mapStyleSourcesReady(map: maplibregl.Map): boolean {
   try {
-    return map.isStyleLoaded() === true;
+    return map.loaded() === true && map.isStyleLoaded() === true && Boolean(map.getStyle()?.layers?.length);
   } catch {
     return false;
   }

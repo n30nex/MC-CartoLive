@@ -13,6 +13,9 @@ describe('MapSettingsDrawer', () => {
     expect(html).toContain('Weather clouds');
     expect(html).toContain('Propagation insights');
     expect(html).toContain('Terrain relief');
+    expect(html).toContain('Map Studio');
+    expect(html).toContain('OpenFreeMap 3D');
+    expect(html).toContain('Offline PMTiles');
     expect(html).toContain('API key required');
     expect(html).toContain('disabled=""');
   });
@@ -36,6 +39,8 @@ describe('MapSettingsDrawer', () => {
     expect(html).toContain('Clean');
     expect(html).toContain('Analysis');
     expect(html).toContain('3D');
+    expect(html).toContain('3D And RF');
+    expect(html).toContain('Role Towers');
     expect(html).toContain('aria-pressed="true"');
     expect(DEFAULT_MAP_SETTINGS.layers.routes).toBe(false);
     expect(DEFAULT_MAP_SETTINGS.layers.terrainHeightmap).toBe(false);

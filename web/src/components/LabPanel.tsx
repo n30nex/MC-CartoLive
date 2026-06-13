@@ -151,7 +151,7 @@ export default function LabPanel({
     <section className={`lab-panel workspace-panel workspace-${presentation}`} aria-label={`${experiment.label} Labs`} style={stageStyle}>
       <header className="lab-panel-header">
         <div>
-          <span className="panel-eyebrow">2.9.4 Labs</span>
+          <span className="panel-eyebrow">2.9.5 Labs</span>
           <h2>{experiment.label}</h2>
           <p>{experiment.tagline}</p>
         </div>

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { RotateCcw, SlidersHorizontal, X } from 'lucide-react';
+import { Layers, RadioTower, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
 import {
   applyMapLayerPreset,
+  applyMapStyleProfile,
   DEFAULT_MAP_SETTINGS,
   MAP_LAYER_PRESETS,
   mapLayerPresetIDForSettings,
@@ -9,9 +10,11 @@ import {
   type MapLayerSettings,
   type MapLayerPresetID,
   type MapSettings,
+  type NodeModelStyle,
   type PacketAnimationStyle,
   type RenderQuality
 } from '../mapSettings';
+import { MAP_STYLE_PROFILES, mapStyleProfileByID, type MapStyleProfileID } from '../map/styles/styleRegistry';
 
 interface MapSettingsDrawerProps {
   settings: MapSettings;
@@ -82,10 +85,23 @@ const RENDER_QUALITIES: readonly { value: RenderQuality; label: string }[] = [
   { value: 'high', label: 'High' }
 ];
 
+const NODE_MODEL_STYLES: readonly { value: NodeModelStyle; label: string }[] = [
+  { value: 'role-towers', label: 'Role Towers' },
+  { value: 'signal-beacons', label: 'Beacons' },
+  { value: 'minimal-pins', label: 'Pins' }
+];
+
 export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenPropagation }: MapSettingsDrawerProps) {
   const activePresetID = mapLayerPresetIDForSettings(settings.layers);
+  const activeStyleProfile = mapStyleProfileByID(settings.style.profileID);
+  const applyStyle = (profileID: MapStyleProfileID) => {
+    onChange(applyMapStyleProfile(settings, profileID));
+  };
   const applyPreset = (presetID: MapLayerPresetID) => {
     onChange(applyMapLayerPreset(settings, presetID));
+  };
+  const updateStyle = (key: keyof MapSettings['style'], value: string | number) => {
+    onChange(normalizeMapSettings({ ...settings, style: { ...settings.style, [key]: value } }));
   };
   const updateLayer = (key: keyof MapLayerSettings, value: boolean) => {
     onChange(normalizeMapSettings({ ...settings, layers: { ...settings.layers, [key]: value } }));
@@ -109,7 +125,33 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
       </header>
 
       <section className="map-settings-section">
-        <h3>Presets</h3>
+        <h3>Map Studio</h3>
+        <div className="map-style-profile-grid" role="group" aria-label="Map style profiles">
+          {MAP_STYLE_PROFILES.map((profile) => {
+            const selected = activeStyleProfile.id === profile.id;
+            return (
+              <button
+                key={profile.id}
+                type="button"
+                className={selected ? 'active' : ''}
+                aria-pressed={selected}
+                onClick={() => applyStyle(profile.id)}
+              >
+                <span>
+                  <strong>{profile.label}</strong>
+                  <small>{profile.description}</small>
+                </span>
+                <em>{profile.sourceLabel}</em>
+              </button>
+            );
+          })}
+        </div>
+        <Slider label="Basemap dim" value={settings.style.basemapDim} min={0} max={0.78} step={0.02} suffix="x" onChange={(value) => updateStyle('basemapDim', value)} />
+        <Slider label="Label density" value={settings.style.labelDensity} min={0} max={1.4} step={0.05} suffix="x" onChange={(value) => updateStyle('labelDensity', value)} />
+      </section>
+
+      <section className="map-settings-section">
+        <h3>Workflow Presets</h3>
         <div className="map-settings-preset-grid" role="group" aria-label="Layer presets">
           {MAP_LAYER_PRESETS.map((preset) => (
             <button
@@ -169,7 +211,7 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
       </section>
 
       <section className="map-settings-section">
-        <h3>Live Packet Style</h3>
+        <h3>Live Packets</h3>
         <Slider label="Speed" value={settings.packets.speed} min={0.5} max={3} step={0.1} suffix="x" onChange={(value) => updatePacket('speed', value)} />
         <Slider label="Brightness" value={settings.packets.brightness} min={0.4} max={1.6} step={0.05} suffix="x" onChange={(value) => updatePacket('brightness', value)} />
         <Slider label="Trail" value={settings.packets.trail} min={0} max={2} step={0.05} suffix="x" onChange={(value) => updatePacket('trail', value)} />
@@ -208,6 +250,33 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
             onChange={(event) => updatePacketToggle('showLiveCometsAtAllZooms', event.target.checked)}
           />
         </label>
+      </section>
+
+      <section className="map-settings-section">
+        <h3>3D And RF</h3>
+        <div className="map-settings-segmented" role="group" aria-label="3D node model style">
+          {NODE_MODEL_STYLES.map((style) => (
+            <button
+              key={style.value}
+              type="button"
+              className={settings.style.nodeModelStyle === style.value ? 'active' : ''}
+              onClick={() => updateStyle('nodeModelStyle', style.value)}
+            >
+              {style.label}
+            </button>
+          ))}
+        </div>
+        <Slider label="Terrain lift" value={settings.style.terrainExaggeration} min={0.2} max={3} step={0.05} suffix="x" onChange={(value) => updateStyle('terrainExaggeration', value)} />
+        <Slider label="Building opacity" value={settings.style.buildingOpacity} min={0} max={1} step={0.05} suffix="x" onChange={(value) => updateStyle('buildingOpacity', value)} />
+        <Slider label="Node model scale" value={settings.style.nodeModelScale} min={0.55} max={1.8} step={0.05} suffix="x" onChange={(value) => updateStyle('nodeModelScale', value)} />
+        <Slider label="Antenna height" value={settings.style.nodeAltitudeMeters} min={0} max={120} step={2} suffix=" m" onChange={(value) => updateStyle('nodeAltitudeMeters', value)} />
+        <Slider label="Route arc height" value={settings.style.routeArcAltitudeScale} min={0.35} max={2.4} step={0.05} suffix="x" onChange={(value) => updateStyle('routeArcAltitudeScale', value)} />
+        <p className="map-settings-note">
+          <RadioTower size={14} />
+          <span>{activeStyleProfile.supports3D ? '3D-ready style profile' : 'Flat style profile'}</span>
+          <Layers size={14} />
+          <span>{activeStyleProfile.supportsOffline ? 'offline-capable' : 'online tiles'}</span>
+        </p>
       </section>
 
       <footer className="map-settings-footer">

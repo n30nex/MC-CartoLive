@@ -247,10 +247,9 @@ async function smokeOpenFreeMapToggle(page, viewport) {
   await toggle.waitFor({ state: 'visible', timeout: 12_000 });
   await toggle.click();
   await page.waitForSelector('.map-base-toggle.active', { state: 'visible', timeout: 15_000 });
+  await page.waitForSelector('.map-wrap[data-map-style-profile="openfreemap-3d"]', { state: 'visible', timeout: 15_000 });
   await page.waitForTimeout(500);
   await assertVisibleInViewport(page, '.maplibregl-canvas', 'OpenFreeMap canvas', viewport);
-  await toggle.click();
-  await page.waitForTimeout(300);
 }
 
 async function smokePalettePicker(page, viewport) {
@@ -270,7 +269,10 @@ async function smokeMapSettings(page, viewport) {
   await toggle.waitFor({ state: 'visible', timeout: 12_000 });
   await toggle.click();
   await assertVisibleInViewport(page, '.map-settings-drawer', 'map settings drawer', viewport);
-  await page.locator('.map-settings-drawer').getByText(/Live Packet Style/i).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('.map-settings-drawer').getByText(/Map Studio/i).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('.map-settings-drawer').getByRole('button', { name: /OpenFreeMap 3D/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('.map-settings-drawer').getByRole('button', { name: /Offline PMTiles/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('.map-settings-drawer').getByText(/3D And RF/i).waitFor({ state: 'visible', timeout: 5_000 });
   await page.getByRole('button', { name: /Close map settings/i }).click();
   await page.waitForSelector('.map-settings-drawer', { state: 'hidden', timeout: 5_000 });
 }
@@ -284,7 +286,12 @@ async function smokeVcr(page, viewport) {
   const box = await timeline.boundingBox();
   if (box) {
     await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.5);
-    await page.waitForSelector('.vcr-hover-time', { state: 'visible', timeout: 5_000 });
+    await page.waitForFunction(() => {
+      const element = document.querySelector('.vcr-hover-time');
+      if (!(element instanceof HTMLElement)) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== 'hidden';
+    }, null, { timeout: 5_000 });
     await assertVisibleInViewport(page, '.vcr-hover-time', 'VCR hover timestamp', viewport);
   }
 
@@ -367,6 +374,7 @@ async function smokePacketsReplay(page, viewport) {
     if (await toggle.isVisible({ timeout: 2_000 }).catch(() => false) && !(await toggle.evaluate((button) => button.classList.contains('active')))) {
       await toggle.click();
       await page.waitForSelector('.map-base-toggle.active', { state: 'visible', timeout: 15_000 });
+      await page.waitForSelector('.map-wrap[data-map-style-profile="openfreemap-3d"]', { state: 'visible', timeout: 15_000 });
       await page.waitForSelector('.map-wrap[data-map-base-mode="openfreemap"]', { state: 'visible', timeout: 15_000 });
     }
   }
@@ -589,6 +597,7 @@ async function readMapViewData(page) {
     if (!wrap) return null;
     return {
       baseMode: wrap.getAttribute('data-map-base-mode') ?? '',
+      styleProfile: wrap.getAttribute('data-map-style-profile') ?? '',
       lat: Number(wrap.getAttribute('data-map-center-lat')),
       lng: Number(wrap.getAttribute('data-map-center-lng')),
       zoom: Number(wrap.getAttribute('data-map-zoom'))
@@ -732,5 +741,6 @@ function isGenericFailedResourceConsoleMessage(text) {
 function isIgnoredFailedResource(status, url) {
   if (status !== 404) return false;
   return /^https:\/\/demotiles\.maplibre\.org\/font\/.+\.pbf(?:$|\?)/i.test(url)
+    || /^https:\/\/tiles\.openfreemap\.org\/fonts\/.+\.pbf(?:$|\?)/i.test(url)
     || /\/favicon\.ico(?:$|\?)/i.test(url);
 }

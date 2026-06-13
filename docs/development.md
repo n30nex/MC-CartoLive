@@ -180,6 +180,21 @@ Run a short local soak when validating release automation:
 .\scripts\soak-check.ps1 -BaseUrl http://127.0.0.1:39476 -DurationMinutes 10 -IntervalSeconds 30
 ```
 
+## Map Studio And Offline Tiles
+
+2.9.5 adds the Map Studio style registry and optional PMTiles profiles. Leave
+`VITE_PMTILES_BASEMAP_URL` blank for normal development; the Offline PMTiles and
+Field Offline profiles will fall back to a local low-detail map. To test a real
+archive, host it from the same origin or another CSP-allowed HTTPS endpoint and
+set the URL before building the frontend or image:
+
+```bash
+VITE_PMTILES_BASEMAP_URL=/tiles/canada.pmtiles npm run build
+```
+
+The Map Settings drawer should show Map Studio, OpenFreeMap 3D, Offline PMTiles,
+and 3D And RF controls in both dev-server and packaged browser smoke.
+
 Run production smoke from your workstation after a droplet deploy:
 
 ```powershell
@@ -190,7 +205,7 @@ Use overrides when testing a branch, alternate host, expected build, or another
 diagnostic region:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.9.4 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.9.5 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
 Scan public JSON surfaces for privacy-boundary regressions while the app is

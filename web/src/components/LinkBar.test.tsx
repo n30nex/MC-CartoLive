@@ -31,10 +31,10 @@ describe('LinkBar', () => {
   });
 
   it('keeps the compact changelog focused on the current release train', () => {
-    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.label)).toEqual(['2.9.4', '2.9.3', '2.9.2']);
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.label)).toEqual(['2.9.5', '2.9.4', '2.9.3']);
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Map Studio');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Labs Polish');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Live RF Labs');
-    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Durable public live');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.body).join(' ')).not.toContain('Perf/Guide/Features');
   });
 

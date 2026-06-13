@@ -4,6 +4,26 @@ This changelog records the public release history at a useful level of detail.
 Detailed patch-by-patch investigation notes and temporary planning material live
 in Git history, not in the active documentation set.
 
+## 2.9.5 - 2026-06-13
+
+- Added Map Studio to Map Settings with Classic, OpenFreeMap Dark/Light,
+  Positron, Liberty, Fiord, OpenFreeMap 3D, Topo RF, NOC Wallboard, Offline
+  PMTiles, Field Offline, Accessibility, and Low Bandwidth style profiles.
+- Added browser-local basemap dimming, label-density, terrain-lift,
+  building-opacity, node-model-scale, antenna-height, route-arc-height, and
+  3D node-model style controls.
+- Added optional PMTiles protocol support for operator-supplied offline basemaps
+  with graceful local fallback when no archive URL is configured.
+- Reworked the toolbar basemap button into a quick cycle for Classic Dark,
+  OpenFreeMap 3D, Topo RF, NOC Wallboard, and Low Bandwidth, while keeping the
+  full style catalog in the drawer.
+- Upgraded 3D node rendering with role towers, signal beacons, minimal pins,
+  selected/path focus columns, route arc height control, and terrain-aware
+  placement.
+- Updated focused frontend tests, browser-smoke expectations, release metadata,
+  PMTiles configuration, and operator documentation for the map-customization
+  release.
+
 ## 2.9.4 - 2026-06-13
 
 - Promoted Labs into routed experiment pages under `#/lab/*`, with a top-bar

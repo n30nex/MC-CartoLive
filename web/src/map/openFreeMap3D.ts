@@ -1,7 +1,7 @@
 import maplibregl from 'maplibre-gl';
 import * as THREE from 'three';
-import type { MapLayerSettings, PacketAnimationStyle, PacketVisualSettings, RenderQuality } from '../mapSettings';
-import { DEFAULT_MAP_LAYER_SETTINGS, DEFAULT_PACKET_VISUAL_SETTINGS, normalizeLayerSettings, normalizePacketVisualSettings } from '../mapSettings';
+import type { MapLayerSettings, MapStyleSettings, PacketAnimationStyle, PacketVisualSettings, RenderQuality } from '../mapSettings';
+import { DEFAULT_MAP_LAYER_SETTINGS, DEFAULT_MAP_STYLE_SETTINGS, DEFAULT_PACKET_VISUAL_SETTINGS, mapStyleSettingsSignature, normalizeLayerSettings, normalizePacketVisualSettings, normalizeStyleSettings } from '../mapSettings';
 import { payloadVisual } from '../payloadVisuals';
 import type { PublicNode, PublicObserverBurst, PublicRoute, PublicRoutePulse } from '../types';
 import { isMappableEndpoint, isMappableNode } from './geo';
@@ -33,6 +33,7 @@ export interface OpenFreeMap3DUpdate {
   focus: NodeFocus;
   selectedRouteID: string | null;
   analysisSegments: PublicRoutePulse['segments'];
+  styleSettings: MapStyleSettings;
   layerSettings: MapLayerSettings;
   packetVisualSettings: PacketVisualSettings;
   themeMode: 'dark' | 'light';
@@ -120,6 +121,7 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
   private observerRoot = new THREE.Group();
   private latest: OpenFreeMap3DUpdate | null = null;
   private layerSettings = DEFAULT_MAP_LAYER_SETTINGS;
+  private styleSettings = DEFAULT_MAP_STYLE_SETTINGS;
   private packetVisualSettings = DEFAULT_PACKET_VISUAL_SETTINGS;
   private nodeSignature = '';
   private routeSignature = '';
@@ -150,6 +152,7 @@ class OpenFreeMap3DLayer implements OpenFreeMap3DController {
     this.latest = input;
     const prev = this.layerSettings;
     this.layerSettings = normalizeLayerSettings(input.layerSettings);
+    this.styleSettings = normalizeStyleSettings(input.styleSettings);
     this.packetVisualSettings = normalizePacketVisualSettings(input.packetVisualSettings);
     if (!this.layerSettings.terrainLOS && prev.terrainLOS) this.losCache.clear();
     if (this.rebuildIfNeeded(false) || this.hasActiveAnimations()) {
@@ -345,8 +348,12 @@ function rebuildNodeModels(map: maplibregl.Map, root: THREE.Group, input: OpenFr
   clearGroup(root);
   const zoom = map.getZoom();
   for (const node of selectedNodes) {
-    const model = createNodeModel(node, input.themeMode, nodeModelLOD(node, input.focus, zoom));
-    positionAtLngLat(model, node.longitude, node.latitude, 8);
+    const selected = node.id === input.focus.selectedNodeID;
+    const path = input.focus.pathNodeIDs.has(node.id) || input.focus.neighbourNodeIDs.has(node.id);
+    const model = createNodeModel(node, input.themeMode, nodeModelLOD(node, input.focus, zoom), input.styleSettings, { selected, path });
+    const terrain = input.layerSettings.terrainHeightmap ? queryTerrainElevation(map, node.longitude, node.latitude) : 0;
+    const scale = positionAtLngLat(model, node.longitude, node.latitude, terrain + input.styleSettings.nodeAltitudeMeters);
+    model.scale.setScalar(scale * input.styleSettings.nodeModelScale);
     root.add(model);
   }
 }
@@ -374,7 +381,7 @@ function rebuildRouteArcs(
   if (input.layerSettings.analysisPaths) {
     for (const [index, segment] of input.analysisSegments.entries()) {
       if (!isMappableEndpoint(segment.from) || !isMappableEndpoint(segment.to)) continue;
-      root.add(createSegmentArcMesh(`analysis-${segment.routeId}-${index}`, segment, '#facc15', 0.88, 1.6));
+      root.add(createSegmentArcMesh(`analysis-${segment.routeId}-${index}`, segment, '#facc15', 0.88, 1.6, input.packetVisualSettings.renderQuality, input.styleSettings.routeArcAltitudeScale));
     }
   }
 }
@@ -437,15 +444,23 @@ export function nodeModelLOD(node: PublicNode, focus: NodeFocus, zoom: number): 
   return zoom >= 9.6 ? 'full' : 'marker';
 }
 
-function createNodeModel(node: PublicNode, themeMode: 'dark' | 'light', lod: NodeModelLOD): THREE.Group {
+function createNodeModel(node: PublicNode, themeMode: 'dark' | 'light', lod: NodeModelLOD, styleSettings: MapStyleSettings = DEFAULT_MAP_STYLE_SETTINGS, state: { selected?: boolean; path?: boolean } = {}): THREE.Group {
   const group = new THREE.Group();
   const kind = nodeModelKind(node);
   const color = nodeColor(node);
   const colorNumber = hexNumber(color);
   const dark = themeMode === 'dark';
+  if (styleSettings.nodeModelStyle === 'minimal-pins') {
+    addCylinder(group, 96, 190, state.selected ? 720 : 520, colorNumber, 0.9, state.selected ? 360 : 260);
+    addSphere(group, state.selected ? 280 : 210, colorNumber, state.selected ? 0.88 : 0.72, state.selected ? 760 : 560);
+    if (state.selected || state.path) addFocusColumn(group, colorNumber, state.selected ? 1 : 0.58);
+    return group;
+  }
   if (lod === 'marker') {
     addCylinder(group, 170, 170, kind === 'observer' ? 260 : 420, colorNumber, 0.88, kind === 'observer' ? 140 : 230);
     addSphere(group, kind === 'observer' ? 300 : 250, colorNumber, kind === 'observer' ? 0.28 : 0.22, kind === 'observer' ? 240 : 430);
+    if (styleSettings.nodeModelStyle === 'signal-beacons') addBeaconRings(group, colorNumber, kind === 'observer' ? 420 : 560);
+    if (state.selected || state.path) addFocusColumn(group, colorNumber, state.selected ? 0.9 : 0.5);
     return group;
   }
   if (kind === 'repeater') {
@@ -453,6 +468,7 @@ function createNodeModel(node: PublicNode, themeMode: 'dark' | 'light', lod: Nod
     addBox(group, 620, 420, 180, dark ? 0x0f172a : 0xe2e8f0, 0.92, 90);
     addCylinder(group, 34, 34, 1550, 0xe2e8f0, 0.82, 880, -220, 0);
     addCylinder(group, 34, 34, 1550, 0xe2e8f0, 0.82, 880, 220, 0);
+    addTorus(group, 430, 16, 0x86efac, 0.42, 1360);
     addCone(group, 270, 380, colorNumber, 0.8, 1780);
   } else if (kind === 'companion') {
     addBox(group, 780, 520, 170, 0x2563eb, 0.92, 150);
@@ -469,9 +485,12 @@ function createNodeModel(node: PublicNode, themeMode: 'dark' | 'light', lod: Nod
     addCylinder(group, 190, 190, 220, 0xf59e0b, 0.92, 130);
     addSphere(group, 360, 0xfbbf24, 0.18, 170);
     addTorus(group, 520, 18, 0xfef3c7, 0.52, 180);
+    addCylinder(group, 18, 18, 780, 0xfef3c7, 0.58, 560);
   } else {
     addSphere(group, 300, 0x94a3b8, 0.82, 260);
   }
+  if (styleSettings.nodeModelStyle === 'signal-beacons') addBeaconRings(group, colorNumber, kind === 'observer' ? 680 : 920);
+  if (state.selected || state.path) addFocusColumn(group, state.selected ? 0xffffff : colorNumber, state.selected ? 1 : 0.58);
   const glow = new THREE.PointLight(hexNumber(color), kind === 'observer' ? 1.8 : 1.1, 5200);
   glow.position.z = kind === 'repeater' ? 1600 : 650;
   group.add(glow);
@@ -492,7 +511,7 @@ function createRouteArcMesh(route: PublicRoute, input: OpenFreeMap3DUpdate, now:
     opacity = selected ? 0.82 : path ? 0.72 : connected ? 0.58 : now - route.lastHeard <= ROUTE_FRESH_MS ? 0.5 : 0.28;
   }
   const emphasis = selected || path ? 1.85 : connected ? 1.35 : 1;
-  return createSegmentArcMesh(route.id, { from: route.from, to: route.to, distanceKm: route.distanceKm, routeId: route.id }, color, opacity, emphasis, input.packetVisualSettings.renderQuality);
+  return createSegmentArcMesh(route.id, { from: route.from, to: route.to, distanceKm: route.distanceKm, routeId: route.id }, color, opacity, emphasis, input.packetVisualSettings.renderQuality, input.styleSettings.routeArcAltitudeScale);
 }
 
 function createSegmentArcMesh(
@@ -501,9 +520,10 @@ function createSegmentArcMesh(
   color: string,
   opacity: number,
   emphasis: number,
-  quality: RenderQuality = 'balanced'
+  quality: RenderQuality = 'balanced',
+  altitudeScale = 1
 ): THREE.Object3D {
-  const samples = sampleRouteArc(segment.from, segment.to, { distanceKm: segment.distanceKm, heightScale: emphasis });
+  const samples = sampleRouteArc(segment.from, segment.to, { distanceKm: segment.distanceKm, heightScale: emphasis * altitudeScale });
   const points = samples.map((sample) => mercatorVector(sample));
   const curve = new THREE.CatmullRomCurve3(points);
   const midpoint = samples[Math.floor(samples.length / 2)] ?? samples[0];
@@ -674,6 +694,7 @@ function routeSceneSignature(
     input.layerSettings.routeArcs3D,
     input.layerSettings.analysisPaths,
     input.layerSettings.terrainLOS,
+    mapStyleSettingsSignature(input.styleSettings),
     input.packetVisualSettings.renderQuality,
     input.selectedRouteID ?? '',
     viewSignature(map),
@@ -784,6 +805,23 @@ function addSphere(group: THREE.Group, radius: number, color: number, opacity: n
 function addTorus(group: THREE.Group, radius: number, tube: number, color: number, opacity: number, z: number) {
   const g = poolG(poolK('torus', radius, tube), () => new THREE.TorusGeometry(radius, tube, 8, 32));
   const m = new THREE.Mesh(g, material(color, opacity, true)); m.rotation.x = Math.PI / 2; m.position.z = z; group.add(m);
+}
+function addBeaconRings(group: THREE.Group, color: number, z: number) {
+  addTorus(group, 460, 14, color, 0.3, z);
+  addTorus(group, 720, 12, 0xe0f2fe, 0.18, z + 90);
+}
+function addFocusColumn(group: THREE.Group, color: number, opacity: number) {
+  addCylinder(group, 68, 118, 2200, color, Math.min(0.32, opacity * 0.22), 1120);
+  addTorus(group, 640, 20, color, Math.min(0.48, opacity * 0.36), 84);
+}
+
+function queryTerrainElevation(map: maplibregl.Map, lng: number, lat: number): number {
+  try {
+    const elevation = map.queryTerrainElevation([lng, lat]);
+    return typeof elevation === 'number' && Number.isFinite(elevation) ? elevation : 0;
+  } catch {
+    return 0;
+  }
 }
 
 function material(color: number, opacity: number, additive = false): THREE.MeshBasicMaterial {

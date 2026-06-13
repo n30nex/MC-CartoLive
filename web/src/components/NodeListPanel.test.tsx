@@ -16,7 +16,7 @@ describe('NodeListPanel', () => {
       />
     );
 
-    expect(html).toContain('2.9.4 Nodes');
+    expect(html).toContain('2.9.5 Nodes');
     expect(html).toContain('Search public nodes by label, role, region, or observer airport.');
     expect(html).toContain('Search labels, roles, regions, IATA');
     expect(html).toContain('Live now');

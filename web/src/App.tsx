@@ -15,7 +15,7 @@ import {
   type AppState,
   type RouteActivitySummary
 } from './state';
-import CanadaMap, { type MapAction, type MapBaseMode } from './map/CanadaMap';
+import CanadaMap, { type MapAction } from './map/CanadaMap';
 import ErrorBoundary from './components/ErrorBoundary';
 import PanelSkeleton from './components/PanelSkeleton';
 import HotRoutes from './components/HotRoutes';
@@ -84,7 +84,8 @@ import {
 import { buildSharedViewURL, parseSharedView, type MapViewState } from './shareView';
 import { recordLivePendingQueueSize, recordVcrReplayQueueSize, recordVisibilityPause } from './perfDiagnostics';
 import { appendBufferedRoutePulses, routePulseMessages } from './playbackController';
-import { normalizeMapSettings, readStoredMapSettings, writeStoredMapSettings, type MapSettings } from './mapSettings';
+import { applyMapStyleProfile, normalizeMapSettings, readStoredMapSettings, writeStoredMapSettings, type MapSettings } from './mapSettings';
+import { mapStyleProfileByID, type MapStyleProfileID } from './map/styles/styleRegistry';
 import {
   THEME_PALETTES,
   applyDocumentTheme,
@@ -138,7 +139,6 @@ export default function App() {
   const [socketStatus, setSocketStatus] = useState('starting');
   const [paused, setPaused] = useState(false);
   const [followTraffic, setFollowTraffic] = useState(false);
-  const [mapBaseMode, setMapBaseMode] = useState<MapBaseMode>('original');
   const [query, setQuery] = useState(() => sharedViewRef.current?.q ?? '');
   const [clearToken, setClearToken] = useState(0);
   const [mapAction, setMapAction] = useState<MapAction>(null);
@@ -221,6 +221,8 @@ export default function App() {
   const flushMessagesTimerRef = useRef<number | null>(null);
   const selectedThemePalette = useMemo(() => themePaletteByID(themePaletteID), [themePaletteID]);
   const resolvedThemeMode = useMemo(() => resolveThemeMode(themeMode), [themeMode]);
+  const activeMapStyleProfile = useMemo(() => mapStyleProfileByID(mapSettings.style.profileID), [mapSettings.style.profileID]);
+  const mapThemeMode = useMemo(() => themeModeForMapStyle(mapSettings.style.profileID, resolvedThemeMode), [mapSettings.style.profileID, resolvedThemeMode]);
   const appThemeStyle = useMemo(() => themeStyleVariables(selectedThemePalette, resolvedThemeMode) as CSSProperties, [selectedThemePalette, resolvedThemeMode]);
 
   useEffect(() => {
@@ -1363,13 +1365,14 @@ export default function App() {
         highlightedPathRouteIDs={highlightedPathRouteIDs}
         highlightedPathNodeIDs={highlightedPathNodeIDs}
         analysisSegments={selectedPacket?.segments ?? []}
+        styleProfileID={mapSettings.style.profileID}
+        styleSettings={mapSettings.style}
         layerSettings={mapSettings.layers}
         packetVisualSettings={mapSettings.packets}
         plotMode={plotMode}
         mapAction={mapAction}
         routeGifExportRequest={routeGifExportRequest}
-        baseMode={mapBaseMode}
-        themeMode={resolvedThemeMode}
+        themeMode={mapThemeMode}
         initialView={sharedViewRef.current}
         mapConfig={publicMapConfig}
         loading={loadingPositionedNodes}
@@ -1529,11 +1532,11 @@ export default function App() {
           <LocateFixed size={18} />
         </button>
         <button
-          className={`icon-button map-base-toggle ${mapBaseMode === 'openfreemap' ? 'active' : ''}`}
+          className={`icon-button map-base-toggle ${activeMapStyleProfile.supports3D ? 'active' : ''}`}
           type="button"
-          aria-pressed={mapBaseMode === 'openfreemap'}
-          title={mapBaseMode === 'openfreemap' ? 'Switch to original map' : 'Switch to OpenFreeMap 3D'}
-          onClick={() => setMapBaseMode((value) => (value === 'openfreemap' ? 'original' : 'openfreemap'))}
+          aria-pressed={activeMapStyleProfile.supports3D}
+          title={`Map style: ${activeMapStyleProfile.label}`}
+          onClick={() => setMapSettings((current) => applyMapStyleProfile(current, nextQuickMapProfileID(current.style.profileID)))}
         >
           <Layers size={18} />
         </button>
@@ -1655,11 +1658,11 @@ export default function App() {
             </button>
             <button
               type="button"
-              className={mapBaseMode === 'openfreemap' ? 'active' : ''}
-              onClick={() => setMapBaseMode((value) => (value === 'openfreemap' ? 'original' : 'openfreemap'))}
+              className={activeMapStyleProfile.supports3D ? 'active' : ''}
+              onClick={() => setMapSettings((current) => applyMapStyleProfile(current, nextQuickMapProfileID(current.style.profileID)))}
             >
               <Layers size={18} />
-              <span>Basemap</span>
+              <span>{activeMapStyleProfile.label}</span>
             </button>
             <button type="button" onClick={shareView}>
               <Share2 size={18} />
@@ -1970,6 +1973,17 @@ function paletteSwatchStyle(palette: ThemePalette): CSSProperties {
     '--swatch-secondary': palette.vars['--palette-secondary'],
     '--swatch-surface': palette.vars['--palette-bg-raised']
   } as CSSProperties;
+}
+
+function themeModeForMapStyle(profileID: MapStyleProfileID, fallback: 'dark' | 'light'): 'dark' | 'light' {
+  const theme = mapStyleProfileByID(profileID).theme;
+  return theme === 'light' ? 'light' : theme === 'dark' || theme === 'noc' || theme === 'topo' ? 'dark' : fallback;
+}
+
+function nextQuickMapProfileID(profileID: MapStyleProfileID): MapStyleProfileID {
+  const quickCycle: MapStyleProfileID[] = ['classic-dark', 'openfreemap-3d', 'topo-rf', 'noc', 'low-bandwidth'];
+  const index = quickCycle.indexOf(profileID);
+  return quickCycle[(index + 1) % quickCycle.length];
 }
 
 function isLabRoute(hash: string): boolean {

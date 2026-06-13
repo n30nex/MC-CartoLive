@@ -201,7 +201,7 @@ func (s *Server) publicLOSProfile(w http.ResponseWriter, r *http.Request) {
 		AntennaHeightAM: heightA,
 		AntennaHeightBM: heightB,
 		Points:          points,
-		Notes:           []string{"Canada CDEM import workflow is documented for 2.9.4; this public response remains safe when elevation samples are unavailable."},
+		Notes:           []string{"Canada CDEM import workflow is documented for 2.9.5; this public response remains safe when elevation samples are unavailable."},
 	})
 }
 
@@ -526,7 +526,7 @@ func publicOpenAPISchema() map[string]any {
 		"openapi": "3.1.0",
 		"info": map[string]any{
 			"title":   "MC-CartoLive Public API",
-			"version": "2.9.4",
+			"version": "2.9.5",
 		},
 		"paths": map[string]any{
 			"/api/v1/public/state":                       map[string]any{"get": publicSchemaOperation("Public live state")},

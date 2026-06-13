@@ -5,7 +5,7 @@ import type { AppState } from '../state';
 import { LAB_EXPERIMENTS } from '../lab';
 
 describe('LabPanel', () => {
-  it('renders the 2.9.4 labs workspace and experiment controls', () => {
+  it('renders the current labs workspace and experiment controls', () => {
     const html = renderToStaticMarkup(
       <LabPanel
         state={emptyLabState()}
@@ -16,7 +16,7 @@ describe('LabPanel', () => {
       />
     );
 
-    expect(html).toContain('2.9.4 Labs');
+    expect(html).toContain('2.9.5 Labs');
     expect(html).toContain('RF Synth');
     expect(html).toContain('Packets become pitch, pan, and pulse.');
     expect(html).toContain('Signal');

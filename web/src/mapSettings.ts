@@ -1,5 +1,8 @@
+import { mapStyleProfileByID, type MapStyleProfileID } from './map/styles/styleRegistry';
+
 export type PacketAnimationStyle = 'comet' | 'pulse' | 'minimal';
 export type RenderQuality = 'smooth' | 'balanced' | 'high';
+export type NodeModelStyle = 'role-towers' | 'signal-beacons' | 'minimal-pins';
 
 export interface MapLayerSettings {
   clusters: boolean;
@@ -31,7 +34,20 @@ export interface PacketVisualSettings {
   renderQuality: RenderQuality;
 }
 
+export interface MapStyleSettings {
+  profileID: MapStyleProfileID;
+  basemapDim: number;
+  labelDensity: number;
+  terrainExaggeration: number;
+  buildingOpacity: number;
+  nodeModelStyle: NodeModelStyle;
+  nodeModelScale: number;
+  nodeAltitudeMeters: number;
+  routeArcAltitudeScale: number;
+}
+
 export interface MapSettings {
+  style: MapStyleSettings;
   layers: MapLayerSettings;
   packets: PacketVisualSettings;
 }
@@ -46,7 +62,7 @@ export interface MapLayerPreset {
 }
 
 export const MAP_SETTINGS_STORAGE_KEY = 'mc-cartolive-map-settings';
-export const MAP_SETTINGS_SCHEMA_VERSION = 3;
+export const MAP_SETTINGS_SCHEMA_VERSION = 4;
 
 export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   clusters: true,
@@ -78,7 +94,20 @@ export const DEFAULT_PACKET_VISUAL_SETTINGS: PacketVisualSettings = {
   renderQuality: 'balanced'
 };
 
+export const DEFAULT_MAP_STYLE_SETTINGS: MapStyleSettings = {
+  profileID: 'classic-dark',
+  basemapDim: 0.08,
+  labelDensity: 0.72,
+  terrainExaggeration: 1.25,
+  buildingOpacity: 0.62,
+  nodeModelStyle: 'role-towers',
+  nodeModelScale: 1,
+  nodeAltitudeMeters: 14,
+  routeArcAltitudeScale: 1
+};
+
 export const DEFAULT_MAP_SETTINGS: MapSettings = {
+  style: DEFAULT_MAP_STYLE_SETTINGS,
   layers: DEFAULT_MAP_LAYER_SETTINGS,
   packets: DEFAULT_PACKET_VISUAL_SETTINGS
 };
@@ -139,8 +168,24 @@ export const MAP_LAYER_PRESETS: readonly MapLayerPreset[] = [
 export function normalizeMapSettings(input: unknown): MapSettings {
   const raw = isRecord(input) ? input : {};
   return {
+    style: normalizeStyleSettings(raw.style),
     layers: normalizeLayerSettings(raw.layers),
     packets: normalizePacketVisualSettings(raw.packets)
+  };
+}
+
+export function normalizeStyleSettings(input: unknown): MapStyleSettings {
+  const raw = isRecord(input) ? input : {};
+  return {
+    profileID: mapStyleProfileByID(typeof raw.profileID === 'string' ? raw.profileID : undefined, DEFAULT_MAP_STYLE_SETTINGS.profileID).id,
+    basemapDim: clampNumber(raw.basemapDim, 0, 0.78, DEFAULT_MAP_STYLE_SETTINGS.basemapDim),
+    labelDensity: clampNumber(raw.labelDensity, 0, 1.4, DEFAULT_MAP_STYLE_SETTINGS.labelDensity),
+    terrainExaggeration: clampNumber(raw.terrainExaggeration, 0.2, 3, DEFAULT_MAP_STYLE_SETTINGS.terrainExaggeration),
+    buildingOpacity: clampNumber(raw.buildingOpacity, 0, 1, DEFAULT_MAP_STYLE_SETTINGS.buildingOpacity),
+    nodeModelStyle: isNodeModelStyle(raw.nodeModelStyle) ? raw.nodeModelStyle : DEFAULT_MAP_STYLE_SETTINGS.nodeModelStyle,
+    nodeModelScale: clampNumber(raw.nodeModelScale, 0.55, 1.8, DEFAULT_MAP_STYLE_SETTINGS.nodeModelScale),
+    nodeAltitudeMeters: clampNumber(raw.nodeAltitudeMeters, 0, 120, DEFAULT_MAP_STYLE_SETTINGS.nodeAltitudeMeters),
+    routeArcAltitudeScale: clampNumber(raw.routeArcAltitudeScale, 0.35, 2.4, DEFAULT_MAP_STYLE_SETTINGS.routeArcAltitudeScale)
   };
 }
 
@@ -207,6 +252,51 @@ export function applyMapLayerPreset(settings: MapSettings, presetID: MapLayerPre
   });
 }
 
+export function applyMapStyleProfile(settings: MapSettings, profileID: MapStyleProfileID): MapSettings {
+  const profile = mapStyleProfileByID(profileID);
+  const next: MapSettings = normalizeMapSettings({
+    ...settings,
+    style: { ...settings.style, profileID: profile.id }
+  });
+  if (profile.id === 'openfreemap-3d') {
+    next.layers = {
+      ...next.layers,
+      routes: true,
+      nodeModels3D: true,
+      routeArcs3D: true,
+      packetComets3D: true,
+      buildingExtrusions: true,
+      terrainHeightmap: true
+    };
+  } else if (profile.id === 'topo-rf') {
+    next.layers = {
+      ...next.layers,
+      routes: true,
+      terrainLOS: true,
+      terrainHeightmap: true,
+      propagationInsights: true
+    };
+  } else if (profile.lowBandwidth) {
+    next.layers = {
+      ...next.layers,
+      activityHeatmap: false,
+      packetResidue: false,
+      messageBubbles: false,
+      buildingExtrusions: false,
+      nodeModels3D: false,
+      routeArcs3D: false,
+      packetComets3D: false,
+      terrainHeightmap: false,
+      weatherClouds: false
+    };
+    next.packets = { ...next.packets, renderQuality: 'smooth', animationStyle: next.packets.animationStyle === 'minimal' ? 'minimal' : 'pulse' };
+  } else if (profile.id === 'accessibility') {
+    next.style = { ...next.style, basemapDim: 0.18, labelDensity: 1.05 };
+    next.packets = { ...next.packets, animationStyle: 'minimal', renderQuality: 'smooth' };
+  }
+  return normalizeMapSettings(next);
+}
+
 export function mapLayerPresetIDForSettings(settings: MapLayerSettings): MapLayerPresetID | null {
   const signature = layerSettingsSignature(settings);
   return MAP_LAYER_PRESETS.find((preset) => layerSettingsSignature(preset.layers) === signature)?.id ?? null;
@@ -218,6 +308,24 @@ export function isPacketAnimationStyle(value: unknown): value is PacketAnimation
 
 export function isRenderQuality(value: unknown): value is RenderQuality {
   return value === 'smooth' || value === 'balanced' || value === 'high';
+}
+
+export function isNodeModelStyle(value: unknown): value is NodeModelStyle {
+  return value === 'role-towers' || value === 'signal-beacons' || value === 'minimal-pins';
+}
+
+export function mapStyleSettingsSignature(settings: MapStyleSettings): string {
+  return [
+    settings.profileID,
+    settings.basemapDim.toFixed(2),
+    settings.labelDensity.toFixed(2),
+    settings.terrainExaggeration.toFixed(2),
+    settings.buildingOpacity.toFixed(2),
+    settings.nodeModelStyle,
+    settings.nodeModelScale.toFixed(2),
+    Math.round(settings.nodeAltitudeMeters),
+    settings.routeArcAltitudeScale.toFixed(2)
+  ].join(':');
 }
 
 export function layerSettingsSignature(settings: MapLayerSettings): string {

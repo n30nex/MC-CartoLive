@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   applyMapLayerPreset,
+  applyMapStyleProfile,
   DEFAULT_MAP_SETTINGS,
+  DEFAULT_MAP_STYLE_SETTINGS,
   MAP_LAYER_PRESETS,
   MAP_SETTINGS_SCHEMA_VERSION,
   MAP_SETTINGS_STORAGE_KEY,
@@ -21,6 +23,7 @@ describe('map settings', () => {
       layers: { clusters: false, nodes: false, liveComets: false },
       packets: { speed: 99, brightness: 0.1, trail: 8, animationStyle: 'pulse', showLiveCometsAtAllZooms: true, renderQuality: 'smooth' }
     });
+    expect(settings.style).toEqual(DEFAULT_MAP_STYLE_SETTINGS);
     expect(settings.layers.clusters).toBe(false);
     expect(settings.layers.activityHeatmap).toBe(true);
     expect(settings.layers.nodes).toBe(false);
@@ -39,6 +42,32 @@ describe('map settings', () => {
     expect(settings.packets.animationStyle).toBe('pulse');
     expect(settings.packets.showLiveCometsAtAllZooms).toBe(true);
     expect(settings.packets.renderQuality).toBe('smooth');
+  });
+
+  it('normalizes style profile and 3D tuning controls', () => {
+    const settings = normalizeMapSettings({
+      style: {
+        profileID: 'openfreemap-3d',
+        basemapDim: 2,
+        labelDensity: -1,
+        terrainExaggeration: 9,
+        buildingOpacity: -4,
+        nodeModelStyle: 'signal-beacons',
+        nodeModelScale: '1.35',
+        nodeAltitudeMeters: 200,
+        routeArcAltitudeScale: 0.1
+      }
+    });
+
+    expect(settings.style.profileID).toBe('openfreemap-3d');
+    expect(settings.style.basemapDim).toBe(0.78);
+    expect(settings.style.labelDensity).toBe(0);
+    expect(settings.style.terrainExaggeration).toBe(3);
+    expect(settings.style.buildingOpacity).toBe(0);
+    expect(settings.style.nodeModelStyle).toBe('signal-beacons');
+    expect(settings.style.nodeModelScale).toBe(1.35);
+    expect(settings.style.nodeAltitudeMeters).toBe(120);
+    expect(settings.style.routeArcAltitudeScale).toBe(0.35);
   });
 
   it('normalizes persisted OpenFreeMap 3D layer toggles', () => {
@@ -113,6 +142,26 @@ describe('map settings', () => {
     const threeD = applyMapLayerPreset(base, '3d');
     expect(threeD.layers.terrainHeightmap).toBe(true);
     expect(threeD.layers.routeArcs3D).toBe(true);
+  });
+
+  it('applies map style profiles with workflow-safe defaults', () => {
+    const base = normalizeMapSettings({
+      style: { profileID: 'classic-dark' },
+      layers: { routes: false, terrainHeightmap: false },
+      packets: { renderQuality: 'high', animationStyle: 'comet' }
+    });
+
+    const threeD = applyMapStyleProfile(base, 'openfreemap-3d');
+    expect(threeD.style.profileID).toBe('openfreemap-3d');
+    expect(threeD.layers.routes).toBe(true);
+    expect(threeD.layers.terrainHeightmap).toBe(true);
+    expect(threeD.layers.nodeModels3D).toBe(true);
+
+    const low = applyMapStyleProfile(base, 'low-bandwidth');
+    expect(low.style.profileID).toBe('low-bandwidth');
+    expect(low.layers.activityHeatmap).toBe(false);
+    expect(low.layers.nodeModels3D).toBe(false);
+    expect(low.packets.renderQuality).toBe('smooth');
   });
 
   it('identifies exact layer preset matches', () => {

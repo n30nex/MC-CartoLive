@@ -20,6 +20,11 @@ type InfoPanel = 'changelog' | null;
 
 export const LATEST_RELEASE_HIGHLIGHTS = [
   {
+    label: '2.9.5',
+    title: 'Map Studio',
+    body: 'Map Studio adds more basemap profiles, optional PMTiles offline views, and richer configurable 3D node and route rendering.'
+  },
+  {
     label: '2.9.4',
     title: 'Labs Polish',
     body: 'Every Labs experiment gets a routed page, a dropdown entry, clearer live signal context, stronger controls, and tuned visual polish.'
@@ -28,11 +33,6 @@ export const LATEST_RELEASE_HIGHLIGHTS = [
     label: '2.9.3',
     title: 'Live RF Labs',
     body: 'Labs turns sanitized public packets into opt-in sound, visual sequencers, waterfalls, constellations, radar, and message fireflies.'
-  },
-  {
-    label: '2.9.2',
-    title: 'Durable public live',
-    body: 'Public event sequences, reconnect backfill, NOC status, public schema, and map-runtime foundations move the release train forward safely.'
   }
 ];
 

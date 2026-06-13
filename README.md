@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.9.4
+# MeshCore MQTT Live Map v2.9.5
 
 Also known as **MC-CartoLive**.
 
@@ -12,18 +12,22 @@ Public instance: [carto.canadaverse.org](https://carto.canadaverse.org/).
 
 ## Current Release
 
-Version 2.9.4 is the Labs polish update on the public-safe 2.9 foundation. It
+Version 2.9.5 is the Map Studio release on the public-safe 2.9 foundation. It
 keeps the one-container SQLite deployment shape while adding:
 
-- a routed Labs dropdown with individual experiment pages under `#/lab/*`
-- a fullscreen Labs workbench with tuned responsive layouts and canvas sizing
-- richer per-experiment signal context, cue chips, and inspector metrics
-- polished Canvas treatments for RF synth, waterfall, sequencer, route
-  organism, constellation, aurora, DJ booth, radar, and message fireflies
-- a restrained weather cloud layer that fades out before detail-map mode
-- focused tests, browser-smoke coverage, and release documentation for Labs
+- a Map Studio drawer with Classic, OpenFreeMap, Topo RF, NOC, offline PMTiles,
+  accessibility, and low-bandwidth style profiles
+- quick toolbar cycling through the most operationally useful map modes while
+  keeping the full style catalog in settings
+- optional operator-supplied PMTiles basemap support for offline or field use
+- basemap dimming, label-density, terrain-lift, building-opacity, antenna-height,
+  node-model-scale, and route-arc-height controls
+- upgraded 3D node models with role towers, signal beacons, minimal pins,
+  selected/path focus columns, and terrain-aware placement
+- focused tests, browser-smoke coverage, and release documentation for map
+  customization and 3D improvements
 
-The recommended v2.9.4 release path is clone + Compose on a VPS or local host,
+The recommended v2.9.5 release path is clone + Compose on a VPS or local host,
 optionally behind Cloudflare Tunnel, Caddy, nginx, or another HTTPS reverse
 proxy.
 
@@ -70,7 +74,7 @@ podman run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.9.4
+  ghcr.io/n30nex/mc-cartolive:2.9.5
 ```
 
 For a persistent deployment:
@@ -80,7 +84,7 @@ podman run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.9.4
+  ghcr.io/n30nex/mc-cartolive:2.9.5
 ```
 
 The production droplet currently uses Docker Compose; local release validation
@@ -104,6 +108,8 @@ Important variables:
 | `MAP_BOUNDS` | Custom bounds as `minLat,minLng,maxLat,maxLng`. |
 | `PUBLIC_REGIONS` | Public-safe broker region allowlist. Empty allows safe labels. |
 | `DB_PATH` | SQLite path inside the container. |
+| `VITE_PMTILES_BASEMAP_URL` | Optional same-origin or CSP-allowed PMTiles basemap for offline profiles. |
+| `VITE_PMTILES_TERRAIN_URL` | Reserved optional PMTiles terrain archive URL for future terrain swaps. |
 
 ## Development
 
@@ -130,13 +136,13 @@ Release hygiene:
 node scripts/check-version-sync.mjs
 node scripts/check-public-privacy.mjs http://127.0.0.1:39476
 podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
-node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:2.9.4 --pull
+node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:2.9.5 --pull
 ```
 
 Live post-deploy smoke:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.9.4 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.9.5 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
 ## Documentation
@@ -148,8 +154,9 @@ Live post-deploy smoke:
 - [Privacy model](docs/privacy.md)
 - [Roadmap](docs/roadmap.md)
 - [Changelog](CHANGELOG.md)
+- [2.9.5 release notes](docs/2.9.5/release_notes.md)
+- [2.9.5 validation checklist](docs/2.9.5/validation_checklist.md)
 - [2.9.4 release notes](docs/2.9.4/release_notes.md)
-- [2.9.4 validation checklist](docs/2.9.4/validation_checklist.md)
 - [2.9.3 release notes](docs/2.9.3/release_notes.md)
 
 ## Privacy Boundary

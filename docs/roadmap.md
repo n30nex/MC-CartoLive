@@ -6,8 +6,8 @@ in [CHANGELOG.md](../CHANGELOG.md); operator procedures live in
 
 ## Current Baseline
 
-Version `2.9.4` is the current Labs polish release on the public-safe event,
-operations, and map-runtime foundation.
+Version `2.9.5` is the current Map Studio release on the public-safe event,
+operations, Labs, and map-runtime foundation.
 
 - Public API shapes are stable across the 2.8.x and 2.9.x line.
 - The default public map is traffic-first: terrain relief, propagation overlays,
@@ -16,17 +16,19 @@ operations, and map-runtime foundation.
   the embedded React frontend and SQLite under `/app/data`.
 - Local release validation uses Podman; the production droplet can continue to
   use Docker Compose.
-- The 2.9.4 frontend gives each Labs experiment its own routed page, dropdown
-  entry, polished workbench layout, and public-safe inspector context.
+- The 2.9.5 frontend gives users a richer style registry, optional PMTiles
+  profiles, and configurable 3D node/route presentation without changing public
+  API shapes.
 
 ## Active Focus
 
 - Keep the hosted Canada map stable, readable, and privacy-safe during live
   traffic.
-- Keep Packets, Chat, NetGraph, VCR, NodeList, propagation history, and 3D
-  optional but easy to discover.
+- Keep Packets, Chat, NetGraph, VCR, NodeList, propagation history, Map Studio,
+  and 3D optional but easy to discover.
 - Keep Labs fun, browser-safe, and strictly derived from public DTOs.
-- Improve map and panel UX through small API-compatible 2.9.x patches.
+- Improve map, offline tile, 3D, and panel UX through small API-compatible
+  2.9.x patches.
 - Keep release evidence concise and current instead of adding more planning
   documents.
 - Keep production deployment repeatable with backup, smoke, rollback, privacy
@@ -40,7 +42,8 @@ operations, and map-runtime foundation.
 - Continue extracting CanadaMap into runtime overlays using the new registry
   contracts.
 - Add importer tooling for coarse coverage cells and Canada CDEM LOS samples.
-- Add focused browser smoke coverage for the new NOC/style/event workflows.
+- Add more focused browser smoke coverage for PMTiles, terrain, and 3D style
+  workflows once fixture assets are available.
 - Continue improving operator diagnostics without exposing raw packet data.
 
 ## Release Gates
