@@ -1,0 +1,34 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MC-CartoLive Public API",
+    "version": "2.9.2"
+  },
+  "paths": {
+    "/api/v1/public/state": { "get": { "summary": "Public live state" } },
+    "/api/v1/public/events": { "get": { "summary": "Public event backfill by durable sequence" } },
+    "/api/v1/public/viewport": { "get": { "summary": "Viewport-scoped public map data" } },
+    "/api/v1/public/noc": { "get": { "summary": "Public-safe operations summary" } },
+    "/api/v1/public/packets": { "get": { "summary": "Public packet paths" } },
+    "/api/v1/public/chat": { "get": { "summary": "Public chat messages" } },
+    "/api/v1/public/coverage": { "get": { "summary": "Coarse public coverage cells" } },
+    "/api/v1/public/los/profile": { "get": { "summary": "Public LOS profile" } },
+    "/api/v1/public/schema": { "get": { "summary": "Static checked public API schema" } },
+    "/api/v1/public/propagation": { "get": { "summary": "Public propagation events" } },
+    "/api/v1/public/integrations/home-assistant": { "get": { "summary": "Public-safe sensor summary" } }
+  },
+  "x-public-forbidden-fields": [
+    "publicKey",
+    "observerPublicKey",
+    "packetHash",
+    "rawHex",
+    "rawJson",
+    "payloadHex",
+    "pathHex",
+    "resolver",
+    "debug",
+    "secret",
+    "token",
+    "password"
+  ]
+}

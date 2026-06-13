@@ -17,6 +17,9 @@ docs are kept short; historical release evidence is preserved by version.
 
 ## Release Docs
 
+- [2.9.2 release notes](2.9.2/release_notes.md)
+- [2.9.2 operator notes](2.9.2/operator_notes.md)
+- [2.9.2 validation checklist](2.9.2/validation_checklist.md)
 - [2.9.1 release notes](2.9.1/release_notes.md)
 - [2.9.1 validation checklist](2.9.1/validation_checklist.md)
 - [2.9.1 master plan](2.9.1/master_plan.md)

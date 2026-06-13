@@ -12,12 +12,19 @@ const endpoints = [
   { path: '/readyz', type: 'json' },
   { path: '/metrics', type: 'text' },
   { path: '/api/v1/public/state', type: 'json' },
+  { path: '/api/v1/public/events?afterSeq=0&limit=25', type: 'json' },
+  { path: '/api/v1/public/viewport?bbox=-142,41,-52,84&zoom=4&limit=25', type: 'json' },
+  { path: '/api/v1/public/noc', type: 'json' },
   { path: `/api/v1/public/history?from=${from}&to=${now}&limit=25`, type: 'json' },
   { path: `/api/v1/public/history/summary?from=${from}&to=${now}&bucketMs=60000`, type: 'json' },
   { path: `/api/v1/public/packets?from=${from}&to=${now}&limit=25`, type: 'json' },
   { path: `/api/v1/public/chat?from=${from}&to=${now}&limit=25`, type: 'json' },
   { path: '/api/v1/public/solar', type: 'json' },
-  { path: `/api/v1/public/propagation?from=${from}&to=${now}&limit=25`, type: 'json' }
+  { path: `/api/v1/public/propagation?from=${from}&to=${now}&limit=25`, type: 'json' },
+  { path: '/api/v1/public/coverage?limit=25', type: 'json' },
+  { path: '/api/v1/public/los/profile?aLat=43.65&aLng=-79.38&bLat=45.42&bLng=-75.69', type: 'json' },
+  { path: '/api/v1/public/schema', type: 'json' },
+  { path: '/api/v1/public/integrations/home-assistant', type: 'json' }
 ];
 
 const forbiddenKeyPatterns = [

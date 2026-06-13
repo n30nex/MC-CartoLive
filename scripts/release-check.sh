@@ -17,6 +17,7 @@ fi
 
 cd "$ROOT/backend"
 node "$ROOT/scripts/check-version-sync.mjs"
+node "$ROOT/scripts/public-schema-check.mjs"
 
 go test ./...
 go tool govulncheck ./...
@@ -53,6 +54,10 @@ curl -fsS "$BASE_URL/api/v1/public/packets?from=$FROM&to=$NOW&limit=25" >/tmp/mc
 curl -fsS "$BASE_URL/api/v1/public/chat?from=$FROM&to=$NOW&limit=25" >/tmp/mc-cartolive-chat.json
 curl -fsS "$BASE_URL/api/v1/public/solar" >/tmp/mc-cartolive-solar.json
 curl -fsS "$BASE_URL/api/v1/public/propagation?from=$FROM&to=$NOW&limit=25" >/tmp/mc-cartolive-propagation.json
+curl -fsS "$BASE_URL/api/v1/public/events?afterSeq=0&limit=25" >/tmp/mc-cartolive-public-events.json
+curl -fsS "$BASE_URL/api/v1/public/noc" >/tmp/mc-cartolive-noc.json
+curl -fsS "$BASE_URL/api/v1/public/schema" >/tmp/mc-cartolive-public-schema.json
+curl -fsS "$BASE_URL/api/v1/public/integrations/home-assistant" >/tmp/mc-cartolive-sensors.json
 curl -fsS "$BASE_URL/metrics" >/tmp/mc-cartolive-metrics.txt
 node "$ROOT/scripts/check-public-privacy.mjs" "$BASE_URL"
 
@@ -71,6 +76,10 @@ echo "packets: /tmp/mc-cartolive-packets.json"
 echo "chat:    /tmp/mc-cartolive-chat.json"
 echo "solar:   /tmp/mc-cartolive-solar.json"
 echo "propagation: /tmp/mc-cartolive-propagation.json"
+echo "events:  /tmp/mc-cartolive-public-events.json"
+echo "noc:     /tmp/mc-cartolive-noc.json"
+echo "schema:  /tmp/mc-cartolive-public-schema.json"
+echo "sensors: /tmp/mc-cartolive-sensors.json"
 echo "metrics: /tmp/mc-cartolive-metrics.txt"
 echo "live confidence:"
 grep -Eo '"(packetIngestState|publicCacheState|mapMotionState|liveConfidenceState)":"[^"]+"' /tmp/mc-cartolive-health.json || true

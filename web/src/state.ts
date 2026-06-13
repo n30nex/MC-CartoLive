@@ -1,5 +1,6 @@
 import type {
   PublicActivity,
+  PublicEvent,
   PublicLiveEnvelope,
   PublicLiveState,
   PublicNode,
@@ -54,6 +55,8 @@ export interface AppState {
   routeTraces: RouteTraceHit[];
   stats: PublicStats | null;
   serverTime: number;
+  latestSeq: number;
+  seenSeqs: number[];
 }
 
 export const emptyState: AppState = {
@@ -64,7 +67,9 @@ export const emptyState: AppState = {
   observerBursts: [],
   routeTraces: [],
   stats: null,
-  serverTime: 0
+  serverTime: 0,
+  latestSeq: 0,
+  seenSeqs: []
 };
 
 export function initialAppState(state: PublicLiveState): AppState {
@@ -79,7 +84,9 @@ export function initialAppState(state: PublicLiveState): AppState {
     observerBursts,
     routeTraces: pulses.reduce((traces, pulse) => addRouteTraceHits(traces, pulse, serverTime), [] as RouteTraceHit[]),
     stats: state.stats ?? null,
-    serverTime
+    serverTime,
+    latestSeq: state.stats?.latestSeq ?? 0,
+    seenSeqs: []
   };
 }
 
@@ -127,42 +134,66 @@ export function hydrateSnapshotObserverBursts(activity: PublicActivity[], server
 }
 
 export function applyPublicEnvelope(state: AppState, message: PublicLiveEnvelope): AppState {
+  if (message.type === 'hello' || message.type === 'pong' || message.type === 'lagged') {
+    return withLatestSeq(state, message.latestSeq ?? message.seq ?? state.latestSeq);
+  }
   if (message.type !== 'event') return state;
+  if (message.seq && state.seenSeqs.includes(message.seq)) {
+    return withLatestSeq(state, message.latestSeq ?? message.seq);
+  }
+  const mark = (next: AppState): AppState => rememberSeq(withLatestSeq(next, message.latestSeq ?? message.seq ?? next.latestSeq), message.seq);
   if (message.event === 'nodeUpdate') {
     const node = message.data;
     const next = state.nodes.filter((item) => item.id !== node.id);
     const nodes = [node, ...next];
-    return { ...state, nodes, stats: refreshStats(state.stats, { activeNodes: nodes.length }) };
+    return mark({ ...state, nodes, stats: refreshStats(state.stats, { activeNodes: nodes.length }) });
   }
   if (message.event === 'activity') {
     const activity = withEnvelopeTiming(message.data, message);
-    if (state.activity.some((item) => item.id === activity.id)) return state;
+    if (state.activity.some((item) => item.id === activity.id)) return mark(state);
     const packets = isPacketActivity(activity) ? (state.stats?.packets ?? 0) + 1 : state.stats?.packets;
     const serverTime = Math.max(state.serverTime, message.serverTime ?? activity.heardAt);
-    return {
+    return mark({
       ...state,
       activity: [activity, ...state.activity].slice(0, 240),
       observerBursts: addObserverBurst(state.observerBursts, activity, serverTime),
       stats: refreshStats(state.stats, { packets, serverTime: Math.max(state.stats?.serverTime ?? 0, serverTime) }),
       serverTime
-    };
+    });
   }
   if (message.event === 'routePulse') {
     const pulse = withEnvelopeTiming(message.data, message);
-    if (state.pulses.some((item) => item.id === pulse.id)) return state;
+    if (state.pulses.some((item) => item.id === pulse.id)) return mark(state);
     const routes = upsertPulseRoutes(state.routes, pulse);
     const serverTime = Math.max(state.serverTime, message.serverTime ?? pulse.heardAt);
     const routeTraces = addRouteTraceHits(state.routeTraces, pulse, serverTime);
-    return {
+    return mark({
       ...state,
       routes,
       pulses: [pulse, ...state.pulses].slice(0, 240),
       routeTraces,
       stats: refreshStats(state.stats, { activeRoutes: routes.length, serverTime: Math.max(state.stats?.serverTime ?? 0, serverTime) }),
       serverTime
-    };
+    });
   }
   return state;
+}
+
+export function applyPublicEvent(state: AppState, event: PublicEvent): AppState {
+  if (event.type !== 'activity' && event.type !== 'routePulse' && event.type !== 'nodeUpdate') {
+    return withLatestSeq(state, event.seq);
+  }
+  return applyPublicEnvelope(state, {
+    v: 1,
+    type: 'event',
+    event: event.type,
+    seq: event.seq,
+    latestSeq: event.seq,
+    serverTime: event.receivedAt ?? event.at,
+    receivedAt: event.receivedAt ?? event.at,
+    displayAt: event.receivedAt ?? event.at,
+    data: event.data as never
+  });
 }
 
 export function filterNodes(nodes: PublicNode[], query: string): PublicNode[] {
@@ -358,6 +389,23 @@ function refreshStats(stats: PublicStats | null, next: Partial<PublicStats>): Pu
   return {
     ...stats,
     ...Object.fromEntries(Object.entries(next).filter(([, value]) => value !== undefined))
+  };
+}
+
+function withLatestSeq(state: AppState, seq: number | undefined): AppState {
+  if (!seq || seq <= state.latestSeq) return state;
+  return {
+    ...state,
+    latestSeq: seq,
+    stats: refreshStats(state.stats, { latestSeq: seq }) ?? state.stats
+  };
+}
+
+function rememberSeq(state: AppState, seq: number | undefined): AppState {
+  if (!seq || seq <= 0 || state.seenSeqs.includes(seq)) return state;
+  return {
+    ...state,
+    seenSeqs: [...state.seenSeqs, seq].slice(-1000)
   };
 }
 

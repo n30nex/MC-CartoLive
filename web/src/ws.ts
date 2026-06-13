@@ -14,6 +14,10 @@ export function reconnectDelayMs(attempts: number, random = Math.random): number
   return backoff + Math.floor(random() * WS_RECONNECT_JITTER_MS);
 }
 
+export function publicSocketSubscriptionsEnabled(env: Record<string, unknown> = import.meta.env): boolean {
+  return String(env['VITE_PUBLIC_WS_SUBSCRIPTIONS_ENABLED'] ?? '').toLowerCase() === 'true';
+}
+
 export function connectPublicSocket(onMessage: (message: PublicLiveEnvelope) => void, onStatus: (status: string) => void, onOpen?: () => void): LiveSocket {
   if (typeof window.WebSocket !== 'function') {
     onStatus('polling');
@@ -81,7 +85,7 @@ export function connectPublicSocket(onMessage: (message: PublicLiveEnvelope) => 
       attempts = 0;
       onStatus('live');
       onOpen?.();
-      if (!sendJSON({ v: 1, type: 'subscribe', id: 'public-map' })) return;
+      if (publicSocketSubscriptionsEnabled() && !sendJSON({ v: 1, type: 'subscribe', id: 'public-map' })) return;
       pingTimer = window.setInterval(() => {
         sendJSON({ type: 'ping' });
       }, 25_000);

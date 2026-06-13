@@ -63,7 +63,7 @@ podman run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.9.1
+  ghcr.io/n30nex/mc-cartolive:2.9.2
 ```
 
 Persistent deployment:
@@ -73,7 +73,7 @@ podman run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.9.1
+  ghcr.io/n30nex/mc-cartolive:2.9.2
 ```
 
 The image runs as non-root `appuser`, includes the bundled `mc-diagnose`
@@ -104,7 +104,7 @@ rebuild, readiness wait, and rollback on failure.
 
 ## Runtime Notes
 
-- Version 2.9.1 exposes app version, Git SHA, build number, and build time in
+- Version 2.9.2 exposes app version, Git SHA, build number, and build time in
   the top project bar and in health/readiness responses.
 - `/healthz` is cheap liveness. `/readyz` checks DB, static assets, public state
   readiness, cache freshness, and public-safe runtime status.
@@ -146,8 +146,12 @@ The diagnostic report uses public-safe map inclusion reasons such as
   build, package smoke, privacy scan, browser smoke for changed UI, and live
   smoke after deploy.
 - Keep `/healthz`, `/readyz`, `/api/v1/public/state`,
+  `/api/v1/public/events`, `/api/v1/public/viewport`, `/api/v1/public/noc`,
   `/api/v1/public/history`, `/api/v1/public/packets`, `/api/v1/public/chat`,
-  `/api/v1/public/propagation`, and `/ws/public` in smoke coverage.
+  `/api/v1/public/propagation`, `/api/v1/public/coverage`,
+  `/api/v1/public/los/profile`, `/api/v1/public/schema`,
+  `/api/v1/public/integrations/home-assistant`, and `/ws/public` in smoke
+  coverage.
 - Back up `data/meshcore-live.db*` before upgrades.
 - Scan public JSON and WebSocket payloads for raw packet hashes, raw hex, full
   public keys, resolver debug fields, broker credentials, channel secrets, and

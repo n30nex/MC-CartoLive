@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { WS_RECONNECT_BASE_MS, WS_RECONNECT_MAX_MS, connectPublicSocket, reconnectDelayMs } from './ws';
+import { WS_RECONNECT_BASE_MS, WS_RECONNECT_MAX_MS, connectPublicSocket, publicSocketSubscriptionsEnabled, reconnectDelayMs } from './ws';
 
 const originalWebSocket = window.WebSocket;
 
@@ -18,6 +18,11 @@ describe('public websocket reconnect backoff', () => {
     expect(reconnectDelayMs(1, () => 0)).toBe(WS_RECONNECT_BASE_MS * 2);
     expect(reconnectDelayMs(20, () => 0)).toBe(WS_RECONNECT_MAX_MS);
     expect(reconnectDelayMs(20, () => 0.99)).toBeLessThan(WS_RECONNECT_MAX_MS + 500);
+  });
+
+  it('keeps scoped subscriptions opt-in', () => {
+    expect(publicSocketSubscriptionsEnabled({ VITE_PUBLIC_WS_SUBSCRIPTIONS_ENABLED: 'false' })).toBe(false);
+    expect(publicSocketSubscriptionsEnabled({ VITE_PUBLIC_WS_SUBSCRIPTIONS_ENABLED: 'true' })).toBe(true);
   });
 
   it('falls back to recovering when WebSocket construction throws', () => {
@@ -49,7 +54,7 @@ describe('public websocket reconnect backoff', () => {
     class ThrowingPingWebSocket extends FakeWebSocket {
       override send(data: string) {
         super.send(data);
-        if (this.sent.length > 1) {
+        if (data.includes('"ping"')) {
           throw new Error('send failed');
         }
       }
@@ -69,8 +74,7 @@ describe('public websocket reconnect backoff', () => {
     sockets[0].emit('open');
     vi.advanceTimersByTime(25_000);
 
-    expect(sockets[0].sent[0]).toContain('"subscribe"');
-    expect(sockets[0].sent[1]).toContain('"ping"');
+    expect(sockets[0].sent[0]).toContain('"ping"');
     expect(sockets[0].closed).toBe(true);
     expect(statuses).toEqual(['connecting', 'live', 'error', 'recovering']);
     socket.close();

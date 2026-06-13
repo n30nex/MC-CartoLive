@@ -30,6 +30,7 @@ try {
   }
 
   node (Join-Path $root "scripts/check-version-sync.mjs")
+  node (Join-Path $root "scripts/public-schema-check.mjs")
 
   Push-Location "backend"
   try {
@@ -76,6 +77,10 @@ try {
   $chat = Invoke-RestMethod "$BaseUrl/api/v1/public/chat?from=$from&to=$now&limit=25"
   $solar = Invoke-RestMethod "$BaseUrl/api/v1/public/solar"
   $propagation = Invoke-RestMethod "$BaseUrl/api/v1/public/propagation?from=$from&to=$now&limit=25"
+  $events = Invoke-RestMethod "$BaseUrl/api/v1/public/events?afterSeq=0&limit=25"
+  $noc = Invoke-RestMethod "$BaseUrl/api/v1/public/noc"
+  $schema = Invoke-RestMethod "$BaseUrl/api/v1/public/schema"
+  $sensors = Invoke-RestMethod "$BaseUrl/api/v1/public/integrations/home-assistant"
   $metrics = Invoke-WebRequest -UseBasicParsing "$BaseUrl/metrics"
   node (Join-Path $root "scripts/check-public-privacy.mjs") $BaseUrl
 
@@ -99,6 +104,10 @@ try {
     SolarKp = $solar.kpIndex
     PropagationEvents = $propagation.window.count
     PropagationStatus = $propagation.conditions.sourceStatus
+    PublicEvents = @($events.events).Count
+    NocStatus = $noc.status
+    PublicSchemaVersion = $schema.info.version
+    SensorPackets = $sensors.packetRate.perMinute
     MetricsBytes = $metrics.Content.Length
     PacketIngestState = $health.packetIngestState
     PublicCacheState = $health.publicCacheState

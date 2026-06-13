@@ -21,6 +21,7 @@ var (
 )
 
 type PublicNode struct {
+	Seq            int64    `json:"seq,omitempty"`
 	ID             string   `json:"id"`
 	Label          string   `json:"label"`
 	Role           string   `json:"role"`
@@ -61,6 +62,7 @@ type PublicRoute struct {
 }
 
 type PublicActivity struct {
+	Seq              int64                   `json:"seq,omitempty"`
 	ID               string                  `json:"id"`
 	Kind             string                  `json:"kind"`
 	PayloadTypeName  string                  `json:"payloadTypeName"`
@@ -97,6 +99,7 @@ type PublicMessageAnchor struct {
 }
 
 type PublicRoutePulse struct {
+	Seq             int64                `json:"seq,omitempty"`
 	ID              string               `json:"id"`
 	IATA            string               `json:"iata,omitempty"`
 	Region          string               `json:"region,omitempty"`
@@ -232,6 +235,7 @@ type PublicStats struct {
 	MQTTMessages      int64                       `json:"mqttMessages"`
 	WSClients         int                         `json:"wsClients"`
 	ServerTime        int64                       `json:"serverTime"`
+	LatestSeq         int64                       `json:"latestSeq,omitempty"`
 	ResolutionBuckets map[string]map[string]int64 `json:"resolutionBuckets,omitempty"`
 	ExcludedIATAs     map[string]int64            `json:"excludedIatas,omitempty"`
 	ExcludedRegions   map[string]int64            `json:"excludedRegions,omitempty"`
@@ -273,6 +277,183 @@ type PublicHistoryResponse struct {
 	Events     []PublicHistoryEvent `json:"events"`
 	NextCursor string               `json:"nextCursor,omitempty"`
 	Window     PublicHistoryWindow  `json:"window"`
+}
+
+type PublicEvent struct {
+	Seq             int64    `json:"seq"`
+	Type            string   `json:"type"`
+	At              int64    `json:"at"`
+	ReceivedAt      int64    `json:"receivedAt,omitempty"`
+	IATA            string   `json:"iata,omitempty"`
+	Region          string   `json:"region,omitempty"`
+	PayloadTypeName string   `json:"payloadTypeName,omitempty"`
+	Message         bool     `json:"message,omitempty"`
+	RouteIDs        []string `json:"routeIds,omitempty"`
+	NodeIDs         []string `json:"nodeIds,omitempty"`
+	Data            any      `json:"data"`
+}
+
+type PublicEventsResponse struct {
+	ServerTime int64         `json:"serverTime"`
+	LatestSeq  int64         `json:"latestSeq"`
+	Events     []PublicEvent `json:"events"`
+	NextCursor string        `json:"nextCursor,omitempty"`
+}
+
+type PublicViewportResponse struct {
+	ServerTime int64         `json:"serverTime"`
+	LatestSeq  int64         `json:"latestSeq,omitempty"`
+	Nodes      []PublicNode  `json:"nodes"`
+	Routes     []PublicRoute `json:"routes"`
+	Events     []PublicEvent `json:"events,omitempty"`
+	BBox       []float64     `json:"bbox,omitempty"`
+	Zoom       float64       `json:"zoom,omitempty"`
+	Includes   []string      `json:"includes,omitempty"`
+}
+
+type PublicNOCObserver struct {
+	ID            string `json:"id"`
+	Label         string `json:"label"`
+	Region        string `json:"region,omitempty"`
+	State         string `json:"state"`
+	LastSeen      int64  `json:"lastSeen"`
+	LastSeenAgeMs int64  `json:"lastSeenAgeMs"`
+	PacketsTotal  int64  `json:"packetsTotal"`
+	ActivityCount int64  `json:"activityCount"`
+}
+
+type PublicNOCResponse struct {
+	ServerTime          int64                       `json:"serverTime"`
+	LatestSeq           int64                       `json:"latestSeq,omitempty"`
+	MQTTConnected       bool                        `json:"mqttConnected"`
+	PublicCacheReady    bool                        `json:"publicCacheReady"`
+	PublicCacheAgeMs    int64                       `json:"publicCacheAgeMs"`
+	WSClients           int                         `json:"wsClients"`
+	WSDroppedMessages   int64                       `json:"wsDroppedMessages"`
+	Packets             int64                       `json:"packets"`
+	ActiveNodes         int64                       `json:"activeNodes"`
+	ActiveRoutes        int64                       `json:"activeRoutes"`
+	Observers           []PublicNOCObserver         `json:"observers"`
+	ObserverStateCounts map[string]int              `json:"observerStateCounts"`
+	ResolutionBuckets   map[string]map[string]int64 `json:"resolutionBuckets,omitempty"`
+}
+
+type PublicCoverageCell struct {
+	ID              string    `json:"id"`
+	Source          string    `json:"source"`
+	Region          string    `json:"region,omitempty"`
+	BBox            []float64 `json:"bbox"`
+	Intensity       float64   `json:"intensity"`
+	SampleCount     int64     `json:"sampleCount"`
+	AgeBucket       string    `json:"ageBucket"`
+	UpdatedAt       int64     `json:"updatedAt"`
+	Attribution     string    `json:"attribution,omitempty"`
+	PrecisionBucket string    `json:"precisionBucket"`
+}
+
+type PublicCoverageResponse struct {
+	ServerTime       int64                `json:"serverTime"`
+	SourceStatus     string               `json:"sourceStatus"`
+	PrecisionDefault string               `json:"precisionDefault"`
+	Cells            []PublicCoverageCell `json:"cells"`
+	Attribution      string               `json:"attribution,omitempty"`
+}
+
+type PublicLOSPoint struct {
+	Fraction   float64  `json:"fraction"`
+	Lat        float64  `json:"lat"`
+	Lng        float64  `json:"lng"`
+	DistanceKm float64  `json:"distanceKm"`
+	ElevationM *float64 `json:"elevationM,omitempty"`
+	ClearanceM *float64 `json:"clearanceM,omitempty"`
+}
+
+type PublicLOSProfileResponse struct {
+	ServerTime      int64            `json:"serverTime"`
+	Source          string           `json:"source"`
+	SourceStatus    string           `json:"sourceStatus"`
+	DistanceKm      float64          `json:"distanceKm"`
+	BearingDeg      float64          `json:"bearingDeg"`
+	FrequencyMHz    float64          `json:"frequencyMhz"`
+	AntennaHeightAM float64          `json:"antennaHeightAM"`
+	AntennaHeightBM float64          `json:"antennaHeightBM"`
+	Points          []PublicLOSPoint `json:"points"`
+	Notes           []string         `json:"notes,omitempty"`
+}
+
+type PublicSensorSummaryResponse struct {
+	ServerTime       int64  `json:"serverTime"`
+	MQTTConnected    bool   `json:"mqttConnected"`
+	Packets          int64  `json:"packets"`
+	ActiveNodes      int64  `json:"activeNodes"`
+	ActiveRoutes     int64  `json:"activeRoutes"`
+	WSClients        int    `json:"wsClients"`
+	ObserverOnline   int    `json:"observerOnline"`
+	ObserverStale    int    `json:"observerStale"`
+	ObserverOffline  int    `json:"observerOffline"`
+	TopRegion        string `json:"topRegion,omitempty"`
+	PublicCacheAgeMs int64  `json:"publicCacheAgeMs"`
+	LatestSeq        int64  `json:"latestSeq,omitempty"`
+}
+
+func PublicEventFromData(eventType string, data any) PublicEvent {
+	event := PublicEvent{Type: strings.TrimSpace(eventType), Data: data}
+	switch item := data.(type) {
+	case PublicNode:
+		event.At = item.LastSeen
+		event.NodeIDs = []string{item.ID}
+		if len(item.RegionsHeardIn) > 0 {
+			event.Region = strings.ToUpper(strings.TrimSpace(item.RegionsHeardIn[0]))
+		} else if len(item.IATAsHeardIn) > 0 {
+			event.Region = strings.ToUpper(strings.TrimSpace(item.IATAsHeardIn[0]))
+		}
+	case PublicActivity:
+		event.At = item.HeardAt
+		event.Region = strings.ToUpper(strings.TrimSpace(firstNonEmpty(item.Region, item.IATA)))
+		event.IATA = strings.ToUpper(strings.TrimSpace(item.IATA))
+		event.PayloadTypeName = strings.ToUpper(strings.TrimSpace(item.PayloadTypeName))
+		event.Message = strings.TrimSpace(item.MessageText) != ""
+		event.RouteIDs = append([]string{}, item.RouteIDs...)
+	case PublicRoutePulse:
+		event.At = item.HeardAt
+		event.Region = strings.ToUpper(strings.TrimSpace(firstNonEmpty(item.Region, item.IATA)))
+		event.IATA = strings.ToUpper(strings.TrimSpace(item.IATA))
+		event.PayloadTypeName = strings.ToUpper(strings.TrimSpace(item.PayloadTypeName))
+		event.Message = strings.TrimSpace(item.MessageText) != ""
+		for _, segment := range item.Segments {
+			event.RouteIDs = append(event.RouteIDs, segment.RouteID)
+			event.NodeIDs = append(event.NodeIDs, segment.From.NodeID, segment.To.NodeID)
+		}
+	}
+	if event.At <= 0 {
+		event.At = time.Now().UnixMilli()
+	}
+	return event
+}
+
+func PublicEventDataWithSeq(data any, seq int64) any {
+	switch item := data.(type) {
+	case PublicNode:
+		item.Seq = seq
+		return item
+	case PublicActivity:
+		item.Seq = seq
+		return item
+	case PublicRoutePulse:
+		item.Seq = seq
+		return item
+	default:
+		return data
+	}
+}
+
+func firstNonEmpty(items ...string) string {
+	for _, item := range items {
+		if strings.TrimSpace(item) != "" {
+			return item
+		}
+	}
+	return ""
 }
 
 type PublicHistorySummaryBucket struct {

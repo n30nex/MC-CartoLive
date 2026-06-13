@@ -2,10 +2,14 @@ import type {
   PublicActivity,
   PublicChatResponse,
   PublicChatMessage,
+  PublicCoverageResponse,
+  PublicEventsResponse,
   PublicHistoryResponse,
   PublicHistorySummaryResponse,
+  PublicLOSProfileResponse,
   PublicMessageAnchor,
   PublicLiveState,
+  PublicNOCResponse,
   PublicNode,
   PublicObserverLocation,
   PublicPacketPath,
@@ -19,11 +23,15 @@ import type {
   PublicRoutePulse,
   PublicRouteSegment,
   PublicPacketsResponse,
+  PublicSensorSummaryResponse,
+  PublicViewportResponse,
   PublicResolutionBucket,
   PublicStats,
   RuntimeHealth,
   SolarConditions
 } from './types';
+
+const PUBLIC_STATE_CACHE_KEY = 'mc-cartolive:last-public-state';
 
 async function getJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { headers: { Accept: 'application/json' }, signal });
@@ -34,7 +42,17 @@ async function getJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
 }
 
 export function fetchPublicState(): Promise<PublicLiveState> {
-  return getJSON<PublicLiveState>('/api/v1/public/state').then(sanitizePublicState);
+  return getJSON<PublicLiveState>('/api/v1/public/state')
+    .then((response) => {
+      const state = sanitizePublicState(response);
+      cachePublicStateSnapshot(state);
+      return state;
+    })
+    .catch((error) => {
+      const cached = readCachedPublicStateSnapshot();
+      if (cached) return cached;
+      throw error;
+    });
 }
 
 export function fetchHealthz(): Promise<RuntimeHealth> {
@@ -61,6 +79,87 @@ export function fetchPublicHistory({ from, to, limit, cursor, signal }: PublicHi
   if (limit !== undefined) params.set('limit', Math.round(limit).toString());
   if (cursor) params.set('cursor', cursor);
   return getJSON<PublicHistoryResponse>(`/api/v1/public/history?${params.toString()}`, signal);
+}
+
+export interface PublicEventsParams {
+  afterSeq?: number;
+  from?: number;
+  to?: number;
+  limit?: number;
+  region?: string;
+  payload?: string;
+  event?: string;
+  messageOnly?: boolean;
+  signal?: AbortSignal;
+}
+
+export function fetchPublicEvents({ afterSeq, from, to, limit, region, payload, event, messageOnly, signal }: PublicEventsParams): Promise<PublicEventsResponse> {
+  const params = new URLSearchParams();
+  if (afterSeq !== undefined) params.set('afterSeq', Math.max(0, Math.round(afterSeq)).toString());
+  if (from !== undefined) params.set('from', Math.round(from).toString());
+  if (to !== undefined) params.set('to', Math.round(to).toString());
+  if (limit !== undefined) params.set('limit', Math.round(limit).toString());
+  if (region) params.set('region', region);
+  if (payload) params.set('payload', payload);
+  if (event) params.set('event', event);
+  if (messageOnly) params.set('messageOnly', 'true');
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return getJSON<PublicEventsResponse>(`/api/v1/public/events${suffix}`, signal).then(sanitizePublicEventsResponse);
+}
+
+export interface PublicViewportParams {
+  bbox: [number, number, number, number];
+  zoom?: number;
+  include?: string[];
+  sinceSeq?: number;
+  signal?: AbortSignal;
+}
+
+export function fetchPublicViewport({ bbox, zoom, include, sinceSeq, signal }: PublicViewportParams): Promise<PublicViewportResponse> {
+  const params = new URLSearchParams({ bbox: bbox.map((value) => String(value)).join(',') });
+  if (zoom !== undefined) params.set('zoom', String(zoom));
+  if (include && include.length > 0) params.set('include', include.join(','));
+  if (sinceSeq !== undefined) params.set('sinceSeq', Math.round(sinceSeq).toString());
+  return getJSON<PublicViewportResponse>(`/api/v1/public/viewport?${params.toString()}`, signal).then(sanitizePublicViewportResponse);
+}
+
+export function fetchPublicNOC(signal?: AbortSignal): Promise<PublicNOCResponse> {
+  return getJSON<PublicNOCResponse>('/api/v1/public/noc', signal);
+}
+
+export function fetchPublicCoverage(region?: string, signal?: AbortSignal): Promise<PublicCoverageResponse> {
+  const params = new URLSearchParams();
+  if (region) params.set('region', region);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return getJSON<PublicCoverageResponse>(`/api/v1/public/coverage${suffix}`, signal);
+}
+
+export interface PublicLOSProfileParams {
+  aLat?: number;
+  aLng?: number;
+  bLat?: number;
+  bLng?: number;
+  nodeA?: string;
+  nodeB?: string;
+  frequencyMhz?: number;
+  antennaHeightAM?: number;
+  antennaHeightBM?: number;
+  signal?: AbortSignal;
+}
+
+export function fetchPublicLOSProfile(paramsIn: PublicLOSProfileParams): Promise<PublicLOSProfileResponse> {
+  const params = new URLSearchParams();
+  for (const key of ['aLat', 'aLng', 'bLat', 'bLng', 'frequencyMhz', 'antennaHeightAM', 'antennaHeightBM'] as const) {
+    const value = paramsIn[key];
+    if (value !== undefined) params.set(key, String(value));
+  }
+  if (paramsIn.nodeA) params.set('nodeA', paramsIn.nodeA);
+  if (paramsIn.nodeB) params.set('nodeB', paramsIn.nodeB);
+  return getJSON<PublicLOSProfileResponse>(`/api/v1/public/los/profile?${params.toString()}`, paramsIn.signal);
+}
+
+export function fetchPublicSensorSummary(signal?: AbortSignal): Promise<PublicSensorSummaryResponse> {
+  return getJSON<PublicSensorSummaryResponse>('/api/v1/public/integrations/home-assistant', signal);
 }
 
 export interface PublicPacketsParams extends PublicHistoryParams {
@@ -237,6 +336,75 @@ function sanitizePublicState(response: PublicLiveState | unknown): PublicLiveSta
     recentPulses,
     recentActivity,
     stats: sanitizePublicStats(safeResponse.stats)
+  };
+}
+
+function sanitizePublicEventsResponse(response: PublicEventsResponse | unknown): PublicEventsResponse {
+  const safe = (response ?? {}) as { serverTime?: unknown; latestSeq?: unknown; events?: unknown[]; nextCursor?: unknown };
+  const events = Array.isArray(safe.events)
+    ? safe.events.map(sanitizePublicEvent).filter((event): event is PublicEventsResponse['events'][number] => Boolean(event))
+    : [];
+  return {
+    serverTime: sanitizeNumber(safe.serverTime, Date.now()),
+    latestSeq: sanitizeNumber(safe.latestSeq, events.reduce((latest, event) => Math.max(latest, event.seq), 0)),
+    events,
+    nextCursor: sanitizeStringOrUndefined(safe.nextCursor)
+  };
+}
+
+function sanitizePublicEvent(event: unknown): PublicEventsResponse['events'][number] | null {
+  if (!event || typeof event !== 'object') return null;
+  const item = event as Record<string, unknown>;
+  const seq = sanitizeNumber(item.seq, 0);
+  const type = sanitizeString(item.type, '');
+  if (seq <= 0 || !type) return null;
+  const base = {
+    seq,
+    type,
+    at: sanitizeNumber(item.at, Date.now()),
+    receivedAt: sanitizeOptionalNumber(item.receivedAt),
+    iata: sanitizeStringOrUndefined(item.iata),
+    region: sanitizeStringOrUndefined(item.region),
+    payloadTypeName: sanitizeStringOrUndefined(item.payloadTypeName),
+    message: item.message === true,
+    routeIds: safeStringList(item.routeIds),
+    nodeIds: safeStringList(item.nodeIds)
+  };
+  if (type === 'activity') {
+    const data = sanitizePublicStateActivity(item.data);
+    return data ? { ...base, type, data } : null;
+  }
+  if (type === 'routePulse') {
+    const data = sanitizePublicStatePulse(item.data);
+    return data ? { ...base, type, data } : null;
+  }
+  if (type === 'nodeUpdate') {
+    const data = sanitizePublicStateNode(item.data);
+    return data ? { ...base, type, data } : null;
+  }
+  return { ...base, data: item.data };
+}
+
+function sanitizePublicViewportResponse(response: PublicViewportResponse | unknown): PublicViewportResponse {
+  const safe = (response ?? {}) as { serverTime?: unknown; latestSeq?: unknown; nodes?: unknown[]; routes?: unknown[]; events?: unknown[]; bbox?: unknown; zoom?: unknown; includes?: unknown };
+  const nodes = Array.isArray(safe.nodes)
+    ? safe.nodes.map(sanitizePublicStateNode).filter((node): node is PublicNode => Boolean(node))
+    : [];
+  const routes = Array.isArray(safe.routes)
+    ? safe.routes.map(sanitizePublicStateRoute).filter((route): route is PublicRoute => Boolean(route))
+    : [];
+  const events = Array.isArray(safe.events)
+    ? safe.events.map(sanitizePublicEvent).filter((event): event is PublicEventsResponse['events'][number] => Boolean(event))
+    : [];
+  return {
+    serverTime: sanitizeNumber(safe.serverTime, Date.now()),
+    latestSeq: sanitizeOptionalNumber(safe.latestSeq),
+    nodes,
+    routes,
+    events,
+    bbox: Array.isArray(safe.bbox) ? safe.bbox.map((item) => sanitizeNumber(item, 0)).slice(0, 4) : undefined,
+    zoom: sanitizeOptionalNumber(safe.zoom),
+    includes: safeStringList(safe.includes)
   };
 }
 
@@ -808,4 +976,35 @@ function defaultPublicStats(): PublicStats {
     wsClients: 0,
     serverTime: 0
   };
+}
+
+function cachePublicStateSnapshot(state: PublicLiveState): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    window.localStorage.setItem(
+      PUBLIC_STATE_CACHE_KEY,
+      JSON.stringify({
+        cachedAt: Date.now(),
+        state
+      })
+    );
+  } catch {
+    // Offline snapshot caching is opportunistic.
+  }
+}
+
+function readCachedPublicStateSnapshot(): PublicLiveState | null {
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  try {
+    const raw = window.localStorage.getItem(PUBLIC_STATE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { cachedAt?: unknown; state?: unknown };
+    const state = sanitizePublicState(parsed.state);
+    return {
+      ...state,
+      serverTime: sanitizeNumber(parsed.cachedAt, state.serverTime)
+    };
+  } catch {
+    return null;
+  }
 }

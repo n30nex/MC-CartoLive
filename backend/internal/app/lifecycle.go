@@ -101,9 +101,16 @@ func NewApplication(ctx context.Context, cfg Config, log *slog.Logger) (*Applica
 	}
 	hub := live.NewHub(log, cfg.WSClientQueueSize, cfg.PublicBaseURL)
 	publicHub := live.NewHub(log, cfg.WSClientQueueSize, cfg.PublicBaseURL)
+	publicHub.SetResumeEnabled(cfg.PublicWSResumeEnabled)
+	publicHub.SetSubscriptionsEnabled(cfg.PublicWSSubscriptionsEnabled)
 	publicCache := live.NewPublicStateCache(live.NewPublicIATAFilter(publicIATAs(cfg.PublicRegions, yc)))
 	resolver := resolve.New(st, yc.ForwarderRoles)
 	app := &Application{Config: cfg, Log: log, Store: st, Hub: hub, PublicHub: publicHub, PublicCache: publicCache, Runtime: live.NewRuntimeStats(), Resolver: resolver, Solar: solar.NewFetcher(log), Propagation: propagation.NewWeatherFetcher(log)}
+	if latestSeq, err := st.LatestPublicSeq(ctx); err == nil {
+		publicHub.SetLatestSeq(latestSeq)
+	} else {
+		log.Warn("public event sequence seed failed", "error", err)
+	}
 	app.MQTT = imqtt.NewClient(imqtt.ClientConfig{
 		Enabled:   cfg.MQTTEnabled,
 		BrokerURL: cfg.MQTTBrokerURL,
@@ -203,7 +210,7 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 			a.Log.Warn("status upsert failed", "error", err)
 		}
 		if node, err := a.Store.NodeByPublicKey(ctx, msg.TopicInfo.PublisherPK); err == nil && hasCoords(node) {
-			a.broadcastNodeUpdateForIATA(node, msg.TopicInfo.IATA)
+			a.broadcastNodeUpdateForIATA(ctx, node, msg.TopicInfo.IATA)
 		}
 		return
 	}
@@ -247,7 +254,7 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 			a.Log.Warn("advert node upsert failed", "packetHash", parsed.PacketHash, "error", err)
 		} else {
 			advertNode = &node
-			a.broadcastNodeUpdateForIATA(node, msg.TopicInfo.IATA)
+			a.broadcastNodeUpdateForIATA(ctx, node, msg.TopicInfo.IATA)
 		}
 	}
 
@@ -287,12 +294,12 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 			a.Hub.Broadcast("edgeAnimation", stored)
 			if publicAllowed {
 				if activity, ok := live.PublicActivityFromEdge(stored); ok {
-					a.PublicHub.Broadcast("activity", activity)
+					activity = a.publishPublicEvent(ctx, "activity", activity).(live.PublicActivity)
 					a.PublicCache.ApplyActivity(activity)
 					publicActivitySent = true
 				}
 				if pulse, ok := live.PublicRoutePulseFromEdge(stored); ok {
-					a.PublicHub.Broadcast("routePulse", pulse)
+					pulse = a.publishPublicEvent(ctx, "routePulse", pulse).(live.PublicRoutePulse)
 					a.PublicCache.ApplyRoutePulse(pulse)
 				}
 			}
@@ -300,12 +307,12 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 	}
 	if !publicActivitySent && observationOK && publicAllowed {
 		activity := a.publicActivityFromPacket(ctx, observation, nil)
-		a.PublicHub.Broadcast("activity", activity)
+		activity = a.publishPublicEvent(ctx, "activity", activity).(live.PublicActivity)
 		a.PublicCache.ApplyActivity(activity)
 	}
 }
 
-func (a *Application) broadcastNodeUpdateForIATA(node live.Node, iata string) {
+func (a *Application) broadcastNodeUpdateForIATA(ctx context.Context, node live.Node, iata string) {
 	a.Hub.Broadcast("nodeUpdate", node)
 	if iata != "" && !a.PublicCache.AllowsIATA(iata) {
 		a.PublicCache.RecordExcludedIATA(iata)
@@ -317,9 +324,31 @@ func (a *Application) broadcastNodeUpdateForIATA(node live.Node, iata string) {
 			return
 		}
 		publicNode.IATAsHeardIn = filteredIATAs
-		a.PublicHub.Broadcast("nodeUpdate", publicNode)
+		publicNode = a.publishPublicEvent(ctx, "nodeUpdate", publicNode).(live.PublicNode)
 		a.PublicCache.ApplyNode(publicNode)
 	}
+}
+
+func (a *Application) publishPublicEvent(ctx context.Context, eventType string, data any) any {
+	if a == nil || a.PublicHub == nil {
+		return data
+	}
+	if !a.Config.PublicEventsEnabled || a.Store == nil {
+		a.PublicHub.Broadcast(eventType, data)
+		return data
+	}
+	event := live.PublicEventFromData(eventType, data)
+	stored, err := a.Store.InsertPublicEvent(ctx, event)
+	if err != nil {
+		a.Log.Warn("public event insert failed", "event", eventType, "error", err)
+		a.PublicHub.Broadcast(eventType, data)
+		return data
+	}
+	event = stored
+	data = live.PublicEventDataWithSeq(data, event.Seq)
+	event.Data = data
+	a.PublicHub.BroadcastPublicEvent(event)
+	return data
 }
 
 func (a *Application) publicActivityFromPacket(ctx context.Context, observation live.PacketObservation, routeIDs []string) live.PublicActivity {
@@ -615,6 +644,7 @@ func (a *Application) RefreshPublicStateCache(ctx context.Context) error {
 		MQTTMessages:  a.MQTT.TotalMessages(),
 		WSClients:     a.Hub.ClientCount() + a.PublicHub.ClientCount(),
 		ServerTime:    time.Now().UnixMilli(),
+		LatestSeq:     a.PublicHub.LatestSeq(),
 	}
 	if count := a.packetCount.Load(); count > 0 {
 		publicStats.Packets = count

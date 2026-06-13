@@ -101,6 +101,9 @@ type Envelope struct {
 	Type         string `json:"type"`
 	Event        string `json:"event,omitempty"`
 	Seq          int64  `json:"seq,omitempty"`
+	LatestSeq    int64  `json:"latestSeq,omitempty"`
+	FromSeq      int64  `json:"fromSeq,omitempty"`
+	ToSeq        int64  `json:"toSeq,omitempty"`
 	ServerTime   int64  `json:"serverTime,omitempty"`
 	ReceivedAt   int64  `json:"receivedAt,omitempty"`
 	DisplayAt    int64  `json:"displayAt,omitempty"`

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { phonebookGroupsForNode, type ConnectivityGraph, type PhonebookGroup, type PhonebookSortMode, type ReachableNode } from '../connectivity';
 import ElevationProfile from './ElevationProfile';
 import { formatRelative } from '../lib/formatRelative';
+import { publicRouteQuality, routePathPrefixBucket } from '../routeQuality';
 import { meshcorePathAvailable, meshcorePathCopyText, type NodeMessageHistoryItem } from '../routeTools';
 import type { PublicNode, PublicRoute } from '../types';
 
@@ -51,6 +52,7 @@ export default function SelectionDrawer({
     [connectivityGraph, maxDistanceKm, node?.id, phonebookQuery, phonebookSort]
   );
   const filteredReachableCount = filteredPhonebookGroups.reduce((total, group) => total + group.nodes.length, 0);
+  const routeQuality = route ? publicRouteQuality(route) : null;
   if (!node && !route) return null;
 
   return (
@@ -103,7 +105,7 @@ export default function SelectionDrawer({
                 { label: 'Distance', value: `${route.distanceKm.toFixed(1)} km` },
                 { label: 'Packets', value: route.packetCount.toLocaleString() },
                 { label: 'Last', value: formatRelative(route.lastHeard) },
-                { label: 'Payloads', value: route.payloadTypeNames.length.toLocaleString() }
+                { label: 'Quality', value: routeQuality?.trafficBucket ?? 'quiet' }
               ]}
             />
             <div className="selection-endpoint-row" aria-label="Route endpoints">
@@ -116,6 +118,9 @@ export default function SelectionDrawer({
               <Detail label="Distance" value={`${route.distanceKm.toFixed(1)} km`} />
               <Detail label="Last heard" value={formatRelative(route.lastHeard)} />
               <Detail label="Payloads" value={route.payloadTypeNames.join(', ') || 'Unknown'} />
+              <Detail label="Confidence" value={routeQuality?.confidence ?? 'high'} />
+              <Detail label="Age bucket" value={routeQuality?.ageBucket ?? 'recent'} />
+              <Detail label="Path prefix" value={routePathPrefixBucket(route)} />
               <Detail label="From" value={route.from.label} />
               <Detail label="To" value={route.to.label} />
             </dl>

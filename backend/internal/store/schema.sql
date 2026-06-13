@@ -175,6 +175,46 @@ CREATE INDEX IF NOT EXISTS idx_public_packet_paths_region_recent ON public_packe
 CREATE INDEX IF NOT EXISTS idx_public_packet_paths_payload_recent ON public_packet_paths(payload_type_name, mappable, heard_at_ms DESC, edge_id DESC);
 CREATE INDEX IF NOT EXISTS idx_public_packet_paths_message_recent ON public_packet_paths(mappable, heard_at_ms DESC, edge_id DESC) WHERE message_text != '';
 
+CREATE TABLE IF NOT EXISTS public_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_type TEXT NOT NULL,
+  occurred_at_ms INTEGER NOT NULL,
+  received_at_ms INTEGER NOT NULL,
+  region TEXT NOT NULL DEFAULT '',
+  iata TEXT NOT NULL DEFAULT '',
+  payload_type_name TEXT NOT NULL DEFAULT '',
+  message_flag INTEGER NOT NULL DEFAULT 0,
+  route_ids_json TEXT NOT NULL DEFAULT '[]',
+  node_ids_json TEXT NOT NULL DEFAULT '[]',
+  public_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_public_events_time ON public_events(occurred_at_ms DESC, seq DESC);
+CREATE INDEX IF NOT EXISTS idx_public_events_seq ON public_events(seq);
+CREATE INDEX IF NOT EXISTS idx_public_events_region_seq ON public_events(region, seq);
+CREATE INDEX IF NOT EXISTS idx_public_events_payload_seq ON public_events(payload_type_name, seq);
+CREATE INDEX IF NOT EXISTS idx_public_events_type_seq ON public_events(event_type, seq);
+CREATE INDEX IF NOT EXISTS idx_public_events_message_seq ON public_events(message_flag, seq);
+
+CREATE TABLE IF NOT EXISTS public_coverage_cells (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source TEXT NOT NULL DEFAULT 'manual',
+  region TEXT NOT NULL DEFAULT '',
+  min_lat REAL NOT NULL,
+  min_lng REAL NOT NULL,
+  max_lat REAL NOT NULL,
+  max_lng REAL NOT NULL,
+  intensity REAL NOT NULL DEFAULT 0,
+  sample_count INTEGER NOT NULL DEFAULT 0,
+  age_bucket TEXT NOT NULL DEFAULT 'unknown',
+  updated_at_ms INTEGER NOT NULL,
+  attribution TEXT NOT NULL DEFAULT '',
+  precision_bucket TEXT NOT NULL DEFAULT 'coarse'
+);
+
+CREATE INDEX IF NOT EXISTS idx_public_coverage_cells_region ON public_coverage_cells(region, updated_at_ms DESC);
+CREATE INDEX IF NOT EXISTS idx_public_coverage_cells_updated ON public_coverage_cells(updated_at_ms DESC);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS public_packet_paths_fts USING fts5(search_text);
 
 CREATE TRIGGER IF NOT EXISTS public_packet_paths_ai AFTER INSERT ON public_packet_paths BEGIN

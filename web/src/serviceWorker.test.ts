@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { cleanupLegacyServiceWorkers, clearLegacyCaches, serviceWorkerEnabled, type ServiceWorkerWindowLike } from './serviceWorker';
 
 describe('service worker release safety', () => {
-  it('is disabled unless explicitly enabled', () => {
-    expect(serviceWorkerEnabled({})).toBe(false);
+  it('is enabled unless explicitly disabled', () => {
+    expect(serviceWorkerEnabled({})).toBe(true);
     expect(serviceWorkerEnabled({ VITE_ENABLE_SERVICE_WORKER: 'false' })).toBe(false);
     expect(serviceWorkerEnabled({ VITE_ENABLE_SERVICE_WORKER: 'true' })).toBe(true);
   });

@@ -4,6 +4,22 @@ This changelog records the public release history at a useful level of detail.
 Detailed patch-by-patch investigation notes and temporary planning material live
 in Git history, not in the active documentation set.
 
+## 2.9.2 - 2026-06-12
+
+- Added durable public event storage with monotonic sequences, `/api/v1/public/events`,
+  WebSocket `latestSeq`, lag/backfill metadata, and frontend reconnect backfill.
+- Added public-safe NOC, viewport, coverage, LOS profile, schema, and integration
+  summary endpoints behind flags while keeping raw/private analyzer scope out.
+- Added a default compact NOC dashboard strip, public route quality buckets, and
+  sequence-aware frontend dedupe.
+- Added map runtime foundations for style profiles, overlay registry contracts,
+  PMTiles graceful setup, and worker-ready GeoJSON transforms.
+- Expanded public privacy scanning to the new public surfaces and added event,
+  style registry, worker, and route-quality tests.
+- Enabled app-shell/service-worker snapshot support with explicit opt-out.
+- Upgraded the frontend build toolchain to Vite 8 with an audited esbuild
+  dependency path.
+
 ## 2.9.1 - 2026-06-12
 
 - Reduced default live-mode frontend churn by stopping routine full public-state

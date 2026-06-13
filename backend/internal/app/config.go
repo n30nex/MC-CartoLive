@@ -52,6 +52,15 @@ type Config struct {
 	PublicPacketPathBackfillEnabled bool
 	PublicPacketPathBackfillBatch   int
 	PublicPacketPathBackfillHours   int
+	PublicEventsEnabled             bool
+	PublicWSResumeEnabled           bool
+	PublicWSSubscriptionsEnabled    bool
+	PublicViewportEnabled           bool
+	PublicNOCEnabled                bool
+	PublicCoverageEnabled           bool
+	PublicLOSEnabled                bool
+	PublicSchemaEnabled             bool
+	PublicIntegrationsEnabled       bool
 	PropagationEnabled              bool
 	PropagationMinDistanceKM        float64
 	PropagationFetchIntervalSec     int
@@ -77,7 +86,7 @@ func LoadConfig() (Config, error) {
 	publicRegions := configuredPublicRegions(mapPreset)
 	cfg := Config{
 		ListenAddr:                      envString("LISTEN_ADDR", ":8080"),
-		AppVersion:                      envString("APP_VERSION", "2.9.1"),
+		AppVersion:                      envString("APP_VERSION", "2.9.2"),
 		GitSHA:                          envString("GIT_SHA", envString("VITE_GIT_SHA", "")),
 		BuildTime:                       envString("BUILD_TIME", envString("VITE_BUILD_TIME", "")),
 		PublicBaseURL:                   envString("PUBLIC_BASE_URL", "http://localhost:8080"),
@@ -116,6 +125,15 @@ func LoadConfig() (Config, error) {
 		PublicPacketPathBackfillEnabled: envBool("PUBLIC_PACKET_PATH_BACKFILL_ENABLED", true),
 		PublicPacketPathBackfillBatch:   envInt("PUBLIC_PACKET_PATH_BACKFILL_BATCH", 500),
 		PublicPacketPathBackfillHours:   envInt("PUBLIC_PACKET_PATH_BACKFILL_HOURS", 24),
+		PublicEventsEnabled:             envBool("PUBLIC_EVENTS_ENABLED", true),
+		PublicWSResumeEnabled:           envBool("PUBLIC_WS_RESUME_ENABLED", true),
+		PublicWSSubscriptionsEnabled:    envBool("PUBLIC_WS_SUBSCRIPTIONS_ENABLED", false),
+		PublicViewportEnabled:           envBool("PUBLIC_VIEWPORT_ENABLED", true),
+		PublicNOCEnabled:                envBool("NOC_MODE_ENABLED", true),
+		PublicCoverageEnabled:           envBool("COVERAGE_ENABLED", true),
+		PublicLOSEnabled:                envBool("LOS_ENABLED", true),
+		PublicSchemaEnabled:             envBool("PUBLIC_SCHEMA_ENABLED", true),
+		PublicIntegrationsEnabled:       envBool("PUBLIC_INTEGRATIONS_ENABLED", true),
 		PropagationEnabled:              envBool("PROPAGATION_ENABLED", true),
 		PropagationMinDistanceKM:        envFloat("PROPAGATION_MIN_DISTANCE_KM", 75),
 		PropagationFetchIntervalSec:     envInt("PROPAGATION_FETCH_INTERVAL_SECONDS", 900),

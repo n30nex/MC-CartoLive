@@ -1,6 +1,7 @@
 export type NodeRole = 'companion' | 'repeater' | 'room_server' | 'sensor' | 'unknown';
 
 export interface PublicNode {
+  seq?: number;
   id: string;
   label: string;
   role: NodeRole;
@@ -148,6 +149,7 @@ export interface PublicStats {
   mqttMessages: number;
   wsClients: number;
   serverTime: number;
+  latestSeq?: number;
   resolutionBuckets?: Record<string, Record<string, number>>;
   excludedIatas?: Record<string, number>;
   excludedRegions?: Record<string, number>;
@@ -191,6 +193,115 @@ export interface PublicHistoryResponse {
   events: PublicHistoryEvent[];
   nextCursor?: string;
   window: PublicHistoryWindow;
+}
+
+export type PublicEvent =
+  | { seq: number; type: 'activity'; at: number; receivedAt?: number; iata?: string; region?: string; payloadTypeName?: string; message?: boolean; routeIds?: string[]; nodeIds?: string[]; data: PublicActivity }
+  | { seq: number; type: 'routePulse'; at: number; receivedAt?: number; iata?: string; region?: string; payloadTypeName?: string; message?: boolean; routeIds?: string[]; nodeIds?: string[]; data: PublicRoutePulse }
+  | { seq: number; type: 'nodeUpdate'; at: number; receivedAt?: number; iata?: string; region?: string; payloadTypeName?: string; message?: boolean; routeIds?: string[]; nodeIds?: string[]; data: PublicNode }
+  | { seq: number; type: string; at: number; receivedAt?: number; iata?: string; region?: string; payloadTypeName?: string; message?: boolean; routeIds?: string[]; nodeIds?: string[]; data: unknown };
+
+export interface PublicEventsResponse {
+  serverTime: number;
+  latestSeq: number;
+  events: PublicEvent[];
+  nextCursor?: string;
+}
+
+export interface PublicViewportResponse {
+  serverTime: number;
+  latestSeq?: number;
+  nodes: PublicNode[];
+  routes: PublicRoute[];
+  events?: PublicEvent[];
+  bbox?: number[];
+  zoom?: number;
+  includes?: string[];
+}
+
+export interface PublicNOCObserver {
+  id: string;
+  label: string;
+  region?: string;
+  state: 'online' | 'stale' | 'offline' | string;
+  lastSeen: number;
+  lastSeenAgeMs: number;
+  packetsTotal: number;
+  activityCount: number;
+}
+
+export interface PublicNOCResponse {
+  serverTime: number;
+  latestSeq?: number;
+  mqttConnected: boolean;
+  publicCacheReady: boolean;
+  publicCacheAgeMs: number;
+  wsClients: number;
+  wsDroppedMessages: number;
+  packets: number;
+  activeNodes: number;
+  activeRoutes: number;
+  observers: PublicNOCObserver[];
+  observerStateCounts: Record<string, number>;
+  resolutionBuckets?: Record<string, Record<string, number>>;
+}
+
+export interface PublicCoverageCell {
+  id: string;
+  source: string;
+  region?: string;
+  bbox: number[];
+  intensity: number;
+  sampleCount: number;
+  ageBucket: string;
+  updatedAt: number;
+  attribution?: string;
+  precisionBucket: string;
+}
+
+export interface PublicCoverageResponse {
+  serverTime: number;
+  sourceStatus: string;
+  precisionDefault: string;
+  cells: PublicCoverageCell[];
+  attribution?: string;
+}
+
+export interface PublicLOSPoint {
+  fraction: number;
+  lat: number;
+  lng: number;
+  distanceKm: number;
+  elevationM?: number;
+  clearanceM?: number;
+}
+
+export interface PublicLOSProfileResponse {
+  serverTime: number;
+  source: string;
+  sourceStatus: string;
+  distanceKm: number;
+  bearingDeg: number;
+  frequencyMhz: number;
+  antennaHeightAM: number;
+  antennaHeightBM: number;
+  points: PublicLOSPoint[];
+  notes?: string[];
+}
+
+export interface PublicSensorSummaryResponse {
+  serverTime: number;
+  mqttConnected: boolean;
+  packets: number;
+  activeNodes: number;
+  activeRoutes: number;
+  wsClients: number;
+  observerOnline: number;
+  observerStale: number;
+  observerOffline: number;
+  topRegion?: string;
+  publicCacheAgeMs: number;
+  latestSeq?: number;
 }
 
 export interface PublicPacketsResponse {
@@ -355,11 +466,12 @@ export interface RuntimeHealth {
 export type Health = RuntimeHealth;
 
 export type PublicLiveEnvelope =
-  | { v: 1; type: 'hello'; seq?: number; serverTime: number; receivedAt?: number; displayAt?: number; connectionId: string }
-  | { v: 1; type: 'lagged'; seq?: number; serverTime?: number; receivedAt?: number; displayAt?: number; droppedCount: number; since: number }
-  | { v: 1; type: 'event'; event: 'nodeUpdate'; seq?: number; serverTime?: number; receivedAt?: number; displayAt?: number; data: PublicNode }
-  | { v: 1; type: 'event'; event: 'activity'; seq?: number; serverTime?: number; receivedAt?: number; displayAt?: number; data: PublicActivity }
-  | { v: 1; type: 'event'; event: 'routePulse'; seq?: number; serverTime?: number; receivedAt?: number; displayAt?: number; data: PublicRoutePulse };
+  | { v: 1; type: 'hello'; seq?: number; latestSeq?: number; fromSeq?: number; toSeq?: number; serverTime: number; receivedAt?: number; displayAt?: number; connectionId: string }
+  | { v: 1; type: 'pong'; seq?: number; latestSeq?: number; serverTime?: number; receivedAt?: number; displayAt?: number }
+  | { v: 1; type: 'lagged'; seq?: number; latestSeq?: number; fromSeq?: number; toSeq?: number; serverTime?: number; receivedAt?: number; displayAt?: number; droppedCount: number; since: number }
+  | { v: 1; type: 'event'; event: 'nodeUpdate'; seq?: number; latestSeq?: number; serverTime?: number; receivedAt?: number; displayAt?: number; data: PublicNode }
+  | { v: 1; type: 'event'; event: 'activity'; seq?: number; latestSeq?: number; serverTime?: number; receivedAt?: number; displayAt?: number; data: PublicActivity }
+  | { v: 1; type: 'event'; event: 'routePulse'; seq?: number; latestSeq?: number; serverTime?: number; receivedAt?: number; displayAt?: number; data: PublicRoutePulse };
 
 export interface SolarConditions {
   serverTime: number;

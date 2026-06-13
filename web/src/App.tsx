@@ -1,9 +1,10 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Check, CloudSun, Columns3, Eye, EyeOff, History, Layers, LocateFixed, Monitor, Moon, MoreHorizontal, Palette, Pause, Play, RadioTower, RotateCcw, Route, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
-import { fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicPropagation, fetchPublicState } from './api';
+import { fetchPublicEvents, fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicPropagation, fetchPublicState } from './api';
 import { connectPublicSocket } from './ws';
 import {
   applyPublicEnvelope,
+  applyPublicEvent,
   emptyState,
   filterNodes,
   filterRoutes,
@@ -23,6 +24,7 @@ import LinkBar from './components/LinkBar';
 import PlotRoutesPanel, { type PlotMode, type PlotResult } from './components/PlotRoutesPanel';
 import SelectionDrawer from './components/SelectionDrawer';
 import StatusBar from './components/StatusBar';
+import NocSummary from './components/NocSummary';
 import PropagationPanel from './components/PropagationPanel';
 import VisitorGuide from './components/VisitorGuide';
 import VcrBar, { MiniLiveClock } from './components/VcrBar';
@@ -205,6 +207,7 @@ export default function App() {
   const GIF_EXPORT_MAX_PER_WINDOW = 5;
   const GIF_EXPORT_WINDOW_MS = 10 * 60_000;
   const GIF_EXPORT_COOLDOWN_MS = 30_000;
+  const stateRef = useRef<AppState>(emptyState);
   const pendingMessagesRef = useRef<PublicLiveEnvelope[]>([]);
   const vcrBufferedMessagesRef = useRef<PublicLiveEnvelope[]>([]);
   const vcrModeRef = useRef<VcrMode>('live');
@@ -215,6 +218,10 @@ export default function App() {
   const selectedThemePalette = useMemo(() => themePaletteByID(themePaletteID), [themePaletteID]);
   const resolvedThemeMode = useMemo(() => resolveThemeMode(themeMode), [themeMode]);
   const appThemeStyle = useMemo(() => themeStyleVariables(selectedThemePalette, resolvedThemeMode) as CSSProperties, [selectedThemePalette, resolvedThemeMode]);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
     const updateRoute = () => {
@@ -675,7 +682,38 @@ export default function App() {
         if (!initialNodesReceived) setNodeLoadFailed(true);
       });
     };
+    const backfillOrRefresh = (latestSeq?: number) => {
+      if (vcrModeRef.current !== 'live') return;
+      const afterSeq = stateRef.current.latestSeq;
+      if (!latestSeq || latestSeq <= afterSeq) {
+        setState((current) => applyPublicEnvelope(current, { v: 1, type: 'hello', seq: latestSeq, latestSeq, serverTime: Date.now(), connectionId: 'resume' }));
+        return;
+      }
+      fetchPublicEvents({ afterSeq, limit: 1000 })
+        .then((response) => {
+          if (!active || vcrModeRef.current !== 'live') return;
+          if (response.events.length === 0 && response.latestSeq > afterSeq) {
+            refreshState();
+            return;
+          }
+          setState((current) => response.events.reduce((next, event) => applyPublicEvent(next, event), current));
+          setSocketStatus('live');
+        })
+        .catch(() => {
+          if (!active) return;
+          refreshState();
+        });
+    };
     const socket = connectPublicSocket((message) => {
+      if (message.type === 'hello') {
+        setState((current) => applyPublicEnvelope(current, message));
+        if (openedOnce) backfillOrRefresh(message.latestSeq ?? message.seq);
+        return;
+      }
+      if (message.type === 'pong') {
+        setState((current) => applyPublicEnvelope(current, message));
+        return;
+      }
       if (message.type === 'lagged') {
         pendingMessagesRef.current = [];
         recordLivePendingQueueSize(0);
@@ -687,12 +725,12 @@ export default function App() {
           setVcr((current) => ({ ...current, status: 'lagged' }));
           return;
         }
-        refreshState();
+        setState((current) => applyPublicEnvelope(current, message));
+        backfillOrRefresh(message.latestSeq ?? message.toSeq ?? message.seq);
         return;
       }
       enqueueMessage(message);
     }, setSocketStatus, () => {
-      if (openedOnce) refreshState();
       openedOnce = true;
     });
     return () => {
@@ -1306,15 +1344,18 @@ export default function App() {
       {loadingPositionedNodes && <NodeLoadingToast failed={nodeLoadFailed} drawing={initialNodesReceived} />}
       <LinkBar packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} chatOpen={chatOpen} />
       {!chromeHidden && (
-        <StatusBar
-          stats={state.stats}
-          socketStatus={socketStatus}
-          nodeCount={visibleNodes.length}
-          routeCount={visibleRoutes.length}
-          coverage={coverage}
-          latestPayloadTypeName={latestPacketActivity?.payloadTypeName ?? null}
-          latestPacketID={latestPacketActivity?.id ?? null}
-        />
+        <>
+          <StatusBar
+            stats={state.stats}
+            socketStatus={socketStatus}
+            nodeCount={visibleNodes.length}
+            routeCount={visibleRoutes.length}
+            coverage={coverage}
+            latestPayloadTypeName={latestPacketActivity?.payloadTypeName ?? null}
+            latestPacketID={latestPacketActivity?.id ?? null}
+          />
+          <NocSummary />
+        </>
       )}
 
       <div className="top-actions">

@@ -19,6 +19,11 @@ type InfoPanel = 'changelog' | null;
 
 export const LATEST_RELEASE_HIGHLIGHTS = [
   {
+    label: '2.9.2',
+    title: 'Durable public live',
+    body: 'Public event sequences, reconnect backfill, NOC status, public schema, and map-runtime foundations move the release train forward safely.'
+  },
+  {
     label: '2.9.1',
     title: 'Live map performance',
     body: 'Healthy WebSocket sessions avoid full-state polling, route pulses update less state, and map heat/activity layers refresh at calmer cadences.'
@@ -27,11 +32,6 @@ export const LATEST_RELEASE_HIGHLIGHTS = [
     label: '2.9.0',
     title: 'Visitor UX rollup',
     body: 'Layer presets, clearer map settings, first-visit orientation, and denser selection summaries polish the live map without public API changes.'
-  },
-  {
-    label: '2.8.2',
-    title: 'Flat first view',
-    body: 'Terrain relief and propagation overlays default off, mobile controls move to a bottom dock, and the top status bar stays focused on traffic.'
   }
 ];
 

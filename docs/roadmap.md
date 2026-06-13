@@ -6,7 +6,8 @@ in [CHANGELOG.md](../CHANGELOG.md); operator procedures live in
 
 ## Current Baseline
 
-Version `2.9.1` is the current production-ready live-map performance release.
+Version `2.9.2` is the current public-safe event, operations, and map-runtime
+foundation release.
 
 - Public API shapes are stable across the 2.8.x and 2.9.x line.
 - The default public map is traffic-first: terrain relief, propagation overlays,
@@ -15,8 +16,9 @@ Version `2.9.1` is the current production-ready live-map performance release.
   the embedded React frontend and SQLite under `/app/data`.
 - Local release validation uses Podman; the production droplet can continue to
   use Docker Compose.
-- The 2.9.1 frontend reduces live-mode polling, route reducer churn, hidden
-  heatmap source work, and idle UI polling while preserving the 2.9.0 UX.
+- The 2.9.2 frontend uses durable public event sequences for reconnect
+  backfill, adds a compact NOC strip, and introduces map-runtime foundation
+  modules while preserving the 2.9.x visitor UX.
 
 ## Active Focus
 
@@ -32,12 +34,12 @@ Version `2.9.1` is the current production-ready live-map performance release.
 
 ## Candidate 2.9.x Work
 
-- Improve mobile panel ergonomics after production feedback.
-- Tighten map typography, contrast, and label density on small screens.
-- Add focused browser smoke coverage for the most-used visitor workflows.
-- Continue reducing frontend source rebuilds and idle animation work.
-- Improve operator diagnostics where they explain public-safe map inclusion
-  without exposing raw packet data.
+- Expand the new public event log into more history/VCR workflows.
+- Continue extracting CanadaMap into runtime overlays using the new registry
+  contracts.
+- Add importer tooling for coarse coverage cells and Canada CDEM LOS samples.
+- Add focused browser smoke coverage for the new NOC/style/event workflows.
+- Continue improving operator diagnostics without exposing raw packet data.
 
 ## Release Gates
 

@@ -1,4 +1,5 @@
-const CACHE_NAME = 'mc-cartolive-v2';
+const CACHE_NAME = 'mc-cartolive-v3';
+const SNAPSHOT_URL = '/api/v1/public/state';
 
 const APP_SHELL_URLS = [
   '/',
@@ -29,6 +30,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  if (url.origin === self.location.origin && url.pathname === SNAPSHOT_URL) {
+    event.respondWith(networkFirst(event.request));
+    return;
+  }
+
   if (url.pathname.endsWith('.png') || url.pathname.includes('tiles') || url.pathname.includes('tile')) {
     event.respondWith(networkFirst(event.request));
     return;
@@ -55,7 +61,7 @@ async function cacheFirst(request) {
 function shouldBypassCache(request, url) {
   if (request.method !== 'GET') return true;
   if (url.search) return true;
-  if (url.pathname.startsWith('/api/')) return true;
+  if (url.pathname.startsWith('/api/') && url.pathname !== SNAPSHOT_URL) return true;
   if (url.pathname === '/healthz' || url.pathname === '/readyz' || url.pathname === '/metrics') return true;
   if (url.pathname.startsWith('/ws')) return true;
   return false;

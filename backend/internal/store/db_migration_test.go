@@ -46,6 +46,8 @@ func TestMigrateUpgradesOldSchemaColumns(t *testing.T) {
 		"packet_observations":           {"message_sender", "message_text"},
 		"live_edge_events":              {"message_sender", "message_text", "message_anchor_json"},
 		"public_packet_paths":           {"mappable", "region", "route_ids_json", "endpoint_labels_json", "search_text", "message_sender", "message_text"},
+		"public_events":                 {"event_type", "public_json", "route_ids_json", "node_ids_json"},
+		"public_coverage_cells":         {"precision_bucket", "attribution"},
 		"propagation_weather_snapshots": {"fetched_at_ms", "pressure_hpa", "inversion_proxy"},
 		"propagation_events":            {"public_id", "classification", "weather_json", "solar_json"},
 	} {

@@ -8,6 +8,8 @@ import (
 func (s *Store) PruneOldData(ctx context.Context, beforeMs int64) error {
 	tables := []struct{ name, column string }{
 		{"public_packet_paths", "heard_at_ms"},
+		{"public_events", "occurred_at_ms"},
+		{"public_coverage_cells", "updated_at_ms"},
 		{"live_edge_events", "heard_at_ms"},
 		{"packet_observations", "heard_at_ms"},
 		{"observer_status", "received_at_ms"},

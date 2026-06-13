@@ -119,24 +119,31 @@ func clientIP(r *http.Request, trustProxyHeaders bool) string {
 }
 
 type Config struct {
-	RecentPacketLimit      int
-	RecentEdgeEventLimit   int
-	DefaultCenterLat       float64
-	DefaultCenterLng       float64
-	DefaultZoom            float64
-	DefaultRegion          string
-	MapRegionPreset        string
-	MapBounds              live.CoordinateBounds
-	PublicMode             bool
-	StrictRFOnly           bool
-	MaxUnverifiedEdgeKM    float64
-	AppVersion             string
-	GitSHA                 string
-	BuildTime              string
-	PublicIATARestricted   bool
-	PublicRegionRestricted bool
-	PublicIATAs            []string
-	TrustProxyHeaders      bool
+	RecentPacketLimit         int
+	RecentEdgeEventLimit      int
+	DefaultCenterLat          float64
+	DefaultCenterLng          float64
+	DefaultZoom               float64
+	DefaultRegion             string
+	MapRegionPreset           string
+	MapBounds                 live.CoordinateBounds
+	PublicMode                bool
+	StrictRFOnly              bool
+	MaxUnverifiedEdgeKM       float64
+	AppVersion                string
+	GitSHA                    string
+	BuildTime                 string
+	PublicIATARestricted      bool
+	PublicRegionRestricted    bool
+	PublicIATAs               []string
+	TrustProxyHeaders         bool
+	PublicEventsEnabled       bool
+	PublicViewportEnabled     bool
+	PublicNOCEnabled          bool
+	PublicCoverageEnabled     bool
+	PublicLOSEnabled          bool
+	PublicSchemaEnabled       bool
+	PublicIntegrationsEnabled bool
 }
 
 type Server struct {
@@ -187,10 +194,17 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/public/state", s.rateLimited(s.publicState))
 	mux.HandleFunc("GET /api/v1/public/history", s.rateLimited(s.publicHistory))
 	mux.HandleFunc("GET /api/v1/public/history/summary", s.rateLimited(s.publicHistorySummary))
+	mux.HandleFunc("GET /api/v1/public/events", s.rateLimited(s.publicEvents))
+	mux.HandleFunc("GET /api/v1/public/viewport", s.rateLimited(s.publicViewport))
+	mux.HandleFunc("GET /api/v1/public/noc", s.rateLimited(s.publicNOC))
 	mux.HandleFunc("GET /api/v1/public/packets", s.rateLimited(s.publicPackets))
 	mux.HandleFunc("GET /api/v1/public/chat", s.rateLimited(s.publicChat))
 	mux.HandleFunc("GET /api/v1/public/solar", s.rateLimited(s.publicSolar))
 	mux.HandleFunc("GET /api/v1/public/propagation", s.rateLimited(s.publicPropagation))
+	mux.HandleFunc("GET /api/v1/public/coverage", s.rateLimited(s.publicCoverage))
+	mux.HandleFunc("GET /api/v1/public/los/profile", s.rateLimited(s.publicLOSProfile))
+	mux.HandleFunc("GET /api/v1/public/schema", s.rateLimited(s.publicSchema))
+	mux.HandleFunc("GET /api/v1/public/integrations/home-assistant", s.rateLimited(s.publicSensorSummary))
 	mux.Handle("GET /ws/public", s.PublicHub)
 	if !s.Config.PublicMode {
 		mux.HandleFunc("GET /api/v1/live/state", s.liveState)
@@ -496,6 +510,7 @@ func (s *Server) publicState(w http.ResponseWriter, r *http.Request) {
 			state.Stats.MQTTConnected = s.mqttConnected()
 			state.Stats.MQTTMessages = s.mqttTotal()
 			state.Stats.WSClients = s.wsClientCount()
+			state.Stats.LatestSeq = s.latestPublicSeq(r.Context())
 			state.Map = s.publicMapConfig()
 			etag := `"` + strconv.FormatInt(state.UpdatedAt, 10) + `"`
 			w.Header().Set("ETag", etag)
@@ -534,6 +549,7 @@ func (s *Server) publicState(w http.ResponseWriter, r *http.Request) {
 		MQTTMessages:  s.mqttTotal(),
 		WSClients:     s.wsClientCount(),
 		ServerTime:    time.Now().UnixMilli(),
+		LatestSeq:     s.latestPublicSeq(ctx),
 	})
 	publicState.Map = s.publicMapConfig()
 	writeJSON(w, http.StatusOK, publicState)

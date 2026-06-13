@@ -6,6 +6,7 @@ import {
   SNAPSHOT_PULSE_REPLAY_SPACING_MS,
   SNAPSHOT_PULSE_FUTURE_SKEW_MS,
   SNAPSHOT_PULSE_STALE_MS,
+  applyPublicEvent,
   applyPublicEnvelope,
   addObserverBurst,
   currentPacketRatePerMinute,
@@ -29,7 +30,8 @@ const publicState: PublicLiveState = {
     mqttConnected: true,
     mqttMessages: 14,
     wsClients: 1,
-    serverTime: 1_700_000_000_000
+    serverTime: 1_700_000_000_000,
+    latestSeq: 5
   },
   nodes: [
     {
@@ -92,6 +94,7 @@ describe('public app state', () => {
     expect(state.routes[0].frequencyBucket).toBeGreaterThanOrEqual(0);
     expect(state.activity[0].id).toBe('activity-1');
     expect(state.stats?.activeRoutes).toBe(1);
+    expect(state.latestSeq).toBe(5);
   });
 
   it('hydrates recent public pulses from state snapshots for polling fallback', () => {
@@ -385,6 +388,34 @@ describe('public app state', () => {
     expect(twice.activity.filter((item) => item.id === 'activity-reconnect')).toHaveLength(1);
     expect(twice.pulses.filter((item) => item.id === 'pulse-reconnect')).toHaveLength(1);
     expect(twice.routes.find((route) => route.id === 'r-ab')?.packetCount).toBe(8);
+  });
+
+  it('applies public event backfill once by durable seq', () => {
+    const state = initialAppState(publicState);
+    const event = {
+      seq: 99,
+      type: 'activity',
+      at: 1_700_000_020_000,
+      receivedAt: 1_700_000_020_100,
+      data: {
+        id: 'activity-backfill',
+        kind: 'packet',
+        payloadTypeName: 'PLAIN_TEXT',
+        heardAt: 1_700_000_020_000,
+        hopCount: 0,
+        hasRoute: false,
+        animationState: 'observer',
+        resolutionBucket: 'observer_only',
+        observerLocation: { label: 'Backfill observer', lat: 43.6, lng: -79.4 }
+      }
+    } as const;
+
+    const once = applyPublicEvent(state, event);
+    const twice = applyPublicEvent(once, event);
+
+    expect(twice.activity.filter((item) => item.id === 'activity-backfill')).toHaveLength(1);
+    expect(twice.latestSeq).toBe(99);
+    expect(twice.seenSeqs).toContain(99);
   });
 
   it('summarizes and prunes route activity into last-15-minute bins', () => {

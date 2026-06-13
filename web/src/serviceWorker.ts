@@ -17,7 +17,7 @@ export interface ServiceWorkerWindowLike {
 }
 
 export function serviceWorkerEnabled(env: Record<string, unknown> = import.meta.env): boolean {
-  return env.VITE_ENABLE_SERVICE_WORKER === 'true';
+  return env.VITE_ENABLE_SERVICE_WORKER !== 'false';
 }
 
 export function configureServiceWorker(win: ServiceWorkerWindowLike = window): void {
