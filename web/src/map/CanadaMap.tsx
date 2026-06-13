@@ -190,6 +190,8 @@ const NODE_ICON_LAYER = 'node-role-icons';
 const NODE_LABEL_LAYER = 'node-map-labels';
 const OBSERVER_LAYER = 'observer-symbols';
 const ROUTE_LAYER = 'route-lines';
+const CARTO_DARK_SOURCE = 'carto-dark-tiles';
+const CARTO_DARK_LAYER = 'carto-dark';
 const CARTO_LIGHT_SOURCE = 'carto-light-tiles';
 const CARTO_LIGHT_LAYER = 'carto-light';
 const OPENFREEMAP_SOURCE = 'openfreemap-planet';
@@ -478,12 +480,38 @@ export const originalMapStyle: maplibregl.StyleSpecification = {
   version: 8,
   projection: { type: 'mercator' },
   glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-  sources: {},
+  sources: {
+    [CARTO_DARK_SOURCE]: {
+      type: 'raster',
+      tiles: [
+        'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+        'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+        'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
+      ],
+      tileSize: 256,
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+    }
+  },
   layers: [
     {
       id: 'map-background',
       type: 'background',
       paint: { 'background-color': '#000000' }
+    },
+    {
+      id: CARTO_DARK_LAYER,
+      type: 'raster',
+      source: CARTO_DARK_SOURCE,
+      minzoom: 0,
+      maxzoom: 20,
+      paint: {
+        'raster-opacity': ['interpolate', ['linear'], ['zoom'], 2, 0.34, 7, 0.48, 12, 0.66, 16, 0.78],
+        'raster-saturation': -0.96,
+        'raster-contrast': 0.08,
+        'raster-brightness-min': 0,
+        'raster-brightness-max': 0.72,
+        'raster-fade-duration': 0
+      }
     }
   ]
 };
@@ -2648,7 +2676,7 @@ function clearMapSky(map: maplibregl.Map) {
 }
 
 function ensureHillshadeLayer(map: maplibregl.Map, themeMode: MapThemeMode) {
-  const basemapID = themeMode === 'light' ? CARTO_LIGHT_LAYER : undefined;
+  const basemapID = themeMode === 'light' ? CARTO_LIGHT_LAYER : CARTO_DARK_LAYER;
   const layers = map.getStyle().layers ?? [];
   const basemapIdx = basemapID ? layers.findIndex((l) => l.id === basemapID) : -1;
   const afterBasemapID = basemapIdx >= 0 && basemapIdx + 1 < layers.length ? layers[basemapIdx + 1].id : undefined;

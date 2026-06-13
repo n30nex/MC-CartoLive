@@ -6,9 +6,9 @@ schemas.
 
 ## Style Profiles
 
-- `Classic Dark`: local black traffic-first canvas for maximum route contrast.
-  It stays flat by default and keeps terrain relief behind the explicit
-  `Terrain relief` toggle.
+- `Classic Dark`: dimmed CARTO street basemap over a black background for live
+  route contrast. It stays flat by default and keeps terrain relief behind the
+  explicit `Terrain relief` toggle.
 - `Classic Light`: CARTO raster basemap for the familiar bright daytime view.
   It stays flat by default and keeps terrain relief behind the explicit
   `Terrain relief` toggle.

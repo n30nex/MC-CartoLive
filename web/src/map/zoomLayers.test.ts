@@ -19,11 +19,13 @@ describe('map zoom layer consistency', () => {
     expect(mapOverlayStyle.sources['analysis-route-paths']).toBeTruthy();
   });
 
-  it('keeps the default dark map on a tint-free black canvas', () => {
+  it('keeps the default dark map as dimmed streets over a black canvas', () => {
     const background = originalMapStyle.layers.find((item) => item.id === 'map-background') as any;
-    expect(originalMapStyle.sources).toEqual({});
+    const streetLayer = originalMapStyle.layers.find((item) => item.id === 'carto-dark') as any;
+    expect(originalMapStyle.sources['carto-dark-tiles']).toBeTruthy();
     expect(background?.paint?.['background-color']).toBe('#000000');
-    expect(JSON.stringify(originalMapStyle)).not.toContain('dark_all');
+    expect(streetLayer?.paint?.['raster-saturation']).toBeLessThanOrEqual(-0.9);
+    expect(streetLayer?.paint?.['raster-brightness-max']).toBeLessThanOrEqual(0.72);
   });
 
   it('adds propagation insight layers at detail zoom with a dedicated public source', () => {
