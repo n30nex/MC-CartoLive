@@ -39,9 +39,9 @@
 - [x] `node scripts/public-schema-check.mjs`
 - [x] `node scripts/check-public-privacy.mjs http://127.0.0.1:39477` against
   synthetic fixture replay.
-- [ ] Container build or production Compose rebuild.
-- [ ] Live smoke after droplet deploy.
-- [ ] Deployed public privacy scan.
+- [x] Production Compose rebuild on the droplet.
+- [x] Live smoke after droplet deploy.
+- [x] Deployed public privacy scan.
 
 ## Local Evidence
 
@@ -55,16 +55,26 @@
 - Public privacy scan passed against a fixture-backed local server at
   `http://127.0.0.1:39477`.
 - Local Docker was unavailable and local Podman disconnected during image build
-  after frontend `npm ci`; final container evidence must come from the
-  production Compose rebuild or a restored local container runtime.
+  after frontend `npm ci`; final container evidence came from the production
+  Compose rebuild.
 
 ## Deployment
 
-- [ ] `main` pushed to GitHub.
-- [ ] 2.9.2 deployed to the droplet.
-- [ ] Live smoke run against `https://carto.canadaverse.org`.
-- [ ] Deployed public privacy scan passed.
+- [x] `main` pushed to GitHub.
+- [x] 2.9.2 deployed to the droplet.
+- [x] Live smoke run against `https://carto.canadaverse.org`.
+- [x] Deployed public privacy scan passed.
 
 ## Deployed Evidence
 
-- Pending final pushed SHA and droplet deploy verification.
+- Production deploy completed through `scripts/deploy.sh` on the Canada
+  droplet from pushed `main`.
+- Docker Compose rebuilt the image on the droplet and replaced the running
+  container.
+- Public health and readiness reported version `2.9.2`, ready state, fresh
+  public cache, and expected Git metadata.
+- Live smoke passed against `https://carto.canadaverse.org`: public state,
+  history, packets, chat, WebSocket hello, Docker health, and `mc-diagnose`
+  for region `YTR`.
+- Deployed public privacy scan passed at `https://carto.canadaverse.org`,
+  including the new 2.9.2 public endpoints and `/ws/public`.
