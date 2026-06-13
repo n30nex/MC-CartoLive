@@ -115,14 +115,14 @@ rebuild, readiness wait, and rollback on failure.
   Canada map, or `custom` with `MAP_BOUNDS=minLat,minLng,maxLat,maxLng`.
 - `PUBLIC_REGIONS` is the preferred public region allowlist. `PUBLIC_IATAS`
   remains as a deprecated 2.x alias for existing Canada env files.
-- UI preferences such as theme, palette, map layers, packet visuals, VCR state,
+- UI preferences such as theme, palette, map layers, packet visuals, replay state,
   and panel visibility are browser-local.
 - Map Studio style choices are browser-local and do not change public API
-  output. The quick style button cycles Classic Dark, OpenFreeMap 3D, Topo RF,
-  NOC Wallboard, and Low Bandwidth.
+  output. The Map drawer opens Clean Live, Terrain/Topo, 3D, and Low Bandwidth
+  mode cards before advanced controls.
 - OpenFreeMap/3D, terrain, PMTiles profiles, propagation history, Packets,
-  Chat, NetGraph, and VCR use sanitized public APIs and public WebSocket/history
-  data.
+  Chat, NetGraph, and Replay use sanitized public APIs and public
+  WebSocket/history data.
 - Optional PMTiles basemaps are build-time frontend URLs. Prefer same-origin
   files such as `/tiles/canada.pmtiles`; external HTTPS PMTiles hosts must also
   be allowed by the deployment CSP.

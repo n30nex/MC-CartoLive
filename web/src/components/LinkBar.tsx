@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
-import { ChevronDown, ExternalLink, FlaskConical, Github, History, List, MessageSquareText, Network, X } from 'lucide-react';
+import { ChevronDown, ExternalLink, FlaskConical, Github, History, List, MessageSquareText, Network, RadioTower, X } from 'lucide-react';
 import { appBrandLogo, appBrandName, appBrandURL, appVersion, buildNumber, buildTime, gitSha, releaseURL } from '../buildInfo';
 import { routeAssetIcons } from '../assets/routes/assets';
 import { DEFAULT_LAB_EXPERIMENT_ID, LAB_EXPERIMENTS, type LabExperimentID } from '../lab';
@@ -36,19 +36,28 @@ export const LATEST_RELEASE_HIGHLIGHTS = [
   }
 ];
 
+export const WORKSPACE_LINKS = [
+  { id: 'packets', label: 'Packets', href: '#/packets' },
+  { id: 'nodes', label: 'Nodes', href: '#/nodes' },
+  { id: 'chat', label: 'Chat', href: '#/chat' },
+  { id: 'netgraph', label: 'NetGraph', href: '#/netgraph' },
+  { id: 'labs', label: 'Labs', href: '#/lab' }
+] as const;
+
 interface LinkBarProps {
   packetsOpen?: boolean;
   netGraphOpen?: boolean;
   chatOpen?: boolean;
   labOpen?: boolean;
+  nodeListOpen?: boolean;
   activeLabExperimentID?: LabExperimentID;
 }
 
-export default function LinkBar({ packetsOpen = false, netGraphOpen = false, chatOpen = false, labOpen = false, activeLabExperimentID = DEFAULT_LAB_EXPERIMENT_ID }: LinkBarProps) {
+export default function LinkBar({ packetsOpen = false, netGraphOpen = false, chatOpen = false, labOpen = false, nodeListOpen = false, activeLabExperimentID = DEFAULT_LAB_EXPERIMENT_ID }: LinkBarProps) {
   const [now, setNow] = useState(() => Date.now());
   const [repoStats, setRepoStats] = useState<RepoStats | null>(() => readCachedRepoStats(browserStorage()));
   const [activeInfoPanel, setActiveInfoPanel] = useState<InfoPanel>(null);
-  const [labsMenuOpen, setLabsMenuOpen] = useState(false);
+  const [workspacesMenuOpen, setWorkspacesMenuOpen] = useState(false);
   const brandName = appBrandName.trim() || 'MC-CartoLive';
   const brandURL = appBrandURL.trim() || GITHUB_REPO_URL;
   const brandLogo = appBrandLogo.trim() || routeAssetIcons.app;
@@ -58,6 +67,7 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
   const parsedBuildTime = parseBuildTime(buildTime);
   const buildDate = Number.isFinite(parsedBuildTime) ? new Date(parsedBuildTime).toLocaleString() : 'Build time unavailable';
   const activeLabExperiment = LAB_EXPERIMENTS.find((item) => item.id === activeLabExperimentID) ?? LAB_EXPERIMENTS[0];
+  const workspaceActive = packetsOpen || netGraphOpen || chatOpen || labOpen || nodeListOpen;
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -98,57 +108,42 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
         <a href={releaseURL} target="_blank" rel="noreferrer" title={`Open release v${appVersion}`}>
           v{appVersion}
         </a>
-        <a href={commitURL} target="_blank" rel="noreferrer" title={`Open build commit ${gitSha || buildNumber}`}>
-          build {buildID}
-        </a>
-        <span title={buildDate}>{buildAge}</span>
-        <a className={`link-bar-page ${packetsOpen ? 'active' : ''}`} href="#/packets" title="Open true path packets">
-          <List size={13} />
-          <span>Packets</span>
-        </a>
-        <a className={`link-bar-page ${netGraphOpen ? 'active' : ''}`} href="#/netgraph" title="Open live network graph">
-          <Network size={13} />
-          <span>NetGraph</span>
-        </a>
-        <a className={`link-bar-page ${chatOpen ? 'active' : ''}`} href="#/chat" title="Open public chat history">
-          <MessageSquareText size={13} />
-          <span>Chat</span>
-        </a>
-        <div className={`link-bar-labs-menu ${labsMenuOpen ? 'open' : ''}`}>
+        <div className={`link-bar-labs-menu link-bar-workspaces-menu ${workspacesMenuOpen ? 'open' : ''}`}>
           <button
             type="button"
-            className={`link-bar-page ${labOpen ? 'active' : ''}`}
+            className={`link-bar-page ${workspaceActive ? 'active' : ''}`}
             aria-haspopup="menu"
-            aria-expanded={labsMenuOpen}
-            title={`Open Labs: ${activeLabExperiment.label}`}
+            aria-expanded={workspacesMenuOpen}
+            title="Open workspaces"
             onClick={() => {
-              setLabsMenuOpen((value) => !value);
+              setWorkspacesMenuOpen((value) => !value);
               setActiveInfoPanel(null);
             }}
           >
-            <FlaskConical size={13} />
-            <span>Labs</span>
+            <List size={13} />
+            <span>Workspaces</span>
             <ChevronDown size={12} />
           </button>
-          {labsMenuOpen && (
-            <div className="link-bar-labs-popover" role="menu" aria-label="Labs experiments">
-              {LAB_EXPERIMENTS.map((experiment) => (
-                <a
-                  key={experiment.id}
-                  className={experiment.id === activeLabExperimentID ? 'active' : ''}
-                  href={experiment.path}
-                  role="menuitem"
-                  title={experiment.detail}
-                  style={{ '--lab-accent': experiment.accent } as CSSProperties}
-                  onClick={() => setLabsMenuOpen(false)}
-                >
-                  <span className="lab-menu-dot" />
-                  <span>
-                    <strong>{experiment.label}</strong>
-                    <em>{experiment.tagline}</em>
-                  </span>
-                </a>
-              ))}
+          {workspacesMenuOpen && (
+            <div className="link-bar-labs-popover link-bar-workspaces-popover" role="menu" aria-label="Workspaces">
+              <WorkspaceLink active={packetsOpen} href="#/packets" icon={<List size={14} />} label="Packets" onClick={() => setWorkspacesMenuOpen(false)} />
+              <WorkspaceLink active={nodeListOpen} href="#/nodes" icon={<RadioTower size={14} />} label="Nodes" onClick={() => setWorkspacesMenuOpen(false)} />
+              <WorkspaceLink active={chatOpen} href="#/chat" icon={<MessageSquareText size={14} />} label="Chat" onClick={() => setWorkspacesMenuOpen(false)} />
+              <WorkspaceLink active={netGraphOpen} href="#/netgraph" icon={<Network size={14} />} label="NetGraph" onClick={() => setWorkspacesMenuOpen(false)} />
+              <a
+                className={labOpen ? 'active' : ''}
+                href={activeLabExperiment.path}
+                role="menuitem"
+                title={`Open Labs: ${activeLabExperiment.label}`}
+                style={{ '--lab-accent': activeLabExperiment.accent } as CSSProperties}
+                onClick={() => setWorkspacesMenuOpen(false)}
+              >
+                <FlaskConical size={14} />
+                <span>
+                  <strong>Labs</strong>
+                  <em>{activeLabExperiment.label}</em>
+                </span>
+              </a>
             </div>
           )}
         </div>
@@ -159,25 +154,20 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
             className={activeInfoPanel === 'changelog' ? 'active' : ''}
             type="button"
             aria-pressed={activeInfoPanel === 'changelog'}
-            title="Latest changelog"
+            title="About"
             onClick={() => {
               setActiveInfoPanel((panel) => panel === 'changelog' ? null : 'changelog');
-              setLabsMenuOpen(false);
+              setWorkspacesMenuOpen(false);
             }}
           >
             <History size={13} />
-            <span>Changelog</span>
+            <span>About</span>
           </button>
         </div>
-        <a className="link-bar-github" href={GITHUB_REPO_URL} target="_blank" rel="noreferrer" title="Open MC-CartoLive on GitHub">
-          <Github size={15} />
-          <span>{repoStats ? `${repoStats.stars.toLocaleString()} stars / ${repoStats.forks.toLocaleString()} forks` : 'GitHub'}</span>
-          <ExternalLink size={12} />
-        </a>
       </div>
       {activeInfoPanel === 'changelog' && (
-        <InfoPopover title="Latest Changelog" icon={<History size={14} />} onClose={() => setActiveInfoPanel(null)}>
-          <p>Current public map baseline and the UX polish that makes live traffic easier to read.</p>
+        <InfoPopover title="About" icon={<History size={14} />} onClose={() => setActiveInfoPanel(null)}>
+          <p>Version {appVersion} · build <a href={commitURL} target="_blank" rel="noreferrer">{buildID}</a> · <span title={buildDate}>{buildAge}</span></p>
           <div className="link-bar-release-list">
             {LATEST_RELEASE_HIGHLIGHTS.map((item) => (
               <article key={`${item.label}-${item.title}`} className="link-bar-release-note">
@@ -187,10 +177,26 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
               </article>
             ))}
           </div>
+          <a href={GITHUB_REPO_URL} target="_blank" rel="noreferrer">
+            <Github size={13} />
+            <span>{repoStats ? `${repoStats.stars.toLocaleString()} stars / ${repoStats.forks.toLocaleString()} forks` : 'GitHub'}</span>
+            <ExternalLink size={12} />
+          </a>
           <a href={releaseURL} target="_blank" rel="noreferrer">Open full release notes</a>
         </InfoPopover>
       )}
     </nav>
+  );
+}
+
+function WorkspaceLink({ active, href, icon, label, onClick }: { active: boolean; href: string; icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <a className={active ? 'active' : ''} href={href} role="menuitem" onClick={onClick}>
+      {icon}
+      <span>
+        <strong>{label}</strong>
+      </span>
+    </a>
   );
 }
 

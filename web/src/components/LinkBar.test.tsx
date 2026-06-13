@@ -1,32 +1,27 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import LinkBar, { LATEST_RELEASE_HIGHLIGHTS } from './LinkBar';
+import LinkBar, { LATEST_RELEASE_HIGHLIGHTS, WORKSPACE_LINKS } from './LinkBar';
 import { LAB_EXPERIMENTS } from '../lab';
 
 describe('LinkBar', () => {
-  it('renders NetGraph beside the existing top-bar pages and marks it active', () => {
-    const html = renderToStaticMarkup(<LinkBar netGraphOpen />);
-    expect(html).toContain('#/packets');
-    expect(html).toContain('#/netgraph');
-    expect(html).toContain('#/chat');
+  it('renders compact workspace and about controls', () => {
+    const html = renderToStaticMarkup(<LinkBar netGraphOpen nodeListOpen />);
     expect(html).toContain('aria-haspopup="menu"');
-    expect(html).toContain('NetGraph');
-    expect(html).toContain('Chat');
-    expect(html).toContain('Labs');
+    expect(html).toContain('Workspaces');
+    expect(html).toContain('About');
     expect(html).not.toContain('Open first-run setup');
     expect(html).not.toContain('#/setup');
     expect(html).not.toContain('#/perf');
     expect(html).not.toContain('Perf');
     expect(html).not.toContain('Features');
     expect(html).not.toContain('Guide');
-    expect(html).toContain('class="link-bar-page active" href="#/netgraph"');
+    expect(html).toContain('class="link-bar-page active"');
     expect(html).toContain('Open MC-CartoLive');
-    expect(html).toContain('Changelog');
+    expect(html).not.toContain('Changelog');
   });
 
-  it('opens Labs as a routed experiment dropdown', () => {
+  it('marks Labs through the workspace menu trigger', () => {
     const html = renderToStaticMarkup(<LinkBar labOpen activeLabExperimentID="radar" />);
-    expect(html).toContain('Open Labs: Network Weather Radar');
     expect(html).toContain('class="link-bar-page active"');
   });
 
@@ -36,6 +31,11 @@ describe('LinkBar', () => {
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Labs Polish');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Live RF Labs');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.body).join(' ')).not.toContain('Perf/Guide/Features');
+  });
+
+  it('defines the operator-simple workspace menu entries', () => {
+    expect(WORKSPACE_LINKS.map((item) => item.label)).toEqual(['Packets', 'Nodes', 'Chat', 'NetGraph', 'Labs']);
+    expect(WORKSPACE_LINKS.map((item) => item.href)).toEqual(['#/packets', '#/nodes', '#/chat', '#/netgraph', '#/lab']);
   });
 
   it('defines a public route for every Labs experiment', () => {

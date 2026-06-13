@@ -40,11 +40,11 @@ export default function VisitorGuide({
       <div className="visitor-guide-actions">
         <button type="button" onClick={onOpenSettings}>
           <SlidersHorizontal size={14} />
-          <span>Layer presets</span>
+          <span>Map</span>
         </button>
         <button type="button" className={knownPathwaysOn ? 'active' : ''} aria-pressed={knownPathwaysOn} onClick={onToggleKnownPathways}>
           <Route size={14} />
-          <span>{knownPathwaysOn ? 'Paths on' : 'Paths off'}</span>
+          <span>{knownPathwaysOn ? 'Routes on' : 'Routes off'}</span>
         </button>
         <button type="button" onClick={onOpenHelp}>
           <Keyboard size={14} />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapOverlayStyle, WEATHER_CLOUD_FADE_END_ZOOM, WEATHER_CLOUD_OPACITY, weatherCloudRasterLayer } from './CanadaMap';
+import { mapOverlayStyle, terrainUsesColorRelief, WEATHER_CLOUD_FADE_END_ZOOM, WEATHER_CLOUD_OPACITY, weatherCloudRasterLayer, weatherCloudsVisibleAtZoom } from './CanadaMap';
 import { DETAIL_MIN_ZOOM } from './zoomMode';
 
 describe('map zoom layer consistency', () => {
@@ -50,6 +50,13 @@ describe('map zoom layer consistency', () => {
     expect((mapOverlayStyle.sources['meshcore-hillshade-dem'] as any).attribution).toContain('Elevation tiles');
   });
 
+  it('only applies height color relief to the deliberate topo profile', () => {
+    expect(terrainUsesColorRelief('topo-rf')).toBe(true);
+    for (const id of ['classic-dark', 'classic-light', 'openfreemap-dark', 'openfreemap-3d', 'noc', 'accessibility'] as const) {
+      expect(terrainUsesColorRelief(id)).toBe(false);
+    }
+  });
+
   it('keeps weather clouds subtle and gone before detail zoom', () => {
     const weather = weatherCloudRasterLayer() as any;
     expect(WEATHER_CLOUD_FADE_END_ZOOM).toBeLessThan(DETAIL_MIN_ZOOM);
@@ -60,6 +67,9 @@ describe('map zoom layer consistency', () => {
     expect(WEATHER_CLOUD_OPACITY.at(-1)).toBe(0);
     const opacityStops = WEATHER_CLOUD_OPACITY.slice(3).filter((_: unknown, index: number) => index % 2 === 1) as number[];
     expect(Math.max(...opacityStops)).toBeLessThanOrEqual(0.28);
+    expect(weatherCloudsVisibleAtZoom({ weatherClouds: true }, WEATHER_CLOUD_FADE_END_ZOOM - 0.01)).toBe(true);
+    expect(weatherCloudsVisibleAtZoom({ weatherClouds: true }, DETAIL_MIN_ZOOM)).toBe(false);
+    expect(weatherCloudsVisibleAtZoom({ weatherClouds: false }, 2)).toBe(false);
   });
 
   it('aggregates role counts on the clustered node source', () => {

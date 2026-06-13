@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Check, CloudSun, Columns3, Eye, EyeOff, History, Layers, LocateFixed, Monitor, Moon, MoreHorizontal, Palette, Pause, Play, RadioTower, RotateCcw, Route, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
+import { Check, CloudSun, Columns3, Eye, EyeOff, History, LocateFixed, Monitor, Moon, MoreHorizontal, Palette, Pause, Play, RadioTower, RotateCcw, Route, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
 import { fetchPublicEvents, fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicPropagation, fetchPublicState } from './api';
 import { connectPublicSocket } from './ws';
 import {
@@ -84,7 +84,7 @@ import {
 import { buildSharedViewURL, parseSharedView, type MapViewState } from './shareView';
 import { recordLivePendingQueueSize, recordVcrReplayQueueSize, recordVisibilityPause } from './perfDiagnostics';
 import { appendBufferedRoutePulses, routePulseMessages } from './playbackController';
-import { applyMapStyleProfile, normalizeMapSettings, readStoredMapSettings, writeStoredMapSettings, type MapSettings } from './mapSettings';
+import { normalizeMapSettings, readStoredMapSettings, writeStoredMapSettings, type MapSettings } from './mapSettings';
 import { mapStyleProfileByID, type MapStyleProfileID } from './map/styles/styleRegistry';
 import {
   THEME_PALETTES,
@@ -221,7 +221,6 @@ export default function App() {
   const flushMessagesTimerRef = useRef<number | null>(null);
   const selectedThemePalette = useMemo(() => themePaletteByID(themePaletteID), [themePaletteID]);
   const resolvedThemeMode = useMemo(() => resolveThemeMode(themeMode), [themeMode]);
-  const activeMapStyleProfile = useMemo(() => mapStyleProfileByID(mapSettings.style.profileID), [mapSettings.style.profileID]);
   const mapThemeMode = useMemo(() => themeModeForMapStyle(mapSettings.style.profileID, resolvedThemeMode), [mapSettings.style.profileID, resolvedThemeMode]);
   const appThemeStyle = useMemo(() => themeStyleVariables(selectedThemePalette, resolvedThemeMode) as CSSProperties, [selectedThemePalette, resolvedThemeMode]);
 
@@ -254,7 +253,7 @@ export default function App() {
       } else if (nextPacketsOpen || nextChatOpen) {
         setWorkspacePresentation('side');
       }
-      if (nextPacketsOpen || nextNetGraphOpen || nextChatOpen || nextLabOpen || nextSetupOpen) {
+      if (nextPacketsOpen || nextNetGraphOpen || nextChatOpen || nextLabOpen || nextSetupOpen || nextNodeListOpen) {
         setPaletteMenuOpen(false);
         setPanelsMenuOpen(false);
         setMapSettingsOpen(false);
@@ -1385,7 +1384,7 @@ export default function App() {
         />
       </ErrorBoundary>
       {loadingPositionedNodes && <NodeLoadingToast failed={nodeLoadFailed} drawing={initialNodesReceived} />}
-      <LinkBar packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} chatOpen={chatOpen} labOpen={labOpen} activeLabExperimentID={labExperimentID} />
+      <LinkBar packetsOpen={packetsOpen} netGraphOpen={netGraphOpen} chatOpen={chatOpen} labOpen={labOpen} nodeListOpen={nodeListOpen} activeLabExperimentID={labExperimentID} />
       {!chromeHidden && (
         <>
           <StatusBar
@@ -1401,154 +1400,144 @@ export default function App() {
         </>
       )}
 
-      <div className="top-actions">
+      <div className="top-actions operator-toolbar" aria-label="Map actions">
         <button
-          className={`icon-button hide-all-toggle ${chromeHidden ? 'active' : ''}`}
+          className={`operator-action ${followTraffic && !vcrPlaybackActive ? 'active' : ''}`}
           type="button"
-          aria-pressed={chromeHidden}
-          title={chromeHidden ? 'Show all map UI panels' : 'Hide map UI panels'}
-          onClick={toggleChromeVisibility}
+          aria-pressed={followTraffic && !vcrPlaybackActive}
+          disabled={vcrPlaybackActive}
+          title={vcrPlaybackActive ? 'Live follow resumes after replay' : followTraffic ? 'Stop following live traffic' : 'Follow live traffic'}
+          onClick={() => setFollowTraffic((value) => !value)}
         >
-          {chromeHidden ? <Eye size={18} /> : <EyeOff size={18} />}
+          <RadioTower size={16} />
+          <span>Live</span>
         </button>
-        <div className="top-action-menu">
-          <button
-            className={`icon-button ${panelsMenuOpen ? 'active' : ''}`}
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={panelsMenuOpen}
-            title="Show or hide map panels"
-            onClick={() => {
-              setPanelsMenuOpen((value) => !value);
-              setPaletteMenuOpen(false);
-              setMapSettingsOpen(false);
-            }}
-          >
-            <Columns3 size={18} />
-          </button>
-          {panelsMenuOpen && (
-            <div className="top-popover panel-picker" role="menu" aria-label="Map panels">
-              {PANEL_MENU_ITEMS.map((item) => {
-                const visible = chromePanelVisible(chromeVisibility, item.id);
-                return (
-                  <button
-                    key={item.id}
-                    className={visible ? 'active' : ''}
-                    type="button"
-                    role="menuitemcheckbox"
-                    aria-checked={visible}
-                    onClick={() => toggleChromePanel(item.id)}
-                  >
-                    <span>{item.label}</span>
-                    {visible && <Check size={14} />}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <button className="operator-action route-focus" type="button" title="Focus latest route" onClick={() => dispatchMapAction('latest-route')}>
+          <LocateFixed size={16} />
+          <span>Focus</span>
+        </button>
+        <button className={`operator-action known-pathways-toggle ${knownPathwaysOn ? 'on' : 'off'}`} type="button" aria-pressed={knownPathwaysOn} title={knownPathwaysOn ? 'Routes on' : 'Routes off'} onClick={toggleKnownPathways}>
+          <Route size={16} />
+          <span>Routes</span>
+        </button>
         <button
-          className={`icon-button map-settings-toggle ${mapSettingsOpen ? 'active' : ''}`}
+          className={`operator-action map-settings-toggle ${mapSettingsOpen ? 'active' : ''}`}
           type="button"
           aria-pressed={mapSettingsOpen}
-          title="Map settings"
+          title="Map"
           onClick={() => {
             setMapSettingsOpen((value) => !value);
             setPanelsMenuOpen(false);
             setPaletteMenuOpen(false);
           }}
         >
-          <SlidersHorizontal size={18} />
-        </button>
-        <button
-          className={`icon-button known-pathways-toggle ${knownPathwaysOn ? 'on' : 'off'}`}
-          type="button"
-          aria-pressed={knownPathwaysOn}
-          title={knownPathwaysOn ? 'Known Pathways on' : 'Known Pathways off'}
-          onClick={toggleKnownPathways}
-        >
-          <Route size={18} />
-        </button>
-        <button
-          className={`icon-button theme-mode-toggle ${themeMode}`}
-          type="button"
-          aria-pressed={themeMode === 'light'}
-          title={themeMode === 'system' ? 'Switch to dark mode' : themeMode === 'dark' ? 'Switch to light mode' : 'Switch to system mode'}
-          onClick={() => setThemeMode((value) => toggleThemeMode(value))}
-        >
-          {themeMode === 'system' ? <Monitor size={18} /> : themeMode === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
+          <SlidersHorizontal size={16} />
+          <span>Map</span>
         </button>
         <div className="top-action-menu">
           <button
-            className={`icon-button palette-toggle ${paletteMenuOpen ? 'active' : ''}`}
+            className={`operator-action ${panelsMenuOpen ? 'active' : ''}`}
             type="button"
             aria-haspopup="menu"
-            aria-expanded={paletteMenuOpen}
-            title={`Palette: ${selectedThemePalette.name}`}
+            aria-expanded={panelsMenuOpen}
+            title="More"
             onClick={() => {
-              setPaletteMenuOpen((value) => !value);
-              setPanelsMenuOpen(false);
+              setPanelsMenuOpen((value) => !value);
               setMapSettingsOpen(false);
             }}
           >
-            <Palette size={18} />
+            <MoreHorizontal size={16} />
+            <span>More</span>
           </button>
-          {paletteMenuOpen && (
-            <div className="top-popover palette-picker" role="menu" aria-label="Color palettes">
-              {THEME_PALETTES.map((palette) => {
-                const selected = palette.id === selectedThemePalette.id;
-                return (
-                  <button
-                    key={palette.id}
-                    className={selected ? 'active' : ''}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={selected}
-                    onClick={() => {
-                      setThemePaletteID(palette.id);
-                      setPaletteMenuOpen(false);
-                    }}
-                  >
-                    <span className="palette-swatch" style={paletteSwatchStyle(palette)}>
-                      <i />
-                      <i />
-                      <i />
-                    </span>
-                    <span>{palette.name}</span>
-                    {selected && <Check size={14} />}
-                  </button>
-                );
-              })}
+          {panelsMenuOpen && (
+            <div className="top-popover operator-more-menu" role="menu" aria-label="More map actions">
+              <div className="operator-menu-section">
+                <span>Tools</span>
+                <button type="button" onClick={() => { openVcr(); setPanelsMenuOpen(false); }}>
+                  <History size={14} />
+                  <span>Replay</span>
+                </button>
+                <button type="button" onClick={() => { openNodeList(); setPanelsMenuOpen(false); }}>
+                  <RadioTower size={14} />
+                  <span>Nodes</span>
+                </button>
+                <button type="button" onClick={() => { setPropagationOpen(true); setPanelsMenuOpen(false); }}>
+                  <CloudSun size={14} />
+                  <span>Propagation</span>
+                </button>
+                <button type="button" onClick={shareView}>
+                  <Share2 size={14} />
+                  <span>Share</span>
+                </button>
+              </div>
+              <div className="operator-menu-section">
+                <span>View</span>
+                <button type="button" onClick={toggleChromeVisibility}>
+                  {chromeHidden ? <Eye size={14} /> : <EyeOff size={14} />}
+                  <span>{chromeHidden ? 'Show UI' : 'Hide UI'}</span>
+                </button>
+                <button type="button" onClick={() => setThemeMode((value) => toggleThemeMode(value))}>
+                  {themeMode === 'system' ? <Monitor size={14} /> : themeMode === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
+                  <span>Theme</span>
+                </button>
+                <button type="button" onClick={() => setPaletteMenuOpen((value) => !value)}>
+                  <Palette size={14} />
+                  <span>Palettes</span>
+                </button>
+                {paletteMenuOpen && THEME_PALETTES.map((palette) => {
+                  const selected = palette.id === selectedThemePalette.id;
+                  return (
+                    <button key={palette.id} className={selected ? 'active' : ''} type="button" role="menuitemradio" aria-checked={selected} onClick={() => setThemePaletteID(palette.id)}>
+                      <span className="palette-swatch" style={paletteSwatchStyle(palette)}>
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                      <span>{palette.name}</span>
+                      {selected && <Check size={14} />}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="operator-menu-section">
+                <span>Panels</span>
+                {PANEL_MENU_ITEMS.map((item) => {
+                  const visible = chromePanelVisible(chromeVisibility, item.id);
+                  return (
+                    <button key={item.id} className={visible ? 'active' : ''} type="button" role="menuitemcheckbox" aria-checked={visible} onClick={() => toggleChromePanel(item.id)}>
+                      <Columns3 size={14} />
+                      <span>{item.label}</span>
+                      {visible && <Check size={14} />}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="operator-menu-section">
+                <span>Utility</span>
+                <button type="button" onClick={() => setClearToken((value) => value + 1)}>
+                  <RotateCcw size={14} />
+                  <span>Clear pulses</span>
+                </button>
+                <button type="button" onClick={() => setPaused((value) => !value)}>
+                  {paused ? <Play size={14} /> : <Pause size={14} />}
+                  <span>{paused ? 'Resume feed' : 'Pause feed'}</span>
+                </button>
+                <button type="button" onClick={() => dispatchMapAction('reset')}>
+                  <X size={14} />
+                  <span>Reset map</span>
+                </button>
+                <button type="button" onClick={() => { window.location.hash = '#/setup'; setPanelsMenuOpen(false); }}>
+                  <SlidersHorizontal size={14} />
+                  <span>Setup</span>
+                </button>
+                <button type="button" onClick={() => { setShortcutHelpOpen(true); setPanelsMenuOpen(false); }}>
+                  <MoreHorizontal size={14} />
+                  <span>Help</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
-        <button className="icon-button" type="button" title={paused ? 'Resume packet flow' : 'Pause packet flow'} onClick={() => setPaused((value) => !value)}>
-          {paused ? <Play size={18} /> : <Pause size={18} />}
-        </button>
-        <button className="icon-button" type="button" title="Clear active pulses" onClick={() => setClearToken((value) => value + 1)}>
-          <RotateCcw size={18} />
-        </button>
-        <button className="icon-button route-focus" type="button" title="Focus latest route" onClick={() => dispatchMapAction('latest-route')}>
-          <LocateFixed size={18} />
-        </button>
-        <button
-          className={`icon-button map-base-toggle ${activeMapStyleProfile.supports3D ? 'active' : ''}`}
-          type="button"
-          aria-pressed={activeMapStyleProfile.supports3D}
-          title={`Map style: ${activeMapStyleProfile.label}`}
-          onClick={() => setMapSettings((current) => applyMapStyleProfile(current, nextQuickMapProfileID(current.style.profileID)))}
-        >
-          <Layers size={18} />
-        </button>
-        <button className="icon-button" type="button" title="Share this view" onClick={shareView}>
-          <Share2 size={18} />
-        </button>
-        <button className="icon-button" type="button" title="Open node list" onClick={openNodeList}>
-          <RadioTower size={18} />
-        </button>
-        <button className="icon-button" type="button" title="Reset map" onClick={() => dispatchMapAction('reset')}>
-          <X size={18} />
-        </button>
       </div>
       <VisitorGuide
         knownPathwaysOn={knownPathwaysOn}
@@ -1564,10 +1553,35 @@ export default function App() {
       />
       <div className="mobile-control-dock" aria-label="Mobile map controls">
         <button
+          className={`mobile-control-button ${followTraffic && !vcrPlaybackActive ? 'active' : ''}`}
+          type="button"
+          aria-pressed={followTraffic && !vcrPlaybackActive}
+          disabled={vcrPlaybackActive}
+          title={vcrPlaybackActive ? 'Live follow resumes after replay' : followTraffic ? 'Stop following live traffic' : 'Follow live traffic'}
+          onClick={() => setFollowTraffic((value) => !value)}
+        >
+          <RadioTower size={20} />
+          <span>Live</span>
+        </button>
+        <button className="mobile-control-button" type="button" title="Focus latest route" onClick={() => dispatchMapAction('latest-route')}>
+          <LocateFixed size={20} />
+          <span>Focus</span>
+        </button>
+        <button
+          className={`mobile-control-button known-pathways-toggle ${knownPathwaysOn ? 'on' : 'off'}`}
+          type="button"
+          aria-pressed={knownPathwaysOn}
+          title={knownPathwaysOn ? 'Routes on' : 'Routes off'}
+          onClick={toggleKnownPathways}
+        >
+          <Route size={20} />
+          <span>Routes</span>
+        </button>
+        <button
           className={`mobile-control-button ${mapSettingsOpen ? 'active' : ''}`}
           type="button"
           aria-pressed={mapSettingsOpen}
-          title="Map settings"
+          title="Map"
           onClick={() => {
             setMapSettingsOpen((value) => !value);
             setPanelsMenuOpen(false);
@@ -1576,27 +1590,7 @@ export default function App() {
           }}
         >
           <SlidersHorizontal size={20} />
-          <span>Settings</span>
-        </button>
-        <button
-          className={`mobile-control-button known-pathways-toggle ${knownPathwaysOn ? 'on' : 'off'}`}
-          type="button"
-          aria-pressed={knownPathwaysOn}
-          title={knownPathwaysOn ? 'Known Pathways on' : 'Known Pathways off'}
-          onClick={toggleKnownPathways}
-        >
-          <Route size={20} />
-          <span>Paths</span>
-        </button>
-        <button
-          className={`mobile-control-button theme-mode-toggle ${themeMode}`}
-          type="button"
-          aria-pressed={themeMode === 'light'}
-          title={themeMode === 'system' ? 'Switch to dark mode' : themeMode === 'dark' ? 'Switch to light mode' : 'Switch to system mode'}
-          onClick={() => setThemeMode((value) => toggleThemeMode(value))}
-        >
-          {themeMode === 'system' ? <Monitor size={20} /> : themeMode === 'dark' ? <Moon size={20} /> : <Sun size={20} />}
-          <span>Theme</span>
+          <span>Map</span>
         </button>
         <button
           className={`mobile-control-button ${mobileControlsOpen ? 'active' : ''}`}
@@ -1656,14 +1650,6 @@ export default function App() {
               <LocateFixed size={18} />
               <span>Focus</span>
             </button>
-            <button
-              type="button"
-              className={activeMapStyleProfile.supports3D ? 'active' : ''}
-              onClick={() => setMapSettings((current) => applyMapStyleProfile(current, nextQuickMapProfileID(current.style.profileID)))}
-            >
-              <Layers size={18} />
-              <span>{activeMapStyleProfile.label}</span>
-            </button>
             <button type="button" onClick={shareView}>
               <Share2 size={18} />
               <span>Share</span>
@@ -1674,6 +1660,14 @@ export default function App() {
             }}>
               <RadioTower size={18} />
               <span>Nodes</span>
+            </button>
+            <button type="button" onClick={() => { window.location.hash = '#/setup'; setMobileControlsOpen(false); }}>
+              <SlidersHorizontal size={18} />
+              <span>Setup</span>
+            </button>
+            <button type="button" onClick={() => { setShortcutHelpOpen(true); setMobileControlsOpen(false); }}>
+              <MoreHorizontal size={18} />
+              <span>Help</span>
             </button>
           </div>
           <section className="mobile-control-section">
@@ -1810,21 +1804,6 @@ export default function App() {
                 onCopyPath={copyMeshcorePath}
                 onSelectRoute={selectRoute}
               />
-              <button
-                className={`follow-traffic-button ${followTraffic && !vcrPlaybackActive ? 'active' : ''}`}
-                type="button"
-                aria-pressed={followTraffic && !vcrPlaybackActive}
-                disabled={vcrPlaybackActive}
-                title={vcrPlaybackActive ? 'Live Follow resumes when VCR returns to Live' : followTraffic ? 'Stop following live packet movement' : 'Follow live packet movement'}
-                onClick={() => setFollowTraffic((value) => !value)}
-              >
-                <RadioTower size={15} />
-                <span>Live Follow</span>
-              </button>
-              <button className="dock-control-button vcr-open-button" type="button" title="Open VCR playback controls" onClick={openVcr}>
-                <RotateCcw size={15} />
-                <span>VCR</span>
-              </button>
             </div>
           )}
           <MiniLiveClock timestamp={liveClock} onOpen={openVcr} />
@@ -1978,12 +1957,6 @@ function paletteSwatchStyle(palette: ThemePalette): CSSProperties {
 function themeModeForMapStyle(profileID: MapStyleProfileID, fallback: 'dark' | 'light'): 'dark' | 'light' {
   const theme = mapStyleProfileByID(profileID).theme;
   return theme === 'light' ? 'light' : theme === 'dark' || theme === 'noc' || theme === 'topo' ? 'dark' : fallback;
-}
-
-function nextQuickMapProfileID(profileID: MapStyleProfileID): MapStyleProfileID {
-  const quickCycle: MapStyleProfileID[] = ['classic-dark', 'openfreemap-3d', 'topo-rf', 'noc', 'low-bandwidth'];
-  const index = quickCycle.indexOf(profileID);
-  return quickCycle[(index + 1) % quickCycle.length];
 }
 
 function isLabRoute(hash: string): boolean {

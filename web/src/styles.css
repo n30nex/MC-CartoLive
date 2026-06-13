@@ -770,6 +770,20 @@ button {
   white-space: normal;
 }
 
+.link-bar-workspaces-popover {
+  width: min(270px, calc(100vw - 24px));
+}
+
+.link-bar-workspaces-popover a {
+  min-height: 36px;
+  grid-template-columns: 20px minmax(0, 1fr);
+}
+
+.link-bar-workspaces-popover a > svg {
+  justify-self: center;
+  color: color-mix(in srgb, var(--lab-accent, var(--mc-accent, #38bdf8)) 78%, var(--mc-text, #ffffff));
+}
+
 .lab-menu-dot {
   width: 9px;
   height: 32px;
@@ -942,6 +956,12 @@ button {
   border-radius: 6px;
   font-size: 11px;
   font-weight: 820;
+}
+
+.link-bar-info-body a:has(svg) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .perf-panel,
@@ -3618,6 +3638,16 @@ button.status-pill {
   gap: 7px;
 }
 
+.operator-toolbar {
+  align-items: center;
+  padding: 5px;
+  background: color-mix(in srgb, var(--mc-surface, rgba(5, 10, 17, 0.9)) 82%, transparent);
+  border: 1px solid var(--mc-border, rgba(125, 211, 252, 0.24));
+  border-radius: 9px;
+  box-shadow: 0 18px 44px var(--mc-shadow, rgba(0, 0, 0, 0.34)), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px) saturate(1.08);
+}
+
 .mobile-control-dock,
 .mobile-control-sheet {
   display: none;
@@ -3640,6 +3670,50 @@ button.status-pill {
   cursor: pointer;
   box-shadow: 0 12px 28px var(--mc-shadow, rgba(0, 0, 0, 0.3)), 0 0 12px color-mix(in srgb, var(--mc-accent, #38bdf8) 8%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.operator-action {
+  min-width: 64px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  color: var(--mc-text, #edf5ff);
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(6, 11, 18, 0.92)) 84%, transparent);
+  border: 1px solid var(--mc-border, rgba(125, 211, 252, 0.24));
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 920;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.operator-action:hover,
+.operator-action:focus-visible,
+.operator-action.active {
+  border-color: var(--mc-border-strong, rgba(56, 189, 248, 0.64));
+  box-shadow: 0 0 20px color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.operator-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+  transform: none;
+}
+
+.operator-action.known-pathways-toggle.on {
+  color: #bbf7d0;
+  border-color: rgba(34, 197, 94, 0.58);
+}
+
+.operator-action.known-pathways-toggle.off {
+  color: #fecdd3;
+  border-color: rgba(248, 113, 113, 0.58);
 }
 
 .icon-button:hover,
@@ -3691,10 +3765,10 @@ button.status-pill {
   bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   z-index: var(--z-map-chrome, 8);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(72px, auto);
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   align-items: end;
-  width: min(302px, calc(100vw - 142px));
+  width: min(302px, calc(100vw - 20px));
   pointer-events: auto;
 }
 
@@ -3985,6 +4059,42 @@ button.status-pill {
   width: 180px;
 }
 
+.operator-more-menu {
+  width: 248px;
+  max-height: min(640px, calc(100vh - 118px));
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.operator-menu-section {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--mc-border, rgba(125, 211, 252, 0.26)) 56%, transparent);
+}
+
+.operator-menu-section:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.operator-menu-section > span {
+  padding: 2px 4px;
+  color: var(--mc-text-muted, #9fb1c9);
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.operator-more-menu button {
+  grid-template-columns: 18px minmax(0, 1fr) 16px;
+}
+
+.operator-more-menu button svg {
+  justify-self: center;
+}
+
 .palette-picker {
   width: 236px;
   max-height: min(420px, calc(100vh - 120px));
@@ -4166,6 +4276,41 @@ button.status-pill {
   color: var(--mc-text, #ffffff);
   border-color: var(--mc-border-strong, rgba(56, 189, 248, 0.64));
   box-shadow: 0 0 18px color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent);
+  outline: none;
+}
+
+.map-mode-grid button {
+  min-height: 64px;
+}
+
+.map-settings-advanced-toggle {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 10px;
+  color: var(--mc-text-normal, #dbeafe);
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(7, 16, 29, 0.84)) 72%, transparent);
+  border: 1px solid var(--mc-border, rgba(125, 211, 252, 0.24));
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.map-settings-advanced-toggle strong {
+  color: color-mix(in srgb, var(--mc-accent, #38bdf8) 74%, var(--mc-text, #ffffff));
+  font-size: 10px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.map-settings-advanced-toggle:hover,
+.map-settings-advanced-toggle:focus-visible,
+.map-settings-advanced-toggle.active {
+  color: var(--mc-text, #ffffff);
+  border-color: var(--mc-border-strong, rgba(56, 189, 248, 0.64));
   outline: none;
 }
 
@@ -6732,7 +6877,8 @@ button.status-pill {
   }
 
   .top-popover.palette-picker,
-  .top-popover.panel-picker {
+  .top-popover.panel-picker,
+  .top-popover.operator-more-menu {
     position: fixed;
     top: auto;
     left: calc(8px + var(--ui-safe-left, 0px));
@@ -6849,7 +6995,7 @@ button.status-pill {
     left: calc(8px + var(--ui-safe-left, 0px));
     z-index: var(--z-map-chrome, 8);
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 6px;
     padding: 7px;
     background: color-mix(in srgb, var(--mc-surface-strong, rgba(6, 11, 18, 0.94)) 92%, transparent);

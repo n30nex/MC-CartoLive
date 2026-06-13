@@ -11,7 +11,7 @@ operations, Labs, and map-runtime foundation.
 
 - Public API shapes are stable across the 2.8.x and 2.9.x line.
 - The default public map is traffic-first: terrain relief, propagation overlays,
-  and Known Pathways are opt-in for new visitors.
+  and route lines are opt-in for new visitors.
 - The supported deployment shape is one container with the Go backend serving
   the embedded React frontend and SQLite under `/app/data`.
 - Local release validation uses Podman; the production droplet can continue to
@@ -24,7 +24,7 @@ operations, Labs, and map-runtime foundation.
 
 - Keep the hosted Canada map stable, readable, and privacy-safe during live
   traffic.
-- Keep Packets, Chat, NetGraph, VCR, NodeList, propagation history, Map Studio,
+- Keep Packets, Chat, NetGraph, Replay, NodeList, propagation history, Map Studio,
   and 3D optional but easy to discover.
 - Keep Labs fun, browser-safe, and strictly derived from public DTOs.
 - Improve map, offline tile, 3D, and panel UX through small API-compatible
@@ -36,9 +36,9 @@ operations, Labs, and map-runtime foundation.
 
 ## Candidate 2.9.x Work
 
-- Expand the new public event log into more history/VCR workflows.
+- Expand the new public event log into more history/replay workflows.
 - Iterate on Labs with workerized transforms, exportable clips, and deeper
-  VCR sampling once the public event log grows.
+  replay sampling once the public event log grows.
 - Continue extracting CanadaMap into runtime overlays using the new registry
   contracts.
 - Add importer tooling for coarse coverage cells and Canada CDEM LOS samples.

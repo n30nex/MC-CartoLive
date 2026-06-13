@@ -13,18 +13,21 @@ Date: 2026-06-13
 
 ## UI Gates
 
-- [x] Focused Map Studio, style registry, map settings, and 3D tests pass.
-- [x] Map Settings shows Map Studio, OpenFreeMap 3D, Offline PMTiles, and 3D
-  And RF controls.
-- [x] The top Layers button enters OpenFreeMap 3D from the default map and keeps
-  the active state tied to 3D-capable styles.
-- [x] OpenFreeMap 3D, Topo RF, Accessibility, NOC, and Low Bandwidth profiles
-  apply the expected browser-local layer defaults.
+- [x] Focused Map Studio, style registry, map settings, LinkBar, and layer tests
+  pass.
+- [x] Map Settings shows Clean Live, Terrain/Topo, 3D, and Low Bandwidth mode
+  cards first.
+- [x] The main toolbar shows only Live, Focus, Routes, Map, and More.
+- [x] Classic, NOC, Accessibility, and standard OpenFreeMap styles stay flat by
+  default; Topo RF and OpenFreeMap 3D enable terrain by default.
+- [x] Flat maps do not apply height color-relief tint; Topo RF remains the only
+  color-relief terrain profile.
+- [x] Weather clouds remain disabled by default and hidden before detail zoom.
 - [x] Offline PMTiles and Field Offline profiles render a usable fallback when
   no archive URL is configured.
 - [x] 3D role towers, signal beacons, minimal pins, route arc height, building
-  opacity, and terrain clarity remain configurable without exposing private
-  data.
+  opacity, and terrain clarity remain configurable from Advanced without
+  exposing private data.
 
 ## Package Gates
 

@@ -6,12 +6,12 @@ no database migration.
 
 ## What Changed
 
-- Map Settings now opens with Map Studio style profiles before the layer
-  toggles.
-- The top Layers button quick-cycles through Classic Dark, OpenFreeMap 3D, Topo
-  RF, NOC Wallboard, and Low Bandwidth.
-- OpenFreeMap 3D and Topo RF automatically enable the relevant 3D, route, and
-  terrain controls.
+- Map Settings now opens with operator mode cards before detailed layer toggles.
+- The main toolbar is now `Live`, `Focus`, `Routes`, `Map`, and `More`.
+- `Map` opens mode cards for Clean Live, Terrain/Topo, 3D, and Low Bandwidth;
+  advanced style, layer, packet, weather, and RF controls are collapsed.
+- Classic, NOC, Accessibility, and standard OpenFreeMap styles stay flat by
+  default. OpenFreeMap 3D and Topo RF automatically enable terrain.
 - Offline PMTiles and Field Offline profiles use `VITE_PMTILES_BASEMAP_URL`
   when supplied, and otherwise fall back to a local low-detail map.
 - 3D nodes can render as role towers, signal beacons, or minimal pins, with
@@ -31,10 +31,11 @@ Then open:
 - `https://carto.canadaverse.org/#/lab/synth`
 - `https://carto.canadaverse.org/#/nodes`
 
-On the main map, open Map Settings and confirm Map Studio lists OpenFreeMap 3D,
-Topo RF, Offline PMTiles, Accessibility, and Low Bandwidth. Click the top Layers
-button once from the default map and confirm the map enters OpenFreeMap 3D with
-the button active. The offline profiles should remain usable even when no
+On the main map, confirm the top toolbar shows only `Live`, `Focus`, `Routes`,
+`Map`, and `More`. Open `Map` and confirm the Clean Live, Terrain/Topo, 3D, and
+Low Bandwidth cards appear first. Classic Dark/Light should be flat at street
+zoom until `Terrain relief` is explicitly toggled. Terrain/Topo and 3D should
+still enable terrain. The offline profiles should remain usable even when no
 PMTiles archive is configured.
 
 ## Privacy

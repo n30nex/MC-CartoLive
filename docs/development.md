@@ -128,7 +128,7 @@ Use this checklist after map, playback, or styling changes:
   without revealing every idle route.
 - Map Settings layer toggles and packet visual sliders work without unnecessary
   source rebuilds.
-- VCR starts hidden, opens without overlap, scrubs the 24h timeline, and returns
+- Replay starts hidden, opens without overlap, scrubs the 24h timeline, and returns
   cleanly to live mode.
 - Search, compact Legend, panel restore, dark/light mode, and palette choices
   remain readable on desktop and mobile.
@@ -180,7 +180,7 @@ Run a short local soak when validating release automation:
 .\scripts\soak-check.ps1 -BaseUrl http://127.0.0.1:39476 -DurationMinutes 10 -IntervalSeconds 30
 ```
 
-## Map Studio And Offline Tiles
+## Map Modes And Offline Tiles
 
 2.9.5 adds the Map Studio style registry and optional PMTiles profiles. Leave
 `VITE_PMTILES_BASEMAP_URL` blank for normal development; the Offline PMTiles and
@@ -192,8 +192,9 @@ set the URL before building the frontend or image:
 VITE_PMTILES_BASEMAP_URL=/tiles/canada.pmtiles npm run build
 ```
 
-The Map Settings drawer should show Map Studio, OpenFreeMap 3D, Offline PMTiles,
-and 3D And RF controls in both dev-server and packaged browser smoke.
+The Map Settings drawer should show Clean Live, Terrain/Topo, 3D, and Low
+Bandwidth cards first. Classic flat styles should not show a grey/blue terrain
+tint at street zoom unless terrain relief is explicitly enabled.
 
 Run production smoke from your workstation after a droplet deploy:
 

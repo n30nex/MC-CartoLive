@@ -2494,21 +2494,30 @@ function ensureTerrainSources(map: maplibregl.Map, themeMode: MapThemeMode, styl
 function applyTerrainSetting(map: maplibregl.Map, enabled: boolean, themeMode: MapThemeMode, styleSettings: MapStyleSettings = DEFAULT_MAP_STYLE_SETTINGS, profileID: MapStyleProfileID = styleSettings.profileID) {
   const terrainSourceID = ensureTerrainSources(map, themeMode, styleSettings, profileID);
   const shouldEnable = enabled && Boolean(terrainSourceID);
-  setLayerVisibility(map, COLOR_RELIEF_LAYER, shouldEnable);
+  setLayerVisibility(map, COLOR_RELIEF_LAYER, shouldEnable && terrainUsesColorRelief(profileID));
   setLayerVisibility(map, HILLSHADE_LAYER, shouldEnable);
   if (!shouldEnable || !terrainSourceID) {
     clearMapTerrain(map);
     return;
   }
   map.setTerrain({ source: terrainSourceID, exaggeration: terrainExaggerationForClarity(styleSettings.terrainClarity) || TERRAIN_EXAGGERATION });
-  map.setSky({
-    'sky-color': themeMode === 'light' ? '#dbeafe' : '#0f172a',
-    'horizon-color': themeMode === 'light' ? '#bfdbfe' : '#172554',
-    'fog-color': themeMode === 'light' ? '#eff6ff' : '#07111f',
-    'sky-horizon-blend': 0.34,
-    'horizon-fog-blend': themeMode === 'light' ? 0.18 : 0.34,
-    'fog-ground-blend': themeMode === 'light' ? 0.08 : 0.18
-  });
+  const profile = mapStyleProfileByID(profileID);
+  if (profile.supports3D || terrainUsesColorRelief(profileID)) {
+    map.setSky({
+      'sky-color': themeMode === 'light' ? '#dbeafe' : '#0f172a',
+      'horizon-color': themeMode === 'light' ? '#bfdbfe' : '#172554',
+      'fog-color': themeMode === 'light' ? '#eff6ff' : '#07111f',
+      'sky-horizon-blend': 0.34,
+      'horizon-fog-blend': themeMode === 'light' ? 0.18 : 0.34,
+      'fog-ground-blend': themeMode === 'light' ? 0.08 : 0.18
+    });
+  } else {
+    clearMapSky(map);
+  }
+}
+
+export function terrainUsesColorRelief(profileID: MapStyleProfileID): boolean {
+  return mapStyleProfileByID(profileID).terrainPresentation === 'topographic';
 }
 
 function terrainAvailableForProfile(map: maplibregl.Map, profileID: MapStyleProfileID): boolean {
@@ -2611,7 +2620,7 @@ function terrainHillshadeIntensity(tone: ReturnType<typeof terrainToneForProfile
 function terrainColorReliefOpacity(tone: ReturnType<typeof terrainToneForProfile>, clarity: number): number {
   switch (tone) {
     case 'topo':
-      return 0.04 + clarity * 0.13;
+      return 0.035 + clarity * 0.095;
     case 'vector-light':
       return 0.025 + clarity * 0.075;
     case 'vector-dark':
@@ -2641,6 +2650,10 @@ function clearMapTerrain(map: maplibregl.Map) {
   } catch {
     // The original basemap has no terrain source; this is only needed after toggling back from OpenFreeMap.
   }
+  clearMapSky(map);
+}
+
+function clearMapSky(map: maplibregl.Map) {
   try {
     (map as any).setSky(null);
   } catch {
@@ -3246,9 +3259,13 @@ function setLayerVisibility(map: maplibregl.Map, layerID: string, visible: boole
 
 function applyWeatherCloudSetting(map: maplibregl.Map, settings: MapLayerSettings) {
   if (!map.getLayer(WEATHER_CLOUD_LAYER)) return;
-  const visible = settings.weatherClouds && map.getZoom() < WEATHER_CLOUD_FADE_END_ZOOM;
+  const visible = weatherCloudsVisibleAtZoom(settings, map.getZoom());
   map.setLayoutProperty(WEATHER_CLOUD_LAYER, 'visibility', visible ? 'visible' : 'none');
   map.setPaintProperty(WEATHER_CLOUD_LAYER, 'raster-opacity', visible ? WEATHER_CLOUD_OPACITY : 0);
+}
+
+export function weatherCloudsVisibleAtZoom(settings: Pick<MapLayerSettings, 'weatherClouds'>, zoom: number): boolean {
+  return settings.weatherClouds && zoom < WEATHER_CLOUD_FADE_END_ZOOM;
 }
 
 function firstTextSymbolLayerID(map: maplibregl.Map): string | undefined {

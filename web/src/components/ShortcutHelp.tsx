@@ -5,11 +5,11 @@ interface Props { onClose: () => void; }
 const GUIDE_SECTIONS = [
   {
     title: 'Live Map',
-    body: 'Packet comets and fading trails show current public RF activity. Known Pathways stays off until you turn it on.'
+    body: 'Packet comets and fading trails show current public RF activity. Routes stay off until you turn them on.'
   },
   {
     title: 'Map Controls',
-    body: 'Use Settings for layer presets, the Paths button for route lines, and VCR to replay traffic you missed.'
+    body: 'Use Map for modes and layers, Routes for route lines, and Replay for traffic you missed.'
   },
   {
     title: 'Panels',

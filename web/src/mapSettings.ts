@@ -62,7 +62,7 @@ export interface MapLayerPreset {
 }
 
 export const MAP_SETTINGS_STORAGE_KEY = 'mc-cartolive-map-settings';
-export const MAP_SETTINGS_SCHEMA_VERSION = 5;
+export const MAP_SETTINGS_SCHEMA_VERSION = 6;
 
 export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   clusters: true,
@@ -80,7 +80,7 @@ export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   packetComets3D: true,
   buildingExtrusions: true,
   terrainLOS: false,
-  terrainHeightmap: true,
+  terrainHeightmap: false,
   weatherClouds: false,
   propagationInsights: false
 };
@@ -378,6 +378,10 @@ function normalizeStoredMapSettings(input: unknown): MapSettings {
     const layers = isRecord(raw.layers) ? raw.layers : {};
     if (layers.terrainHeightmap !== false) settings.layers.terrainHeightmap = false;
     if (layers.propagationInsights !== false) settings.layers.propagationInsights = false;
+  }
+  if (schemaVersion < 6) {
+    const profile = mapStyleProfileByID(settings.style.profileID);
+    if (!profile.terrainDefault) settings.layers.terrainHeightmap = false;
   }
   return settings;
 }

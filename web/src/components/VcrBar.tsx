@@ -84,7 +84,7 @@ export default function VcrBar({
   };
 
   return (
-    <section className={`vcr-bar ${mode}`} aria-label="Live playback VCR">
+    <section className={`vcr-bar ${mode}`} aria-label="Live replay controls">
       <div className="vcr-controls">
         <button className={`vcr-button live ${mode === 'live' ? 'active' : ''}`} type="button" aria-label="Return to live playback" title="Return to live playback" onClick={onLive}>
           <RadioTower size={16} />
@@ -123,7 +123,7 @@ export default function VcrBar({
           <Sparkles size={15} />
           <span>Laser</span>
         </button>
-        <button className="vcr-button icon-only vcr-close" type="button" aria-label="Hide VCR controls and return live" title="Hide VCR controls and return live" onClick={onClose}>
+        <button className="vcr-button icon-only vcr-close" type="button" aria-label="Hide replay controls and return live" title="Hide replay controls and return live" onClick={onClose}>
           <Play size={16} />
         </button>
       </div>
@@ -186,7 +186,7 @@ export default function VcrBar({
             max={timelineNow}
             step={1000}
             value={value}
-            aria-label="VCR timeline"
+            aria-label="Replay timeline"
             aria-valuetext={`Selected ${formatClock(value)}`}
             title={activeHoverTimestamp === null ? 'Scrub replay timeline' : `Hover ${formatClock(activeHoverTimestamp)}`}
             onChange={(event) => onScrub(Number(event.currentTarget.value))}
@@ -199,7 +199,7 @@ export default function VcrBar({
 
 export function MiniLiveClock({ timestamp, onOpen }: { timestamp: number; onOpen: () => void }) {
   return (
-    <button className="vcr-mini-clock" type="button" title="Open VCR playback controls" aria-label={`Live clock ${formatClock(timestamp)}. Open VCR playback controls`} onClick={onOpen}>
+    <button className="vcr-mini-clock" type="button" title="Open replay controls" aria-label={`Live clock ${formatClock(timestamp)}. Open replay controls`} onClick={onOpen}>
       <RadioTower className="vcr-live-clock-icon" size={14} aria-hidden="true" />
       <span>LIVE</span>
       <time dateTime={new Date(timestamp).toISOString()}>{formatClock(timestamp)}</time>

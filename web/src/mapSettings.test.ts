@@ -33,7 +33,7 @@ describe('map settings', () => {
     expect(settings.layers.routeArcs3D).toBe(true);
     expect(settings.layers.packetComets3D).toBe(true);
     expect(settings.layers.buildingExtrusions).toBe(true);
-    expect(settings.layers.terrainHeightmap).toBe(true);
+    expect(settings.layers.terrainHeightmap).toBe(false);
     expect(settings.layers.weatherClouds).toBe(false);
     expect(settings.layers.propagationInsights).toBe(false);
     expect(settings.packets.speed).toBe(3);
@@ -95,7 +95,7 @@ describe('map settings', () => {
     expect(settings.layers.liveComets).toBe(true);
   });
 
-  it('preserves an explicit stored Known Pathways preference', () => {
+  it('preserves an explicit stored routes preference', () => {
     expect(normalizeMapSettings({ layers: { routes: true } }).layers.routes).toBe(true);
     expect(normalizeMapSettings({ layers: { routes: false } }).layers.routes).toBe(false);
   });
@@ -119,9 +119,9 @@ describe('map settings', () => {
     expect(migrated.packets.speed).toBe(2);
   });
 
-  it('preserves 2.8.2 explicit terrain and propagation choices during the 2.9.0 schema bump', () => {
+  it('resets pre-v6 flat map terrain while preserving propagation choices', () => {
     window.localStorage.setItem(MAP_SETTINGS_STORAGE_KEY, JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 5,
       layers: {
         terrainHeightmap: true,
         propagationInsights: true
@@ -129,8 +129,24 @@ describe('map settings', () => {
     }));
 
     const stored = readStoredMapSettings();
-    expect(stored.layers.terrainHeightmap).toBe(true);
+    expect(stored.layers.terrainHeightmap).toBe(false);
     expect(stored.layers.propagationInsights).toBe(true);
+  });
+
+  it('preserves pre-v6 terrain for deliberate topo and 3D profiles', () => {
+    window.localStorage.setItem(MAP_SETTINGS_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 5,
+      style: { profileID: 'topo-rf' },
+      layers: { terrainHeightmap: true }
+    }));
+    expect(readStoredMapSettings().layers.terrainHeightmap).toBe(true);
+
+    window.localStorage.setItem(MAP_SETTINGS_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 5,
+      style: { profileID: 'openfreemap-3d' },
+      layers: { terrainHeightmap: true }
+    }));
+    expect(readStoredMapSettings().layers.terrainHeightmap).toBe(true);
   });
 
   it('applies frontend-only layer presets without changing packet preferences', () => {
@@ -143,7 +159,7 @@ describe('map settings', () => {
     expect(analysis.layers.routes).toBe(true);
     expect(analysis.layers.propagationInsights).toBe(true);
     expect(analysis.layers.terrainLOS).toBe(true);
-    expect(analysis.layers.terrainHeightmap).toBe(true);
+    expect(analysis.layers.terrainHeightmap).toBe(false);
     expect(analysis.packets.speed).toBe(2);
     expect(analysis.packets.animationStyle).toBe('pulse');
 
@@ -173,10 +189,13 @@ describe('map settings', () => {
     expect(low.packets.renderQuality).toBe('smooth');
 
     const classicLight = applyMapStyleProfile(base, 'classic-light');
-    expect(classicLight.layers.terrainHeightmap).toBe(true);
+    expect(classicLight.layers.terrainHeightmap).toBe(false);
 
     const noc = applyMapStyleProfile(base, 'noc');
-    expect(noc.layers.terrainHeightmap).toBe(true);
+    expect(noc.layers.terrainHeightmap).toBe(false);
+
+    const topo = applyMapStyleProfile(base, 'topo-rf');
+    expect(topo.layers.terrainHeightmap).toBe(true);
   });
 
   it('identifies exact layer preset matches', () => {

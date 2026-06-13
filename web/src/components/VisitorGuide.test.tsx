@@ -17,8 +17,8 @@ describe('visitor orientation', () => {
 
     expect(html).toContain('2.9.5 Live');
     expect(html).toContain('Watch live traffic first');
-    expect(html).toContain('Layer presets');
-    expect(html).toContain('Paths off');
+    expect(html).toContain('Map');
+    expect(html).toContain('Routes off');
     expect(html).toContain('Help');
   });
 

@@ -3,6 +3,8 @@
 2.9.5 is the Map Studio release. It expands the public map from a small
 dark/light/3D toggle into a browser-local style workspace with richer basemap
 choices, offline tile hooks, and more configurable 3D RF presentation.
+The latest 2.9.5 update also cleans up the first-view operator UI and keeps
+flat street maps free of terrain color tint by default.
 
 ## Highlights
 
@@ -13,10 +15,17 @@ choices, offline tile hooks, and more configurable 3D RF presentation.
 - Added a toolbar quick cycle for the operational modes visitors are most likely
   to switch between: Classic Dark, OpenFreeMap 3D, Topo RF, NOC Wallboard, and
   Low Bandwidth.
+- Replaced the long top action row with a compact `Live`, `Focus`, `Routes`,
+  `Map`, and `More` toolbar. Workspaces now live under a `Workspaces` menu, and
+  build/changelog/GitHub details moved under `About`.
+- Changed flat map styles so Classic, NOC, Accessibility, and normal
+  OpenFreeMap styles do not enable terrain by default. If terrain is manually
+  enabled on those maps, it uses hillshade only; the height color tint is
+  reserved for `Topo RF`.
 - Added controls for basemap dimming, label density, terrain clarity, building
   opacity, node model style, node model scale, antenna height, and route arc
-  height. Terrain clarity now balances mesh lift, hillshade, and subtle height
-  tint so local topography reads without burying street detail.
+  height. Terrain clarity now balances mesh lift and hillshade without tinting
+  flat street-map styles.
 - Added optional PMTiles protocol support for operator-supplied offline basemaps
   while keeping graceful local fallback when no archive URL is configured.
 - Upgraded 3D node models with role towers, signal beacons, minimal pins, focus

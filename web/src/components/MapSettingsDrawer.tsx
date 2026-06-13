@@ -91,7 +91,30 @@ const NODE_MODEL_STYLES: readonly { value: NodeModelStyle; label: string }[] = [
   { value: 'minimal-pins', label: 'Pins' }
 ];
 
+const COMMON_LAYER_CONTROLS: readonly LayerControl[] = [
+  { key: 'routes', label: 'Routes', hint: 'Public route lines' },
+  { key: 'nodeLabels', label: 'Labels', hint: 'Node and observer labels' },
+  { key: 'liveComets', label: 'Live packets', hint: 'Live packet motion' },
+  { key: 'activityHeatmap', label: 'Activity heat', hint: 'Recent activity glow' },
+  { key: 'terrainHeightmap', label: 'Terrain relief', hint: 'Optional hillshade or topo relief' }
+];
+
+const MODE_CARDS: readonly { id: string; label: string; profileID: MapStyleProfileID; presetID: MapLayerPresetID; hint: string }[] = [
+  { id: 'clean-live', label: 'Clean Live', profileID: 'classic-dark', presetID: 'clean', hint: 'Flat street map with live traffic' },
+  { id: 'terrain-topo', label: 'Terrain/Topo', profileID: 'topo-rf', presetID: 'analysis', hint: 'Topo relief for RF review' },
+  { id: '3d', label: '3D', profileID: 'openfreemap-3d', presetID: '3d', hint: 'Pitched map with route arcs' },
+  { id: 'low-bandwidth', label: 'Low Bandwidth', profileID: 'low-bandwidth', presetID: 'clean', hint: 'Quiet view for weak clients' }
+];
+
+type AdvancedSection = 'layers' | 'style' | 'packets' | 'rf';
+
 export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenPropagation }: MapSettingsDrawerProps) {
+  const [advancedOpen, setAdvancedOpen] = useState<Record<AdvancedSection, boolean>>({
+    layers: false,
+    style: false,
+    packets: false,
+    rf: false
+  });
   const activePresetID = mapLayerPresetIDForSettings(settings.layers);
   const activeStyleProfile = mapStyleProfileByID(settings.style.profileID);
   const applyStyle = (profileID: MapStyleProfileID) => {
@@ -112,6 +135,27 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
   const updatePacketToggle = (key: keyof MapSettings['packets'], value: boolean) => {
     onChange(normalizeMapSettings({ ...settings, packets: { ...settings.packets, [key]: value } }));
   };
+  const applyMode = (profileID: MapStyleProfileID, presetID: MapLayerPresetID) => {
+    onChange(applyMapStyleProfile(applyMapLayerPreset(settings, presetID), profileID));
+  };
+  const activeModeID = activeStyleProfile.id === 'topo-rf'
+    ? 'terrain-topo'
+    : activeStyleProfile.id === 'openfreemap-3d'
+      ? '3d'
+      : activeStyleProfile.id === 'low-bandwidth'
+        ? 'low-bandwidth'
+        : 'clean-live';
+  const toggleAdvanced = (section: AdvancedSection) => {
+    setAdvancedOpen((current) => ({ ...current, [section]: !current[section] }));
+  };
+  const advancedLayerGroups = LAYER_GROUPS.map((group) => ({
+    ...group,
+    controls: group.controls.filter((control) => {
+      if (COMMON_LAYER_CONTROLS.some((common) => common.key === control.key)) return false;
+      if (control.key === 'weatherClouds' && !WEATHER_CLOUDS_AVAILABLE) return false;
+      return true;
+    })
+  })).filter((group) => group.controls.length > 0);
   return (
     <aside className="map-settings-drawer" aria-label="Map settings">
       <header className="map-settings-header">
@@ -125,158 +169,140 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
       </header>
 
       <section className="map-settings-section">
-        <h3>Map Studio</h3>
-        <div className="map-style-profile-grid" role="group" aria-label="Map style profiles">
-          {MAP_STYLE_PROFILES.map((profile) => {
-            const selected = activeStyleProfile.id === profile.id;
-            return (
-              <button
-                key={profile.id}
-                type="button"
-                className={selected ? 'active' : ''}
-                aria-pressed={selected}
-                onClick={() => applyStyle(profile.id)}
-              >
-                <span>
-                  <strong>{profile.label}</strong>
-                  <small>{profile.description}</small>
-                </span>
-                <em>{profile.sourceLabel}</em>
-              </button>
-            );
-          })}
-        </div>
-        <Slider label="Basemap dim" value={settings.style.basemapDim} min={0} max={0.78} step={0.02} suffix="x" onChange={(value) => updateStyle('basemapDim', value)} />
-        <Slider label="Label density" value={settings.style.labelDensity} min={0} max={1.4} step={0.05} suffix="x" onChange={(value) => updateStyle('labelDensity', value)} />
-      </section>
-
-      <section className="map-settings-section">
-        <h3>Workflow Presets</h3>
-        <div className="map-settings-preset-grid" role="group" aria-label="Layer presets">
-          {MAP_LAYER_PRESETS.map((preset) => (
+        <h3>Map</h3>
+        <div className="map-settings-preset-grid map-mode-grid" role="group" aria-label="Map modes">
+          {MODE_CARDS.map((mode) => (
             <button
-              key={preset.id}
+              key={mode.id}
               type="button"
-              className={activePresetID === preset.id ? 'active' : ''}
-              aria-pressed={activePresetID === preset.id}
-              onClick={() => applyPreset(preset.id)}
+              className={activeModeID === mode.id ? 'active' : ''}
+              aria-pressed={activeModeID === mode.id}
+              onClick={() => applyMode(mode.profileID, mode.presetID)}
             >
-              <strong>{preset.label}</strong>
-              <small>{preset.hint}</small>
+              <strong>{mode.label}</strong>
+              <small>{mode.hint}</small>
             </button>
           ))}
         </div>
       </section>
 
       <section className="map-settings-section">
-        <h3>Layers</h3>
-        <div className="map-settings-layer-groups">
-          {LAYER_GROUPS.map((group) => (
-            <div key={group.label} className="map-settings-layer-group">
-              <h4>{group.label}</h4>
-              <div className="map-settings-toggle-list">
-                {group.controls.map((control) => {
-                  const unavailable = control.key === 'weatherClouds' && !WEATHER_CLOUDS_AVAILABLE;
-                  const hint = unavailable ? control.unavailableHint ?? control.hint : control.hint;
-                  return (
+        <h3>Common</h3>
+        <div className="map-settings-toggle-list">
+          {COMMON_LAYER_CONTROLS.map((control) => (
+            <LayerToggle key={control.key} control={control} checked={settings.layers[control.key]} onChange={updateLayer} />
+          ))}
+        </div>
+      </section>
+
+      <section className="map-settings-section">
+        <h3>Advanced</h3>
+        <AdvancedSectionButton label="Layers" open={advancedOpen.layers} onClick={() => toggleAdvanced('layers')} />
+        {advancedOpen.layers && (
+          <div className="map-settings-layer-groups">
+            {advancedLayerGroups.map((group) => (
+              <div key={group.label} className="map-settings-layer-group">
+                <h4>{group.label}</h4>
+                <div className="map-settings-toggle-list">
+                  {group.controls.map((control) => (
                     <div key={control.key} className="map-settings-toggle-wrap">
-                      <label className={`map-settings-toggle${unavailable ? ' unavailable' : ''}`}>
-                        <span>
-                          <strong>{control.label}</strong>
-                          <small>{hint}</small>
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={unavailable ? false : settings.layers[control.key]}
-                          disabled={unavailable}
-                          onChange={(event) => updateLayer(control.key, event.target.checked)}
-                        />
-                      </label>
+                      <LayerToggle control={control} checked={settings.layers[control.key]} onChange={updateLayer} />
                       {control.key === 'propagationInsights' && onOpenPropagation && (
-                        <button
-                          type="button"
-                          className="map-settings-inline-action"
-                          onClick={onOpenPropagation}
-                        >
+                        <button type="button" className="map-settings-inline-action" onClick={onOpenPropagation}>
                           Open history
                         </button>
                       )}
                     </div>
-                  );
-                })}
+                  ))}
+                </div>
               </div>
+            ))}
+          </div>
+        )}
+
+        <AdvancedSectionButton label="Style Library" open={advancedOpen.style} onClick={() => toggleAdvanced('style')} />
+        {advancedOpen.style && (
+          <>
+            <div className="map-style-profile-grid" role="group" aria-label="Map style profiles">
+              {MAP_STYLE_PROFILES.map((profile) => {
+                const selected = activeStyleProfile.id === profile.id;
+                return (
+                  <button key={profile.id} type="button" className={selected ? 'active' : ''} aria-pressed={selected} onClick={() => applyStyle(profile.id)}>
+                    <span>
+                      <strong>{profile.label}</strong>
+                      <small>{profile.sourceLabel}</small>
+                    </span>
+                    <em>{profile.terrainDefault ? 'terrain' : 'flat'}</em>
+                  </button>
+                );
+              })}
             </div>
-          ))}
-        </div>
-      </section>
+            <div className="map-settings-preset-grid" role="group" aria-label="Workflow presets">
+              {MAP_LAYER_PRESETS.map((preset) => (
+                <button key={preset.id} type="button" className={activePresetID === preset.id ? 'active' : ''} aria-pressed={activePresetID === preset.id} onClick={() => applyPreset(preset.id)}>
+                  <strong>{preset.label}</strong>
+                  <small>{preset.hint}</small>
+                </button>
+              ))}
+            </div>
+            <Slider label="Basemap dim" value={settings.style.basemapDim} min={0} max={0.78} step={0.02} suffix="x" onChange={(value) => updateStyle('basemapDim', value)} />
+            <Slider label="Label density" value={settings.style.labelDensity} min={0} max={1.4} step={0.05} suffix="x" onChange={(value) => updateStyle('labelDensity', value)} />
+          </>
+        )}
 
-      <section className="map-settings-section">
-        <h3>Live Packets</h3>
-        <Slider label="Speed" value={settings.packets.speed} min={0.5} max={3} step={0.1} suffix="x" onChange={(value) => updatePacket('speed', value)} />
-        <Slider label="Brightness" value={settings.packets.brightness} min={0.4} max={1.6} step={0.05} suffix="x" onChange={(value) => updatePacket('brightness', value)} />
-        <Slider label="Trail" value={settings.packets.trail} min={0} max={2} step={0.05} suffix="x" onChange={(value) => updatePacket('trail', value)} />
-        <div className="map-settings-segmented" role="group" aria-label="Packet animation type">
-          {ANIMATION_STYLES.map((style) => (
-            <button
-              key={style.value}
-              type="button"
-              className={settings.packets.animationStyle === style.value ? 'active' : ''}
-              onClick={() => updatePacket('animationStyle', style.value)}
-            >
-              {style.label}
-            </button>
-          ))}
-        </div>
-        <div className="map-settings-segmented" role="group" aria-label="Render quality">
-          {RENDER_QUALITIES.map((quality) => (
-            <button
-              key={quality.value}
-              type="button"
-              className={settings.packets.renderQuality === quality.value ? 'active' : ''}
-              onClick={() => updatePacket('renderQuality', quality.value)}
-            >
-              {quality.label}
-            </button>
-          ))}
-        </div>
-        <label className="map-settings-toggle">
-          <span>
-            <strong>All-zoom live comets</strong>
-            <small>Show live packet comets while zoomed out. Replay always bypasses the zoom gate.</small>
-          </span>
-          <input
-            type="checkbox"
-            checked={settings.packets.showLiveCometsAtAllZooms}
-            onChange={(event) => updatePacketToggle('showLiveCometsAtAllZooms', event.target.checked)}
-          />
-        </label>
-      </section>
+        <AdvancedSectionButton label="Packet Motion" open={advancedOpen.packets} onClick={() => toggleAdvanced('packets')} />
+        {advancedOpen.packets && (
+          <>
+            <Slider label="Speed" value={settings.packets.speed} min={0.5} max={3} step={0.1} suffix="x" onChange={(value) => updatePacket('speed', value)} />
+            <Slider label="Brightness" value={settings.packets.brightness} min={0.4} max={1.6} step={0.05} suffix="x" onChange={(value) => updatePacket('brightness', value)} />
+            <Slider label="Trail" value={settings.packets.trail} min={0} max={2} step={0.05} suffix="x" onChange={(value) => updatePacket('trail', value)} />
+            <div className="map-settings-segmented" role="group" aria-label="Packet animation type">
+              {ANIMATION_STYLES.map((style) => (
+                <button key={style.value} type="button" className={settings.packets.animationStyle === style.value ? 'active' : ''} onClick={() => updatePacket('animationStyle', style.value)}>
+                  {style.label}
+                </button>
+              ))}
+            </div>
+            <div className="map-settings-segmented" role="group" aria-label="Render quality">
+              {RENDER_QUALITIES.map((quality) => (
+                <button key={quality.value} type="button" className={settings.packets.renderQuality === quality.value ? 'active' : ''} onClick={() => updatePacket('renderQuality', quality.value)}>
+                  {quality.label}
+                </button>
+              ))}
+            </div>
+            <label className="map-settings-toggle">
+              <span>
+                <strong>All-zoom live packets</strong>
+                <small>Live motion below detail zoom</small>
+              </span>
+              <input type="checkbox" checked={settings.packets.showLiveCometsAtAllZooms} onChange={(event) => updatePacketToggle('showLiveCometsAtAllZooms', event.target.checked)} />
+            </label>
+          </>
+        )}
 
-      <section className="map-settings-section">
-        <h3>3D And RF</h3>
-        <div className="map-settings-segmented" role="group" aria-label="3D node model style">
-          {NODE_MODEL_STYLES.map((style) => (
-            <button
-              key={style.value}
-              type="button"
-              className={settings.style.nodeModelStyle === style.value ? 'active' : ''}
-              onClick={() => updateStyle('nodeModelStyle', style.value)}
-            >
-              {style.label}
-            </button>
-          ))}
-        </div>
-        <Slider label="Terrain clarity" value={settings.style.terrainClarity} min={0} max={100} step={1} suffix="%" onChange={(value) => updateStyle('terrainClarity', value)} />
-        <Slider label="Building opacity" value={settings.style.buildingOpacity} min={0} max={1} step={0.05} suffix="x" onChange={(value) => updateStyle('buildingOpacity', value)} />
-        <Slider label="Node model scale" value={settings.style.nodeModelScale} min={0.55} max={1.8} step={0.05} suffix="x" onChange={(value) => updateStyle('nodeModelScale', value)} />
-        <Slider label="Antenna height" value={settings.style.nodeAltitudeMeters} min={0} max={120} step={2} suffix=" m" onChange={(value) => updateStyle('nodeAltitudeMeters', value)} />
-        <Slider label="Route arc height" value={settings.style.routeArcAltitudeScale} min={0.35} max={2.4} step={0.05} suffix="x" onChange={(value) => updateStyle('routeArcAltitudeScale', value)} />
-        <p className="map-settings-note">
-          <RadioTower size={14} />
-          <span>{activeStyleProfile.supports3D ? '3D-ready style profile' : 'Flat style profile'}</span>
-          <Layers size={14} />
-          <span>{activeStyleProfile.supportsOffline ? 'offline-capable' : 'online tiles'}</span>
-        </p>
+        <AdvancedSectionButton label="3D And RF" open={advancedOpen.rf} onClick={() => toggleAdvanced('rf')} />
+        {advancedOpen.rf && (
+          <>
+            <div className="map-settings-segmented" role="group" aria-label="3D node model style">
+              {NODE_MODEL_STYLES.map((style) => (
+                <button key={style.value} type="button" className={settings.style.nodeModelStyle === style.value ? 'active' : ''} onClick={() => updateStyle('nodeModelStyle', style.value)}>
+                  {style.label}
+                </button>
+              ))}
+            </div>
+            <Slider label="Terrain clarity" value={settings.style.terrainClarity} min={0} max={100} step={1} suffix="%" onChange={(value) => updateStyle('terrainClarity', value)} />
+            <Slider label="Building opacity" value={settings.style.buildingOpacity} min={0} max={1} step={0.05} suffix="x" onChange={(value) => updateStyle('buildingOpacity', value)} />
+            <Slider label="Node model scale" value={settings.style.nodeModelScale} min={0.55} max={1.8} step={0.05} suffix="x" onChange={(value) => updateStyle('nodeModelScale', value)} />
+            <Slider label="Antenna height" value={settings.style.nodeAltitudeMeters} min={0} max={120} step={2} suffix=" m" onChange={(value) => updateStyle('nodeAltitudeMeters', value)} />
+            <Slider label="Route arc height" value={settings.style.routeArcAltitudeScale} min={0.35} max={2.4} step={0.05} suffix="x" onChange={(value) => updateStyle('routeArcAltitudeScale', value)} />
+            <p className="map-settings-note">
+              <RadioTower size={14} />
+              <span>{activeStyleProfile.supports3D ? '3D-ready style profile' : 'Flat style profile'}</span>
+              <Layers size={14} />
+              <span>{activeStyleProfile.supportsOffline ? 'offline-capable' : 'online tiles'}</span>
+            </p>
+          </>
+        )}
       </section>
 
       <footer className="map-settings-footer">
@@ -284,6 +310,27 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
         <span><SlidersHorizontal size={14} /> local browser preference</span>
       </footer>
     </aside>
+  );
+}
+
+function LayerToggle({ control, checked, onChange }: { control: LayerControl; checked: boolean; onChange: (key: keyof MapLayerSettings, value: boolean) => void }) {
+  return (
+    <label className="map-settings-toggle">
+      <span>
+        <strong>{control.label}</strong>
+        <small>{control.hint}</small>
+      </span>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(control.key, event.target.checked)} />
+    </label>
+  );
+}
+
+function AdvancedSectionButton({ label, open, onClick }: { label: string; open: boolean; onClick: () => void }) {
+  return (
+    <button type="button" className={`map-settings-advanced-toggle ${open ? 'active' : ''}`} aria-expanded={open} onClick={onClick}>
+      <span>{label}</span>
+      <strong>{open ? 'Hide' : 'Show'}</strong>
+    </button>
   );
 }
 
