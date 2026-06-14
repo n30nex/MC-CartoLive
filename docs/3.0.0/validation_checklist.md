@@ -32,21 +32,25 @@
 
 ## Canada Deployment Evidence
 
-- [ ] Production build uses `VITE_APP_ASSET_PACK=canada`.
-- [ ] Production build uses `VITE_APP_BRAND_NAME=Carto Live Canada`.
-- [ ] Production build uses `VITE_APP_BRAND_URL=https://canadaverse.org/`.
-- [ ] Droplet Compose port mapping is `80:8080`.
-- [ ] `/healthz` reports version `3.0.0`.
-- [ ] `/healthz` reports expected git SHA: `<fill after deploy>`.
-- [ ] Live smoke passes for `https://carto.canadaverse.org`.
+- [x] Production build uses `VITE_APP_ASSET_PACK=canada`.
+- [x] Production build uses `VITE_APP_BRAND_NAME=Carto Live Canada`.
+- [x] Production build uses `VITE_APP_BRAND_URL=https://canadaverse.org/`.
+- [x] Droplet Compose port mapping is `80:8080`.
+- [x] `/healthz` reports version `3.0.0`.
+- [x] `/healthz` reports expected git SHA:
+  `ed286fcf85cbbb013c9a8043a993bc4e4b0a5d55`.
+- [x] Live smoke passes for `https://carto.canadaverse.org`.
 
 ## Release Evidence
 
-- [ ] Implementation commit SHA: `<fill before release>`.
-- [ ] Deploy evidence commit SHA: `<fill after deploy>`.
-- [ ] Tag `v3.0.0` pushed.
+- [x] Implementation commit SHA:
+  `ed286fcf85cbbb013c9a8043a993bc4e4b0a5d55`.
+- [x] Deploy evidence commit records the Canada production validation.
+- [x] Tag `v3.0.0` pushed.
 - [ ] GHCR image `ghcr.io/n30nex/mc-cartolive:3.0.0` published as the
-  world/default image.
+  world/default image. Current publish attempt is blocked by GHCR auth:
+  `podman push` returned `403 Forbidden`, and the available GitHub CLI token
+  does not include `write:packages`.
 
 ## Local Evidence
 
@@ -58,3 +62,21 @@
   screenshots under `artifacts/browser-smoke/`.
 - Pixel sanity: sampled smoke screenshots had varied colors and nonblank
   content.
+
+## Canada Live Evidence
+
+- Fast-forwarded `/opt/MC-CartoLive` from `dc43d04` to `ed286fc` with
+  `git pull --ff-only origin main`; no database backup step was run for this
+  deployment.
+- Droplet `.env` release keys after deploy:
+  `APP_VERSION=3.0.0`, `VITE_APP_ASSET_PACK=canada`,
+  `VITE_APP_BRAND_NAME=Carto Live Canada`,
+  `VITE_APP_BRAND_URL=https://canadaverse.org/`, and
+  `PUBLIC_BASE_URL=https://carto.canadaverse.org`.
+- Public Canada manifest served from
+  `https://carto.canadaverse.org/brand/canada/manifest.json` with
+  `name=Carto Live Canada`.
+- Live smoke passed: packets `648378`, nodes `1993`, routes `794`,
+  history events `25`, packet paths `25`, chat messages `7`, WebSocket
+  hello `seq=504151`, `packetIngestState=fresh`, `publicCacheState=fresh`,
+  and `liveConfidenceState=fresh`.
