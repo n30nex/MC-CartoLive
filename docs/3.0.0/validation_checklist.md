@@ -47,10 +47,12 @@
   `ed286fcf85cbbb013c9a8043a993bc4e4b0a5d55`.
 - [x] Deploy evidence commit records the Canada production validation.
 - [x] Tag `v3.0.0` pushed.
-- [ ] GHCR image `ghcr.io/n30nex/mc-cartolive:3.0.0` published as the
-  world/default image. Current publish attempt is blocked by GHCR auth:
-  `podman push` returned `403 Forbidden`, and the available GitHub CLI token
-  does not include `write:packages`.
+- [x] GHCR image `ghcr.io/n30nex/mc-cartolive:3.0.0` published as the
+  world/default image by GitHub Actions run `27486711923`.
+- [x] GHCR manifest inspection confirms a linux/amd64 image digest:
+  `sha256:a113b124e117f43ae26363ca352c1c11572f084f9faaa46b2625d4cc27675b07`.
+- [x] GitHub Release published:
+  `https://github.com/n30nex/MC-CartoLive/releases/tag/v3.0.0`.
 
 ## Local Evidence
 
