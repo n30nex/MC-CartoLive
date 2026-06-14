@@ -30,9 +30,7 @@ proxy.
 
 ## 3.0 Screenshot Tour
 
-These are public UI captures from the 3.0 Canada surface. The screenshots show
-sanitized public map fields only; raw packets, full keys, broker credentials,
-and resolver internals stay outside the public boundary.
+These are public UI captures from the 3.0 Canada surface.
 
 ### Map, Routes, And Replay
 
