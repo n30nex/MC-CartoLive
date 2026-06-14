@@ -7,6 +7,7 @@ HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:39476/readyz}"
 LOCAL_BASE_URL="${LOCAL_BASE_URL:-http://127.0.0.1:39476}"
 SERVICE="${SERVICE:-meshcore-live-map}"
 BACKUP_DIR="${BACKUP_DIR:-backups}"
+SKIP_DB_BACKUP="${SKIP_DB_BACKUP:-0}"
 
 cd "$REPO"
 
@@ -18,18 +19,21 @@ fi
 
 PREV_SHA="$(git rev-parse HEAD)"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-mkdir -p "$BACKUP_DIR"
 
 echo "Previous SHA: $PREV_SHA"
 echo "Deploying branch: $BRANCH"
 echo "Health URL: $HEALTH_URL"
 
-if command -v sqlite3 >/dev/null 2>&1 && [ -f data/meshcore-live.db ]; then
+if [ "$SKIP_DB_BACKUP" = "1" ]; then
+  echo "Skipping SQLite backup because SKIP_DB_BACKUP=1"
+elif command -v sqlite3 >/dev/null 2>&1 && [ -f data/meshcore-live.db ]; then
+  mkdir -p "$BACKUP_DIR"
   DB_BACKUP="$BACKUP_DIR/meshcore-live.$STAMP.db"
   echo "Backing up SQLite database with sqlite3 .backup"
   sqlite3 data/meshcore-live.db ".backup '$DB_BACKUP'"
   sqlite3 "$DB_BACKUP" "PRAGMA integrity_check;"
 else
+  mkdir -p "$BACKUP_DIR"
   echo "sqlite3 unavailable or database missing; stopping container for file backup"
   docker compose stop "$SERVICE" || docker compose stop || true
   mkdir -p "$BACKUP_DIR/meshcore-live.$STAMP"

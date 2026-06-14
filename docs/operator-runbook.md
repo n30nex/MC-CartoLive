@@ -13,6 +13,13 @@ docker compose build
 docker compose up -d
 ```
 
+For a fast frontend-only patch where a fresh SQLite backup is intentionally
+skipped, use:
+
+```bash
+SKIP_DB_BACKUP=1 bash scripts/deploy.sh /opt/MC-CartoLive main
+```
+
 ## Smoke Check
 
 ```bash
