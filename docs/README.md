@@ -14,7 +14,14 @@ is preserved by version.
 | [Privacy model](privacy.md) | Private inputs, public outputs, route truth, and test expectations. |
 | [Roadmap](roadmap.md) | Current baseline and active 3.x direction. |
 
-## 3.0.0 Release Package
+## 3.0.1 Release Package
+
+| Document | Purpose |
+| --- | --- |
+| [Release notes](3.0.1/release_notes.md) | Product-facing 3.0.1 smooth-shell summary and compatibility notes. |
+| [Validation checklist](3.0.1/validation_checklist.md) | Local, browser, and privacy validation checklist. |
+
+## 3.0.0 Asset Pack Package
 
 | Document | Purpose |
 | --- | --- |

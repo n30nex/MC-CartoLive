@@ -3,6 +3,7 @@ import { mapStyleProfileByID, type MapStyleProfileID } from './map/styles/styleR
 export type PacketAnimationStyle = 'comet' | 'pulse' | 'minimal';
 export type RenderQuality = 'smooth' | 'balanced' | 'high';
 export type NodeModelStyle = 'role-towers' | 'signal-beacons' | 'minimal-pins';
+export type MapModeID = 'watch' | 'explore' | 'terrain' | 'studio';
 
 export interface MapLayerSettings {
   clusters: boolean;
@@ -47,6 +48,8 @@ export interface MapStyleSettings {
 }
 
 export interface MapSettings {
+  modeID: MapModeID;
+  customized: boolean;
   style: MapStyleSettings;
   layers: MapLayerSettings;
   packets: PacketVisualSettings;
@@ -61,8 +64,18 @@ export interface MapLayerPreset {
   layers: MapLayerSettings;
 }
 
+export interface MapModeDefinition {
+  id: MapModeID;
+  label: string;
+  shortLabel: string;
+  hint: string;
+  profileID: MapStyleProfileID;
+  layers: MapLayerSettings;
+  packetVisuals?: Partial<PacketVisualSettings>;
+}
+
 export const MAP_SETTINGS_STORAGE_KEY = 'mc-cartolive-map-settings';
-export const MAP_SETTINGS_SCHEMA_VERSION = 6;
+export const MAP_SETTINGS_SCHEMA_VERSION = 7;
 
 export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
   clusters: false,
@@ -107,6 +120,8 @@ export const DEFAULT_MAP_STYLE_SETTINGS: MapStyleSettings = {
 };
 
 export const DEFAULT_MAP_SETTINGS: MapSettings = {
+  modeID: 'watch',
+  customized: false,
   style: DEFAULT_MAP_STYLE_SETTINGS,
   layers: DEFAULT_MAP_LAYER_SETTINGS,
   packets: DEFAULT_PACKET_VISUAL_SETTINGS
@@ -115,7 +130,7 @@ export const DEFAULT_MAP_SETTINGS: MapSettings = {
 export const MAP_LAYER_PRESETS: readonly MapLayerPreset[] = [
   {
     id: 'live',
-    label: 'Live',
+    label: 'Default',
     hint: 'First-view traffic: comets, trails, nodes, and quiet route lines.',
     layers: { ...DEFAULT_MAP_LAYER_SETTINGS }
   },
@@ -166,9 +181,76 @@ export const MAP_LAYER_PRESETS: readonly MapLayerPreset[] = [
   }
 ];
 
+export const MAP_MODES: readonly MapModeDefinition[] = [
+  {
+    id: 'watch',
+    label: 'Watch',
+    shortLabel: 'Watch',
+    hint: 'Recent traffic first: comets, activity glow, nodes, and quiet routes.',
+    profileID: 'classic-dark',
+    layers: { ...DEFAULT_MAP_LAYER_SETTINGS }
+  },
+  {
+    id: 'explore',
+    label: 'Explore',
+    shortLabel: 'Explore',
+    hint: 'Routes, labels, selected paths, and plotting tools for network review.',
+    profileID: 'classic-dark',
+    layers: {
+      ...DEFAULT_MAP_LAYER_SETTINGS,
+      routes: true,
+      analysisPaths: true,
+      propagationInsights: false,
+      terrainLOS: false,
+      terrainHeightmap: false
+    }
+  },
+  {
+    id: 'terrain',
+    label: 'Terrain',
+    shortLabel: 'Terrain',
+    hint: 'Topo relief, terrain line-of-sight, and propagation context.',
+    profileID: 'topo-rf',
+    layers: {
+      ...DEFAULT_MAP_LAYER_SETTINGS,
+      routes: true,
+      activityHeatmap: true,
+      analysisPaths: true,
+      terrainLOS: true,
+      terrainHeightmap: true,
+      propagationInsights: true,
+      nodeModels3D: false,
+      routeArcs3D: false,
+      packetComets3D: false,
+      buildingExtrusions: false
+    }
+  },
+  {
+    id: 'studio',
+    label: 'Studio',
+    shortLabel: 'Studio',
+    hint: 'Pitched 3D map with buildings, node models, route arcs, and packet motion.',
+    profileID: 'openfreemap-3d',
+    layers: {
+      ...DEFAULT_MAP_LAYER_SETTINGS,
+      routes: true,
+      nodeModels3D: true,
+      routeArcs3D: true,
+      packetComets3D: true,
+      buildingExtrusions: true,
+      terrainLOS: true,
+      terrainHeightmap: true
+    },
+    packetVisuals: { renderQuality: 'balanced', animationStyle: 'comet' }
+  }
+] as const;
+
 export function normalizeMapSettings(input: unknown): MapSettings {
   const raw = isRecord(input) ? input : {};
+  const modeID = isMapModeID(raw.modeID) ? raw.modeID : DEFAULT_MAP_SETTINGS.modeID;
   return {
+    modeID,
+    customized: raw.customized === true,
     style: normalizeStyleSettings(raw.style),
     layers: normalizeLayerSettings(raw.layers),
     packets: normalizePacketVisualSettings(raw.packets)
@@ -249,6 +331,7 @@ export function applyMapLayerPreset(settings: MapSettings, presetID: MapLayerPre
   const preset = MAP_LAYER_PRESETS.find((item) => item.id === presetID);
   return normalizeMapSettings({
     ...settings,
+    customized: true,
     layers: preset ? preset.layers : settings.layers
   });
 }
@@ -257,6 +340,7 @@ export function applyMapStyleProfile(settings: MapSettings, profileID: MapStyleP
   const profile = mapStyleProfileByID(profileID);
   const next: MapSettings = normalizeMapSettings({
     ...settings,
+    customized: true,
     style: { ...settings.style, profileID: profile.id }
   });
   next.layers = {
@@ -299,6 +383,33 @@ export function applyMapStyleProfile(settings: MapSettings, profileID: MapStyleP
   return normalizeMapSettings(next);
 }
 
+export function applyMapMode(settings: MapSettings, modeID: MapModeID): MapSettings {
+  const mode = mapModeByID(modeID);
+  return normalizeMapSettings({
+    ...settings,
+    modeID: mode.id,
+    customized: false,
+    style: { ...settings.style, profileID: mode.profileID },
+    layers: mode.layers,
+    packets: { ...settings.packets, ...(mode.packetVisuals ?? {}) }
+  });
+}
+
+export function mapModeByID(modeID: string | undefined, fallback: MapModeID = 'watch'): MapModeDefinition {
+  return MAP_MODES.find((mode) => mode.id === modeID) ?? MAP_MODES.find((mode) => mode.id === fallback)!;
+}
+
+export function mapModeForSettings(settings: MapSettings): MapModeDefinition {
+  if (!settings.customized) return mapModeByID(settings.modeID);
+  return inferMapMode(settings);
+}
+
+export function mapModeExactIDForSettings(settings: MapSettings): MapModeID | null {
+  const styleID = settings.style.profileID;
+  const layerSignature = layerSettingsSignature(settings.layers);
+  return MAP_MODES.find((mode) => mode.profileID === styleID && layerSettingsSignature(mode.layers) === layerSignature)?.id ?? null;
+}
+
 export function mapLayerPresetIDForSettings(settings: MapLayerSettings): MapLayerPresetID | null {
   const signature = layerSettingsSignature(settings);
   return MAP_LAYER_PRESETS.find((preset) => layerSettingsSignature(preset.layers) === signature)?.id ?? null;
@@ -314,6 +425,10 @@ export function isRenderQuality(value: unknown): value is RenderQuality {
 
 export function isNodeModelStyle(value: unknown): value is NodeModelStyle {
   return value === 'role-towers' || value === 'signal-beacons' || value === 'minimal-pins';
+}
+
+export function isMapModeID(value: unknown): value is MapModeID {
+  return value === 'watch' || value === 'explore' || value === 'terrain' || value === 'studio';
 }
 
 export function mapStyleSettingsSignature(settings: MapStyleSettings): string {
@@ -383,7 +498,20 @@ function normalizeStoredMapSettings(input: unknown): MapSettings {
     const profile = mapStyleProfileByID(settings.style.profileID);
     if (!profile.terrainDefault) settings.layers.terrainHeightmap = false;
   }
+  if (schemaVersion < 7 || !isMapModeID(raw.modeID)) {
+    const inferred = inferMapMode(settings);
+    settings.modeID = inferred.id;
+    settings.customized = mapModeExactIDForSettings(settings) !== inferred.id;
+  }
   return settings;
+}
+
+function inferMapMode(settings: MapSettings): MapModeDefinition {
+  const profileID = settings.style.profileID;
+  if (profileID === 'openfreemap-3d') return mapModeByID('studio');
+  if (profileID === 'topo-rf' || settings.layers.terrainLOS || settings.layers.propagationInsights) return mapModeByID('terrain');
+  if (settings.layers.routes) return mapModeByID('explore');
+  return mapModeByID('watch');
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {

@@ -66,9 +66,9 @@ export default function PropagationPanel({ conditions, events, loading, error, o
                 <p>{event.reasons.slice(0, 2).join(' / ') || endpointSummary(event)}</p>
               </div>
               <div className="propagation-row-actions">
-                <button type="button" title="Focus this event on the map" onClick={() => onFocus(event)}>
+                <button type="button" title="Show this event on the map" onClick={() => onFocus(event)}>
                   <LocateFixed size={15} />
-                  <span>Focus</span>
+                  <span>Show</span>
                 </button>
                 <button type="button" title="Replay this event path" onClick={() => onReplay(event)}>
                   <Play size={15} />

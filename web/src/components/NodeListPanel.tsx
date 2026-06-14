@@ -85,7 +85,7 @@ export default function NodeListPanel({
     <section className={`node-list-panel workspace-panel workspace-${presentation}`} role="dialog" aria-label="Node list">
       <header className="node-list-header">
         <div>
-          <span className="panel-eyebrow">3.0.0 Nodes</span>
+          <span className="panel-eyebrow">3.0.1 Nodes</span>
           <h2>Node List</h2>
           <p>Search public nodes by label, role, region, or observer airport.</p>
         </div>

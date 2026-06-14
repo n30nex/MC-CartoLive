@@ -21,6 +21,11 @@ type InfoPanel = 'changelog' | null;
 
 export const LATEST_RELEASE_HIGHLIGHTS = [
   {
+    label: '3.0.1',
+    title: 'Smooth Live Shell',
+    body: 'Map modes, mobile tabs, unified snackbars, branded loading, and runtime churn guards make the live map calmer and more app-like.'
+  },
+  {
     label: '3.0.0',
     title: 'Asset Pack v3',
     body: 'World and Canada presets now ship curated v3 branding, node, packet, map, workspace, and motion assets without runtime image-generation calls.'

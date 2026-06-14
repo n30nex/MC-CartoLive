@@ -6,17 +6,17 @@ in [CHANGELOG.md](../CHANGELOG.md); operator procedures live in
 
 ## Current Baseline
 
-Version `3.0.0` is the current asset pack release on the public-safe event,
-operations, Labs, map-runtime, and world-ready packaging foundation.
+Version `3.0.1` is the current smooth live-map shell release on the public-safe
+event, operations, Labs, map-runtime, and world-ready packaging foundation.
 
-- Public API shapes remain stable across the 2.8.x, 2.9.x, and 3.0.0 line.
+- Public API shapes remain stable across the 2.8.x, 2.9.x, and 3.0.1 line.
 - The default public map is traffic-first: terrain relief, propagation overlays,
   and route lines are opt-in for new visitors.
 - The supported deployment shape is one container with the Go backend serving
   the embedded React frontend and SQLite under `/app/data`.
 - Local release validation uses Podman; the production droplet can continue to
   use Docker Compose.
-- The 3.0.0 frontend adds committed `world` and `canada` asset presets for
+- The 3.0.1 frontend keeps committed `world` and `canada` asset presets for
   branding, map/layer affordances, node/packet visuals, workspace states,
   motion effects, and Waterfall backdrops without changing public API shapes.
 
@@ -56,6 +56,9 @@ Every production release should pass:
 - `cd web && npm test -- --run`
 - `cd web && npm run build`
 - `node scripts/check-version-sync.mjs`
+- `node scripts/public-schema-check.mjs`
+- `node scripts/check-asset-pack.mjs`
+- `node scripts/check-frontend-budget.mjs`
 - Podman image build and package smoke
 - public privacy scan
 - browser smoke for changed UI surfaces

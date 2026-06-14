@@ -27,6 +27,7 @@ const scenarios = [
     checks: [
       { selector: '.link-bar', label: 'top project bar' },
       { selector: '.top-actions', label: 'top map actions', desktopOnly: true },
+      { selector: '.mobile-tabbar', label: 'mobile app tabbar', mobileOnly: true },
       { selector: '.vcr-mini-clock', label: 'mini live clock', desktopOnly: true },
       { selector: '.maplibregl-ctrl-bottom-right', label: 'map controls' }
     ],
@@ -196,6 +197,7 @@ async function runScenario(browser, viewport, scenario) {
 
     for (const check of scenario.checks) {
       if (check.desktopOnly && viewport.isMobile) continue;
+      if (check.mobileOnly && !viewport.isMobile) continue;
       await assertVisibleInViewport(page, check.selector, check.label, viewport);
     }
 
@@ -264,7 +266,7 @@ async function smokeOpenFreeMapToggle(page, viewport) {
   await settings.waitFor({ state: 'visible', timeout: 12_000 });
   await settings.click({ force: true });
   await assertVisibleInViewport(page, '.map-settings-drawer', 'map settings drawer for OpenFreeMap', viewport);
-  await page.locator('.map-mode-grid').getByRole('button', { name: /^3D\b/i }).click();
+  await page.locator('.map-mode-grid').getByRole('button', { name: /Studio/i }).click();
   await page.waitForSelector('.map-wrap[data-map-style-profile="openfreemap-3d"]', { state: 'visible', timeout: 15_000 });
   await page.getByRole('button', { name: /Close map settings/i }).click();
   await page.waitForSelector('.map-settings-drawer', { state: 'hidden', timeout: 5_000 });
@@ -289,10 +291,11 @@ async function smokeMapSettings(page, viewport) {
   await toggle.waitFor({ state: 'visible', timeout: 12_000 });
   await toggle.click({ force: true });
   await assertVisibleInViewport(page, '.map-settings-drawer', 'map settings drawer', viewport);
-  await page.locator('.map-settings-drawer').getByRole('heading', { name: /^Settings$/i }).waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('.map-settings-drawer').getByRole('button', { name: /Clean Live/i }).waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('.map-settings-drawer').getByRole('button', { name: /^3D\b/i }).first().waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('.map-settings-drawer').getByRole('button', { name: /Low Bandwidth/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('.map-settings-drawer').getByRole('heading', { name: /^Modes$/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('.map-settings-drawer').getByRole('button', { name: /Watch/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('.map-settings-drawer').getByRole('button', { name: /Explore/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('.map-settings-drawer').getByRole('button', { name: /Terrain/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await page.locator('.map-settings-drawer').getByRole('button', { name: /Studio/i }).waitFor({ state: 'visible', timeout: 5_000 });
   await page.locator('.map-settings-drawer').getByText(/3D And RF/i).waitFor({ state: 'visible', timeout: 5_000 });
   await page.getByRole('button', { name: /Close map settings/i }).click();
   await page.waitForSelector('.map-settings-drawer', { state: 'hidden', timeout: 5_000 });

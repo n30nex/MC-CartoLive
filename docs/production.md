@@ -63,7 +63,7 @@ podman run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:3.0.0
+  ghcr.io/n30nex/mc-cartolive:3.0.1
 ```
 
 Persistent deployment:
@@ -73,7 +73,7 @@ podman run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:3.0.0
+  ghcr.io/n30nex/mc-cartolive:3.0.1
 ```
 
 The image runs as non-root `appuser`, includes the bundled `mc-diagnose`
@@ -104,7 +104,7 @@ rebuild, readiness wait, and rollback on failure.
 
 ## Runtime Notes
 
-- Version 3.0.0 exposes app version, Git SHA, build number, and build time in
+- Version 3.0.1 exposes app version, Git SHA, build number, and build time in
   the top project bar and in health/readiness responses.
 - `/healthz` is cheap liveness. `/readyz` checks DB, static assets, public state
   readiness, cache freshness, and public-safe runtime status.
@@ -122,8 +122,8 @@ rebuild, readiness wait, and rollback on failure.
 - UI preferences such as theme, palette, map layers, packet visuals, replay state,
   and panel visibility are browser-local.
 - Map Studio style choices are browser-local and do not change public API
-  output. The Map drawer opens Clean Live, Terrain/Topo, 3D, and Low Bandwidth
-  mode cards before advanced controls.
+  output. The Map drawer opens Watch, Explore, Terrain, and Studio mode cards
+  before advanced controls.
 - OpenFreeMap/3D, terrain, PMTiles profiles, propagation history, Packets,
   Chat, NetGraph, Replay, Waterfall Labs, and static v3 image assets use
   sanitized public APIs and public WebSocket/history data.

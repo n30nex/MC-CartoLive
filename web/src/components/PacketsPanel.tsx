@@ -385,7 +385,7 @@ function PacketRow({
   const path = packetEndpointSummary(packet);
   return (
     <article className={`packet-row ${selected ? 'selected' : ''}`} role="listitem">
-      <button type="button" className="packet-row-main" onClick={() => onSelect(packet)} title="Focus this packet path on the map">
+      <button type="button" className="packet-row-main" onClick={() => onSelect(packet)} title="Show this packet path on the map">
         <span className="packet-row-top">
           <span className="packet-payload" style={{ '--packet-color': visual.color } as CSSProperties}>
             <img src={visual.icon} alt="" aria-hidden="true" />
@@ -434,7 +434,7 @@ function PacketDetail({
         <img src={activeAssetPack.workspaces.emptyState} alt="" aria-hidden="true" />
         <span className="panel-eyebrow">Details</span>
         <strong>Select a packet</strong>
-        <p>Focus or replay any true public path from the list.</p>
+        <p>Show or replay any true public path from the list.</p>
       </aside>
     );
   }
@@ -460,7 +460,7 @@ function PacketDetail({
         </blockquote>
       )}
       <div className="packet-detail-actions">
-        <button type="button" onClick={() => onFocus(packet)}>Focus</button>
+        <button type="button" onClick={() => onFocus(packet)}>Show</button>
         <button type="button" onClick={() => onReplay(packet)}><Play size={14} />Replay</button>
         <button type="button" onClick={() => onCopyRouteIDs(packet)}><Copy size={14} />Copy route IDs</button>
       </div>

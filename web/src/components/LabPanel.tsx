@@ -215,7 +215,7 @@ export default function LabPanel({
     <section className={`lab-panel lab-waterfall-panel workspace-panel workspace-${presentation}`} aria-label="Packet Waterfall Labs" style={stageStyle}>
       <header className="lab-panel-header waterfall-header">
         <div>
-          <span className="panel-eyebrow">3.0.0 Labs</span>
+          <span className="panel-eyebrow">3.0.1 Labs</span>
           <h2>Packet Waterfall</h2>
           <p>Live public packets fall through a capped RF cascade and drive an opt-in rhythmic synth.</p>
         </div>

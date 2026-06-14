@@ -70,6 +70,8 @@ cd web
 npm ci
 npm test -- --run
 npm run build
+cd ..
+node scripts/check-frontend-budget.mjs
 ```
 
 Vite dev server:
@@ -87,7 +89,7 @@ project bar. Docker and CI builds also pick up `GITHUB_SHA` when present.
 
 ## Mobile UI
 
-The mobile layout keeps the map, route motion, packet comets, Live Follow,
+The mobile layout keeps the map, route motion, packet comets, Follow,
 and route-copy tools as the primary experience. Secondary panels,
 status toasts, the legend, and busy-path lists are hidden by default at small
 viewport widths.
@@ -117,7 +119,7 @@ Use this checklist after map, playback, or styling changes:
   six-character `pathHash3` route prefixes.
 - Clusters appear below detail zoom; nodes, routes, labels, observer icons,
   packet effects, and message bubbles appear together at detail zoom.
-- Live Follow, WebSocket reconnect, and burst pacing resume packet comets
+- Follow, WebSocket reconnect, and burst pacing resume packet comets
   without duplicate stale bursts.
 - Packets replay compacts the panel, pauses live flow, fits the full true path,
   waits briefly, and animates one selected packet path.
@@ -149,6 +151,11 @@ cd web
 npm ci
 npm test -- --run
 npm run build
+cd ..
+node scripts/check-version-sync.mjs
+node scripts/public-schema-check.mjs
+node scripts/check-asset-pack.mjs
+node scripts/check-frontend-budget.mjs
 ```
 
 ```bash
@@ -182,7 +189,7 @@ Run a short local soak when validating release automation:
 
 ## Map Modes And Offline Tiles
 
-3.0.0 keeps the Map Studio style registry and optional PMTiles profiles. Leave
+3.0.1 keeps the Map Studio style registry and optional PMTiles profiles. Leave
 `VITE_PMTILES_BASEMAP_URL` blank for normal development; the Offline PMTiles and
 Field Offline profiles will fall back to a local low-detail map. To test a real
 archive, host it from the same origin or another CSP-allowed HTTPS endpoint and
@@ -192,9 +199,9 @@ set the URL before building the frontend or image:
 VITE_PMTILES_BASEMAP_URL=/tiles/canada.pmtiles npm run build
 ```
 
-The Map Settings drawer should show Clean Live, Terrain/Topo, 3D, and Low
-Bandwidth cards first. Classic flat styles should not show a grey/blue terrain
-tint at street zoom unless terrain relief is explicitly enabled.
+The Map Settings drawer should show Watch, Explore, Terrain, and Studio cards
+first. Classic flat styles should not show a grey/blue terrain tint at street
+zoom unless terrain relief is explicitly enabled.
 
 Run production smoke from your workstation after a droplet deploy:
 
@@ -206,7 +213,7 @@ Use overrides when testing a branch, alternate host, expected build, or another
 diagnostic region:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.0.0 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.0.1 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
 Scan public JSON surfaces for privacy-boundary regressions while the app is

@@ -462,6 +462,89 @@ button {
   pointer-events: none;
 }
 
+.toast-viewport {
+  position: fixed;
+  right: calc(14px + var(--ui-safe-right, 0px));
+  bottom: calc(18px + var(--vcr-bar-height, 0px) + var(--ui-safe-bottom, 0px));
+  z-index: var(--z-toast, 24);
+  display: grid;
+  gap: 8px;
+  width: min(380px, calc(100vw - 28px));
+  pointer-events: none;
+}
+
+.app-toast {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 24px;
+  gap: 9px;
+  align-items: center;
+  min-height: 54px;
+  padding: 9px 10px;
+  color: var(--mc-text, #edf5ff);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--mc-surface-strong, rgba(5, 10, 20, 0.96)) 96%, transparent), color-mix(in srgb, var(--mc-control-bg, rgba(10, 18, 32, 0.9)) 86%, transparent));
+  border: 1px solid color-mix(in srgb, var(--toast-color, var(--mc-accent, #38bdf8)) 46%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.46), 0 0 22px color-mix(in srgb, var(--toast-color, var(--mc-accent, #38bdf8)) 14%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(18px) saturate(1.18);
+  pointer-events: auto;
+  animation: toast-slide-up 180ms ease-out;
+}
+
+.app-toast.toast-success { --toast-color: #22c55e; }
+.app-toast.toast-warning { --toast-color: #f59e0b; }
+.app-toast.toast-error { --toast-color: #ef4444; }
+.app-toast.toast-loading { --toast-color: #38bdf8; }
+
+.app-toast-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--toast-color, #38bdf8) 84%, #ffffff);
+  background: color-mix(in srgb, var(--toast-color, #38bdf8) 13%, transparent);
+  border-radius: 7px;
+}
+
+.app-toast-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.app-toast-copy strong,
+.app-toast-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-toast-copy strong {
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.app-toast-copy small {
+  color: var(--mc-text-muted, #9fb1c9);
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.app-toast button {
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--mc-text-muted, #9fb1c9);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.toast-spinner {
+  animation: node-loading-spin 1s linear infinite;
+}
+
 .node-hover-toast {
   position: absolute;
   z-index: 9;
@@ -552,6 +635,8 @@ button {
 .node-loading-spinner {
   width: 34px;
   height: 34px;
+  display: grid;
+  place-items: center;
   border: 3px solid rgba(125, 211, 252, 0.18);
   border-top-color: #7dd3fc;
   border-right-color: rgba(45, 212, 191, 0.72);
@@ -560,7 +645,21 @@ button {
   animation: node-loading-spin 1.2s linear infinite;
 }
 
+.node-loading-spinner img {
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  object-fit: cover;
+  animation: node-loading-mark 1.2s linear infinite reverse;
+}
+
 @keyframes node-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes node-loading-mark {
   to {
     transform: rotate(360deg);
   }
@@ -569,6 +668,9 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .map-wrap,
   .node-loading-spinner,
+  .node-loading-spinner img,
+  .toast-spinner,
+  .app-toast,
   .hot-route.recent {
     transition: none;
     animation: none;
@@ -4088,6 +4190,40 @@ button.status-pill {
   backdrop-filter: blur(16px) saturate(1.08);
 }
 
+.map-mode-switcher {
+  display: inline-grid;
+  grid-template-columns: repeat(4, minmax(58px, auto));
+  gap: 4px;
+  padding: 3px;
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(6, 11, 18, 0.92)) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-border, rgba(125, 211, 252, 0.2)) 70%, transparent);
+  border-radius: 7px;
+}
+
+.map-mode-switcher button {
+  min-height: 28px;
+  padding: 0 9px;
+  color: color-mix(in srgb, var(--mc-muted, #9fb3ca) 86%, var(--mc-text, #ffffff));
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 920;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.map-mode-switcher button:hover,
+.map-mode-switcher button:focus-visible,
+.map-mode-switcher button.active {
+  color: var(--mc-text, #edf5ff);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent), color-mix(in srgb, var(--mc-green, #22c55e) 10%, transparent));
+  border-color: color-mix(in srgb, var(--mc-accent, #38bdf8) 46%, transparent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--mc-accent, #38bdf8) 16%, transparent);
+  outline: none;
+}
+
 .mobile-control-dock,
 .mobile-control-sheet {
   display: none;
@@ -4739,6 +4875,32 @@ button.status-pill {
 
 .map-mode-grid button {
   min-height: 64px;
+}
+
+.map-mode-icon {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  color: #ecfeff;
+  background: color-mix(in srgb, var(--mc-accent, #38bdf8) 22%, rgba(2, 6, 23, 0.72));
+  border: 1px solid color-mix(in srgb, var(--mc-accent, #38bdf8) 46%, transparent);
+  border-radius: 7px;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent);
+}
+
+.map-settings-mode-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 7px 8px;
+  color: var(--mc-text-muted, #9fb1c9);
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(7, 16, 29, 0.84)) 74%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-border, rgba(125, 211, 252, 0.22)) 80%, transparent);
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .map-settings-advanced-toggle {
@@ -7207,7 +7369,7 @@ button.status-pill {
 @media (max-width: 760px) {
   .app-shell {
     --vcr-bar-height: 0px;
-    --mobile-dock-height: 68px;
+    --mobile-dock-height: 70px;
     --ui-edge-gap: 8px;
   }
 
@@ -7457,6 +7619,7 @@ button.status-pill {
     border-radius: 7px;
     font: inherit;
     cursor: pointer;
+    transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
   }
 
   .mobile-control-button span {
@@ -7473,9 +7636,14 @@ button.status-pill {
   .mobile-control-button:hover,
   .mobile-control-button:focus-visible {
     color: #eff6ff;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--mc-accent, #38bdf8) 16%, transparent), color-mix(in srgb, var(--mc-green, #22c55e) 8%, transparent));
     border-color: color-mix(in srgb, var(--mc-accent, #38bdf8) 54%, transparent);
     outline: none;
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent);
+  }
+
+  .mobile-control-button:active {
+    transform: translateY(1px);
   }
 
   .mobile-control-button.known-pathways-toggle.on {
@@ -7549,14 +7717,20 @@ button.status-pill {
   }
 
   .mobile-control-grid,
-  .mobile-panel-grid {
+  .mobile-panel-grid,
+  .mobile-mode-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 7px;
   }
 
+  .mobile-mode-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .mobile-control-grid button,
-  .mobile-panel-grid button {
+  .mobile-panel-grid button,
+  .mobile-mode-grid button {
     display: flex;
     min-width: 0;
     min-height: 42px;
@@ -7574,12 +7748,44 @@ button.status-pill {
     cursor: pointer;
   }
 
+  .mobile-mode-grid button {
+    min-height: 68px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .mobile-mode-grid button strong,
+  .mobile-mode-grid button span {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-mode-grid button strong {
+    color: var(--mc-text, #f8fafc);
+    font-size: 11px;
+    font-weight: 950;
+  }
+
+  .mobile-mode-grid button span {
+    color: var(--mc-text-muted, #9fb1c9);
+    font-size: 9px;
+    line-height: 1.2;
+  }
+
   .mobile-control-grid button.active,
   .mobile-panel-grid button.active,
+  .mobile-mode-grid button.active,
   .mobile-control-grid button:hover,
   .mobile-panel-grid button:hover,
+  .mobile-mode-grid button:hover,
   .mobile-control-grid button:focus-visible,
-  .mobile-panel-grid button:focus-visible {
+  .mobile-panel-grid button:focus-visible,
+  .mobile-mode-grid button:focus-visible {
     color: #eff6ff;
     border-color: color-mix(in srgb, var(--mc-accent, #38bdf8) 52%, transparent);
     outline: none;

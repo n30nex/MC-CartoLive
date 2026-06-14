@@ -1626,7 +1626,7 @@ function CanadaMap({
     }
     addPulseNodeActivity(map, nodeActivityRef.current, pulse);
     addPulseNodeMeshActivity(nodeMeshActivityAtRef.current, pulse);
-    setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current);
+    if (layerSettingsRef.current.activityHeatmap) setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current);
     if (isClusterMode(map)) {
       if (renderComet && !addPulseTo3D(map, pulse)) animatorRef.current?.add(pulse);
       if (shouldAnimate && layerSettingsRef.current.observerBursts && addPulseClusterActivityGlow(map, clusterActivityGlowRef.current, pulse)) {
@@ -2077,20 +2077,21 @@ function CanadaMap({
     const map = mapRef.current;
     if (!map) return;
     if (loadedRef.current) updateNodeRendering(map, nodes, nodeFocus, nodeLabelClock, nodeMeshActivityAtRef.current, nodeSourceSignatureRef);
-    if (loadedRef.current) setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
+    const heatmapEnabled = layerSettingsRef.current.activityHeatmap;
+    if (loadedRef.current && heatmapEnabled) setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
     if (isClusterMode(map)) {
       stopNodeActivityTimer(nodeActivityTimerRef);
       clearNodeActivityStates(map, nodeActivityRef.current);
-      if (loadedRef.current) setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
+      if (loadedRef.current && heatmapEnabled) setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
       markPositionedNodesReady(map, nodes, fitInitialNodesRef, positionedNodesReadyRef, positionedNodesRenderedRef);
       return;
     }
     if (addChangedNodeActivity(map, nodeActivityRef.current, nodeTelemetryRef.current, nodeMeshActivityAtRef.current, nodes)) {
-      setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
+      if (heatmapEnabled) setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
       startNodeActivityTimer(map, nodeActivityRef, nodeActivityTimerRef, nodesRef, nodeMeshActivityAtRef);
     }
     if (updateNodeActivityFeatureStates(map, nodeActivityRef.current) > 0) {
-      setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
+      if (heatmapEnabled) setActivityHeatmapSource(map, nodes, nodeActivityRef.current, nodeMeshActivityAtRef.current);
       startNodeActivityTimer(map, nodeActivityRef, nodeActivityTimerRef, nodesRef, nodeMeshActivityAtRef);
     }
     markPositionedNodesReady(map, nodes, fitInitialNodesRef, positionedNodesReadyRef, positionedNodesRenderedRef);

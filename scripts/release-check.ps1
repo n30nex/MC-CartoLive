@@ -31,6 +31,7 @@ try {
 
   node (Join-Path $root "scripts/check-version-sync.mjs")
   node (Join-Path $root "scripts/public-schema-check.mjs")
+  node (Join-Path $root "scripts/check-asset-pack.mjs")
 
   Push-Location "backend"
   try {
@@ -47,6 +48,7 @@ try {
     npm audit --audit-level=high
     npm test -- --run
     npm run build
+    node (Join-Path $root "scripts/check-frontend-budget.mjs")
   }
   finally {
     Pop-Location

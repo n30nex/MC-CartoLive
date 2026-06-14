@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Check, CloudSun, Columns3, Eye, EyeOff, History, LocateFixed, Monitor, Moon, MoreHorizontal, Palette, Pause, Play, RadioTower, RotateCcw, Route, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
+import { Check, CloudSun, Columns3, Eye, EyeOff, History, List, MessageSquareText, Monitor, Moon, MoreHorizontal, Palette, Pause, Play, RadioTower, RotateCcw, Route, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
 import { fetchPublicEvents, fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicPropagation, fetchPublicState } from './api';
 import { connectPublicSocket } from './ws';
 import {
@@ -11,6 +11,7 @@ import {
   initialAppState,
   isPacketActivity,
   liveCoverageStats,
+  publicLiveStateSignature,
   summarizeRouteActivity,
   type AppState,
   type RouteActivitySummary
@@ -36,6 +37,7 @@ const LabPanel = lazyWithReload(() => import('./components/LabPanel'), 'LabPanel
 const SetupPanel = lazyWithReload(() => import('./components/SetupPanel'), 'SetupPanel');
 import MapSettingsDrawer from './components/MapSettingsDrawer';
 import RouteGifExportButton, { type RouteGifExportStatus } from './components/RouteGifExportButton';
+import { ToastProvider, useToasts } from './components/ToastProvider';
 import type { WorkspacePresentation } from './components/workspacePanel';
 import { DEFAULT_LAB_EXPERIMENT_ID, canonicalLabHash, labExperimentIDFromHash, labExperimentPath, type LabExperimentID } from './lab';
 import {
@@ -81,10 +83,11 @@ import {
   type SelectionState
 } from './selection';
 import { buildSharedViewURL, parseSharedView, type MapViewState } from './shareView';
-import { recordLivePendingQueueSize, recordVcrReplayQueueSize, recordVisibilityPause } from './perfDiagnostics';
+import { recordLivePendingQueueSize, recordSnapshotReplacement, recordVcrReplayQueueSize, recordVisibilityPause } from './perfDiagnostics';
 import { appendBufferedRoutePulses, routePulseMessages } from './playbackController';
-import { normalizeMapSettings, readStoredMapSettings, writeStoredMapSettings, type MapSettings } from './mapSettings';
+import { applyMapMode, MAP_MODES, mapModeForSettings, normalizeMapSettings, readStoredMapSettings, writeStoredMapSettings, type MapModeID, type MapSettings } from './mapSettings';
 import { mapStyleProfileByID, type MapStyleProfileID } from './map/styles/styleRegistry';
+import { activeAssetPack } from './assets/v3/assetPacks';
 import {
   THEME_PALETTES,
   applyDocumentTheme,
@@ -97,7 +100,7 @@ import {
   type ThemeMode,
   type ThemePalette
 } from './theme';
-import type { PublicActivity, PublicHistorySummaryBucket, PublicLiveEnvelope, PublicMapConfig, PublicPacketPath, PublicPropagationConditions, PublicPropagationEvent, PublicRoute, PublicRoutePulse } from './types';
+import type { PublicActivity, PublicHistorySummaryBucket, PublicLiveEnvelope, PublicLiveState, PublicMapConfig, PublicPacketPath, PublicPropagationConditions, PublicPropagationEvent, PublicRoute, PublicRoutePulse } from './types';
 
 const NodeListPanel = lazyWithReload(() => import('./components/NodeListPanel'), 'NodeListPanel');
 const ShortcutHelp = lazyWithReload(() => import('./components/ShortcutHelp'), 'ShortcutHelp');
@@ -132,6 +135,15 @@ const EMPTY_ROUTE_ACTIVITY = new Map<string, RouteActivitySummary>();
 const EMPTY_HOT_ROUTES: PublicRoute[] = [];
 
 export default function App() {
+  return (
+    <ToastProvider>
+      <PublicDashboardApp />
+    </ToastProvider>
+  );
+}
+
+function PublicDashboardApp() {
+  const { showToast } = useToasts();
   const sharedViewRef = useRef(parseSharedView(window.location.search));
   const [state, setState] = useState<AppState>(emptyState);
   const [publicMapConfig, setPublicMapConfig] = useState<PublicMapConfig | null>(null);
@@ -176,7 +188,6 @@ export default function App() {
   const [packetsPanelMode, setPacketsPanelMode] = useState<'expanded' | 'compactTray'>('expanded');
   const [workspacePresentation, setWorkspacePresentation] = useState<WorkspacePresentation>('side');
   const [initialLoadGateOpen, setInitialLoadGateOpen] = useState(true);
-  const [shareToast, setShareToast] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
   const [routeGifExport, setRouteGifExport] = useState<{ status: RouteGifExportStatus; progress: number; remainingExports: number; cooldownUntil: number }>({ status: 'idle', progress: 0, remainingExports: 5, cooldownUntil: 0 });
   const [routeGifExportRequest, setRouteGifExportRequest] = useState<RouteMapGifExportRequest | null>(null);
@@ -211,6 +222,7 @@ export default function App() {
   const GIF_EXPORT_WINDOW_MS = 10 * 60_000;
   const GIF_EXPORT_COOLDOWN_MS = 30_000;
   const stateRef = useRef<AppState>(emptyState);
+  const lastSnapshotSignatureRef = useRef('');
   const pendingMessagesRef = useRef<PublicLiveEnvelope[]>([]);
   const vcrBufferedMessagesRef = useRef<PublicLiveEnvelope[]>([]);
   const vcrModeRef = useRef<VcrMode>('live');
@@ -226,6 +238,18 @@ export default function App() {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  const applyPublicSnapshot = useCallback((liveState: PublicLiveState): boolean => {
+    const signature = publicLiveStateSignature(liveState);
+    if (signature === lastSnapshotSignatureRef.current) {
+      recordSnapshotReplacement(true);
+      return false;
+    }
+    lastSnapshotSignatureRef.current = signature;
+    setState(initialAppState(liveState));
+    recordSnapshotReplacement(false);
+    return true;
+  }, []);
 
   useEffect(() => {
     const updateRoute = () => {
@@ -325,6 +349,32 @@ export default function App() {
     setNodeListOpen(false);
   }, []);
 
+  const openMapHome = useCallback(() => {
+    if (window.location.hash) {
+      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
+    }
+    setPacketsOpen(false);
+    setNetGraphOpen(false);
+    setChatOpen(false);
+    setLabOpen(false);
+    setSetupOpen(false);
+    setNodeListOpen(false);
+    setPropagationOpen(false);
+    setVcrOpen(false);
+    setShortcutHelpOpen(false);
+    setMapSettingsOpen(false);
+    setMobileControlsOpen(false);
+    setPacketsPanelMode('expanded');
+  }, []);
+
+  const openPackets = useCallback(() => {
+    window.location.hash = '#/packets';
+  }, []);
+
+  const openChat = useCallback(() => {
+    window.location.hash = '#/chat';
+  }, []);
+
   useEffect(() => {
     writeStoredMapSettings(mapSettings);
   }, [mapSettings]);
@@ -394,7 +444,7 @@ export default function App() {
       .then((liveState) => {
         if (vcrModeRef.current !== 'live') return;
         setPublicMapConfig(liveState.map ?? null);
-        setState(initialAppState(liveState));
+        applyPublicSnapshot(liveState);
         if ((liveState.nodes?.length ?? 0) > 0) {
           setInitialNodesReceived(true);
           setNodeLoadFailed(false);
@@ -652,7 +702,7 @@ export default function App() {
         .then((liveState) => {
           if (cancelled) return;
           setPublicMapConfig(liveState.map ?? null);
-          setState(initialAppState(liveState));
+          applyPublicSnapshot(liveState);
           if ((liveState.nodes?.length ?? 0) > 0) {
             setInitialNodesReceived(true);
           } else {
@@ -672,7 +722,7 @@ export default function App() {
       cancelled = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
-  }, [initialNodesReceived]);
+  }, [applyPublicSnapshot, initialNodesReceived]);
 
   useEffect(() => {
     let openedOnce = false;
@@ -710,7 +760,7 @@ export default function App() {
         if (!active) return;
         if (vcrModeRef.current !== 'live') return;
         setPublicMapConfig(liveState.map ?? null);
-        setState(initialAppState(liveState));
+        applyPublicSnapshot(liveState);
         if ((liveState.nodes?.length ?? 0) > 0) {
           setInitialNodesReceived(true);
           setNodeLoadFailed(false);
@@ -780,7 +830,7 @@ export default function App() {
       recordLivePendingQueueSize(0);
       socket.close();
     };
-  }, [bufferVcrMessage, initialNodesReceived]);
+  }, [applyPublicSnapshot, bufferVcrMessage, initialNodesReceived]);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -807,7 +857,7 @@ export default function App() {
           if (!active) return;
           if (vcrModeRef.current !== 'live') return;
           setPublicMapConfig(liveState.map ?? null);
-          setState(initialAppState(liveState));
+          applyPublicSnapshot(liveState);
           if ((liveState.nodes?.length ?? 0) > 0) {
             setInitialNodesReceived(true);
             setNodeLoadFailed(false);
@@ -827,7 +877,7 @@ export default function App() {
       active = false;
       window.clearInterval(interval);
     };
-  }, [initialNodesReceived, socketStatus]);
+  }, [applyPublicSnapshot, initialNodesReceived, socketStatus]);
 
   useEffect(() => {
     if (!initialNodesReceived || positionedNodesRendered) return;
@@ -1205,21 +1255,25 @@ export default function App() {
     const text = meshcorePathCopyText(path);
     if (!text) {
       setPathCopyToast('No 3-byte path available');
+      showToast({ tone: 'warning', title: 'No route copy path', message: 'This public path has no 3-byte MeshCore prefix.' });
       window.setTimeout(() => setPathCopyToast(null), 2200);
       return;
     }
     try {
       await copyTextToClipboard(text);
       setPathCopyToast('3-byte path copied');
+      showToast({ tone: 'success', title: '3-byte path copied' });
     } catch {
       setPathCopyToast('Copy failed');
+      showToast({ tone: 'error', title: 'Copy failed', message: 'Clipboard access was blocked by the browser.' });
     }
     window.setTimeout(() => setPathCopyToast(null), 2200);
-  }, []);
+  }, [showToast]);
 
   const toggleKnownPathways = useCallback(() => {
     setMapSettings((current) => normalizeMapSettings({
       ...current,
+      customized: true,
       layers: { ...current.layers, routes: !current.layers.routes }
     }));
   }, []);
@@ -1262,8 +1316,7 @@ export default function App() {
   const shareView = useCallback(async () => {
     const view = mapView ?? (sharedViewRef.current ? { lat: sharedViewRef.current.lat, lng: sharedViewRef.current.lng, z: sharedViewRef.current.z } : null);
     if (!view) {
-      setShareToast('Map view not ready');
-      window.setTimeout(() => setShareToast(null), 2200);
+      showToast({ tone: 'warning', title: 'Map view not ready', message: 'Wait for the map camera to settle, then share again.' });
       return;
     }
     const url = buildSharedViewURL(window.location.href, view, {
@@ -1273,12 +1326,11 @@ export default function App() {
     });
     try {
       await copyTextToClipboard(url);
-      setShareToast('View link copied');
+      showToast({ tone: 'success', title: 'View link copied' });
     } catch {
-      setShareToast('Copy failed');
+      showToast({ tone: 'error', title: 'Copy failed', message: 'Clipboard access was blocked by the browser.' });
     }
-    window.setTimeout(() => setShareToast(null), 2200);
-  }, [mapView, query, selectedNodeID, selectedRouteID]);
+  }, [mapView, query, selectedNodeID, selectedRouteID, showToast]);
 
   const exportSelectedPacketGif = useCallback(async () => {
     if (!selectedPacket || routeGifExport.status === 'rendering') return;
@@ -1288,6 +1340,7 @@ export default function App() {
     gifExportTimestampsRef.current = gifExportTimestampsRef.current.filter(t => t > windowStart);
     if (gifExportTimestampsRef.current.length >= GIF_EXPORT_MAX_PER_WINDOW) {
       setRouteGifExport(s => ({ ...s, status: 'error', progress: 0 }));
+      showToast({ tone: 'warning', title: 'GIF limit reached', message: 'Try another route export in a few minutes.' });
       window.setTimeout(() => {
         setRouteGifExport((current) => (current.status === 'error' ? { ...current, status: 'idle', progress: 0 } : current));
       }, 3600);
@@ -1320,6 +1373,7 @@ export default function App() {
         downloadRouteGifBlob(selectedPacket, blob);
         setRouteGifExportRequest(null);
         setRouteGifExport(s => ({ ...s, status: 'done', progress: 1 }));
+        showToast({ tone: 'success', title: 'Route GIF exported' });
         window.setTimeout(() => {
           setRouteGifExport((current) => (current.status === 'done' ? { ...current, status: 'idle', progress: 0 } : current));
         }, 2600);
@@ -1329,14 +1383,35 @@ export default function App() {
         const rem = GIF_EXPORT_MAX_PER_WINDOW - gifExportTimestampsRef.current.filter(t => t > Date.now() - GIF_EXPORT_WINDOW_MS).length;
         setRouteGifExportRequest(null);
         setRouteGifExport(s => ({ ...s, status: 'error', progress: 0, remainingExports: rem }));
+        showToast({ tone: 'error', title: 'GIF export failed', message: 'The map was busy. Try again after it settles.' });
         window.setTimeout(() => {
           setRouteGifExport((current) => (current.status === 'error' ? { ...current, status: 'idle', progress: 0 } : current));
         }, 3600);
       }
     });
-  }, [mapSettings.packets, routeGifExport.status, selectedPacket]);
+  }, [mapSettings.packets, routeGifExport.status, selectedPacket, showToast]);
 
   const showRouteGifExport = Boolean(selectedPacket && !packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen && !vcrOpen);
+  const activeMapMode = mapModeForSettings(mapSettings);
+  const selectMapMode = useCallback((modeID: MapModeID) => {
+    setMapSettings((current) => applyMapMode(current, modeID));
+    const mode = MAP_MODES.find((item) => item.id === modeID);
+    if (mode) showToast({ tone: 'success', title: `${mode.label} mode`, message: mode.hint, durationMs: 1800 });
+    setPanelsMenuOpen(false);
+    setMobileControlsOpen(false);
+  }, [showToast]);
+  const followRecentActive = followTraffic && !vcrPlaybackActive;
+  const toggleFollowRecent = useCallback(() => {
+    if (vcrPlaybackActive) return;
+    if (followRecentActive) {
+      setFollowTraffic(false);
+      showToast({ tone: 'info', title: 'Follow off', message: 'The map will stay where you leave it.', durationMs: 1600 });
+      return;
+    }
+    setFollowTraffic(true);
+    dispatchMapAction('latest-route');
+    showToast({ tone: 'success', title: 'Following recent activity', message: 'The camera will ease toward fresh routed traffic.', durationMs: 1800 });
+  }, [dispatchMapAction, followRecentActive, showToast, vcrPlaybackActive]);
   const knownPathwaysOn = mapSettings.layers.routes;
   const workspaceSurfaceOpen = packetsOpen || netGraphOpen || chatOpen || labOpen || nodeListOpen;
   const visitorGuideSuppressed = chromeHidden || packetsOpen || netGraphOpen || chatOpen || labOpen || setupOpen || propagationOpen || vcrOpen || nodeListOpen || shortcutHelpOpen || mapSettingsOpen || mobileControlsOpen || Boolean(selectedNode || selectedRoute || selectedPacket);
@@ -1401,20 +1476,30 @@ export default function App() {
       )}
 
       <div className="top-actions operator-toolbar" aria-label="Map actions">
+        <div className="map-mode-switcher" role="group" aria-label="Map mode">
+          {MAP_MODES.map((mode) => (
+            <button
+              key={mode.id}
+              className={activeMapMode.id === mode.id && !mapSettings.customized ? 'active' : ''}
+              type="button"
+              aria-pressed={activeMapMode.id === mode.id && !mapSettings.customized}
+              title={mode.hint}
+              onClick={() => selectMapMode(mode.id)}
+            >
+              <span>{mode.shortLabel}</span>
+            </button>
+          ))}
+        </div>
         <button
-          className={`operator-action ${followTraffic && !vcrPlaybackActive ? 'active' : ''}`}
+          className={`operator-action follow-recent-toggle ${followRecentActive ? 'active' : ''}`}
           type="button"
-          aria-pressed={followTraffic && !vcrPlaybackActive}
+          aria-pressed={followRecentActive}
           disabled={vcrPlaybackActive}
-          title={vcrPlaybackActive ? 'Live follow resumes after replay' : followTraffic ? 'Stop following live traffic' : 'Follow live traffic'}
-          onClick={() => setFollowTraffic((value) => !value)}
+          title={vcrPlaybackActive ? 'Follow resumes after replay' : followRecentActive ? 'Stop following recent traffic' : 'Follow recent traffic'}
+          onClick={toggleFollowRecent}
         >
           <RadioTower size={16} />
-          <span>Live</span>
-        </button>
-        <button className="operator-action route-focus" type="button" title="Focus latest route" onClick={() => dispatchMapAction('latest-route')}>
-          <LocateFixed size={16} />
-          <span>Focus</span>
+          <span>Follow</span>
         </button>
         <button className={`operator-action known-pathways-toggle ${knownPathwaysOn ? 'on' : 'off'}`} type="button" aria-pressed={knownPathwaysOn} title={knownPathwaysOn ? 'Routes on' : 'Routes off'} onClick={toggleKnownPathways}>
           <Route size={16} />
@@ -1551,52 +1636,52 @@ export default function App() {
         onOpenHelp={() => setShortcutHelpOpen(true)}
         onToggleKnownPathways={toggleKnownPathways}
       />
-      <div className="mobile-control-dock" aria-label="Mobile map controls">
+      <nav className="mobile-control-dock mobile-tabbar" aria-label="Mobile app tabs">
         <button
-          className={`mobile-control-button ${followTraffic && !vcrPlaybackActive ? 'active' : ''}`}
+          className={`mobile-control-button ${!workspaceSurfaceOpen && !setupOpen && !propagationOpen && !vcrOpen ? 'active' : ''}`}
           type="button"
-          aria-pressed={followTraffic && !vcrPlaybackActive}
-          disabled={vcrPlaybackActive}
-          title={vcrPlaybackActive ? 'Live follow resumes after replay' : followTraffic ? 'Stop following live traffic' : 'Follow live traffic'}
-          onClick={() => setFollowTraffic((value) => !value)}
+          aria-current={!workspaceSurfaceOpen && !setupOpen && !propagationOpen && !vcrOpen ? 'page' : undefined}
+          title="Map"
+          onClick={openMapHome}
         >
           <RadioTower size={20} />
-          <span>Live</span>
-        </button>
-        <button className="mobile-control-button" type="button" title="Focus latest route" onClick={() => dispatchMapAction('latest-route')}>
-          <LocateFixed size={20} />
-          <span>Focus</span>
+          <span>Map</span>
         </button>
         <button
-          className={`mobile-control-button known-pathways-toggle ${knownPathwaysOn ? 'on' : 'off'}`}
+          className={`mobile-control-button ${packetsOpen ? 'active' : ''}`}
           type="button"
-          aria-pressed={knownPathwaysOn}
-          title={knownPathwaysOn ? 'Routes on' : 'Routes off'}
-          onClick={toggleKnownPathways}
+          aria-current={packetsOpen ? 'page' : undefined}
+          title="Packets"
+          onClick={openPackets}
+        >
+          <List size={20} />
+          <span>Packets</span>
+        </button>
+        <button
+          className={`mobile-control-button ${nodeListOpen ? 'active' : ''}`}
+          type="button"
+          aria-current={nodeListOpen ? 'page' : undefined}
+          title="Nodes"
+          onClick={openNodeList}
         >
           <Route size={20} />
-          <span>Routes</span>
+          <span>Nodes</span>
         </button>
         <button
-          className={`mobile-control-button ${mapSettingsOpen ? 'active' : ''}`}
+          className={`mobile-control-button ${chatOpen ? 'active' : ''}`}
           type="button"
-          aria-pressed={mapSettingsOpen}
-          title="Map"
-          onClick={() => {
-            setMapSettingsOpen((value) => !value);
-            setPanelsMenuOpen(false);
-            setPaletteMenuOpen(false);
-            setMobileControlsOpen(false);
-          }}
+          aria-current={chatOpen ? 'page' : undefined}
+          title="Chat"
+          onClick={openChat}
         >
-          <SlidersHorizontal size={20} />
-          <span>Map</span>
+          <MessageSquareText size={20} />
+          <span>Chat</span>
         </button>
         <button
           className={`mobile-control-button ${mobileControlsOpen ? 'active' : ''}`}
           type="button"
           aria-expanded={mobileControlsOpen}
-          title="More map controls"
+          title="More"
           onClick={() => {
             setMobileControlsOpen((value) => !value);
             setPanelsMenuOpen(false);
@@ -1607,7 +1692,7 @@ export default function App() {
           <MoreHorizontal size={20} />
           <span>More</span>
         </button>
-      </div>
+      </nav>
       {mobileControlsOpen && (
         <section className="mobile-control-sheet" aria-label="Map controls">
           <header className="mobile-control-sheet-header">
@@ -1619,7 +1704,51 @@ export default function App() {
               <X size={18} />
             </button>
           </header>
+          <section className="mobile-control-section mobile-mode-section">
+            <h3>Mode</h3>
+            <div className="mobile-mode-grid">
+              {MAP_MODES.map((mode) => (
+                <button
+                  key={mode.id}
+                  className={activeMapMode.id === mode.id && !mapSettings.customized ? 'active' : ''}
+                  type="button"
+                  aria-pressed={activeMapMode.id === mode.id && !mapSettings.customized}
+                  onClick={() => selectMapMode(mode.id)}
+                >
+                  <strong>{mode.shortLabel}</strong>
+                  <span>{mode.hint}</span>
+                </button>
+              ))}
+            </div>
+          </section>
           <div className="mobile-control-grid">
+            <button
+              type="button"
+              aria-pressed={followRecentActive}
+              disabled={vcrPlaybackActive}
+              onClick={toggleFollowRecent}
+            >
+              <RadioTower size={18} />
+              <span>{followRecentActive ? 'Following' : 'Follow'}</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={knownPathwaysOn}
+              onClick={toggleKnownPathways}
+            >
+              <Route size={18} />
+              <span>{knownPathwaysOn ? 'Routes on' : 'Routes off'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMapSettingsOpen(true);
+                setMobileControlsOpen(false);
+              }}
+            >
+              <SlidersHorizontal size={18} />
+              <span>Map settings</span>
+            </button>
             <button type="button" onClick={toggleChromeVisibility}>
               {chromeHidden ? <Eye size={18} /> : <EyeOff size={18} />}
               <span>{chromeHidden ? 'Show UI' : 'Hide UI'}</span>
@@ -1645,10 +1774,6 @@ export default function App() {
             <button type="button" onClick={() => setClearToken((value) => value + 1)}>
               <RotateCcw size={18} />
               <span>Clear</span>
-            </button>
-            <button type="button" onClick={() => dispatchMapAction('latest-route')}>
-              <LocateFixed size={18} />
-              <span>Focus</span>
             </button>
             <button type="button" onClick={shareView}>
               <Share2 size={18} />
@@ -1717,7 +1842,6 @@ export default function App() {
           </section>
         </section>
       )}
-      {shareToast && <div className="share-toast" role="status">{shareToast}</div>}
       {showRouteGifExport && (
         <RouteGifExportButton
           packet={selectedPacket}
@@ -1972,7 +2096,9 @@ function NodeLoadingToast({ failed, drawing }: { failed: boolean; drawing: boole
       : 'Preparing the map before showing live node markers.';
   return (
     <div className={`node-loading-toast ${failed ? 'warn' : ''}`} role="status" aria-live="polite">
-      <span className="node-loading-spinner" />
+      <span className="node-loading-spinner">
+        <img src={activeAssetPack.brand.loadingMark} alt="" aria-hidden="true" />
+      </span>
       <span>
         <strong>{title}</strong>
         <em>{message}</em>

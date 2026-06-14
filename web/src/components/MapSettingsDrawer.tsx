@@ -1,14 +1,18 @@
 import { useState, type CSSProperties } from 'react';
-import { Layers, RadioTower, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
+import { Compass, Layers, Mountain, RadioTower, RotateCcw, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import {
   applyMapLayerPreset,
+  applyMapMode,
   applyMapStyleProfile,
   DEFAULT_MAP_SETTINGS,
   MAP_LAYER_PRESETS,
+  MAP_MODES,
   mapLayerPresetIDForSettings,
+  mapModeForSettings,
   normalizeMapSettings,
   type MapLayerSettings,
   type MapLayerPresetID,
+  type MapModeID,
   type MapSettings,
   type NodeModelStyle,
   type PacketAnimationStyle,
@@ -38,12 +42,12 @@ export const LAYER_GROUPS: readonly { label: string; controls: readonly LayerCon
     ]
   },
   {
-    label: 'Live',
+    label: 'Activity',
     controls: [
       { key: 'clusters', label: 'Clusters', hint: 'Grouped low-zoom node bubbles' },
       { key: 'activityHeatmap', label: 'Activity heatmap', hint: 'Recent activity glow' },
       { key: 'nodes', label: 'Nodes', hint: 'Individual public nodes and observers' },
-      { key: 'liveComets', label: 'Live packet comets', hint: 'Live packet flight animations' },
+      { key: 'liveComets', label: 'Packet comets', hint: 'Recent packet flight animations' },
       { key: 'packetResidue', label: 'Packet trails', hint: 'Recent route glow residue' },
       { key: 'observerBursts', label: 'Observer bursts', hint: 'Observer-only packet pings' },
       { key: 'messageBubbles', label: 'Message bubbles', hint: 'Public decoded text overlays' }
@@ -95,17 +99,17 @@ const NODE_MODEL_STYLES: readonly { value: NodeModelStyle; label: string }[] = [
 const COMMON_LAYER_CONTROLS: readonly LayerControl[] = [
   { key: 'routes', label: 'Routes', hint: 'Public route lines' },
   { key: 'nodeLabels', label: 'Labels', hint: 'Node and observer labels' },
-  { key: 'liveComets', label: 'Live packets', hint: 'Live packet motion' },
+  { key: 'liveComets', label: 'Packet motion', hint: 'Recent packet motion' },
   { key: 'activityHeatmap', label: 'Activity heat', hint: 'Recent activity glow' },
   { key: 'terrainHeightmap', label: 'Terrain relief', hint: 'Optional hillshade or topo relief' }
 ];
 
-const MODE_CARDS: readonly { id: string; label: string; profileID: MapStyleProfileID; presetID: MapLayerPresetID; hint: string }[] = [
-  { id: 'clean-live', label: 'Clean Live', profileID: 'classic-dark', presetID: 'live', hint: 'Flat street map with live traffic' },
-  { id: 'terrain-topo', label: 'Terrain/Topo', profileID: 'topo-rf', presetID: 'analysis', hint: 'Topo relief for RF review' },
-  { id: '3d', label: '3D', profileID: 'openfreemap-3d', presetID: '3d', hint: 'Pitched map with route arcs' },
-  { id: 'low-bandwidth', label: 'Low Bandwidth', profileID: 'low-bandwidth', presetID: 'clean', hint: 'Quiet view for weak clients' }
-];
+const MODE_ICONS: Record<MapModeID, typeof RadioTower> = {
+  watch: RadioTower,
+  explore: Compass,
+  terrain: Mountain,
+  studio: Sparkles
+};
 
 type AdvancedSection = 'layers' | 'style' | 'packets' | 'rf';
 
@@ -118,6 +122,7 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
   });
   const activePresetID = mapLayerPresetIDForSettings(settings.layers);
   const activeStyleProfile = mapStyleProfileByID(settings.style.profileID);
+  const activeMode = mapModeForSettings(settings);
   const applyStyle = (profileID: MapStyleProfileID) => {
     onChange(applyMapStyleProfile(settings, profileID));
   };
@@ -125,27 +130,20 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
     onChange(applyMapLayerPreset(settings, presetID));
   };
   const updateStyle = (key: keyof MapSettings['style'], value: string | number) => {
-    onChange(normalizeMapSettings({ ...settings, style: { ...settings.style, [key]: value } }));
+    onChange(normalizeMapSettings({ ...settings, customized: true, style: { ...settings.style, [key]: value } }));
   };
   const updateLayer = (key: keyof MapLayerSettings, value: boolean) => {
-    onChange(normalizeMapSettings({ ...settings, layers: { ...settings.layers, [key]: value } }));
+    onChange(normalizeMapSettings({ ...settings, customized: true, layers: { ...settings.layers, [key]: value } }));
   };
   const updatePacket = (key: keyof MapSettings['packets'], value: number | PacketAnimationStyle | RenderQuality) => {
-    onChange(normalizeMapSettings({ ...settings, packets: { ...settings.packets, [key]: value } }));
+    onChange(normalizeMapSettings({ ...settings, customized: true, packets: { ...settings.packets, [key]: value } }));
   };
   const updatePacketToggle = (key: keyof MapSettings['packets'], value: boolean) => {
-    onChange(normalizeMapSettings({ ...settings, packets: { ...settings.packets, [key]: value } }));
+    onChange(normalizeMapSettings({ ...settings, customized: true, packets: { ...settings.packets, [key]: value } }));
   };
-  const applyMode = (profileID: MapStyleProfileID, presetID: MapLayerPresetID) => {
-    onChange(applyMapStyleProfile(applyMapLayerPreset(settings, presetID), profileID));
+  const applyModeID = (modeID: MapModeID) => {
+    onChange(applyMapMode(settings, modeID));
   };
-  const activeModeID = activeStyleProfile.id === 'topo-rf'
-    ? 'terrain-topo'
-    : activeStyleProfile.id === 'openfreemap-3d'
-      ? '3d'
-      : activeStyleProfile.id === 'low-bandwidth'
-        ? 'low-bandwidth'
-        : 'clean-live';
   const toggleAdvanced = (section: AdvancedSection) => {
     setAdvancedOpen((current) => ({ ...current, [section]: !current[section] }));
   };
@@ -162,7 +160,7 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
       <header className="map-settings-header">
         <div>
           <span className="panel-eyebrow">Map</span>
-          <h2>Settings</h2>
+          <h2>Modes</h2>
         </div>
         <button type="button" className="icon-button" title="Close map settings" onClick={onClose}>
           <X size={17} />
@@ -170,22 +168,33 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
       </header>
 
       <section className="map-settings-section">
-        <h3>Map</h3>
+        <h3>Choose a view</h3>
         <div className="map-settings-preset-grid map-mode-grid" role="group" aria-label="Map modes">
-          {MODE_CARDS.map((mode) => (
-            <button
-              key={mode.id}
-              type="button"
-              className={activeModeID === mode.id ? 'active' : ''}
-              aria-pressed={activeModeID === mode.id}
-              onClick={() => applyMode(mode.profileID, mode.presetID)}
-              style={{ '--map-mode-art': `url(${activeAssetPack.maps[mode.profileID] ?? activeAssetPack.maps['classic-dark']})` } as CSSProperties}
-            >
-              <strong>{mode.label}</strong>
-              <small>{mode.hint}</small>
-            </button>
-          ))}
+          {MAP_MODES.map((mode) => {
+            const Icon = MODE_ICONS[mode.id];
+            const selected = activeMode.id === mode.id && !settings.customized;
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                className={selected ? 'active' : ''}
+                aria-pressed={selected}
+                onClick={() => applyModeID(mode.id)}
+                style={{ '--map-mode-art': `url(${activeAssetPack.maps[mode.profileID] ?? activeAssetPack.maps['classic-dark']})` } as CSSProperties}
+              >
+                <span className="map-mode-icon"><Icon size={18} /></span>
+                <strong>{mode.label}</strong>
+                <small>{mode.hint}</small>
+              </button>
+            );
+          })}
         </div>
+        {settings.customized && (
+          <p className="map-settings-mode-note">
+            <SlidersHorizontal size={14} />
+            <span>Custom view based on {activeMode.label}</span>
+          </p>
+        )}
       </section>
 
       <section className="map-settings-section">
@@ -275,7 +284,7 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
             <label className="map-settings-toggle">
               <span>
                 <strong>All-zoom live packets</strong>
-                <small>Live motion below detail zoom</small>
+                <small>Packet motion below detail zoom</small>
               </span>
               <input type="checkbox" checked={settings.packets.showLiveCometsAtAllZooms} onChange={(event) => updatePacketToggle('showLiveCometsAtAllZooms', event.target.checked)} />
             </label>

@@ -26,7 +26,8 @@ describe('LinkBar', () => {
   });
 
   it('keeps the compact changelog focused on the current release train', () => {
-    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.label)).toEqual(['3.0.0', '2.9.6', '2.9.5']);
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.label)).toEqual(['3.0.1', '3.0.0', '2.9.6', '2.9.5']);
+    expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Smooth Live Shell');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Asset Pack v3');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Waterfall Labs');
     expect(LATEST_RELEASE_HIGHLIGHTS.map((item) => item.title)).toContain('Map Studio');

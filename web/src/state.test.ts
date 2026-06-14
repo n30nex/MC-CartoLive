@@ -17,6 +17,7 @@ import {
   initialAppState,
   liveCoverageStats,
   pruneObserverBursts,
+  publicLiveStateSignature,
   summarizeRouteActivity
 } from './state';
 import type { PublicLiveEnvelope, PublicLiveState } from './types';
@@ -416,6 +417,18 @@ describe('public app state', () => {
     expect(twice.activity.filter((item) => item.id === 'activity-backfill')).toHaveLength(1);
     expect(twice.latestSeq).toBe(99);
     expect(twice.seenSeqs).toContain(99);
+  });
+
+  it('builds stable public snapshot signatures for replacement guards', () => {
+    const first = publicLiveStateSignature(publicState);
+    const same = publicLiveStateSignature({ ...publicState, nodes: [...publicState.nodes], routes: [...publicState.routes] });
+    const changed = publicLiveStateSignature({
+      ...publicState,
+      stats: { ...publicState.stats, latestSeq: 99 }
+    });
+
+    expect(same).toBe(first);
+    expect(changed).not.toBe(first);
   });
 
   it('summarizes and prunes route activity into last-15-minute bins', () => {

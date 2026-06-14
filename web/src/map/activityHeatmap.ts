@@ -19,7 +19,8 @@ export function activityHeatmapToGeoJSON(
   performanceNow = performance.now(),
   maxFeatures = ACTIVITY_HEATMAP_MAX_FEATURES
 ): FeatureCollection {
-  const features = nodes
+  const candidateNodes = activeHeatmapNodes(nodes, activities, meshActivityAtByNodeID, epochNow);
+  const features = candidateNodes
     .filter(isMappableNode)
     .map((node) => activityHeatFeature(node, activities.get(node.id), meshActivityAtByNodeID.get(node.id), epochNow, performanceNow))
     .filter((feature): feature is NonNullable<typeof feature> => feature !== null)
@@ -27,6 +28,26 @@ export function activityHeatmapToGeoJSON(
     .slice(0, Math.max(0, maxFeatures));
 
   return { type: 'FeatureCollection', features };
+}
+
+export function activeHeatmapNodes(
+  nodes: PublicNode[],
+  activities: Map<string, ActivityHeatEntry>,
+  meshActivityAtByNodeID: Map<string, number>,
+  epochNow = Date.now()
+): PublicNode[] {
+  if (nodes.length === 0) return nodes;
+  if (activities.size === 0 && meshActivityAtByNodeID.size === 0) {
+    return nodes.filter((node) => epochNow - node.lastSeen <= ACTIVITY_HEATMAP_WINDOW_MS);
+  }
+  const activeIDs = new Set<string>();
+  for (const [id, activity] of activities.entries()) {
+    if (activity.hits.length > 0 || activity.lastAt > 0) activeIDs.add(id);
+  }
+  for (const [id, at] of meshActivityAtByNodeID.entries()) {
+    if (Number.isFinite(at) && epochNow - at <= ACTIVITY_HEATMAP_WINDOW_MS) activeIDs.add(id);
+  }
+  return nodes.filter((node) => activeIDs.has(node.id) || epochNow - node.lastSeen <= ACTIVITY_HEATMAP_WINDOW_MS);
 }
 
 function activityHeatFeature(

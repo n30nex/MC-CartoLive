@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v3.0.0
+# MeshCore MQTT Live Map v3.0.1
 
 **MC-CartoLive** is a single-container public live map for MeshCore MQTT
 observations. It ingests broker traffic, stores normalized observations in
@@ -10,9 +10,12 @@ Public instance: [carto.canadaverse.org](https://carto.canadaverse.org/).
 
 ## Current Release
 
-Version 3.0.0 is the polished v3 workspace and asset-pack release. It keeps the
-one-container SQLite deployment shape and stable public API while adding:
+Version 3.0.1 is the smooth live-map shell release. It keeps the one-container
+SQLite deployment shape and stable public API while adding:
 
+- four map modes for Watch, Explore, Terrain, and Studio workflows
+- a mobile app-style tabbar and calmer desktop shell for first-class live use
+- unified snackbars, branded loading states, and reduced-motion-aware app polish
 - first-class workspaces for Map, Packets, Chat, Node List, NetGraph, and Labs
 - committed `world` and `canada` v3 asset presets for branding, PWA icons,
   social cards, node roles, packet classes, map layers, workspace states, and
@@ -24,7 +27,7 @@ one-container SQLite deployment shape and stable public API while adding:
 - an optional manifest-driven Image API/Batch API workflow for future curated
   asset generations; normal builds and runtime stay fully static
 
-The recommended v3.0.0 release path is clone + Compose on a VPS or local host,
+The recommended v3.0.1 release path is clone + Compose on a VPS or local host,
 optionally behind Cloudflare Tunnel, Caddy, nginx, or another HTTPS reverse
 proxy.
 
@@ -87,7 +90,7 @@ podman run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:3.0.0
+  ghcr.io/n30nex/mc-cartolive:3.0.1
 ```
 
 For a persistent deployment:
@@ -97,7 +100,7 @@ podman run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:3.0.0
+  ghcr.io/n30nex/mc-cartolive:3.0.1
 ```
 
 The production droplet currently uses Docker Compose; local release validation
@@ -148,16 +151,18 @@ Release hygiene:
 
 ```bash
 node scripts/check-version-sync.mjs
+node scripts/public-schema-check.mjs
 node scripts/check-asset-pack.mjs
+node scripts/check-frontend-budget.mjs
 node scripts/check-public-privacy.mjs http://127.0.0.1:39476
 podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
-node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:3.0.0 --pull
+node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:3.0.1 --pull
 ```
 
 Live post-deploy smoke:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.0.0 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.0.1 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
 ## Documentation
@@ -169,6 +174,8 @@ Live post-deploy smoke:
 - [Privacy model](docs/privacy.md)
 - [Roadmap](docs/roadmap.md)
 - [Changelog](CHANGELOG.md)
+- [3.0.1 release notes](docs/3.0.1/release_notes.md)
+- [3.0.1 validation checklist](docs/3.0.1/validation_checklist.md)
 - [3.0.0 release notes](docs/3.0.0/release_notes.md)
 - [3.0.0 screenshot tour](docs/3.0.0/screenshot_tour.md)
 - [3.0.0 asset pack notes](docs/3.0.0/asset_pack.md)

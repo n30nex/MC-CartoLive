@@ -1,13 +1,17 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   applyMapLayerPreset,
+  applyMapMode,
   applyMapStyleProfile,
   DEFAULT_MAP_SETTINGS,
   DEFAULT_MAP_STYLE_SETTINGS,
   MAP_LAYER_PRESETS,
+  MAP_MODES,
   MAP_SETTINGS_SCHEMA_VERSION,
   MAP_SETTINGS_STORAGE_KEY,
   mapLayerPresetIDForSettings,
+  mapModeExactIDForSettings,
+  mapModeForSettings,
   normalizeMapSettings,
   readStoredMapSettings,
   writeStoredMapSettings
@@ -23,6 +27,8 @@ describe('map settings', () => {
       layers: { clusters: false, nodes: false, liveComets: false },
       packets: { speed: 99, brightness: 0.1, trail: 8, animationStyle: 'pulse', showLiveCometsAtAllZooms: true, renderQuality: 'smooth' }
     });
+    expect(settings.modeID).toBe('watch');
+    expect(settings.customized).toBe(false);
     expect(settings.style).toEqual(DEFAULT_MAP_STYLE_SETTINGS);
     expect(settings.layers.clusters).toBe(false);
     expect(settings.layers.activityHeatmap).toBe(true);
@@ -168,10 +174,74 @@ describe('map settings', () => {
     expect(threeD.layers.routeArcs3D).toBe(true);
   });
 
-  it('keeps Clean Live defaults route-quiet but live-layer rich', () => {
-    const cleanLive = applyMapLayerPreset(DEFAULT_MAP_SETTINGS, 'live').layers;
+  it('defines four public app-like map modes', () => {
+    expect(MAP_MODES.map((mode) => mode.id)).toEqual(['watch', 'explore', 'terrain', 'studio']);
+    expect(DEFAULT_MAP_SETTINGS.modeID).toBe('watch');
+    expect(DEFAULT_MAP_SETTINGS.customized).toBe(false);
+    expect(mapModeForSettings(DEFAULT_MAP_SETTINGS).id).toBe('watch');
+  });
 
-    expect(cleanLive).toMatchObject({
+  it('applies map modes with workflow defaults and keeps packet preferences', () => {
+    const base = normalizeMapSettings({
+      packets: { speed: 2, brightness: 1.2, trail: 1.4, animationStyle: 'pulse' }
+    });
+
+    const explore = applyMapMode(base, 'explore');
+    expect(explore.modeID).toBe('explore');
+    expect(explore.customized).toBe(false);
+    expect(explore.style.profileID).toBe('classic-dark');
+    expect(explore.layers.routes).toBe(true);
+    expect(explore.layers.terrainHeightmap).toBe(false);
+    expect(explore.packets.speed).toBe(2);
+    expect(explore.packets.animationStyle).toBe('pulse');
+
+    const terrain = applyMapMode(base, 'terrain');
+    expect(terrain.style.profileID).toBe('topo-rf');
+    expect(terrain.layers.routes).toBe(true);
+    expect(terrain.layers.terrainLOS).toBe(true);
+    expect(terrain.layers.propagationInsights).toBe(true);
+    expect(terrain.layers.routeArcs3D).toBe(false);
+
+    const studio = applyMapMode(base, 'studio');
+    expect(studio.style.profileID).toBe('openfreemap-3d');
+    expect(studio.layers.routeArcs3D).toBe(true);
+    expect(studio.layers.packetComets3D).toBe(true);
+    expect(studio.layers.buildingExtrusions).toBe(true);
+  });
+
+  it('marks advanced preset and style changes as customized', () => {
+    const preset = applyMapLayerPreset(DEFAULT_MAP_SETTINGS, 'analysis');
+    expect(preset.customized).toBe(true);
+    expect(mapModeForSettings(preset).id).toBe('terrain');
+    expect(mapModeExactIDForSettings(preset)).toBeNull();
+
+    const style = applyMapStyleProfile(DEFAULT_MAP_SETTINGS, 'openfreemap-3d');
+    expect(style.customized).toBe(true);
+    expect(mapModeForSettings(style).id).toBe('studio');
+  });
+
+  it('migrates legacy settings into the closest v7 mode', () => {
+    window.localStorage.setItem(MAP_SETTINGS_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 6,
+      style: { profileID: 'topo-rf' },
+      layers: { routes: true, terrainLOS: true, propagationInsights: true, terrainHeightmap: true }
+    }));
+    const terrain = readStoredMapSettings();
+    expect(terrain.modeID).toBe('terrain');
+    expect(terrain.customized).toBe(true);
+
+    window.localStorage.setItem(MAP_SETTINGS_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 6,
+      layers: { routes: true }
+    }));
+    const explore = readStoredMapSettings();
+    expect(explore.modeID).toBe('explore');
+  });
+
+  it('keeps default layer preset route-quiet but motion rich', () => {
+    const defaultLayers = applyMapLayerPreset(DEFAULT_MAP_SETTINGS, 'live').layers;
+
+    expect(defaultLayers).toMatchObject({
       routes: false,
       nodeLabels: true,
       liveComets: true,
@@ -236,6 +306,7 @@ describe('map settings', () => {
   it('persists normalized settings in localStorage', () => {
     writeStoredMapSettings({
       ...DEFAULT_MAP_SETTINGS,
+      customized: true,
       layers: { ...DEFAULT_MAP_SETTINGS.layers, routes: false },
       packets: { ...DEFAULT_MAP_SETTINGS.packets, speed: 2 }
     });

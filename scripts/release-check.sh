@@ -18,6 +18,7 @@ fi
 cd "$ROOT/backend"
 node "$ROOT/scripts/check-version-sync.mjs"
 node "$ROOT/scripts/public-schema-check.mjs"
+node "$ROOT/scripts/check-asset-pack.mjs"
 
 go test ./...
 go tool govulncheck ./...
@@ -27,6 +28,7 @@ npm ci
 npm audit --audit-level=high
 npm test -- --run
 npm run build
+node "$ROOT/scripts/check-frontend-budget.mjs"
 
 cd "$ROOT"
 if [ "${SKIP_DOCKER:-0}" != "1" ] && [ "${SKIP_CONTAINER_BUILD:-0}" != "1" ]; then

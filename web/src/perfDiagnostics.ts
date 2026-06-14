@@ -6,6 +6,11 @@ export interface PerfCounters {
   routeSourceUpdates: number;
   nodeSourceUpdates: number;
   otherSourceUpdates: number;
+  skippedSourceUpdates: number;
+  heatmapSourceUpdates: number;
+  snapshotReplacements: number;
+  snapshotSkips: number;
+  routeReducerMs: number;
   livePendingQueueSize: number;
   vcrReplayQueueSize: number;
   visibilityPauses: number;
@@ -51,6 +56,11 @@ export function ensurePerfDiagnostics(): PerfCounters | null {
     routeSourceUpdates: 0,
     nodeSourceUpdates: 0,
     otherSourceUpdates: 0,
+    skippedSourceUpdates: 0,
+    heatmapSourceUpdates: 0,
+    snapshotReplacements: 0,
+    snapshotSkips: 0,
+    routeReducerMs: 0,
     livePendingQueueSize: 0,
     vcrReplayQueueSize: 0,
     visibilityPauses: 0
@@ -70,9 +80,30 @@ export function recordSourceUpdate(sourceID: string): void {
     counters.routeSourceUpdates += 1;
   } else if (sourceID.includes('node')) {
     counters.nodeSourceUpdates += 1;
+  } else if (sourceID.includes('heatmap')) {
+    counters.heatmapSourceUpdates += 1;
   } else {
     counters.otherSourceUpdates += 1;
   }
+}
+
+export function recordSkippedSourceUpdate(): void {
+  const counters = ensurePerfDiagnostics();
+  if (!counters) return;
+  counters.skippedSourceUpdates += 1;
+}
+
+export function recordSnapshotReplacement(skipped: boolean): void {
+  const counters = ensurePerfDiagnostics();
+  if (!counters) return;
+  if (skipped) counters.snapshotSkips += 1;
+  else counters.snapshotReplacements += 1;
+}
+
+export function recordRouteReducerDuration(ms: number): void {
+  const counters = ensurePerfDiagnostics();
+  if (!counters) return;
+  counters.routeReducerMs = Math.max(0, Math.round(ms * 10) / 10);
 }
 
 export function recordPacketFrame(activeComets: number, activeObserverBursts: number, frameMs: number): void {

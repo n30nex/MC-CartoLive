@@ -10,6 +10,7 @@ import type {
   PublicRoutePulse,
   PublicStats
 } from './types';
+import { recordRouteReducerDuration } from './perfDiagnostics';
 
 export const ROUTE_TRACE_WINDOW_MS = 15 * 60_000;
 export const ROUTE_TRACE_BIN_COUNT = 12;
@@ -21,6 +22,7 @@ export const SNAPSHOT_PULSE_STALE_MS = 60_000;
 export const SNAPSHOT_PULSE_FUTURE_SKEW_MS = 10_000;
 export const SNAPSHOT_OBSERVER_BURST_REPLAY_LIMIT = 32;
 export const SNAPSHOT_OBSERVER_BURST_REPLAY_SPACING_MS = 140;
+export const ROUTE_BUCKET_REBALANCE_FACTOR = 1.25;
 
 export interface RouteTraceHit {
   routeId: string;
@@ -88,6 +90,26 @@ export function initialAppState(state: PublicLiveState): AppState {
     latestSeq: state.stats?.latestSeq ?? 0,
     seenSeqs: []
   };
+}
+
+export function publicLiveStateSignature(state: PublicLiveState): string {
+  const nodes = state.nodes ?? [];
+  const routes = state.routes ?? [];
+  const activity = state.recentActivity ?? [];
+  const pulses = state.recentPulses ?? [];
+  return [
+    state.serverTime,
+    state.stats?.latestSeq ?? 0,
+    state.stats?.packets ?? 0,
+    nodes.length,
+    routes.length,
+    activity.length,
+    pulses.length,
+    nodes[0]?.id ?? '',
+    routes[0]?.id ?? '',
+    activity[0]?.id ?? '',
+    pulses[0]?.id ?? ''
+  ].join(':');
 }
 
 export function hydrateSnapshotPulses(pulses: PublicRoutePulse[], serverTime: number): PublicRoutePulse[] {
@@ -164,7 +186,9 @@ export function applyPublicEnvelope(state: AppState, message: PublicLiveEnvelope
   if (message.event === 'routePulse') {
     const pulse = withEnvelopeTiming(message.data, message);
     if (state.pulses.some((item) => item.id === pulse.id)) return mark(state);
+    const reducerStartedAt = performance.now();
     const routes = upsertPulseRoutes(state.routes, pulse);
+    recordRouteReducerDuration(performance.now() - reducerStartedAt);
     const serverTime = Math.max(state.serverTime, message.serverTime ?? pulse.heardAt);
     const routeTraces = addRouteTraceHits(state.routeTraces, pulse, serverTime);
     return mark({
@@ -273,7 +297,7 @@ function upsertPulseRoutes(routes: PublicRoute[], pulse: PublicRoutePulse): Publ
   }
 
   if (!changed) return routes;
-  if (maxAfter === maxBefore) return next;
+  if (maxAfter <= maxBefore * ROUTE_BUCKET_REBALANCE_FACTOR) return next;
   return normalizeRouteBuckets(next);
 }
 

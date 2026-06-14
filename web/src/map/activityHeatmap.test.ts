@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PublicNode } from '../types';
-import { activityHeatIntensity, activityHeatmapToGeoJSON } from './activityHeatmap';
+import { activeHeatmapNodes, activityHeatIntensity, activityHeatmapToGeoJSON } from './activityHeatmap';
 
 const node = (id: string, overrides: Partial<PublicNode> = {}): PublicNode => ({
   id,
@@ -47,5 +47,21 @@ describe('activity heatmap helpers', () => {
     expect(features.features).toHaveLength(2);
     expect((features.features[0] as any).properties.id).toBe('hot');
     expect(features.features.every((feature) => Number((feature as any).properties.intensity) > 0)).toBe(true);
+  });
+
+  it('prefers active heatmap candidates over stale idle nodes', () => {
+    const candidates = activeHeatmapNodes(
+      [
+        node('idle', { lastSeen: 1 }),
+        node('recent', { lastSeen: 1_000_000 }),
+        node('mesh', { lastSeen: 1 }),
+        node('burst', { lastSeen: 1 })
+      ],
+      new Map([['burst', { hits: [100], lastAt: 100 }]]),
+      new Map([['mesh', 999_000]]),
+      1_000_000
+    );
+
+    expect(candidates.map((item) => item.id).sort()).toEqual(['burst', 'mesh', 'recent']);
   });
 });

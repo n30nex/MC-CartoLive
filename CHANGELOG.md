@@ -4,6 +4,23 @@ This changelog records the public release history at a useful level of detail.
 Detailed patch-by-patch investigation notes and temporary planning material live
 in Git history, not in the active documentation set.
 
+## 3.0.1 - 2026-06-14
+
+- Reworked the live-map shell around four public modes: Watch, Explore,
+  Terrain, and Studio, with advanced layer/style controls kept behind the map
+  drawer.
+- Replaced the mobile control dock with an app-style tabbar for Map, Packets,
+  Nodes, Chat, and More while keeping routed workspace URLs stable.
+- Collapsed separate Live/Focus controls into one calmer Follow action for
+  recent routed activity.
+- Added unified snackbars, branded loading feedback, and reduced-motion-aware
+  motion polish for copy/share/export/loading states.
+- Reduced runtime churn with public snapshot identity guards, incremental
+  route-pulse rebalancing, heatmap gating, active heatmap candidates, and
+  duplicate MapLibre source-data suppression.
+- Updated browser smoke expectations, tests, release metadata, and docs for the
+  3.0.1 smooth-shell patch.
+
 ## 3.0.0 - 2026-06-13
 
 - Promoted the v3 public presentation across Map, Packets, Chat, Node List,
