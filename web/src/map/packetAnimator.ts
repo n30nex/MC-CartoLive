@@ -11,6 +11,7 @@ import {
   type RenderQuality
 } from '../mapSettings';
 import { payloadVisual } from '../payloadVisuals';
+import { activeAssetPack } from '../assets/v3/assetPacks';
 import { recordPacketFrame, recordPacketSkippedFrame } from '../perfDiagnostics';
 import { isMappableEndpoint } from './geo';
 
@@ -98,6 +99,8 @@ interface PacketAnimatorOptions {
   visualSettings?: PacketVisualSettings;
 }
 
+type PacketEffectImages = Partial<Record<'cometHead' | 'pulseRing' | 'observerAura' | 'messageSpark', HTMLImageElement>>;
+
 export interface PacketAnimationOptions {
   force?: boolean;
   travelDurationMs?: number;
@@ -162,6 +165,7 @@ export class PacketAnimator {
   private layerSettings = DEFAULT_MAP_LAYER_SETTINGS;
   private visualSettings = DEFAULT_PACKET_VISUAL_SETTINGS;
   private reducedMotion = false;
+  private effectImages: PacketEffectImages = loadPacketEffectImages();
   private handleMapMotion = () => {
     this.forceNextFrame = true;
     this.requestFrame();
@@ -708,6 +712,7 @@ export class PacketAnimator {
     this.ctx.stroke();
 
     this.ctx.globalAlpha = Math.min(1, brightness);
+    this.drawEffectSprite('cometHead', head.x, head.y, (style === 'minimal' ? 20 : 32) + shimmer * 12, 0.42 * brightness);
     this.ctx.fillStyle = '#ffffff';
     this.ctx.shadowBlur = 26 + shimmer * 28;
     this.ctx.shadowColor = color;
@@ -726,6 +731,7 @@ export class PacketAnimator {
 
   private endpointPulse(x: number, y: number, progress: number, color: string, alpha = 0.28) {
     const radius = 7 + progress * 22;
+    this.drawEffectSprite('pulseRing', x, y, radius * 2.6, alpha * 0.72);
     this.ctx.globalAlpha = (1 - progress) * alpha;
     this.ctx.strokeStyle = color;
     this.ctx.lineWidth = 2.4;
@@ -758,6 +764,7 @@ export class PacketAnimator {
       this.ctx.stroke();
 
       this.ctx.globalAlpha = alpha * (isLaunch ? 0.46 : 0.72);
+      if (!isLaunch) this.drawEffectSprite('pulseRing', overlay.x, overlay.y, 26 + progress * 34, overlay.alpha * 0.36);
       this.ctx.strokeStyle = '#ffffff';
       this.ctx.lineWidth = 1;
       this.ctx.beginPath();
@@ -792,6 +799,7 @@ export class PacketAnimator {
       if (alpha <= 0.01) continue;
 
       this.ctx.globalAlpha = alpha;
+      this.drawEffectSprite('observerAura', overlay.x, overlay.y, 34 + pulse * 26, alpha * 0.5);
       this.ctx.fillStyle = '#ffffff';
       this.ctx.shadowBlur = 28;
       this.ctx.shadowColor = overlay.color;
@@ -833,6 +841,7 @@ export class PacketAnimator {
     const radius = 6 + progress * 17;
     this.ctx.save();
     this.ctx.globalAlpha = sparkAlpha;
+    this.drawEffectSprite('messageSpark', x, y, 26 + progress * 18, sparkAlpha * 0.7);
     this.ctx.strokeStyle = '#ffffff';
     this.ctx.lineWidth = 1.35;
     this.ctx.shadowBlur = 18;
@@ -846,6 +855,16 @@ export class PacketAnimator {
       this.ctx.lineTo(x + Math.cos(angle) * outer, y + Math.sin(angle) * outer);
       this.ctx.stroke();
     }
+    this.ctx.restore();
+  }
+
+  private drawEffectSprite(key: keyof PacketEffectImages, x: number, y: number, size: number, alpha: number) {
+    const image = this.effectImages[key];
+    if (!image?.complete || image.naturalWidth === 0 || alpha <= 0) return;
+    this.ctx.save();
+    this.ctx.globalCompositeOperation = 'lighter';
+    this.ctx.globalAlpha = clamp01(alpha);
+    this.ctx.drawImage(image, x - size / 2, y - size / 2, size, size);
     this.ctx.restore();
   }
 
@@ -1163,6 +1182,23 @@ function colorWithAlpha(color: string, alpha: number): string {
   const green = parseInt(color.slice(3, 5), 16);
   const blue = parseInt(color.slice(5, 7), 16);
   return `rgba(${red}, ${green}, ${blue}, ${clamp01(alpha)})`;
+}
+
+function loadPacketEffectImages(): PacketEffectImages {
+  if (typeof Image !== 'function') return {};
+  return {
+    cometHead: loadImage(activeAssetPack.effects.cometHead),
+    pulseRing: loadImage(activeAssetPack.effects.pulseRing),
+    observerAura: loadImage(activeAssetPack.effects.observerAura),
+    messageSpark: loadImage(activeAssetPack.effects.messageSpark)
+  };
+}
+
+function loadImage(src: string): HTMLImageElement {
+  const image = new Image();
+  image.decoding = 'async';
+  image.src = src;
+  return image;
 }
 
 function clamp01(value: number): number {

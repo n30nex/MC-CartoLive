@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Clock3, Copy, Filter, Maximize2, MessageSquareText, Minimize2, Play, RefreshCw, Route, Search, X } from 'lucide-react';
 import { fetchPublicPackets } from '../api';
+import { activeAssetPack } from '../assets/v3/assetPacks';
 import { formatRelative } from '../lib/formatRelative';
 import { isAbortError } from '../lib/isAbortError';
 import { useDebouncedValue } from '../lib/useDebouncedValue';
@@ -331,6 +332,7 @@ export default function PacketsPanel({
           </div>
           {!loading && packets.length === 0 && (
             <div className="packets-empty">
+              <img src={activeAssetPack.workspaces.packets} alt="" aria-hidden="true" />
               {scanInfo?.partial
                 ? 'No matches in the scanned slice yet. Load older to keep searching this window.'
                 : 'No true path packets match the current filters.'}
@@ -386,8 +388,8 @@ function PacketRow({
       <button type="button" className="packet-row-main" onClick={() => onSelect(packet)} title="Focus this packet path on the map">
         <span className="packet-row-top">
           <span className="packet-payload" style={{ '--packet-color': visual.color } as CSSProperties}>
-            <i />
-            {visual.shortLabel}
+            <img src={visual.icon} alt="" aria-hidden="true" />
+            <span>{visual.shortLabel}</span>
           </span>
           <strong>{path}</strong>
           <em>{formatRelative(packet.at)}</em>
@@ -429,6 +431,7 @@ function PacketDetail({
   if (!packet) {
     return (
       <aside className="packet-detail empty">
+        <img src={activeAssetPack.workspaces.emptyState} alt="" aria-hidden="true" />
         <span className="panel-eyebrow">Details</span>
         <strong>Select a packet</strong>
         <p>Focus or replay any true public path from the list.</p>
@@ -439,7 +442,7 @@ function PacketDetail({
   return (
     <aside className="packet-detail">
       <div className="packet-detail-title">
-        <span className="packet-payload" style={{ '--packet-color': visual.color } as CSSProperties}><i />{visual.shortLabel}</span>
+        <span className="packet-payload" style={{ '--packet-color': visual.color } as CSSProperties}><img src={visual.icon} alt="" aria-hidden="true" /><span>{visual.shortLabel}</span></span>
         <strong>{packetEndpointSummary(packet)}</strong>
       </div>
       <dl className="packet-detail-grid">

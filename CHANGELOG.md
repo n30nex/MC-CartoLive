@@ -4,6 +4,26 @@ This changelog records the public release history at a useful level of detail.
 Detailed patch-by-patch investigation notes and temporary planning material live
 in Git history, not in the active documentation set.
 
+## 3.0.0 - 2026-06-13
+
+- Added a manifest-driven v3 image asset pack system with optional OpenAI Image
+  API/Batch API generation scripts, deterministic post-processing, and a
+  committed runtime asset tree.
+- Shipped `world` and `canada` asset presets for app icons, favicons, PWA
+  manifests, social/release art, top-bar marks, node roles, packet classes,
+  map/layer thumbnails, workspace empty states, Waterfall backdrops, and motion
+  effect sprites.
+- Added `VITE_APP_ASSET_PACK` across Vite, Docker, Compose, `.env.example`, and
+  the Setup workspace. The default GHCR/easy-deploy image uses `world`; the
+  hosted Canada build uses `canada`.
+- Wired the asset registry into branding, LinkBar, Legend/packet visuals, node
+  role visuals, map settings thumbnails, PacketAnimator, OpenFreeMap 3D comets,
+  Packet/Node workspaces, route GIF overlays, and Labs Waterfall assets.
+- Added `scripts/check-asset-pack.mjs` to validate manifest records, static
+  target files, PNG dimensions, and pack-local PWA manifests.
+- Updated release metadata, docs, operator notes, and validation checklist for
+  the 3.0.0 world/Canada asset-pack release.
+
 ## 2.9.6 - 2026-06-13
 
 - Collapsed Labs to a single Packet Waterfall experience at `#/lab/waterfall`,

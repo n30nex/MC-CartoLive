@@ -19,13 +19,15 @@ describe('SetupPanel', () => {
       regions: 'r1,r2',
       bounds: '-45,110,-10,155',
       brandName: 'AUS Mesh',
-      brandURL: 'https://example.org'
+      brandURL: 'https://example.org',
+      assetPack: 'world'
     });
     expect(snippet).toContain('PUBLIC_BASE_URL=https://mesh.example');
     expect(snippet).toContain('MAP_REGION_PRESET=custom');
     expect(snippet).toContain('PUBLIC_REGIONS=r1,r2');
     expect(snippet).toContain('MAP_BOUNDS=-45,110,-10,155');
     expect(snippet).toContain('VITE_APP_BRAND_NAME=AUS Mesh');
+    expect(snippet).toContain('VITE_APP_ASSET_PACK=world');
     expect(snippet).toContain('VITE_ENABLE_SERVICE_WORKER=false');
   });
 });

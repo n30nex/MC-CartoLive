@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { Layers, RadioTower, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
 import {
   applyMapLayerPreset,
@@ -15,6 +15,7 @@ import {
   type RenderQuality
 } from '../mapSettings';
 import { MAP_STYLE_PROFILES, mapStyleProfileByID, type MapStyleProfileID } from '../map/styles/styleRegistry';
+import { activeAssetPack } from '../assets/v3/assetPacks';
 
 interface MapSettingsDrawerProps {
   settings: MapSettings;
@@ -178,6 +179,7 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
               className={activeModeID === mode.id ? 'active' : ''}
               aria-pressed={activeModeID === mode.id}
               onClick={() => applyMode(mode.profileID, mode.presetID)}
+              style={{ '--map-mode-art': `url(${activeAssetPack.maps[mode.profileID] ?? activeAssetPack.maps['classic-dark']})` } as CSSProperties}
             >
               <strong>{mode.label}</strong>
               <small>{mode.hint}</small>
@@ -227,7 +229,7 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
               {MAP_STYLE_PROFILES.map((profile) => {
                 const selected = activeStyleProfile.id === profile.id;
                 return (
-                  <button key={profile.id} type="button" className={selected ? 'active' : ''} aria-pressed={selected} onClick={() => applyStyle(profile.id)}>
+                  <button key={profile.id} type="button" className={selected ? 'active' : ''} aria-pressed={selected} onClick={() => applyStyle(profile.id)} style={{ '--map-profile-art': `url(${activeAssetPack.maps[profile.id] ?? activeAssetPack.maps['classic-dark']})` } as CSSProperties}>
                     <span>
                       <strong>{profile.label}</strong>
                       <small>{profile.sourceLabel}</small>

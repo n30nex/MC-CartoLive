@@ -63,7 +63,7 @@ podman run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.9.6
+  ghcr.io/n30nex/mc-cartolive:3.0.0
 ```
 
 Persistent deployment:
@@ -73,7 +73,7 @@ podman run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.9.6
+  ghcr.io/n30nex/mc-cartolive:3.0.0
 ```
 
 The image runs as non-root `appuser`, includes the bundled `mc-diagnose`
@@ -104,7 +104,7 @@ rebuild, readiness wait, and rollback on failure.
 
 ## Runtime Notes
 
-- Version 2.9.6 exposes app version, Git SHA, build number, and build time in
+- Version 3.0.0 exposes app version, Git SHA, build number, and build time in
   the top project bar and in health/readiness responses.
 - `/healthz` is cheap liveness. `/readyz` checks DB, static assets, public state
   readiness, cache freshness, and public-safe runtime status.
@@ -113,6 +113,10 @@ rebuild, readiness wait, and rollback on failure.
 - `PUBLIC_MODE=true` should remain enabled on public hosts.
 - `MAP_REGION_PRESET=world` is the package default. Use `canada` for the hosted
   Canada map, or `custom` with `MAP_BOUNDS=minLat,minLng,maxLat,maxLng`.
+- `VITE_APP_ASSET_PACK=world` is the package/default image preset. Build the
+  hosted Canada release with `VITE_APP_ASSET_PACK=canada`,
+  `VITE_APP_BRAND_NAME=Carto Live Canada`, and
+  `VITE_APP_BRAND_URL=https://canadaverse.org/`.
 - `PUBLIC_REGIONS` is the preferred public region allowlist. `PUBLIC_IATAS`
   remains as a deprecated 2.x alias for existing Canada env files.
 - UI preferences such as theme, palette, map layers, packet visuals, replay state,
@@ -121,8 +125,8 @@ rebuild, readiness wait, and rollback on failure.
   output. The Map drawer opens Clean Live, Terrain/Topo, 3D, and Low Bandwidth
   mode cards before advanced controls.
 - OpenFreeMap/3D, terrain, PMTiles profiles, propagation history, Packets,
-  Chat, NetGraph, Replay, and Waterfall Labs use sanitized public APIs and
-  public WebSocket/history data.
+  Chat, NetGraph, Replay, Waterfall Labs, and static v3 image assets use
+  sanitized public APIs and public WebSocket/history data.
 - Optional PMTiles basemaps are build-time frontend URLs. Prefer same-origin
   files such as `/tiles/canada.pmtiles`; external HTTPS PMTiles hosts must also
   be allowed by the deployment CSP.

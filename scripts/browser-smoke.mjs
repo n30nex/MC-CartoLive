@@ -318,7 +318,7 @@ async function smokeVcr(page, viewport) {
 
   await page.getByRole('button', { name: /Change replay speed/i }).click();
   await smokeVcrScrubReplay(page);
-  await page.getByRole('button', { name: /Hide VCR controls and return live/i }).click();
+  await page.getByRole('button', { name: /Hide (?:VCR|replay) controls and return live/i }).click();
   await page.waitForSelector('.vcr-bar', { state: 'hidden', timeout: 5_000 });
   await assertVisibleInViewport(page, '.vcr-mini-clock', 'mini live clock after VCR close', viewport);
 }

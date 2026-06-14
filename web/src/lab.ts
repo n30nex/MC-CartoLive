@@ -1,4 +1,5 @@
 import { normalizePayloadType, payloadVisual } from './payloadVisuals';
+import { activeAssetPack } from './assets/v3/assetPacks';
 import type { AppState } from './state';
 import type { PublicActivity, PublicMessageAnchor, PublicObserverLocation, PublicRoutePulse } from './types';
 
@@ -109,8 +110,8 @@ export const LAB_EXPERIMENTS: readonly LabExperiment[] = [
   }
 ] as const;
 
-export const WATERFALL_BACKGROUND_SRC = '/labs/waterfall/rf-waterfall-bg.png';
-export const WATERFALL_MIST_SRC = '/labs/waterfall/rf-waterfall-mist.png';
+export const WATERFALL_BACKGROUND_SRC = activeAssetPack.public.waterfallBackground;
+export const WATERFALL_MIST_SRC = activeAssetPack.public.waterfallMist;
 
 export function isLabExperimentID(value: string): value is LabExperimentID {
   return value === DEFAULT_LAB_EXPERIMENT_ID;

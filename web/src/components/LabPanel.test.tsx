@@ -15,7 +15,7 @@ describe('LabPanel', () => {
       />
     );
 
-    expect(html).toContain('2.9.6 Labs');
+    expect(html).toContain('3.0.0 Labs');
     expect(html).toContain('Packet Waterfall');
     expect(html).toContain('Flow');
     expect(html).toContain('Rhythm');

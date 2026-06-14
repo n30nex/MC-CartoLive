@@ -13,10 +13,14 @@ docs are kept short; historical release evidence is preserved by version.
   commands, and release checks.
 - [Privacy model](privacy.md): private inputs, public outputs, route truth, and
   test expectations.
-- [Roadmap](roadmap.md): current baseline and active 2.9.x direction.
+- [Roadmap](roadmap.md): current baseline and active 3.x direction.
 
 ## Release Docs
 
+- [3.0.0 release notes](3.0.0/release_notes.md)
+- [3.0.0 operator notes](3.0.0/operator_notes.md)
+- [3.0.0 asset pack notes](3.0.0/asset_pack.md)
+- [3.0.0 validation checklist](3.0.0/validation_checklist.md)
 - [2.9.6 release notes](2.9.6/release_notes.md)
 - [2.9.6 operator notes](2.9.6/operator_notes.md)
 - [2.9.6 Waterfall Labs notes](2.9.6/waterfall_labs.md)

@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import type { PublicMapConfig } from '../types';
 
 type SetupPreset = 'world' | 'canada' | 'custom';
+type SetupAssetPack = 'world' | 'canada';
 
 interface SetupPanelProps {
   mapConfig?: PublicMapConfig | null;
@@ -16,6 +17,7 @@ interface SetupForm {
   bounds: string;
   brandName: string;
   brandURL: string;
+  assetPack: SetupAssetPack;
 }
 
 interface Validity {
@@ -64,7 +66,8 @@ export default function SetupPanel({ mapConfig, onClose }: SetupPanelProps) {
     regions: setupPresetFromConfig(mapConfig) === 'canada' ? 'YYZ,YOW,YKF,YUL,YVR' : '',
     bounds: boundsFromConfig(mapConfig) ?? DEFAULT_BOUNDS[setupPresetFromConfig(mapConfig)],
     brandName: 'MC-CartoLive',
-    brandURL: 'https://github.com/n30nex/MC-CartoLive'
+    brandURL: 'https://github.com/n30nex/MC-CartoLive',
+    assetPack: setupPresetFromConfig(mapConfig) === 'canada' ? 'canada' : 'world'
   }));
   const envSnippet = useMemo(() => buildSetupEnvSnippet(form), [form]);
   const boundsValidity = useMemo(() => validateBounds(form.bounds), [form.bounds]);
@@ -75,7 +78,8 @@ export default function SetupPanel({ mapConfig, onClose }: SetupPanelProps) {
       ...current,
       preset,
       regions: preset === 'canada' ? 'YYZ,YOW,YKF,YUL,YVR' : current.regions,
-      bounds: DEFAULT_BOUNDS[preset]
+      bounds: DEFAULT_BOUNDS[preset],
+      assetPack: preset === 'canada' ? 'canada' : current.assetPack
     }));
     setCopied(false);
   };
@@ -175,6 +179,16 @@ export default function SetupPanel({ mapConfig, onClose }: SetupPanelProps) {
               placeholder="https://github.com/n30nex/MC-CartoLive"
             />
           </label>
+          <label>
+            <span>Asset pack</span>
+            <select
+              value={form.assetPack}
+              onChange={(event) => setForm((current) => ({ ...current, assetPack: event.currentTarget.value === 'canada' ? 'canada' : 'world' }))}
+            >
+              <option value="world">world</option>
+              <option value="canada">canada</option>
+            </select>
+          </label>
           <div className="setup-note">
             <strong>Secrets stay private.</strong>
             <span>Add MQTT credentials and channel secrets only in your private `.env` or host secret store.</span>
@@ -212,6 +226,7 @@ export function buildSetupEnvSnippet(form: SetupForm): string {
     `VITE_APP_BRAND_NAME=${form.brandName.trim() || 'MC-CartoLive'}`,
     `VITE_APP_BRAND_URL=${form.brandURL.trim() || 'https://github.com/n30nex/MC-CartoLive'}`,
     'VITE_APP_BRAND_LOGO=',
+    `VITE_APP_ASSET_PACK=${form.assetPack}`,
     'VITE_ENABLE_SERVICE_WORKER=false'
   ];
   return lines.join('\n');

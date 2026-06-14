@@ -1,6 +1,8 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Activity, Filter, MapPin, Maximize2, Minimize2, RadioTower, Search, SortAsc, SortDesc, X } from 'lucide-react';
 import type { NodeRole, PublicNode } from '../types';
+import { activeAssetPack } from '../assets/v3/assetPacks';
+import { nodeRoleVisual } from '../nodeVisuals';
 import { toggleWorkspacePresentation, workspacePresentationTitle, type WorkspacePresentation } from './workspacePanel';
 
 interface Props {
@@ -83,7 +85,7 @@ export default function NodeListPanel({
     <section className={`node-list-panel workspace-panel workspace-${presentation}`} role="dialog" aria-label="Node list">
       <header className="node-list-header">
         <div>
-          <span className="panel-eyebrow">2.9.6 Nodes</span>
+          <span className="panel-eyebrow">3.0.0 Nodes</span>
           <h2>Node List</h2>
           <p>Search public nodes by label, role, region, or observer airport.</p>
         </div>
@@ -173,7 +175,7 @@ export default function NodeListPanel({
                   <strong>{node.label || 'Unnamed node'}</strong>
                   <span>{formatCoordinates(node.latitude, node.longitude)}</span>
                 </td>
-                <td><span className={`role-badge role-${node.role}`}>{roleLabel(node.role)}</span></td>
+                <td><span className={`role-badge role-${node.role}`}><img src={nodeRoleVisual(node.role).icon} alt="" aria-hidden="true" />{roleLabel(node.role)}</span></td>
                 <td>{regionsForNode(node)}</td>
                 <td>{node.activityCount.toLocaleString()}</td>
                 <td>{timeAgo(node.lastSeen, now)}</td>
@@ -183,7 +185,12 @@ export default function NodeListPanel({
         </table>
       </div>
 
-      {filtered.length === 0 && <div className="node-list-empty">No public nodes match those filters.</div>}
+      {filtered.length === 0 && (
+        <div className="node-list-empty">
+          <img src={activeAssetPack.workspaces.nodes} alt="" aria-hidden="true" />
+          <span>No public nodes match those filters.</span>
+        </div>
+      )}
       {filtered.length > NODE_ROW_LIMIT && <div className="node-list-truncated">Showing {NODE_ROW_LIMIT.toLocaleString()} of {filtered.length.toLocaleString()} matching nodes.</div>}
     </section>
   );

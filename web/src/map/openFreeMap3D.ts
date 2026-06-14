@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { MapLayerSettings, MapStyleSettings, PacketAnimationStyle, PacketVisualSettings, RenderQuality } from '../mapSettings';
 import { DEFAULT_MAP_LAYER_SETTINGS, DEFAULT_MAP_STYLE_SETTINGS, DEFAULT_PACKET_VISUAL_SETTINGS, mapStyleSettingsSignature, normalizeLayerSettings, normalizePacketVisualSettings, normalizeStyleSettings } from '../mapSettings';
 import { payloadVisual } from '../payloadVisuals';
+import { activeAssetPack } from '../assets/v3/assetPacks';
 import type { PublicNode, PublicObserverBurst, PublicRoute, PublicRoutePulse } from '../types';
 import { isMappableEndpoint, isMappableNode } from './geo';
 import type { NodeFocus } from './nodeFocus';
@@ -64,6 +65,7 @@ type ActiveComet = {
   head: THREE.Mesh;
   halo: THREE.Mesh;
   cone: THREE.Mesh;
+  sprite: THREE.Sprite | null;
   trail: THREE.Line;
   trailGeometry: THREE.BufferGeometry;
   trailPositions: Float32Array;
@@ -553,12 +555,13 @@ export function routeArcRadialSegments(emphasis: number, quality: RenderQuality 
   return emphasis >= 1.6 ? 4 : 3;
 }
 
-function createComet(input: Omit<ActiveComet, 'root' | 'head' | 'halo' | 'cone' | 'trail' | 'trailGeometry' | 'trailPositions' | 'maxTrailPoints' | 'paths' | 'tailTarget'>): ActiveComet {
+function createComet(input: Omit<ActiveComet, 'root' | 'head' | 'halo' | 'cone' | 'sprite' | 'trail' | 'trailGeometry' | 'trailPositions' | 'maxTrailPoints' | 'paths' | 'tailTarget'>): ActiveComet {
   const root = new THREE.Group();
   const color = hexNumber(input.color || '#67e8f9');
   const head = new THREE.Mesh(new THREE.SphereGeometry(700, 16, 10), material(0xffffff, 0.96, true));
   const halo = new THREE.Mesh(new THREE.SphereGeometry(1320, 16, 10), material(color, 0.28, true));
   const cone = new THREE.Mesh(new THREE.ConeGeometry(420, 1100, 16), material(color, 0.82, true));
+  const sprite = createCometSprite(color);
   cone.geometry.rotateX(Math.PI / 2);
   const paths = buildCometSegmentPaths(input.segments, input.force ? 1.5 : 1.15);
   const maxTrailPoints = Math.max(2, Math.max(...paths.map((path) => path.samples.length + 2), 2));
@@ -568,7 +571,9 @@ function createComet(input: Omit<ActiveComet, 'root' | 'head' | 'halo' | 'cone' 
   trailGeometry.setDrawRange(0, 0);
   const trail = new THREE.Line(trailGeometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.74, blending: THREE.AdditiveBlending, depthWrite: false }));
   root.add(trail, halo, head, cone);
-  return { ...input, paths, root, head, halo, cone, trail, trailGeometry, trailPositions, maxTrailPoints, tailTarget: new THREE.Vector3() };
+  if (sprite) root.add(sprite);
+  root.userData['effectAtlas'] = activeAssetPack.effects.threeMaterial;
+  return { ...input, paths, root, head, halo, cone, sprite, trail, trailGeometry, trailPositions, maxTrailPoints, tailTarget: new THREE.Vector3() };
 }
 
 function updateComet(comet: ActiveComet, elapsed: number) {
@@ -578,6 +583,7 @@ function updateComet(comet: ActiveComet, elapsed: number) {
   const path = comet.paths[state.segmentIndex] ?? comet.paths[0];
   if (!path) return;
   writeArcVectorAt(path, state.localProgress, comet.head.position);
+  comet.sprite?.position.copy(comet.head.position);
   const trailProgress = (comet.animationStyle === 'minimal' ? 0.05 : comet.animationStyle === 'pulse' ? 0.1 : 0.16) * Math.max(0.2, comet.trailScale);
   comet.halo.position.copy(comet.head.position);
   comet.cone.position.copy(comet.head.position);
@@ -598,6 +604,11 @@ function updateComet(comet: ActiveComet, elapsed: number) {
     const mat = mesh.material as THREE.Material & { opacity?: number };
     if (mat && 'opacity' in mat) mat.opacity = Math.min(1, (object === comet.halo ? 0.24 : 0.9) * afterglow * comet.brightness * pulse);
   });
+  if (comet.sprite) {
+    comet.sprite.scale.setScalar(1850 * (comet.animationStyle === 'minimal' ? 0.68 : 1));
+    const mat = comet.sprite.material as THREE.SpriteMaterial & { opacity?: number };
+    mat.opacity = Math.min(0.78, 0.52 * afterglow * comet.brightness * pulse);
+  }
 }
 
 export function buildCometSegmentPaths(segments: PublicRoutePulse['segments'], heightScale: number): CometSegmentPath[] {
@@ -827,6 +838,37 @@ function queryTerrainElevation(map: maplibregl.Map, lng: number, lat: number): n
 function material(color: number, opacity: number, additive = false): THREE.MeshBasicMaterial {
   return new THREE.MeshBasicMaterial({ color, transparent: opacity < 1 || additive, opacity, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: !additive, toneMapped: false });
 }
+
+let cometSpriteTexture: THREE.Texture | null | undefined;
+
+function createCometSprite(color: number): THREE.Sprite | null {
+  const texture = getCometSpriteTexture();
+  if (!texture) return null;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: texture,
+    color,
+    transparent: true,
+    opacity: 0.58,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false
+  }));
+  sprite.scale.setScalar(1850);
+  return sprite;
+}
+
+function getCometSpriteTexture(): THREE.Texture | null {
+  if (cometSpriteTexture !== undefined) return cometSpriteTexture;
+  try {
+    const texture = new THREE.TextureLoader().load(activeAssetPack.effects.threeMaterial);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    cometSpriteTexture = texture;
+  } catch {
+    cometSpriteTexture = null;
+  }
+  return cometSpriteTexture;
+}
+
 function nodeColor(node: PublicNode): string { if(node.isObserver)return'#f59e0b';if(node.role==='repeater')return'#22c55e';if(node.role==='companion')return'#3b82f6';if(node.role==='room_server')return'#a855f7';if(node.role==='sensor')return'#65a30d';return'#94a3b8'; }
 function hexNumber(color: string): number { return /^#[0-9a-fA-F]{6}$/.test(color) ? parseInt(color.slice(1), 16) : 0x67e8f9; }
 
@@ -834,7 +876,18 @@ function clearGroup(group: THREE.Group) {
   for (const c of [...group.children]) { group.remove(c); disposeGK(c); }
 }
 function disposeObject(object: THREE.Object3D) {
-  object.traverse((c) => { if (!(c instanceof THREE.Mesh)) return; if (!isPooled(c.geometry)) c.geometry?.dispose?.(); const m = c.material as THREE.Material|THREE.Material[]|undefined; if (Array.isArray(m)) m.forEach(x => x.dispose()); else m?.dispose?.(); });
+  object.traverse((c) => {
+    if (c instanceof THREE.Mesh) {
+      if (!isPooled(c.geometry)) c.geometry?.dispose?.();
+      const m = c.material as THREE.Material|THREE.Material[]|undefined;
+      if (Array.isArray(m)) m.forEach(x => x.dispose());
+      else m?.dispose?.();
+      return;
+    }
+    if (c instanceof THREE.Sprite) {
+      c.material.dispose();
+    }
+  });
 }
 
 function stableSetSignature(values: Set<string>): string {

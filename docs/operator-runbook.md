@@ -43,7 +43,7 @@ The package smoke can also be run directly against a local image, a GHCR tag, or
 a GHCR digest:
 
 ```powershell
-node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:2.9.2 --pull
+node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:3.0.0 --pull
 ```
 
 It starts temporary containers for the synthetic fixture and worldwide `r1`

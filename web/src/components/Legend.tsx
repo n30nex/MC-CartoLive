@@ -1,8 +1,7 @@
 import type { CSSProperties } from 'react';
 import { memo } from 'react';
-import { normalizePayloadType, payloadLegendVisuals } from '../payloadVisuals';
+import { payloadLegendVisuals } from '../payloadVisuals';
 import { OBSERVER_NODE_VISUAL, NODE_ROLE_VISUALS } from '../nodeVisuals';
-import { routePacketDots } from '../assets/routes/assets';
 
 export default memo(function Legend() {
   const payloads = payloadLegendVisuals();
@@ -27,7 +26,7 @@ export default memo(function Legend() {
         <div className="payload-key">
           {payloads.map((payload) => (
             <span className="payload-chip legend-payload" style={{ '--payload-color': payload.color } as CSSProperties} title={payload.description} key={payload.className}>
-              <img src={routePacketDots[normalizePayloadType(payload.label)] ?? routePacketDots.OTHER} alt="" aria-hidden="true" />
+              <img src={payload.icon} alt="" aria-hidden="true" />
               {payload.shortLabel}
             </span>
           ))}

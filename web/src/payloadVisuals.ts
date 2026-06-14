@@ -1,3 +1,5 @@
+import { routePacketDots } from './assets/routes/assets';
+
 export interface PayloadVisual {
   color: string;
   label: string;
@@ -5,6 +7,7 @@ export interface PayloadVisual {
   className: string;
   description: string;
   priority: number;
+  icon: string;
 }
 
 interface PayloadVisualDefinition {
@@ -98,7 +101,8 @@ export function payloadVisual(payloadTypeName?: string | null): PayloadVisual {
   if (known) {
     return {
       ...known,
-      className: `payload-${slugifyPayload(normalized)}`
+      className: `payload-${slugifyPayload(normalized)}`,
+      icon: routePacketDots[normalized] ?? routePacketDots.OTHER
     };
   }
   const color = normalized === 'OTHER' ? FALLBACK_COLORS[0] : FALLBACK_COLORS[stableHash(normalized) % FALLBACK_COLORS.length];
@@ -108,7 +112,8 @@ export function payloadVisual(payloadTypeName?: string | null): PayloadVisual {
     shortLabel: shortPayloadLabel(normalized),
     description: normalized === 'OTHER' ? 'Other packets' : titleCasePayload(normalized),
     className: `payload-${slugifyPayload(normalized)}`,
-    priority: 900 + (stableHash(normalized) % 100)
+    priority: 900 + (stableHash(normalized) % 100),
+    icon: routePacketDots[normalized] ?? routePacketDots.OTHER
   };
 }
 

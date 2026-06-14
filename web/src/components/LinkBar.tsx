@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { ChevronDown, ExternalLink, FlaskConical, Github, History, List, MessageSquareText, Network, RadioTower, X } from 'lucide-react';
 import { appBrandLogo, appBrandName, appBrandURL, appVersion, buildNumber, buildTime, gitSha, releaseURL } from '../buildInfo';
 import { routeAssetIcons } from '../assets/routes/assets';
+import { activeAssetPack } from '../assets/v3/assetPacks';
 import { DEFAULT_LAB_EXPERIMENT_ID, LAB_EXPERIMENTS, type LabExperimentID } from '../lab';
 import {
   GITHUB_REPO_API_URL,
@@ -20,6 +21,11 @@ type InfoPanel = 'changelog' | null;
 
 export const LATEST_RELEASE_HIGHLIGHTS = [
   {
+    label: '3.0.0',
+    title: 'Asset Pack v3',
+    body: 'World and Canada presets now ship curated v3 branding, node, packet, map, workspace, and motion assets without runtime image-generation calls.'
+  },
+  {
     label: '2.9.6',
     title: 'Waterfall Labs',
     body: 'Labs is now a single cinematic Packet Waterfall with generated RF-waterfall art, capped falling packet motion, and opt-in rhythmic synth audio.'
@@ -28,11 +34,6 @@ export const LATEST_RELEASE_HIGHLIGHTS = [
     label: '2.9.5',
     title: 'Map Studio',
     body: 'Map Studio adds more basemap profiles, optional PMTiles offline views, and richer configurable 3D node and route rendering.'
-  },
-  {
-    label: '2.9.4',
-    title: 'Labs Polish',
-    body: 'Every Labs experiment gets a routed page, a dropdown entry, clearer live signal context, stronger controls, and tuned visual polish.'
   }
 ];
 
@@ -60,7 +61,7 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
   const [workspacesMenuOpen, setWorkspacesMenuOpen] = useState(false);
   const brandName = appBrandName.trim() || 'MC-CartoLive';
   const brandURL = appBrandURL.trim() || GITHUB_REPO_URL;
-  const brandLogo = appBrandLogo.trim() || routeAssetIcons.app;
+  const brandLogo = appBrandLogo.trim() || routeAssetIcons.app || activeAssetPack.brand.appIcon;
   const buildAge = useMemo(() => formatBuildAge(buildTime, now), [buildTime, now]);
   const buildID = shortBuildID(buildNumber, gitSha);
   const commitURL = commitURLForSha(gitSha || buildNumber);
@@ -168,6 +169,7 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
       {activeInfoPanel === 'changelog' && (
         <InfoPopover title="About" icon={<History size={14} />} onClose={() => setActiveInfoPanel(null)}>
           <p>Version {appVersion} · build <a href={commitURL} target="_blank" rel="noreferrer">{buildID}</a> · <span title={buildDate}>{buildAge}</span></p>
+          <p>Asset pack: {activeAssetPack.label}</p>
           <div className="link-bar-release-list">
             {LATEST_RELEASE_HIGHLIGHTS.map((item) => (
               <article key={`${item.label}-${item.title}`} className="link-bar-release-note">

@@ -1,7 +1,7 @@
 import { Keyboard, Route, SlidersHorizontal, X } from 'lucide-react';
 import { useState } from 'react';
 
-export const VISITOR_GUIDE_STORAGE_KEY = 'mc-cartolive-visitor-guide-dismissed-v290';
+export const VISITOR_GUIDE_STORAGE_KEY = 'mc-cartolive-visitor-guide-dismissed-v300';
 
 interface VisitorGuideProps {
   knownPathwaysOn: boolean;
@@ -34,7 +34,7 @@ export default function VisitorGuide({
       <button type="button" className="visitor-guide-close" aria-label="Dismiss map guide" onClick={dismiss}>
         <X size={14} />
       </button>
-      <span className="panel-eyebrow">2.9.6 Live</span>
+      <span className="panel-eyebrow">3.0.0 Live</span>
       <h2>Watch live traffic first</h2>
       <p>Comets and fading trails show current public RF activity. Route lines, terrain, and propagation stay optional so the first view stays clear.</p>
       <div className="visitor-guide-actions">

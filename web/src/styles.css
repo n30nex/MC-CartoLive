@@ -2781,6 +2781,7 @@ button {
 .role-badge {
   display: inline-flex;
   align-items: center;
+  gap: 5px;
   min-height: 23px;
   padding: 0 8px;
   color: var(--mc-text, #f8fafc);
@@ -2789,6 +2790,14 @@ button {
   border-radius: 999px;
   font-size: 10px;
   font-weight: 850;
+}
+
+.role-badge img {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, currentColor 44%, transparent));
 }
 
 .role-badge.role-repeater {
@@ -2817,6 +2826,20 @@ button {
   color: var(--mc-text-muted, #9fb1c9);
   font-size: 12px;
   font-weight: 780;
+}
+
+.node-list-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.node-list-empty img {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  object-fit: contain;
+  opacity: 0.9;
 }
 
 .workspace-panel.workspace-fullscreen {
@@ -3066,7 +3089,8 @@ button {
   text-transform: uppercase;
 }
 
-.setup-card input {
+.setup-card input,
+.setup-card select {
   min-width: 0;
   height: 36px;
   padding: 0 10px;
@@ -3075,6 +3099,18 @@ button {
   border: 1px solid var(--mc-border, rgba(125, 211, 252, 0.26));
   border-radius: 7px;
   font: inherit;
+}
+
+.setup-card select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--mc-text-muted, #9fb1c9) 50%),
+    linear-gradient(135deg, var(--mc-text-muted, #9fb1c9) 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) 15px,
+    calc(100% - 11px) 15px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
 }
 
 .setup-presets {
@@ -3243,6 +3279,22 @@ button {
   white-space: nowrap;
 }
 
+.packets-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.packets-empty img,
+.packet-detail.empty img {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  object-fit: contain;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--mc-accent, #38bdf8) 34%, transparent));
+}
+
 .packets-toolbar {
   flex-wrap: wrap;
   gap: 8px;
@@ -3402,7 +3454,7 @@ button {
 .packet-payload {
   gap: 5px;
   flex: 0 0 auto;
-  min-width: 56px;
+  min-width: 64px;
   padding: 3px 7px;
   color: color-mix(in srgb, var(--packet-color, #38bdf8) 70%, var(--mc-text, #ffffff));
   background: color-mix(in srgb, var(--packet-color, #38bdf8) 13%, transparent);
@@ -3410,6 +3462,14 @@ button {
   border-radius: 999px;
   font-size: 10px;
   font-weight: 950;
+}
+
+.packet-payload img {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px var(--packet-color, #38bdf8));
 }
 
 .packet-payload i {
@@ -4593,6 +4653,7 @@ button.status-pill {
 
 .map-settings-preset-grid button,
 .map-style-profile-grid button {
+  position: relative;
   min-width: 0;
   min-height: 56px;
   display: grid;
@@ -4605,11 +4666,28 @@ button.status-pill {
   border: 1px solid var(--mc-border, rgba(125, 211, 252, 0.24));
   border-radius: 7px;
   cursor: pointer;
+  overflow: hidden;
+  isolation: isolate;
 }
 
 .map-style-profile-grid button {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
+}
+
+.map-mode-grid button,
+.map-style-profile-grid button {
+  background-image:
+    linear-gradient(90deg, rgba(3, 7, 18, 0.92), rgba(3, 7, 18, 0.68)),
+    var(--map-mode-art, var(--map-profile-art, none));
+  background-position: center;
+  background-size: cover;
+}
+
+.map-mode-grid button > *,
+.map-style-profile-grid button > * {
+  position: relative;
+  z-index: 1;
 }
 
 .map-style-profile-grid button span {

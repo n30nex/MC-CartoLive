@@ -3,7 +3,7 @@ services:
     build:
       context: .
       args:
-        APP_VERSION: ${APP_VERSION:-2.9.6}
+        APP_VERSION: ${APP_VERSION:-3.0.0}
         VITE_OPENFREEMAP_STYLE_URL: ${VITE_OPENFREEMAP_STYLE_URL:-}
         VITE_OPENFREEMAP_TILEJSON_URL: ${VITE_OPENFREEMAP_TILEJSON_URL:-https://tiles.openfreemap.org/planet}
         VITE_TERRAIN_TILE_URL: ${VITE_TERRAIN_TILE_URL:-https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png}
@@ -17,6 +17,7 @@ services:
         VITE_APP_BRAND_NAME: ${VITE_APP_BRAND_NAME:-MC-CartoLive}
         VITE_APP_BRAND_URL: ${VITE_APP_BRAND_URL:-https://github.com/n30nex/MC-CartoLive}
         VITE_APP_BRAND_LOGO: ${VITE_APP_BRAND_LOGO:-}
+        VITE_APP_ASSET_PACK: ${VITE_APP_ASSET_PACK:-world}
         VITE_ENABLE_SERVICE_WORKER: ${VITE_ENABLE_SERVICE_WORKER:-false}
         VITE_PUBLIC_WS_SUBSCRIPTIONS_ENABLED: ${VITE_PUBLIC_WS_SUBSCRIPTIONS_ENABLED:-false}
     container_name: meshcore-canada-live-map
@@ -26,7 +27,7 @@ services:
     env_file:
       - .env
     environment:
-      APP_VERSION: ${APP_VERSION:-2.9.6}
+      APP_VERSION: ${APP_VERSION:-3.0.0}
       GIT_SHA: ${GIT_SHA:-${VITE_GIT_SHA:-}}
       BUILD_TIME: ${BUILD_TIME:-${VITE_BUILD_TIME:-}}
       VITE_ENABLE_SERVICE_WORKER: ${VITE_ENABLE_SERVICE_WORKER:-false}

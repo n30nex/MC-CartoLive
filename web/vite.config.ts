@@ -5,6 +5,7 @@ import { execSync } from 'node:child_process';
 
 const packageJSON = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version?: string };
 const GITHUB_REPO_URL = 'https://github.com/n30nex/MC-CartoLive';
+const APP_ASSET_PACK = normalizeAssetPack(process.env.VITE_APP_ASSET_PACK);
 
 function buildNumber(): string {
   if (process.env.VITE_BUILD_NUMBER) return process.env.VITE_BUILD_NUMBER;
@@ -34,7 +35,15 @@ function buildTime(): string {
 }
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'mc-cartolive-asset-pack-html',
+      transformIndexHtml(html) {
+        return html.replaceAll('__APP_ASSET_PACK__', APP_ASSET_PACK);
+      }
+    }
+  ],
   build: {
     chunkSizeWarningLimit: 1200,
     rollupOptions: {
@@ -60,9 +69,14 @@ export default defineConfig({
     __RELEASE_URL__: JSON.stringify(`${GITHUB_REPO_URL}/releases/tag/v${packageJSON.version ?? '1.0.0'}`),
     __APP_BRAND_NAME__: JSON.stringify(process.env.VITE_APP_BRAND_NAME || 'MC-CartoLive'),
     __APP_BRAND_URL__: JSON.stringify(process.env.VITE_APP_BRAND_URL || GITHUB_REPO_URL),
-    __APP_BRAND_LOGO__: JSON.stringify(process.env.VITE_APP_BRAND_LOGO || '')
+    __APP_BRAND_LOGO__: JSON.stringify(process.env.VITE_APP_BRAND_LOGO || ''),
+    __APP_ASSET_PACK__: JSON.stringify(APP_ASSET_PACK)
   },
   test: {
     environment: 'jsdom'
   }
 });
+
+function normalizeAssetPack(value: string | undefined): 'world' | 'canada' {
+  return value === 'canada' ? 'canada' : 'world';
+}

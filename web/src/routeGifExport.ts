@@ -1,4 +1,5 @@
 import { appBrandName } from './buildInfo';
+import { activeAssetPack } from './assets/v3/assetPacks';
 import { clamp } from './lib/clamp';
 import { hexToRgba } from './lib/color';
 import { packetEndpointSummary, packetRegion } from './packets';
@@ -171,13 +172,14 @@ export function drawRouteMapGifOverlay(
 
   const headerWidth = Math.min(width - 40, Math.max(520, Math.min(860, title.length * 16 + 290)));
   roundedRect(ctx, 20, 18, headerWidth, 86, 18, 'rgba(3, 7, 18, 0.78)', hexToRgba(accent, 0.42));
+  drawCachedImage(ctx, activeAssetPack.brand.appIcon, 34, 33, 44, 44, 0.88);
   ctx.shadowBlur = 0;
   ctx.fillStyle = '#f8fafc';
   ctx.font = '900 26px Inter, system-ui, sans-serif';
-  ctx.fillText(truncateText(title, 58), 42, 52);
+  ctx.fillText(truncateText(title, 58), 92, 52);
   ctx.fillStyle = '#bae6fd';
   ctx.font = '800 14px Inter, system-ui, sans-serif';
-  ctx.fillText(`${appBrandName || 'MC-CartoLive'} actual map replay`, 42, 82);
+  ctx.fillText(`${appBrandName || activeAssetPack.label} actual map replay`, 92, 82);
 
   const chips = [
     visual.shortLabel,
@@ -189,11 +191,13 @@ export function drawRouteMapGifOverlay(
   let chipX = width - 28;
   ctx.font = '800 14px Inter, system-ui, sans-serif';
   for (const chip of chips.reverse()) {
-    const chipWidth = ctx.measureText(chip).width + 24;
+    const hasIcon = chip === visual.shortLabel;
+    const chipWidth = ctx.measureText(chip).width + (hasIcon ? 46 : 24);
     chipX -= chipWidth;
     roundedRect(ctx, chipX, 24, chipWidth - 8, 30, 9, 'rgba(2, 6, 23, 0.82)', hexToRgba(accent, 0.38));
-    ctx.fillStyle = chip === visual.shortLabel ? accent : '#e0f2fe';
-    ctx.fillText(chip, chipX + 11, 39);
+    ctx.fillStyle = hasIcon ? accent : '#e0f2fe';
+    if (hasIcon) drawCachedImage(ctx, visual.icon, chipX + 8, 30, 18, 18, 0.94);
+    ctx.fillText(chip, chipX + (hasIcon ? 32 : 11), 39);
     chipX -= 8;
   }
 
@@ -227,6 +231,24 @@ export function drawRouteMapGifOverlay(
     ctx.fillText(truncateText(message, 96), 58, messageY + 17);
   }
 
+  ctx.restore();
+}
+
+const routeGifImageCache = new Map<string, HTMLImageElement>();
+
+function drawCachedImage(ctx: CanvasRenderingContext2D, src: string, x: number, y: number, width: number, height: number, alpha = 1) {
+  if (typeof Image !== 'function' || !src) return;
+  let image = routeGifImageCache.get(src);
+  if (!image) {
+    image = new Image();
+    image.decoding = 'async';
+    image.src = src;
+    routeGifImageCache.set(src, image);
+  }
+  if (!image.complete || image.naturalWidth === 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(image, x, y, width, height);
   ctx.restore();
 }
 

@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v2.9.6
+# MeshCore MQTT Live Map v3.0.0
 
 Also known as **MC-CartoLive**.
 
@@ -12,21 +12,22 @@ Public instance: [carto.canadaverse.org](https://carto.canadaverse.org/).
 
 ## Current Release
 
-Version 2.9.6 is the Waterfall Labs release on the public-safe 2.9 foundation. It
-keeps the one-container SQLite deployment shape while adding:
+Version 3.0.0 is the image asset pack release. It keeps the one-container SQLite
+deployment shape while adding:
 
-- a single `/#/lab/waterfall` Labs workspace that replaces the retired
-  multi-page experiment suite
-- generated cinematic RF-waterfall artwork and mist assets for the Waterfall
-  stage
-- falling packet streams, payload lanes, route ribbons, splashes, and live
-  traffic intensity overlays
-- opt-in rhythmic synth audio with strict browser-safe voice and burst limits
-- browser-local Waterfall controls for volume, rhythm, motion, density, time
-  window, payload focus, and reduced motion
-- focused tests and release documentation for the single-Waterfall Labs upgrade
+- committed world and Canada v3 asset presets for branding, PWA icons, social
+  cards, node roles, packet classes, map layers, workspace states, and motion
+  effects
+- a manifest-driven optional OpenAI Image API/Batch API workflow for future
+  curated asset generations, with normal builds and runtime staying fully static
+- `VITE_APP_ASSET_PACK=world` as the default GHCR/easy-deploy image preset and
+  `VITE_APP_ASSET_PACK=canada` for the hosted Canadaverse droplet
+- asset-backed packet chips, node role labels, map/layer thumbnails, live comet
+  effects, route GIF overlays, and Waterfall v3 backdrops
+- updated setup UI, Docker/Compose defaults, and release documentation for the
+  world/Canada preset split
 
-The recommended v2.9.6 release path is clone + Compose on a VPS or local host,
+The recommended v3.0.0 release path is clone + Compose on a VPS or local host,
 optionally behind Cloudflare Tunnel, Caddy, nginx, or another HTTPS reverse
 proxy.
 
@@ -73,7 +74,7 @@ podman run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:2.9.6
+  ghcr.io/n30nex/mc-cartolive:3.0.0
 ```
 
 For a persistent deployment:
@@ -83,7 +84,7 @@ podman run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:2.9.6
+  ghcr.io/n30nex/mc-cartolive:3.0.0
 ```
 
 The production droplet currently uses Docker Compose; local release validation
@@ -104,6 +105,7 @@ Important variables:
 | `MESHCORE_CHANNEL_SECRETS` | Optional private extra channel keys for operators. |
 | `FIXTURE_REPLAY_PATH` | Synthetic fixture path for repeatable local demos. |
 | `MAP_REGION_PRESET` | `world`, `canada`, or `custom`. |
+| `VITE_APP_ASSET_PACK` | Build-time frontend asset preset: `world` by default, `canada` for the hosted Canada release. |
 | `MAP_BOUNDS` | Custom bounds as `minLat,minLng,maxLat,maxLng`. |
 | `PUBLIC_REGIONS` | Public-safe broker region allowlist. Empty allows safe labels. |
 | `DB_PATH` | SQLite path inside the container. |
@@ -133,15 +135,16 @@ Release hygiene:
 
 ```bash
 node scripts/check-version-sync.mjs
+node scripts/check-asset-pack.mjs
 node scripts/check-public-privacy.mjs http://127.0.0.1:39476
 podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
-node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:2.9.6 --pull
+node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:3.0.0 --pull
 ```
 
 Live post-deploy smoke:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 2.9.6 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.0.0 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
 ## Documentation
@@ -153,8 +156,10 @@ Live post-deploy smoke:
 - [Privacy model](docs/privacy.md)
 - [Roadmap](docs/roadmap.md)
 - [Changelog](CHANGELOG.md)
+- [3.0.0 release notes](docs/3.0.0/release_notes.md)
+- [3.0.0 asset pack notes](docs/3.0.0/asset_pack.md)
+- [3.0.0 validation checklist](docs/3.0.0/validation_checklist.md)
 - [2.9.6 release notes](docs/2.9.6/release_notes.md)
-- [2.9.6 validation checklist](docs/2.9.6/validation_checklist.md)
 - [2.9.5 release notes](docs/2.9.5/release_notes.md)
 - [2.9.4 release notes](docs/2.9.4/release_notes.md)
 - [2.9.3 release notes](docs/2.9.3/release_notes.md)

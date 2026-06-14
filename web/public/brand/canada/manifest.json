@@ -1,0 +1,24 @@
+{
+  "name": "Carto Live Canada",
+  "short_name": "CartoLive CA",
+  "description": "Canada MeshCore MQTT Live Map",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#05070b",
+  "background_color": "#05070b",
+  "icons": [
+    {
+      "src": "/brand/canada/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/brand/canada/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

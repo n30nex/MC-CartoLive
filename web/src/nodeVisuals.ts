@@ -45,7 +45,7 @@ export const NODE_ROLE_VISUALS: NodeRoleVisual[] = [
     key: 'sensor',
     role: 'sensor',
     label: 'Sensor',
-    icon: routeAssetIcons.tower,
+    icon: routeAssetIcons.sensor,
     mapImageID: 'node-sensor',
     color: '#65a30d',
     shape: 'pentagon'
@@ -54,7 +54,7 @@ export const NODE_ROLE_VISUALS: NodeRoleVisual[] = [
     key: 'other',
     role: 'unknown',
     label: 'Other',
-    icon: routeAssetIcons.tower,
+    icon: routeAssetIcons.unknown,
     mapImageID: 'node-unknown',
     color: '#64748b',
     shape: 'circle'
