@@ -103,9 +103,9 @@ export const LAB_EXPERIMENTS: readonly LabExperiment[] = [
     path: WATERFALL_LAB_PATH,
     accent: '#22d3ee',
     tagline: 'Packets fall through a cinematic RF cascade and play the live network.',
-    detail: 'Public packet activity becomes luminous falling streams, splashes, mist, route ribbons, and opt-in ambient music.',
+    detail: 'Public packet activity becomes capped luminous streams, mist, route ribbons, impact rings, and opt-in rhythmic synth audio.',
     signal: 'Payload type, route state, packet density, hop count, public regions, message presence, and route distance.',
-    cues: ['Falling packet streams', 'Ambient packet voices', 'Live RF intensity']
+    cues: ['Capped packet streams', 'Rhythmic synth pulses', 'Live RF intensity']
   }
 ] as const;
 

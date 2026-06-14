@@ -22,7 +22,7 @@ export const LATEST_RELEASE_HIGHLIGHTS = [
   {
     label: '2.9.6',
     title: 'Waterfall Labs',
-    body: 'Labs is now a single cinematic Packet Waterfall with generated RF-waterfall art, richer falling packet motion, and opt-in ambient packet music.'
+    body: 'Labs is now a single cinematic Packet Waterfall with generated RF-waterfall art, capped falling packet motion, and opt-in rhythmic synth audio.'
   },
   {
     label: '2.9.5',

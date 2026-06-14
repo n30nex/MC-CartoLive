@@ -17,9 +17,6 @@ import {
   DEFAULT_LAB_EXPERIMENT_ID,
   WATERFALL_BACKGROUND_SRC,
   WATERFALL_MIST_SRC,
-  eventIntensity,
-  eventPitchHz,
-  eventStereoPan,
   filterLabEventsByPayload,
   labEventsFromState,
   labMetrics,
@@ -30,6 +27,21 @@ import {
   type LabMetrics,
   type LabWaterfallLane
 } from '../lab';
+import {
+  DEFAULT_WATERFALL_SETTINGS,
+  WATERFALL_SETTINGS_KEY,
+  WATERFALL_SYNTH_LIMITS,
+  planWaterfallSynthVoices,
+  prepareWaterfallDrops,
+  shouldRenderWaterfallFrame,
+  waterfallAmbientCount,
+  waterfallRenderBudget,
+  waterfallTempo,
+  type WaterfallPreparedDrop,
+  type WaterfallRenderBudget,
+  type WaterfallSettings,
+  type WaterfallSynthVoice
+} from '../labWaterfall';
 import type { AppState } from '../state';
 import { toggleWorkspacePresentation, workspacePresentationTitle, type WorkspacePresentation } from './workspacePanel';
 
@@ -45,30 +57,19 @@ interface LabPanelProps {
 
 type LabAudioStatus = 'idle' | 'ready' | 'blocked' | 'unsupported';
 
-interface WaterfallSettings {
-  volume: number;
-  motion: number;
-  density: number;
-  windowSeconds: number;
-  payloadFocus: string;
-  reducedMotion: boolean;
-}
-
 interface WaterfallAssets {
   background?: HTMLImageElement;
   mist?: HTMLImageElement;
 }
 
-const WATERFALL_SETTINGS_KEY = 'mc-cartolive-waterfall-settings-v1';
+interface WaterfallBackdropCache {
+  base?: HTMLCanvasElement;
+  baseKey?: string;
+  mist?: HTMLCanvasElement;
+  mistKey?: string;
+}
+
 const WATERFALL_ACCENT = '#22d3ee';
-const DEFAULT_WATERFALL_SETTINGS: WaterfallSettings = {
-  volume: 0.34,
-  motion: 0.74,
-  density: 0.9,
-  windowSeconds: 90,
-  payloadFocus: 'all',
-  reducedMotion: false
-};
 
 export default function LabPanel({
   state,
@@ -83,6 +84,7 @@ export default function LabPanel({
   const [now, setNow] = useState(() => state.serverTime || Date.now());
   const [assets, setAssets] = useState<WaterfallAssets>({});
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const backdropCacheRef = useRef<WaterfallBackdropCache>({});
   const stageStyle = { '--lab-accent': WATERFALL_ACCENT } as CSSProperties;
   const windowMs = settings.windowSeconds * 1_000;
 
@@ -123,39 +125,74 @@ export default function LabPanel({
   const lanes = useMemo(() => waterfallLanes(allEvents, now, windowMs), [allEvents, now, windowMs]);
   const activeLanes = useMemo(() => waterfallLanes(visibleEvents.length ? visibleEvents : focusedEvents, now, windowMs), [focusedEvents, now, visibleEvents, windowMs]);
   const metrics = useMemo(() => labMetrics(visibleEvents.length ? visibleEvents : focusedEvents, now, windowMs), [focusedEvents, now, visibleEvents, windowMs]);
+  const renderBudget = useMemo(() => currentWaterfallBudget(undefined, settings.reducedMotion), [settings.reducedMotion]);
+  const preparedDrops = useMemo(
+    () => prepareWaterfallDrops({ events: visibleEvents, lanes: activeLanes, density: settings.density, budget: renderBudget }),
+    [activeLanes, renderBudget, settings.density, visibleEvents]
+  );
+  const ambientCount = useMemo(() => waterfallAmbientCount(activeLanes, settings.density, renderBudget), [activeLanes, renderBudget, settings.density]);
+  const tempo = waterfallTempo(metrics, settings.rhythm);
   const latestEvent = visibleEvents[0] ?? focusedEvents[0] ?? allEvents[0];
   const audio = useWaterfallAudio({
     enabled: audioEnabled,
     events: visibleEvents,
     metrics,
+    rhythm: settings.rhythm,
     volume: settings.volume
   });
+  const audioStatusLabel = audioEnabled ? audio.status : audio.status === 'blocked' || audio.status === 'unsupported' ? audio.status : 'muted';
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
-    let frame = 0;
     let raf = 0;
+    let lastPaintClock = 0;
+    let stopped = false;
     const render = (clock: number) => {
+      raf = 0;
+      if (stopped) return;
+      const budget = currentWaterfallBudget(canvas, settings.reducedMotion);
+      if (!shouldRenderWaterfallFrame(clock, lastPaintClock, budget)) {
+        queueFrame();
+        return;
+      }
+      lastPaintClock = clock;
       drawWaterfallCanvas(canvas, {
         assets,
+        budget,
+        cache: backdropCacheRef.current,
         clock,
-        events: visibleEvents,
+        drops: preparedDrops,
+        ambientCount,
         lanes: activeLanes,
         metrics,
         now: Date.now(),
         settings
       });
-      frame += 1;
-      if (settings.reducedMotion && frame % 3 !== 0) {
+      queueFrame();
+    };
+    const queueFrame = () => {
+      if (!stopped && !document.hidden && raf === 0) {
         raf = window.requestAnimationFrame(render);
+      }
+    };
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (raf) window.cancelAnimationFrame(raf);
+        raf = 0;
         return;
       }
-      raf = window.requestAnimationFrame(render);
+      lastPaintClock = 0;
+      queueFrame();
     };
-    raf = window.requestAnimationFrame(render);
-    return () => window.cancelAnimationFrame(raf);
-  }, [activeLanes, assets, metrics, settings, visibleEvents]);
+    document.addEventListener('visibilitychange', handleVisibility);
+    queueFrame();
+    return () => {
+      stopped = true;
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (raf) window.cancelAnimationFrame(raf);
+    };
+  }, [activeLanes, ambientCount, assets, metrics, preparedDrops, settings]);
 
   const enableAudio = useCallback(() => {
     audio.enable().then((ok) => setAudioEnabled(ok));
@@ -171,7 +208,7 @@ export default function LabPanel({
   }, []);
 
   const resetSettings = useCallback(() => {
-    setSettings(DEFAULT_WATERFALL_SETTINGS);
+    setSettings({ ...DEFAULT_WATERFALL_SETTINGS, reducedMotion: prefersReducedMotion() });
   }, []);
 
   return (
@@ -180,7 +217,7 @@ export default function LabPanel({
         <div>
           <span className="panel-eyebrow">2.9.6 Labs</span>
           <h2>Packet Waterfall</h2>
-          <p>Live public packets fall through an RF cascade and bloom into ambient generative music.</p>
+          <p>Live public packets fall through a capped RF cascade and drive an opt-in rhythmic synth.</p>
         </div>
         <div className="lab-panel-actions">
           {onPresentationChange && (
@@ -216,7 +253,7 @@ export default function LabPanel({
           <div className="waterfall-live-badge" style={{ '--lab-opacity': (0.48 + metrics.liveEnergy * 0.46).toFixed(3) } as CSSProperties}>
             <span>{socketStatus}</span>
             <i />
-            <span>{audioEnabled ? audio.status : 'muted'}</span>
+            <span>{audioStatusLabel}</span>
           </div>
           <div className="waterfall-now">
             <span>Intensity</span>
@@ -229,6 +266,7 @@ export default function LabPanel({
         <section className="waterfall-control-surface" aria-label="Waterfall controls">
           <ControlHeader icon={<SlidersHorizontal size={15} />} title="Flow" />
           <ControlSlider label="Volume" value={settings.volume} min={0} max={1} step={0.01} onChange={(value) => updateSetting('volume', value)} />
+          <ControlSlider label="Rhythm" value={settings.rhythm} min={0} max={1} step={0.01} onChange={(value) => updateSetting('rhythm', value)} />
           <ControlSlider label="Motion" value={settings.motion} min={0.18} max={1.35} step={0.01} onChange={(value) => updateSetting('motion', value)} />
           <ControlSlider label="Density" value={settings.density} min={0.35} max={1.6} step={0.01} onChange={(value) => updateSetting('density', value)} />
           <div className="waterfall-control-row">
@@ -257,7 +295,7 @@ export default function LabPanel({
           <Metric icon={<Activity size={15} />} label="Packets" value={`${metrics.packetRatePerMinute}/min`} />
           <Metric icon={<RadioTower size={15} />} label="Routes" value={`${metrics.routedPerMinute}/min`} />
           <Metric icon={<Sparkles size={15} />} label="Observers" value={`${metrics.observerPerMinute}/min`} />
-          <Metric icon={<Music2 size={15} />} label="Voices" value={voiceCountLabel(metrics)} />
+          <Metric icon={<Music2 size={15} />} label="Tempo" value={`${tempo} bpm`} />
           <Metric icon={<Gauge size={15} />} label="Longest" value={`${Math.round(metrics.longestDistanceKm)} km`} />
         </section>
 
@@ -341,17 +379,20 @@ function useWaterfallAudio({
   enabled,
   events,
   metrics,
+  rhythm,
   volume
 }: {
   enabled: boolean;
   events: LabEvent[];
   metrics: LabMetrics;
+  rhythm: number;
   volume: number;
 }) {
   const contextRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
+  const noiseBufferRef = useRef<AudioBuffer | null>(null);
   const seenRef = useRef<Set<string>>(new Set());
-  const lastSwellRef = useRef(0);
+  const scheduledVoiceTimesRef = useRef<number[]>([]);
   const [status, setStatus] = useState<LabAudioStatus>('idle');
 
   const enable = useCallback(async () => {
@@ -367,15 +408,18 @@ function useWaterfallAudio({
       if (!masterGainRef.current) {
         const master = context.createGain();
         const compressor = context.createDynamicsCompressor();
-        compressor.threshold.value = -24;
-        compressor.knee.value = 18;
-        compressor.ratio.value = 8;
-        compressor.attack.value = 0.008;
-        compressor.release.value = 0.18;
+        compressor.threshold.value = -18;
+        compressor.knee.value = 12;
+        compressor.ratio.value = 12;
+        compressor.attack.value = 0.004;
+        compressor.release.value = 0.12;
         master.gain.value = volumeToGain(volume);
         master.connect(compressor);
         compressor.connect(context.destination);
         masterGainRef.current = master;
+      }
+      if (!noiseBufferRef.current) {
+        noiseBufferRef.current = createSynthNoiseBuffer(context);
       }
       await context.resume();
       setStatus('ready');
@@ -403,26 +447,26 @@ function useWaterfallAudio({
     const context = contextRef.current;
     const master = masterGainRef.current;
     if (!context || !master || context.state !== 'running') return;
-    const cutoff = Date.now() - 14_000;
+    const now = Date.now();
+    scheduledVoiceTimesRef.current = scheduledVoiceTimesRef.current.filter((timestamp) => now - timestamp < 1_000);
+    const availableVoicesThisSecond = WATERFALL_SYNTH_LIMITS.maxVoicesPerSecond - scheduledVoiceTimesRef.current.length;
+    if (availableVoicesThisSecond <= 0) return;
+    const cutoff = now - 8_000;
     const fresh = events
       .filter((event) => event.displayAt >= cutoff && !seenRef.current.has(`${event.source}:${event.id}`))
       .sort((a, b) => a.displayAt - b.displayAt)
-      .slice(-10);
-    fresh.forEach((event, index) => {
-      seenRef.current.add(`${event.source}:${event.id}`);
-      playDropBell(context, master, event, index * 0.055);
-      if (event.kind === 'routed') playGlassPad(context, master, event, index * 0.07);
-      if (event.messageText || event.kind === 'observer') playShimmer(context, master, event, index * 0.04);
+      .slice(-WATERFALL_SYNTH_LIMITS.maxVoicesPerSecond);
+    const plan = planWaterfallSynthVoices({ events: fresh, metrics, rhythm, availableVoicesThisSecond });
+    const stepStart = quantizedSynthStart(context.currentTime, plan.secondsPerStep);
+    plan.voices.forEach((voice) => {
+      seenRef.current.add(voice.key);
+      scheduledVoiceTimesRef.current.push(now);
+      playWaterfallSynthVoice(context, master, noiseBufferRef.current, voice, stepStart + voice.offsetSeconds);
     });
-    const now = Date.now();
-    if (metrics.liveEnergy > 0.28 && now - lastSwellRef.current > 2_800) {
-      lastSwellRef.current = now;
-      playBassSwell(context, master, metrics.liveEnergy, events[0]);
-    }
     if (seenRef.current.size > 900) {
       seenRef.current = new Set([...seenRef.current].slice(-420));
     }
-  }, [enabled, events, metrics.liveEnergy]);
+  }, [enabled, events, metrics, rhythm]);
 
   useEffect(() => () => {
     contextRef.current?.close().catch(() => undefined);
@@ -431,121 +475,129 @@ function useWaterfallAudio({
   return { enable, disable, status };
 }
 
-function playDropBell(context: AudioContext, master: GainNode, event: LabEvent, offsetSeconds: number) {
-  const start = context.currentTime + offsetSeconds;
-  const duration = 0.22 + eventIntensity(event) * 0.32;
-  const gain = context.createGain();
-  const pan = context.createStereoPanner();
-  const filter = context.createBiquadFilter();
-  const primary = context.createOscillator();
-  const overtone = context.createOscillator();
-  const pitch = eventPitchHz(event);
-  primary.type = 'sine';
-  overtone.type = event.messageText ? 'triangle' : 'sine';
-  primary.frequency.setValueAtTime(pitch, start);
-  overtone.frequency.setValueAtTime(pitch * 2.01, start);
-  overtone.detune.setValueAtTime(4, start);
-  filter.type = 'bandpass';
-  filter.frequency.setValueAtTime(Math.min(4_600, pitch * 3.2), start);
-  filter.Q.value = 8;
-  pan.pan.setValueAtTime(eventStereoPan(event), start);
-  gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.exponentialRampToValueAtTime(0.05 + eventIntensity(event) * 0.06, start + 0.018);
-  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-  primary.connect(filter);
-  overtone.connect(filter);
-  filter.connect(gain);
-  gain.connect(pan);
-  pan.connect(master);
-  primary.start(start);
-  overtone.start(start);
-  primary.stop(start + duration + 0.04);
-  overtone.stop(start + duration + 0.04);
-}
-
-function playGlassPad(context: AudioContext, master: GainNode, event: LabEvent, offsetSeconds: number) {
-  const start = context.currentTime + offsetSeconds;
-  const duration = 1.3 + eventIntensity(event) * 0.8;
-  const gain = context.createGain();
-  const pan = context.createStereoPanner();
-  const filter = context.createBiquadFilter();
-  const oscillator = context.createOscillator();
-  oscillator.type = 'triangle';
-  oscillator.frequency.setValueAtTime(eventPitchHz(event) / 2, start);
-  filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(720 + eventIntensity(event) * 1_600, start);
-  filter.Q.value = 0.72;
-  pan.pan.setValueAtTime(eventStereoPan(event) * 0.55, start);
-  gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.linearRampToValueAtTime(0.022 + eventIntensity(event) * 0.034, start + 0.22);
-  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-  oscillator.connect(filter);
-  filter.connect(gain);
-  gain.connect(pan);
-  pan.connect(master);
-  oscillator.start(start);
-  oscillator.stop(start + duration + 0.05);
-}
-
-function playBassSwell(context: AudioContext, master: GainNode, energy: number, event?: LabEvent) {
-  const start = context.currentTime;
-  const duration = 1.8;
-  const gain = context.createGain();
-  const filter = context.createBiquadFilter();
-  const oscillator = context.createOscillator();
-  oscillator.type = 'sine';
-  oscillator.frequency.setValueAtTime(54 + energy * 42 + (event ? stableHash(event.payloadTypeName) % 18 : 0), start);
-  filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(180 + energy * 520, start);
-  filter.Q.value = 0.9;
-  gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.linearRampToValueAtTime(0.018 + energy * 0.04, start + 0.45);
-  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-  oscillator.connect(filter);
-  filter.connect(gain);
-  gain.connect(master);
-  oscillator.start(start);
-  oscillator.stop(start + duration + 0.05);
-}
-
-function playShimmer(context: AudioContext, master: GainNode, event: LabEvent, offsetSeconds: number) {
-  const start = context.currentTime + offsetSeconds;
-  const duration = 0.36 + eventIntensity(event) * 0.26;
-  const buffer = context.createBuffer(1, Math.max(1, Math.floor(context.sampleRate * duration)), context.sampleRate);
-  const data = buffer.getChannelData(0);
-  let seed = stableHash(event.id || event.payloadTypeName) || 1;
-  for (let index = 0; index < data.length; index++) {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    data[index] = ((seed / 0xffffffff) * 2 - 1) * (1 - index / data.length);
+function playWaterfallSynthVoice(context: AudioContext, master: GainNode, noise: AudioBuffer | null, voice: WaterfallSynthVoice, start: number) {
+  if (voice.kind === 'hat') {
+    playSynthHat(context, master, noise, voice, start);
+    return;
   }
-  const source = context.createBufferSource();
+  if (voice.kind === 'bass') {
+    playSynthBass(context, master, voice, start);
+    return;
+  }
+  playSynthPluck(context, master, voice, start);
+}
+
+function playSynthBass(context: AudioContext, master: GainNode, voice: WaterfallSynthVoice, start: number) {
+  const oscillator = context.createOscillator();
   const gain = context.createGain();
-  const filter = context.createBiquadFilter();
   const pan = context.createStereoPanner();
-  source.buffer = buffer;
-  filter.type = 'highpass';
-  filter.frequency.setValueAtTime(1_600 + eventIntensity(event) * 2_400, start);
-  pan.pan.setValueAtTime(eventStereoPan(event), start);
+  const filter = context.createBiquadFilter();
+  oscillator.type = 'sawtooth';
+  oscillator.frequency.setValueAtTime(Math.max(44, voice.frequency / 2), start);
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(160, start);
+  filter.frequency.exponentialRampToValueAtTime(620, start + 0.06);
+  filter.frequency.exponentialRampToValueAtTime(180, start + voice.duration);
+  filter.Q.value = 0.86;
+  pan.pan.setValueAtTime(voice.pan * 0.42, start);
   gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.linearRampToValueAtTime(0.018 + eventIntensity(event) * 0.024, start + 0.025);
-  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  gain.gain.exponentialRampToValueAtTime(voice.gain * 0.82, start + 0.018);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + voice.duration);
+  oscillator.connect(filter);
+  filter.connect(gain);
+  gain.connect(pan);
+  pan.connect(master);
+  oscillator.start(start);
+  oscillator.stop(start + voice.duration + 0.04);
+  oscillator.onended = () => disconnectNodes(oscillator, filter, gain, pan);
+}
+
+function playSynthPluck(context: AudioContext, master: GainNode, voice: WaterfallSynthVoice, start: number) {
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  const pan = context.createStereoPanner();
+  const filter = context.createBiquadFilter();
+  oscillator.type = 'triangle';
+  oscillator.frequency.setValueAtTime(voice.frequency, start);
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(2400, start);
+  filter.frequency.exponentialRampToValueAtTime(680, start + voice.duration);
+  filter.Q.value = 0.82;
+  pan.pan.setValueAtTime(voice.pan * 0.74, start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.linearRampToValueAtTime(voice.gain * 0.9, start + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + voice.duration);
+  oscillator.connect(filter);
+  filter.connect(gain);
+  gain.connect(pan);
+  pan.connect(master);
+  oscillator.start(start);
+  oscillator.stop(start + voice.duration + 0.04);
+  oscillator.onended = () => disconnectNodes(oscillator, filter, gain, pan);
+}
+
+function playSynthHat(context: AudioContext, master: GainNode, noise: AudioBuffer | null, voice: WaterfallSynthVoice, start: number) {
+  if (!noise) return;
+  const source = context.createBufferSource();
+  const filter = context.createBiquadFilter();
+  const gain = context.createGain();
+  const pan = context.createStereoPanner();
+  source.buffer = noise;
+  filter.type = 'highpass';
+  filter.frequency.setValueAtTime(voice.frequency, start);
+  filter.Q.value = 0.64;
+  pan.pan.setValueAtTime(voice.pan * 0.64, start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.linearRampToValueAtTime(voice.gain * 0.46, start + 0.006);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + voice.duration);
   source.connect(filter);
   filter.connect(gain);
   gain.connect(pan);
   pan.connect(master);
   source.start(start);
+  source.stop(start + voice.duration + 0.02);
+  source.onended = () => disconnectNodes(source, filter, gain, pan);
+}
+
+function createSynthNoiseBuffer(context: AudioContext): AudioBuffer {
+  const buffer = context.createBuffer(1, Math.max(1, Math.floor(context.sampleRate * 0.25)), context.sampleRate);
+  const data = buffer.getChannelData(0);
+  let seed = 0x2f6e2b1;
+  for (let index = 0; index < data.length; index++) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    data[index] = ((seed / 0xffffffff) * 2 - 1) * (1 - index / data.length);
+  }
+  return buffer;
+}
+
+function quantizedSynthStart(currentTime: number, secondsPerStep: number): number {
+  const safeStep = Math.max(0.08, secondsPerStep);
+  return Math.ceil((currentTime + 0.018) / safeStep) * safeStep;
+}
+
+function disconnectNodes(...nodes: AudioNode[]) {
+  for (const node of nodes) {
+    try {
+      node.disconnect();
+    } catch {
+      // Already disconnected or released by the browser.
+    }
+  }
 }
 
 function drawWaterfallCanvas(canvas: HTMLCanvasElement, input: {
   assets: WaterfallAssets;
+  budget: WaterfallRenderBudget;
+  cache: WaterfallBackdropCache;
   clock: number;
-  events: LabEvent[];
+  drops: WaterfallPreparedDrop[];
+  ambientCount: number;
   lanes: LabWaterfallLane[];
   metrics: LabMetrics;
   now: number;
   settings: WaterfallSettings;
 }) {
-  const ctx = prepareCanvas(canvas);
+  const ctx = prepareCanvas(canvas, input.budget);
   const width = canvas.width;
   const height = canvas.height;
   const t = input.settings.reducedMotion ? 0 : input.clock / 1000;
@@ -553,20 +605,20 @@ function drawWaterfallCanvas(canvas: HTMLCanvasElement, input: {
   const density = input.settings.density;
   const windowMs = input.settings.windowSeconds * 1_000;
 
-  paintWaterfallBackdrop(ctx, width, height, input.assets, input.metrics.liveEnergy, t);
-  drawAmbientFalls(ctx, width, height, input.lanes, t, density, motion);
+  paintWaterfallBackdrop(ctx, width, height, input.assets, input.cache, input.metrics.liveEnergy, t);
+  drawAmbientFalls(ctx, width, height, input.lanes, t, Math.min(input.ambientCount, input.budget.maxAmbientStreaks), density, motion);
   drawPayloadLanes(ctx, width, height, input.lanes);
-  drawPacketDrops(ctx, width, height, input.events, input.lanes, input.now, windowMs, density, motion);
+  drawPacketDrops(ctx, width, height, input.drops, input.lanes, input.now, windowMs, density, motion, input.budget);
   drawWaterfallPool(ctx, width, height, input.metrics.liveEnergy, t);
 
-  if (input.events.length === 0) {
+  if (input.drops.length === 0) {
     drawCenterText(ctx, width / 2, height / 2, 'RF WATERFALL', 'quiet');
   }
 }
 
-function prepareCanvas(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+function prepareCanvas(canvas: HTMLCanvasElement, budget: WaterfallRenderBudget): CanvasRenderingContext2D {
   const rect = canvas.getBoundingClientRect();
-  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const dpr = budget.dpr;
   const width = Math.max(1, Math.floor((rect.width || 900) * dpr));
   const height = Math.max(1, Math.floor((rect.height || 520) * dpr));
   if (canvas.width !== width || canvas.height !== height) {
@@ -580,9 +632,18 @@ function prepareCanvas(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
   return ctx;
 }
 
-function paintWaterfallBackdrop(ctx: CanvasRenderingContext2D, width: number, height: number, assets: WaterfallAssets, energy: number, t: number) {
+function paintWaterfallBackdrop(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  assets: WaterfallAssets,
+  cache: WaterfallBackdropCache,
+  energy: number,
+  t: number
+) {
   if (assets.background?.complete) {
-    drawCoverImage(ctx, assets.background, width, height);
+    const base = cachedCoverLayer(cache, 'base', assets.background, width, height);
+    ctx.drawImage(base, 0, 0);
   } else {
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
     gradient.addColorStop(0, '#020711');
@@ -596,12 +657,37 @@ function paintWaterfallBackdrop(ctx: CanvasRenderingContext2D, width: number, he
   ctx.fillStyle = `rgba(0, 0, 0, ${0.22 - energy * 0.08})`;
   ctx.fillRect(0, 0, width, height);
   if (assets.mist?.complete) {
+    const mist = cachedCoverLayer(cache, 'mist', assets.mist, width, height);
     ctx.globalCompositeOperation = 'screen';
-    ctx.globalAlpha = 0.22 + energy * 0.18;
-    const drift = Math.sin(t * 0.08) * width * 0.018;
-    drawCoverImage(ctx, assets.mist, width, height, drift, 0, 1.04);
+    ctx.globalAlpha = 0.14 + energy * 0.12;
+    const drift = Math.sin(t * 0.08) * width * 0.012;
+    ctx.drawImage(mist, drift, 0);
+    if (drift > 0) ctx.drawImage(mist, drift - width, 0);
+    else if (drift < 0) ctx.drawImage(mist, drift + width, 0);
   }
   ctx.restore();
+}
+
+function cachedCoverLayer(cache: WaterfallBackdropCache, layer: 'base' | 'mist', image: HTMLImageElement, width: number, height: number): HTMLCanvasElement {
+  const key = `${image.currentSrc || image.src}:${image.naturalWidth || image.width}x${image.naturalHeight || image.height}:${width}x${height}`;
+  const existing = layer === 'base' ? cache.base : cache.mist;
+  const existingKey = layer === 'base' ? cache.baseKey : cache.mistKey;
+  if (existing && existingKey === key) return existing;
+  const next = existing ?? document.createElement('canvas');
+  next.width = width;
+  next.height = height;
+  const ctx = next.getContext('2d');
+  if (!ctx) return next;
+  ctx.clearRect(0, 0, width, height);
+  drawCoverImage(ctx, image, width, height, 0, 0, layer === 'mist' ? 1.02 : 1);
+  if (layer === 'base') {
+    cache.base = next;
+    cache.baseKey = key;
+  } else {
+    cache.mist = next;
+    cache.mistKey = key;
+  }
+  return next;
 }
 
 function drawCoverImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement, width: number, height: number, offsetX = 0, offsetY = 0, scale = 1) {
@@ -614,8 +700,7 @@ function drawCoverImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement, 
   ctx.drawImage(image, x, y, drawWidth, drawHeight);
 }
 
-function drawAmbientFalls(ctx: CanvasRenderingContext2D, width: number, height: number, lanes: LabWaterfallLane[], t: number, density: number, motion: number) {
-  const count = Math.round((34 + lanes.length * 8) * density);
+function drawAmbientFalls(ctx: CanvasRenderingContext2D, width: number, height: number, lanes: LabWaterfallLane[], t: number, count: number, density: number, motion: number) {
   ctx.save();
   ctx.globalCompositeOperation = 'screen';
   for (let index = 0; index < count; index++) {
@@ -665,57 +750,56 @@ function drawPacketDrops(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
-  events: LabEvent[],
+  drops: WaterfallPreparedDrop[],
   lanes: LabWaterfallLane[],
   now: number,
   windowMs: number,
   density: number,
-  motion: number
+  motion: number,
+  budget: WaterfallRenderBudget
 ) {
-  const laneMap = new Map(lanes.map((lane, index) => [lane.payloadTypeName, index]));
   const laneCount = Math.max(1, lanes.length || 1);
   const laneWidth = width / laneCount;
-  const sorted = [...events].sort((a, b) => a.displayAt - b.displayAt).slice(-Math.round(220 * density));
+  const visibleDrops = drops.length > budget.maxDrops ? drops.slice(-budget.maxDrops) : drops;
+  let impactRings = 0;
   ctx.save();
   ctx.globalCompositeOperation = 'screen';
-  for (const event of sorted) {
+  for (const drop of visibleDrops) {
+    const event = drop.event;
     const age = Math.max(0, now - event.displayAt);
     const progress = clamp01((age / Math.max(1, windowMs)) * (0.62 + motion * 0.58));
     if (progress > 1.04) continue;
-    const laneIndex = laneMap.get(event.payloadTypeName) ?? Math.abs(stableHash(event.payloadTypeName)) % laneCount;
-    const seed = stableHash(`${event.source}:${event.id}`);
-    const laneCenter = laneIndex * laneWidth + laneWidth / 2;
-    const jitter = (((seed >>> 3) % 1000) / 1000 - 0.5) * laneWidth * 0.64;
-    const sway = Math.sin(progress * Math.PI * 4 + seed) * laneWidth * 0.08 * motion;
+    const laneCenter = drop.laneIndex * laneWidth + laneWidth / 2;
+    const jitter = (((drop.seed >>> 3) % 1000) / 1000 - 0.5) * laneWidth * 0.58;
+    const sway = Math.sin(progress * Math.PI * 4 + drop.seed) * laneWidth * 0.06 * motion;
     const x = laneCenter + jitter + sway;
     const y = -54 + progress * (height + 124);
-    const intensity = eventIntensity(event);
-    const trail = (62 + intensity * 178) * density;
-    const color = event.color || '#22d3ee';
-    const dropRadius = 2.6 + intensity * 9.5;
+    const intensity = drop.intensity;
+    const trail = (46 + intensity * 132) * density;
+    const color = drop.color;
+    const dropRadius = 2.4 + intensity * 6.8;
 
     const gradient = ctx.createLinearGradient(x, y - trail, x, y + dropRadius);
     gradient.addColorStop(0, colorAlpha(color, 0));
     gradient.addColorStop(0.52, colorAlpha(color, 0.24 + intensity * 0.28));
     gradient.addColorStop(1, colorAlpha('#ffffff', 0.66));
 
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 10 + intensity * 24;
+    ctx.shadowBlur = 0;
     ctx.strokeStyle = gradient;
-    ctx.lineWidth = 1.8 + intensity * 5.6;
+    ctx.lineWidth = 1.4 + intensity * 4.2;
     ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(x + Math.sin(y * 0.006) * 10, y - trail);
     ctx.bezierCurveTo(x - 18 * motion, y - trail * 0.6, x + 20 * motion, y - trail * 0.28, x, y);
     ctx.stroke();
 
-    ctx.fillStyle = colorAlpha('#ffffff', 0.72);
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, dropRadius * 3.2);
+    glow.addColorStop(0, colorAlpha('#ffffff', 0.72));
+    glow.addColorStop(0.42, colorAlpha(color, 0.42));
+    glow.addColorStop(1, colorAlpha(color, 0));
+    ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(x, y, dropRadius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = colorAlpha(color, 0.74);
-    ctx.beginPath();
-    ctx.arc(x, y, dropRadius * 1.7, 0, Math.PI * 2);
+    ctx.arc(x, y, dropRadius * 3.2, 0, Math.PI * 2);
     ctx.fill();
 
     if (event.kind === 'routed') {
@@ -724,7 +808,8 @@ function drawPacketDrops(
     if (event.messageText) {
       drawMessageSpark(ctx, x, y, color, intensity);
     }
-    if (y > height * 0.76) {
+    if (y > height * 0.76 && impactRings < budget.maxImpactRings) {
+      impactRings += 1;
       drawSplash(ctx, x, height * 0.84, color, intensity, progress);
     }
   }
@@ -733,7 +818,6 @@ function drawPacketDrops(
 
 function drawRouteRibbon(ctx: CanvasRenderingContext2D, x: number, y: number, trail: number, color: string, intensity: number, motion: number) {
   ctx.save();
-  ctx.shadowBlur = 16 + intensity * 18;
   ctx.strokeStyle = colorAlpha(color, 0.25 + intensity * 0.22);
   ctx.lineWidth = 1.1 + intensity * 2.2;
   ctx.beginPath();
@@ -813,21 +897,26 @@ function drawCenterText(ctx: CanvasRenderingContext2D, x: number, y: number, lab
 }
 
 function readWaterfallSettings(): WaterfallSettings {
-  if (typeof window === 'undefined') return DEFAULT_WATERFALL_SETTINGS;
+  const defaults = {
+    ...DEFAULT_WATERFALL_SETTINGS,
+    reducedMotion: prefersReducedMotion()
+  };
+  if (typeof window === 'undefined') return defaults;
   try {
     const raw = window.localStorage.getItem(WATERFALL_SETTINGS_KEY);
-    if (!raw) return DEFAULT_WATERFALL_SETTINGS;
+    if (!raw) return defaults;
     const parsed = JSON.parse(raw) as Partial<WaterfallSettings>;
     return {
-      volume: clampNumber(parsed.volume, 0, 1, DEFAULT_WATERFALL_SETTINGS.volume),
-      motion: clampNumber(parsed.motion, 0.18, 1.35, DEFAULT_WATERFALL_SETTINGS.motion),
-      density: clampNumber(parsed.density, 0.35, 1.6, DEFAULT_WATERFALL_SETTINGS.density),
-      windowSeconds: [45, 90, 180].includes(Number(parsed.windowSeconds)) ? Number(parsed.windowSeconds) : DEFAULT_WATERFALL_SETTINGS.windowSeconds,
-      payloadFocus: typeof parsed.payloadFocus === 'string' ? parsed.payloadFocus : DEFAULT_WATERFALL_SETTINGS.payloadFocus,
-      reducedMotion: typeof parsed.reducedMotion === 'boolean' ? parsed.reducedMotion : DEFAULT_WATERFALL_SETTINGS.reducedMotion
+      volume: clampNumber(parsed.volume, 0, 1, defaults.volume),
+      rhythm: clampNumber(parsed.rhythm, 0, 1, defaults.rhythm),
+      motion: clampNumber(parsed.motion, 0.18, 1.35, defaults.motion),
+      density: clampNumber(parsed.density, 0.35, 1.6, defaults.density),
+      windowSeconds: [45, 90, 180].includes(Number(parsed.windowSeconds)) ? Number(parsed.windowSeconds) : defaults.windowSeconds,
+      payloadFocus: typeof parsed.payloadFocus === 'string' ? parsed.payloadFocus : defaults.payloadFocus,
+      reducedMotion: typeof parsed.reducedMotion === 'boolean' ? parsed.reducedMotion : defaults.reducedMotion
     };
   } catch {
-    return DEFAULT_WATERFALL_SETTINGS;
+    return defaults;
   }
 }
 
@@ -842,12 +931,22 @@ function writeWaterfallSettings(settings: WaterfallSettings) {
 
 function volumeToGain(volume: number): number {
   const safe = clampNumber(volume, 0, 1, 0);
-  return safe * safe * 0.82;
+  return safe * safe * 0.62;
 }
 
-function voiceCountLabel(metrics: LabMetrics): string {
-  const voices = 1 + (metrics.routedPerMinute > 0 ? 1 : 0) + (metrics.observerPerMinute > 0 ? 1 : 0) + (metrics.liveEnergy > 0.28 ? 1 : 0);
-  return `${voices}`;
+function currentWaterfallBudget(canvas: HTMLCanvasElement | undefined, reducedMotion: boolean): WaterfallRenderBudget {
+  const rect = canvas?.getBoundingClientRect();
+  return waterfallRenderBudget({
+    width: rect?.width || (typeof window === 'undefined' ? 1024 : window.innerWidth),
+    height: rect?.height || (typeof window === 'undefined' ? 640 : window.innerHeight),
+    devicePixelRatio: typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1,
+    reducedMotion
+  });
+}
+
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 function eventKindLabel(event: LabEvent): string {

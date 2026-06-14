@@ -15,26 +15,29 @@ flow.
 
 - Generated cinematic RF-waterfall artwork provides the stage backdrop.
 - A generated mist/caustic overlay adds depth behind live packet motion.
-- Payload classes become falling lanes.
-- Public routed packets draw brighter ribbons and splashes.
+- Payload classes become capped falling lanes.
+- Public routed packets draw brighter ribbons and limited impact rings.
 - Observer-only packets shimmer with tighter drops.
 - Public message presence adds spark accents without exposing private data.
+- The renderer caps DPR, frame rate, particle counts, and packet drops so bursty
+  traffic stays browser-safe.
 
 ## Audio Model
 
 Audio is opt-in and browser-local.
 
-- Droplet bells: short packet arrivals.
-- Glass pads: routed events and longer paths.
-- Shimmer noise: observer and public message events.
-- Bass swells: aggregate traffic intensity.
-- Master compression keeps bursts musical when packet rates rise.
+- Rhythmic synth steps are quantized to a packet-driven tempo.
+- Routed packets become low synth pulses.
+- Observer packets become soft hat/noise ticks.
+- Text and public message packets become plucked melodic notes.
+- Strict per-step and per-second voice limits keep bursts musical and bounded.
 
 ## Controls
 
 Waterfall controls are browser-local:
 
 - volume
+- rhythm
 - motion
 - density
 - time window
@@ -62,4 +65,3 @@ Forbidden inputs:
 - private broker credentials
 - resolver debug reasons
 - local operator config
-

@@ -18,6 +18,7 @@ describe('LabPanel', () => {
     expect(html).toContain('2.9.6 Labs');
     expect(html).toContain('Packet Waterfall');
     expect(html).toContain('Flow');
+    expect(html).toContain('Rhythm');
     expect(html).toContain('Payload Streams');
     expect(html).toContain('Latest Drop');
     expect(html).toContain('Enable waterfall audio');
@@ -42,6 +43,7 @@ describe('LabPanel', () => {
 
     expect(html).toContain('Packet Waterfall');
     expect(html).toContain('Intensity');
+    expect(html).toContain('Tempo');
     expect(html).toContain('workspace-fullscreen');
   });
 });

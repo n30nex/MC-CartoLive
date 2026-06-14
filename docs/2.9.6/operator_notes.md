@@ -19,6 +19,10 @@ policy disallows playback.
 The audio engine uses only local Web Audio nodes and does not send audio data to
 the backend.
 
+The Waterfall stability hotfix resets old browser-local Waterfall preferences to
+a new v2 key, lowering default volume/density and preventing aggressive v1
+settings from carrying forward.
+
 ## Validation
 
 Recommended checks after deploy:
@@ -32,4 +36,3 @@ Also verify that:
 - `/healthz` reports version `2.9.6` and the expected git SHA.
 - `/#/lab/waterfall` renders the Waterfall canvas and controls.
 - at least one retired Labs URL redirects to `/#/lab/waterfall`.
-

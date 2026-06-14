@@ -21,12 +21,10 @@ keeps the one-container SQLite deployment shape while adding:
   stage
 - falling packet streams, payload lanes, route ribbons, splashes, and live
   traffic intensity overlays
-- opt-in ambient generative Web Audio with packet bells, glass pads, bass swells,
-  and shimmer voices
-- browser-local Waterfall controls for volume, motion, density, time window,
-  payload focus, and reduced motion
-- focused tests, browser-smoke coverage, and release documentation for the
-  single-Waterfall Labs upgrade
+- opt-in rhythmic synth audio with strict browser-safe voice and burst limits
+- browser-local Waterfall controls for volume, rhythm, motion, density, time
+  window, payload focus, and reduced motion
+- focused tests and release documentation for the single-Waterfall Labs upgrade
 
 The recommended v2.9.6 release path is clone + Compose on a VPS or local host,
 optionally behind Cloudflare Tunnel, Caddy, nginx, or another HTTPS reverse

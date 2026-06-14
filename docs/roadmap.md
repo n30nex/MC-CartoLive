@@ -17,8 +17,8 @@ operations, Labs, and map-runtime foundation.
 - Local release validation uses Podman; the production droplet can continue to
   use Docker Compose.
 - The 2.9.6 frontend keeps the Map Studio foundation and turns Labs into one
-  single Packet Waterfall with generated artwork, richer packet motion, and
-  opt-in ambient audio without changing public API shapes.
+  single Packet Waterfall with generated artwork, capped packet motion, and
+  opt-in rhythmic synth audio without changing public API shapes.
 
 ## Active Focus
 
