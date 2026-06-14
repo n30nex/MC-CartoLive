@@ -1,53 +1,41 @@
 # MC-CartoLive Documentation
 
-Start here when working in this repository. Current operator and development
-docs are kept short; historical release evidence is preserved by version.
+Start here when working in this repository. Current docs stay focused on
+operating, developing, validating, and deploying the live map. Release evidence
+is preserved by version.
 
-## Current Docs
+## Start Here
 
-- [Production deployment](production.md): first deploy, upgrades, runtime notes,
-  and production readiness.
-- [Operator runbook](operator-runbook.md): smoke checks, diagnostics, backup,
-  restore, and privacy checks.
-- [Development](development.md): local Podman, fixtures, backend/frontend
-  commands, and release checks.
-- [Privacy model](privacy.md): private inputs, public outputs, route truth, and
-  test expectations.
-- [Roadmap](roadmap.md): current baseline and active 3.x direction.
+| Document | Purpose |
+| --- | --- |
+| [Production deployment](production.md) | First deploy, upgrades, runtime notes, and production readiness. |
+| [Operator runbook](operator-runbook.md) | Smoke checks, diagnostics, backup, restore, and privacy checks. |
+| [Development](development.md) | Local Podman, fixtures, backend/frontend commands, and release checks. |
+| [Privacy model](privacy.md) | Private inputs, public outputs, route truth, and test expectations. |
+| [Roadmap](roadmap.md) | Current baseline and active 3.x direction. |
 
-## Release Docs
+## 3.0.0 Release Package
 
-- [3.0.0 release notes](3.0.0/release_notes.md)
-- [3.0.0 operator notes](3.0.0/operator_notes.md)
-- [3.0.0 asset pack notes](3.0.0/asset_pack.md)
-- [3.0.0 validation checklist](3.0.0/validation_checklist.md)
-- [2.9.6 release notes](2.9.6/release_notes.md)
-- [2.9.6 operator notes](2.9.6/operator_notes.md)
-- [2.9.6 Waterfall Labs notes](2.9.6/waterfall_labs.md)
-- [2.9.6 validation checklist](2.9.6/validation_checklist.md)
-- [2.9.5 release notes](2.9.5/release_notes.md)
-- [2.9.5 operator notes](2.9.5/operator_notes.md)
-- [2.9.5 Map Studio notes](2.9.5/map_studio.md)
-- [2.9.5 validation checklist](2.9.5/validation_checklist.md)
-- [2.9.4 release notes](2.9.4/release_notes.md)
-- [2.9.4 operator notes](2.9.4/operator_notes.md)
-- [2.9.4 Labs notes](2.9.4/labs.md)
-- [2.9.4 validation checklist](2.9.4/validation_checklist.md)
-- [2.9.3 release notes](2.9.3/release_notes.md)
-- [2.9.3 operator notes](2.9.3/operator_notes.md)
-- [2.9.3 validation checklist](2.9.3/validation_checklist.md)
-- [2.9.2 release notes](2.9.2/release_notes.md)
-- [2.9.2 operator notes](2.9.2/operator_notes.md)
-- [2.9.2 validation checklist](2.9.2/validation_checklist.md)
-- [2.9.1 release notes](2.9.1/release_notes.md)
-- [2.9.1 validation checklist](2.9.1/validation_checklist.md)
-- [2.9.1 master plan](2.9.1/master_plan.md)
-- [2.9.0 release notes](2.9.0/release_notes.md)
-- [2.9.0 validation checklist](2.9.0/validation_checklist.md)
-- [2.9.0 master plan](2.9.0/master_plan.md)
-- [2.8.2 release notes](2.8.2/release_notes.md)
-- [2.8.1 release notes](2.8.1/release_notes.md)
-- [2.8.0 release evidence](2.8.0/10_release_completion_evidence_2.8.0.md)
+| Document | Purpose |
+| --- | --- |
+| [Release notes](3.0.0/release_notes.md) | Product-facing 3.0.0 summary and compatibility notes. |
+| [Screenshot tour](3.0.0/screenshot_tour.md) | Current 3.0 map, workspace, NetGraph, Labs, and 3D screenshots. |
+| [Operator notes](3.0.0/operator_notes.md) | Deployment-specific 3.0.0 notes for world and Canada presets. |
+| [Asset pack notes](3.0.0/asset_pack.md) | v3 asset preset layout, generation workflow, and validation. |
+| [Validation checklist](3.0.0/validation_checklist.md) | Local, package, asset, and live deployment evidence. |
+
+## Release Archive
+
+| Version | Primary notes | Additional docs |
+| --- | --- | --- |
+| 2.9.6 | [release](2.9.6/release_notes.md), [validation](2.9.6/validation_checklist.md) | [operator](2.9.6/operator_notes.md), [Waterfall Labs](2.9.6/waterfall_labs.md) |
+| 2.9.5 | [release](2.9.5/release_notes.md), [validation](2.9.5/validation_checklist.md) | [operator](2.9.5/operator_notes.md), [Map Studio](2.9.5/map_studio.md) |
+| 2.9.4 | [release](2.9.4/release_notes.md), [validation](2.9.4/validation_checklist.md) | [operator](2.9.4/operator_notes.md), [Labs](2.9.4/labs.md) |
+| 2.9.3 | [release](2.9.3/release_notes.md), [validation](2.9.3/validation_checklist.md) | [operator](2.9.3/operator_notes.md) |
+| 2.9.2 | [release](2.9.2/release_notes.md), [validation](2.9.2/validation_checklist.md) | [operator](2.9.2/operator_notes.md) |
+| 2.9.1 | [release](2.9.1/release_notes.md), [validation](2.9.1/validation_checklist.md) | [master plan](2.9.1/master_plan.md) |
+| 2.9.0 | [release](2.9.0/release_notes.md), [validation](2.9.0/validation_checklist.md) | [master plan](2.9.0/master_plan.md), [performance audit](2.9.0/frontend_performance_audit.md) |
+| 2.8.x | [2.8.2](2.8.2/release_notes.md), [2.8.1](2.8.1/release_notes.md) | [2.8.0 release evidence](2.8.0/10_release_completion_evidence_2.8.0.md) |
 
 ## Historical Roadmaps
 

@@ -1,45 +1,60 @@
 # MeshCore MQTT Live Map v3.0.0
 
-Also known as **MC-CartoLive**.
-
-MC-CartoLive is a single-container public live map for MeshCore MQTT
-observations. It ingests MeshCore broker traffic, stores normalized
-observations in SQLite, resolves only high-confidence RF routes, and serves a
-privacy-safe MapLibre dashboard with live packet motion, public chat, replay,
-Packets, NetGraph, and optional propagation/terrain context.
+**MC-CartoLive** is a single-container public live map for MeshCore MQTT
+observations. It ingests broker traffic, stores normalized observations in
+SQLite, resolves only high-confidence RF routes, and serves a privacy-safe
+MapLibre dashboard for live packet motion, public chat, replay, Packets,
+NetGraph, Node List, Labs, and optional propagation/terrain context.
 
 Public instance: [carto.canadaverse.org](https://carto.canadaverse.org/).
 
 ## Current Release
 
-Version 3.0.0 is the image asset pack release. It keeps the one-container SQLite
-deployment shape while adding:
+Version 3.0.0 is the polished v3 workspace and asset-pack release. It keeps the
+one-container SQLite deployment shape and stable public API while adding:
 
-- committed world and Canada v3 asset presets for branding, PWA icons, social
-  cards, node roles, packet classes, map layers, workspace states, and motion
-  effects
-- a manifest-driven optional OpenAI Image API/Batch API workflow for future
-  curated asset generations, with normal builds and runtime staying fully static
+- first-class workspaces for Map, Packets, Chat, Node List, NetGraph, and Labs
+- committed `world` and `canada` v3 asset presets for branding, PWA icons,
+  social cards, node roles, packet classes, map layers, workspace states, and
+  motion effects
 - `VITE_APP_ASSET_PACK=world` as the default GHCR/easy-deploy image preset and
-  `VITE_APP_ASSET_PACK=canada` for the hosted Canadaverse droplet
+  `VITE_APP_ASSET_PACK=canada` for the hosted Canadaverse deployment
 - asset-backed packet chips, node role labels, map/layer thumbnails, live comet
-  effects, route GIF overlays, and Waterfall v3 backdrops
-- updated setup UI, Docker/Compose defaults, and release documentation for the
-  world/Canada preset split
+  effects, route GIF overlays, OpenFreeMap 3D visuals, and Waterfall backdrops
+- an optional manifest-driven Image API/Batch API workflow for future curated
+  asset generations; normal builds and runtime stay fully static
 
 The recommended v3.0.0 release path is clone + Compose on a VPS or local host,
 optionally behind Cloudflare Tunnel, Caddy, nginx, or another HTTPS reverse
 proxy.
 
-## Screenshots
+## 3.0 Screenshot Tour
 
-Real public map data from the production UI:
+These are public UI captures from the 3.0 Canada surface. The screenshots show
+sanitized public map fields only; raw packets, full keys, broker credentials,
+and resolver internals stay outside the public boundary.
 
-![Canada cluster overview](docs/assets/screenshots/canada-clusters.png)
+### Map, Routes, And Replay
 
-![Toronto live route detail](docs/assets/screenshots/toronto-detail.png)
+| Live map overview | Route density | Packet flow replay |
+| --- | --- | --- |
+| <img src="docs/assets/screenshots/3.0.0/map-overview.png" alt="3.0 live map overview" width="320"> | <img src="docs/assets/screenshots/3.0.0/route-density.png" alt="3.0 route density view" width="320"> | <img src="docs/assets/screenshots/3.0.0/packet-flow-replay.png" alt="3.0 packet flow replay across a route" width="320"> |
 
-![Ottawa live route detail](docs/assets/screenshots/ottawa-detail.png)
+| OpenFreeMap 3D terrain |
+| --- |
+| <img src="docs/assets/screenshots/3.0.0/openfreemap-3d-topo.png" alt="3.0 OpenFreeMap 3D terrain and RF routes" width="640"> |
+
+### Workspaces
+
+| Packets | Chat | Node List |
+| --- | --- | --- |
+| <img src="docs/assets/screenshots/3.0.0/packets-panel.png" alt="3.0 Packets workspace" width="220"> | <img src="docs/assets/screenshots/3.0.0/chat-panel.png" alt="3.0 public Chat workspace" width="220"> | <img src="docs/assets/screenshots/3.0.0/nodes-workspace.png" alt="3.0 Node List workspace" width="320"> |
+
+### NetGraph And Labs
+
+| NetGraph focus | NetGraph overview | Packet Waterfall Labs |
+| --- | --- | --- |
+| <img src="docs/assets/screenshots/3.0.0/netgraph-focus.png" alt="3.0 NetGraph selected node focus" width="320"> | <img src="docs/assets/screenshots/3.0.0/netgraph-overview.png" alt="3.0 NetGraph connected component overview" width="320"> | <img src="docs/assets/screenshots/3.0.0/labs-waterfall.png" alt="3.0 Packet Waterfall Labs workspace" width="320"> |
 
 ## Capabilities
 
@@ -47,9 +62,9 @@ Real public map data from the production UI:
 - SQLite persistence under `data/` locally or `/app/data` in the container.
 - Conservative public route resolution; ambiguous or unsafe paths are not drawn.
 - Public MapLibre dashboard with clusters, nodes, labels, live packet comets,
-  fading trails, message bubbles, route plotting, VCR replay, and optional 3D.
-- Packets, Chat, NetGraph, NodeList, and propagation history panels built from
-  sanitized public data.
+  fading trails, message bubbles, route plotting, replay, and optional 3D.
+- Packets, Chat, NetGraph, Node List, Labs, and propagation history workspaces
+  built from sanitized public data.
 - Public-safe health/readiness endpoints and release smoke scripts.
 - Worldwide/private broker support through configurable map bounds and region
   labels.
@@ -157,6 +172,7 @@ Live post-deploy smoke:
 - [Roadmap](docs/roadmap.md)
 - [Changelog](CHANGELOG.md)
 - [3.0.0 release notes](docs/3.0.0/release_notes.md)
+- [3.0.0 screenshot tour](docs/3.0.0/screenshot_tour.md)
 - [3.0.0 asset pack notes](docs/3.0.0/asset_pack.md)
 - [3.0.0 validation checklist](docs/3.0.0/validation_checklist.md)
 - [2.9.6 release notes](docs/2.9.6/release_notes.md)

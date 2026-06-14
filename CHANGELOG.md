@@ -6,6 +6,9 @@ in Git history, not in the active documentation set.
 
 ## 3.0.0 - 2026-06-13
 
+- Promoted the v3 public presentation across Map, Packets, Chat, Node List,
+  NetGraph, Labs Waterfall, route replay, and OpenFreeMap 3D/topographic
+  surfaces while keeping public DTOs stable.
 - Added a manifest-driven v3 image asset pack system with optional OpenAI Image
   API/Batch API generation scripts, deterministic post-processing, and a
   committed runtime asset tree.
@@ -21,8 +24,8 @@ in Git history, not in the active documentation set.
   Packet/Node workspaces, route GIF overlays, and Labs Waterfall assets.
 - Added `scripts/check-asset-pack.mjs` to validate manifest records, static
   target files, PNG dimensions, and pack-local PWA manifests.
-- Updated release metadata, docs, operator notes, and validation checklist for
-  the 3.0.0 world/Canada asset-pack release.
+- Updated release metadata, README screenshots, docs index, operator notes, and
+  validation checklist for the 3.0.0 world/Canada asset-pack release.
 
 ## 2.9.6 - 2026-06-13
 

@@ -1,11 +1,18 @@
 # MC-CartoLive 3.0.0 Release Notes
 
-3.0.0 is the v3 image asset pack release. It keeps the public API stable while
-turning the frontend into a polished world-ready package with static committed
-assets for the default world build and a Canada preset for the hosted droplet.
+3.0.0 is the polished v3 workspace and asset-pack release. It keeps the public
+API stable while presenting the live map as a cleaner world-ready package with
+committed static assets for the default world build and a Canada preset for the
+hosted Canadaverse deployment.
+
+See the [3.0.0 screenshot tour](screenshot_tour.md) for the current Map,
+Packets, Chat, Node List, NetGraph, Labs Waterfall, route replay, and
+OpenFreeMap 3D surfaces.
 
 ## Highlights
 
+- Refreshed the public presentation around first-class Map, Packets, Chat, Node
+  List, NetGraph, Labs Waterfall, replay, and 3D/topographic workflows.
 - Added `world` and `canada` asset packs for app branding, PWA icons, node role
   icons, packet class chips, map/layer thumbnails, workspace states, route GIF
   overlays, live comet effects, OpenFreeMap 3D comet material, and Waterfall
@@ -19,6 +26,8 @@ assets for the default world build and a Canada preset for the hosted droplet.
   the typed asset registry.
 - Added `scripts/check-asset-pack.mjs` as a release gate for asset manifest and
   file validation.
+- Updated README, docs index, release notes, and screenshot assets so the active
+  documentation matches the 3.0 public UI.
 
 ## Compatibility
 
