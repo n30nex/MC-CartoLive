@@ -6,6 +6,7 @@ import { isAbortError } from '../lib/isAbortError';
 import { payloadVisual } from '../payloadVisuals';
 import type { LiveCoverageStats } from '../state';
 import type { PublicStats, SolarConditions } from '../types';
+import { LoadingSpinner } from './LoadingPrimitives';
 import { formatPacketsTotal, serverStatus } from './statusDisplay';
 
 interface Props {
@@ -109,7 +110,12 @@ function SolarIndicator() {
     fetchSolar();
   }, [fetchSolar]);
 
-  if (!solar && !error) return <div className="status-pill status-metric solar-indicator" title="Loading solar conditions..."><Sun size={14} style={{ marginRight: 4, opacity: 0.4 }} /><span style={{ opacity: 0.5 }}>···</span></div>;
+  if (!solar && !error) return (
+    <div className="status-pill status-metric solar-indicator" title="Loading solar conditions..." aria-label="Loading solar conditions">
+      <LoadingSpinner size="sm" decorative className="solar-loading-spinner" />
+      <span>Solar</span>
+    </div>
+  );
   if (error && !solar) return (
     <div className="status-pill status-metric solar-indicator warn" title="Solar data unavailable — click to retry">
       <Sun size={14} style={{ marginRight: 4, opacity: 0.5 }} />

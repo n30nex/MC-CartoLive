@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { MonitorSmartphone, Radio, RefreshCw, Route, Server, X } from 'lucide-react';
 import { fetchHealthz, fetchPublicState, fetchReadyz } from '../api';
 import type { PublicLiveState, RuntimeHealth } from '../types';
+import { LoadingBlock } from './LoadingPrimitives';
 
 interface PerfPanelProps {
   onClose: () => void;
@@ -125,7 +126,15 @@ export default function PerfPanel({ onClose }: PerfPanelProps) {
       </div>
 
       {error && <div className="perf-error" role="alert">{error}</div>}
-      {loading && !snapshot && <div className="perf-loading">Checking live status...</div>}
+      {loading && !snapshot && (
+        <LoadingBlock
+          variant="inline"
+          title="Checking live status"
+          message="Pinging public health endpoints."
+          branded={false}
+          className="perf-loading"
+        />
+      )}
 
       <div className="perf-grid perf-live-grid">
         <PerfLiveCard icon={<Server size={18} />} label="Backend" status={backendStatus.value} tone={backendStatus.tone}>

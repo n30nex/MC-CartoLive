@@ -19,6 +19,7 @@ import {
 import CanadaMap, { type MapAction } from './map/CanadaMap';
 import ErrorBoundary from './components/ErrorBoundary';
 import PanelSkeleton from './components/PanelSkeleton';
+import { LoadingSpinner } from './components/LoadingPrimitives';
 import HotRoutes from './components/HotRoutes';
 import Legend from './components/Legend';
 import LinkBar from './components/LinkBar';
@@ -87,7 +88,6 @@ import { recordLivePendingQueueSize, recordSnapshotReplacement, recordVcrReplayQ
 import { appendBufferedRoutePulses, routePulseMessages } from './playbackController';
 import { applyMapMode, MAP_MODES, mapModeForSettings, normalizeMapSettings, readStoredMapSettings, writeStoredMapSettings, type MapModeID, type MapSettings } from './mapSettings';
 import { mapStyleProfileByID, type MapStyleProfileID } from './map/styles/styleRegistry';
-import { activeAssetPack } from './assets/v3/assetPacks';
 import {
   THEME_PALETTES,
   applyDocumentTheme,
@@ -1852,7 +1852,7 @@ function PublicDashboardApp() {
           onExport={exportSelectedPacketGif}
         />
       )}
-      {setupOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><SetupPanel mapConfig={publicMapConfig} onClose={closeSetup} /></Suspense></ErrorBoundary>}
+      {setupOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton title="Loading setup" message="Preparing deployment setup tools." />}><SetupPanel mapConfig={publicMapConfig} onClose={closeSetup} /></Suspense></ErrorBoundary>}
       {mapSettingsOpen && (
         <MapSettingsDrawer
           settings={mapSettings}
@@ -1877,7 +1877,7 @@ function PublicDashboardApp() {
       )}
       {packetsOpen && (
         <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}>
-          <Suspense fallback={<PanelSkeleton />}>
+          <Suspense fallback={<PanelSkeleton title="Loading packets" message="Opening the routed packet workspace." />}>
             <PacketsPanel
               mode={packetsPanelMode}
               selectedPacketID={selectedPacket?.id ?? null}
@@ -1895,7 +1895,7 @@ function PublicDashboardApp() {
       )}
       {netGraphOpen && (
         <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}>
-          <Suspense fallback={<PanelSkeleton />}>
+          <Suspense fallback={<PanelSkeleton title="Preparing network graph" message="Loading graph controls and canvas layout." />}>
             <NetGraphPanel
               nodes={state.nodes}
               routes={state.routes}
@@ -1907,10 +1907,10 @@ function PublicDashboardApp() {
           </Suspense>
         </ErrorBoundary>
       )}
-      {chatOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><ChatPanel presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onClose={closeChat} /></Suspense></ErrorBoundary>}
-      {labOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><LabPanel state={state} socketStatus={socketStatus} experimentID={labExperimentID} presentation={workspacePresentation} onExperimentChange={selectLabExperiment} onPresentationChange={setWorkspacePresentation} onClose={closeLab} /></Suspense></ErrorBoundary>}
-      {nodeListOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><NodeListPanel nodes={visibleNodes} selectedNodeID={selectedNodeID} presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onSelectNode={selectNodeFromList} onClose={closeNodeList} /></Suspense></ErrorBoundary>}
-      {shortcutHelpOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton />}><ShortcutHelp onClose={() => setShortcutHelpOpen(false)} /></Suspense></ErrorBoundary>}
+      {chatOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton title="Loading public chat" message="Fetching the chat workspace." />}><ChatPanel presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onClose={closeChat} /></Suspense></ErrorBoundary>}
+      {labOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton title="Loading waterfall" message="Preparing Labs visuals." />}><LabPanel state={state} socketStatus={socketStatus} experimentID={labExperimentID} presentation={workspacePresentation} onExperimentChange={selectLabExperiment} onPresentationChange={setWorkspacePresentation} onClose={closeLab} /></Suspense></ErrorBoundary>}
+      {nodeListOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton title="Loading nodes" message="Preparing the public node workspace." />}><NodeListPanel nodes={visibleNodes} selectedNodeID={selectedNodeID} presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onSelectNode={selectNodeFromList} onClose={closeNodeList} /></Suspense></ErrorBoundary>}
+      {shortcutHelpOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton title="Loading help" message="Opening map shortcuts." rows={3} />}><ShortcutHelp onClose={() => setShortcutHelpOpen(false)} /></Suspense></ErrorBoundary>}
 
       {!vcrOpen && !packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen && (
         <>
@@ -2096,9 +2096,7 @@ function NodeLoadingToast({ failed, drawing }: { failed: boolean; drawing: boole
       : 'Preparing the map before showing live node markers.';
   return (
     <div className={`node-loading-toast ${failed ? 'warn' : ''}`} role="status" aria-live="polite">
-      <span className="node-loading-spinner">
-        <img src={activeAssetPack.brand.loadingMark} alt="" aria-hidden="true" />
-      </span>
+      <LoadingSpinner size="md" branded decorative className="node-loading-spinner" />
       <span>
         <strong>{title}</strong>
         <em>{message}</em>

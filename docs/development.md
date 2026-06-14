@@ -189,7 +189,7 @@ Run a short local soak when validating release automation:
 
 ## Map Modes And Offline Tiles
 
-3.0.1 keeps the Map Studio style registry and optional PMTiles profiles. Leave
+3.0.2 keeps the Map Studio style registry and optional PMTiles profiles. Leave
 `VITE_PMTILES_BASEMAP_URL` blank for normal development; the Offline PMTiles and
 Field Offline profiles will fall back to a local low-detail map. To test a real
 archive, host it from the same origin or another CSP-allowed HTTPS endpoint and
@@ -213,7 +213,7 @@ Use overrides when testing a branch, alternate host, expected build, or another
 diagnostic region:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.0.1 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.0.2 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
 Scan public JSON surfaces for privacy-boundary regressions while the app is

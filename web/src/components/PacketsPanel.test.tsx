@@ -24,6 +24,9 @@ describe('PacketsPanel', () => {
     expect(html).toContain('Expand to full screen');
     expect(html).not.toContain('Map fits the full route');
     expect(html).toContain('Search endpoint, region, route prefix, message');
+    expect(html).toContain('Loading packets');
+    expect(html).toContain('loading-spinner');
+    expect(html).toContain('<span class="loading-row');
     expect(html).toContain('Region');
     expect(html).toContain('Returned path');
     expect(html).toContain('Other');

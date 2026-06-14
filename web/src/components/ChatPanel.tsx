@@ -15,6 +15,7 @@ import {
   type ChatFilters
 } from '../chat';
 import type { PublicChatMessage, PublicHistoryWindow } from '../types';
+import { LoadingBlock, LoadingButtonLabel, LoadingRows } from './LoadingPrimitives';
 import { toggleWorkspacePresentation, workspacePresentationTitle, type WorkspacePresentation } from './workspacePanel';
 
 interface ChatPanelProps {
@@ -272,7 +273,14 @@ export default function ChatPanel({
       </div>
 
       {error && <div className="chat-error" role="alert">{error}</div>}
-      {loading && initialLoadRef.current && <div className="chat-loading-bar" />}
+      {loading && initialLoadRef.current && (
+        <LoadingBlock
+          variant="inline"
+          title="Loading public chat"
+          message="Fetching map-safe decoded messages."
+          className="chat-loading-block"
+        />
+      )}
 
       <div
         ref={listRef}
@@ -281,11 +289,15 @@ export default function ChatPanel({
         aria-label="Public chat messages"
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       >
-        <div style={{ height: visibleMessages.length * CHAT_ROW_HEIGHT, position: 'relative' }}>
-          <div style={{ transform: `translateY(${virtualRows.offset}px)` }}>
-            {virtualRows.items.map((message) => <ChatRow key={message.id} message={message} />)}
+        {loading && initialLoadRef.current ? (
+          <LoadingRows count={5} className="chat-loading-rows" />
+        ) : (
+          <div style={{ height: visibleMessages.length * CHAT_ROW_HEIGHT, position: 'relative' }}>
+            <div style={{ transform: `translateY(${virtualRows.offset}px)` }}>
+              {virtualRows.items.map((message) => <ChatRow key={message.id} message={message} />)}
+            </div>
           </div>
-        </div>
+        )}
         {!loading && visibleMessages.length === 0 && (
           <div className="chat-empty">
             {hasActiveChatFilters(debouncedFilters) ? 'No public chat messages match the current filters.' : 'No public chat messages in this window.'}
@@ -296,7 +308,7 @@ export default function ChatPanel({
       <footer className="chat-footer">
         <span>{chatFooterStatus(visibleMessages.length, nextCursor, loadingMore)}</span>
         <button type="button" disabled={!nextCursor || loadingMore} onClick={loadOlder}>
-          {loadingMore ? 'Loading...' : nextCursor ? 'Load older' : 'End of window'}
+          <LoadingButtonLabel loading={loadingMore} loadingLabel="Loading older" label={nextCursor ? 'Load older' : 'End of window'} />
         </button>
       </footer>
     </section>

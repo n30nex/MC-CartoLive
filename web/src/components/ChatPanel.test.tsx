@@ -40,7 +40,10 @@ describe('ChatPanel', () => {
   });
 
   it('renders loading, error, and empty states', () => {
-    expect(renderToStaticMarkup(<ChatPanel autoRefresh onClose={() => undefined} />)).toContain('chat-loading-bar');
+    const loadingHtml = renderToStaticMarkup(<ChatPanel autoRefresh onClose={() => undefined} />);
+    expect(loadingHtml).toContain('Loading public chat');
+    expect(loadingHtml).toContain('loading-spinner');
+    expect(loadingHtml).toContain('<span class="loading-row');
     expect(renderToStaticMarkup(<ChatPanel autoRefresh={false} initialError="Nope" onClose={() => undefined} />)).toContain('Nope');
     expect(renderToStaticMarkup(<ChatPanel autoRefresh={false} onClose={() => undefined} />)).toContain('No public chat messages in this window');
   });

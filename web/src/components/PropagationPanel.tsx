@@ -1,5 +1,6 @@
 import { CloudSun, LocateFixed, Play, X } from 'lucide-react';
 import type { PublicPropagationConditions, PublicPropagationEvent } from '../types';
+import { LoadingBlock } from './LoadingPrimitives';
 
 interface PropagationPanelProps {
   conditions: PublicPropagationConditions | null;
@@ -45,7 +46,14 @@ export default function PropagationPanel({ conditions, events, loading, error, o
       )}
 
       {error && <div className="propagation-error" role="alert">{error}</div>}
-      {loading && events.length === 0 && <div className="propagation-loading">Loading propagation history...</div>}
+      {loading && events.length === 0 && (
+        <LoadingBlock
+          variant="inline"
+          title="Loading propagation history"
+          message="Checking public long-distance route context."
+          className="propagation-loading"
+        />
+      )}
       {!loading && events.length === 0 && !error && <div className="propagation-empty">No public long-distance route events in this window.</div>}
 
       {events.length > 0 && (

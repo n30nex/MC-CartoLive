@@ -34,7 +34,7 @@ export default function VisitorGuide({
       <button type="button" className="visitor-guide-close" aria-label="Dismiss map guide" onClick={dismiss}>
         <X size={14} />
       </button>
-      <span className="panel-eyebrow">3.0.1 Map</span>
+      <span className="panel-eyebrow">3.0.2 Map</span>
       <h2>Follow recent traffic</h2>
       <p>Comets and fading trails show current public RF activity. Route lines, terrain, and propagation stay optional so the first view stays clear.</p>
       <div className="visitor-guide-actions">

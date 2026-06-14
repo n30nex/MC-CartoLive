@@ -21,6 +21,11 @@ type InfoPanel = 'changelog' | null;
 
 export const LATEST_RELEASE_HIGHLIGHTS = [
   {
+    label: '3.0.2',
+    title: 'Loading Motion',
+    body: 'Shared branded spinners, skeleton rows, loading blocks, and stable busy labels polish the app while keeping public APIs unchanged.'
+  },
+  {
     label: '3.0.1',
     title: 'Smooth Live Shell',
     body: 'Map modes, mobile tabs, unified snackbars, branded loading, and runtime churn guards make the live map calmer and more app-like.'
@@ -34,11 +39,6 @@ export const LATEST_RELEASE_HIGHLIGHTS = [
     label: '2.9.6',
     title: 'Waterfall Labs',
     body: 'Labs is now a single cinematic Packet Waterfall with generated RF-waterfall art, capped falling packet motion, and opt-in rhythmic synth audio.'
-  },
-  {
-    label: '2.9.5',
-    title: 'Map Studio',
-    body: 'Map Studio adds more basemap profiles, optional PMTiles offline views, and richer configurable 3D node and route rendering.'
   }
 ];
 

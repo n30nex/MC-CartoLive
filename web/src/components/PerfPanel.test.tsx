@@ -35,6 +35,8 @@ describe('PerfPanel helpers', () => {
     expect(html).toContain('Frontend');
     expect(html).toContain('MQTT');
     expect(html).toContain('Live routes');
+    expect(html).toContain('Checking live status');
+    expect(html).toContain('loading-spinner');
     expect(html).not.toContain('History fetch');
     expect(html).not.toContain('Packet endpoint');
     expect(html).not.toContain('Chat endpoint');

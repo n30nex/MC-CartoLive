@@ -63,7 +63,7 @@ podman run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:3.0.1
+  ghcr.io/n30nex/mc-cartolive:3.0.2
 ```
 
 Persistent deployment:
@@ -73,7 +73,7 @@ podman run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:3.0.1
+  ghcr.io/n30nex/mc-cartolive:3.0.2
 ```
 
 The image runs as non-root `appuser`, includes the bundled `mc-diagnose`
@@ -104,7 +104,7 @@ rebuild, readiness wait, and rollback on failure.
 
 ## Runtime Notes
 
-- Version 3.0.1 exposes app version, Git SHA, build number, and build time in
+- Version 3.0.2 exposes app version, Git SHA, build number, and build time in
   the top project bar and in health/readiness responses.
 - `/healthz` is cheap liveness. `/readyz` checks DB, static assets, public state
   readiness, cache freshness, and public-safe runtime status.

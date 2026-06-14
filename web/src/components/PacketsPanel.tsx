@@ -9,6 +9,7 @@ import { DEFAULT_PACKET_FILTERS, packetEndpointSummary, PACKETS_SCOPE_OPTIONS, p
 import { payloadLegendVisuals, payloadVisual } from '../payloadVisuals';
 import { dedupePackets } from '../lib/dedupePackets';
 import type { PublicHistoryWindow, PublicPacketPath, PublicPacketScan } from '../types';
+import { LoadingBlock, LoadingButtonLabel, LoadingRows, LoadingSpinner } from './LoadingPrimitives';
 import { toggleWorkspacePresentation, workspacePresentationTitle, type WorkspacePresentation } from './workspacePanel';
 
 export type PacketsPanelMode = 'expanded' | 'compactTray';
@@ -307,7 +308,14 @@ export default function PacketsPanel({
 
       <PacketSearchStatus state={searchState} nextCursor={nextCursor} loading={loading || loadingMore} scan={scanInfo} />
       {error && <div className="packets-error" role="alert">{error}</div>}
-      {loading && initialLoadRef.current && <div className="packets-loading-bar" />}
+      {loading && initialLoadRef.current && (
+        <LoadingBlock
+          variant="inline"
+          title="Loading packets"
+          message="Searching public route history."
+          className="packets-loading-block"
+        />
+      )}
 
       <div className="packets-content">
         <div
@@ -317,19 +325,23 @@ export default function PacketsPanel({
           aria-label="True path packet rows"
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         >
-          <div style={{ height: packets.length * PACKET_ROW_HEIGHT, position: 'relative' }}>
-            <div style={{ transform: `translateY(${virtualRows.offset}px)` }}>
-              {virtualRows.items.map((packet) => (
-                <PacketRow
-                  key={packet.id}
-                  packet={packet}
-                  selected={packet.id === selectedPacketID}
-                  onSelect={onSelectPacket}
-                  onReplay={onReplayPacket}
-                />
-              ))}
+          {loading && initialLoadRef.current ? (
+            <LoadingRows count={5} className="packets-loading-rows" />
+          ) : (
+            <div style={{ height: packets.length * PACKET_ROW_HEIGHT, position: 'relative' }}>
+              <div style={{ transform: `translateY(${virtualRows.offset}px)` }}>
+                {virtualRows.items.map((packet) => (
+                  <PacketRow
+                    key={packet.id}
+                    packet={packet}
+                    selected={packet.id === selectedPacketID}
+                    onSelect={onSelectPacket}
+                    onReplay={onReplayPacket}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
           {!loading && packets.length === 0 && (
             <div className="packets-empty">
               <img src={activeAssetPack.workspaces.packets} alt="" aria-hidden="true" />
@@ -344,7 +356,7 @@ export default function PacketsPanel({
 
       <footer className="packets-footer">
         <button type="button" disabled={!nextCursor || loadingMore} onClick={loadOlder}>
-          {loadingMore ? 'Searching...' : nextCursor ? 'Load older' : 'End of window'}
+          <LoadingButtonLabel loading={loadingMore} loadingLabel="Searching" label={nextCursor ? 'Load older' : 'End of window'} />
         </button>
       </footer>
     </section>
@@ -365,6 +377,7 @@ function PacketSearchStatus({
   const status = packetSearchStatus(state, nextCursor, loading, scan);
   return (
     <div className={`packets-search-status ${loading ? 'loading' : ''} ${nextCursor ? 'has-more' : ''}`}>
+      {loading && <LoadingSpinner size="sm" decorative />}
       <span>{status}</span>
     </div>
   );

@@ -124,6 +124,191 @@ button {
   --mc-shadow: rgba(15, 23, 42, 0.16);
 }
 
+.loading-spinner {
+  --loading-size: 30px;
+  position: relative;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: var(--loading-size);
+  height: var(--loading-size);
+  color: var(--mc-accent, #38bdf8);
+  background: color-mix(in srgb, var(--mc-surface-strong, rgba(9, 18, 31, 0.82)) 54%, transparent);
+  border: 2px solid color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent);
+  border-top-color: color-mix(in srgb, var(--mc-accent, #38bdf8) 82%, #ffffff);
+  border-right-color: color-mix(in srgb, var(--mc-secondary, #a78bfa) 58%, var(--mc-accent, #38bdf8));
+  border-radius: 999px;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent);
+  animation: loading-spinner-rotate 0.9s linear infinite;
+}
+
+.loading-spinner-sm {
+  --loading-size: 18px;
+  border-width: 2px;
+}
+
+.loading-spinner-md {
+  --loading-size: 30px;
+}
+
+.loading-spinner-lg {
+  --loading-size: 42px;
+  border-width: 3px;
+}
+
+.loading-spinner svg {
+  width: 62%;
+  height: 62%;
+  color: currentColor;
+  opacity: 0.78;
+  animation: loading-spinner-counter 0.9s linear infinite;
+}
+
+.loading-spinner.branded svg {
+  opacity: 0.18;
+}
+
+.loading-spinner img {
+  position: absolute;
+  width: 58%;
+  height: 58%;
+  border-radius: 50%;
+  object-fit: cover;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--mc-accent, #38bdf8) 36%, transparent));
+  animation: loading-spinner-counter 0.9s linear infinite;
+}
+
+.loading-block {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--mc-text-normal, #cbd5e1);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--mc-control-bg, rgba(7, 16, 29, 0.84)) 88%, transparent), color-mix(in srgb, var(--mc-surface-strong, #111827) 74%, transparent));
+  border: 1px solid color-mix(in srgb, var(--mc-border, rgba(125, 211, 252, 0.26)) 88%, transparent);
+  border-radius: 8px;
+  box-shadow:
+    0 12px 34px color-mix(in srgb, var(--mc-shadow, rgba(0, 0, 0, 0.3)) 72%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.loading-block-inline {
+  min-height: 44px;
+  padding: 8px 10px;
+}
+
+.loading-block-panel {
+  min-height: 140px;
+  align-content: center;
+  padding: 16px;
+}
+
+.loading-block-map {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  width: min(340px, calc(100% - 32px));
+  padding: 12px 14px;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(14px);
+}
+
+.loading-block-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.loading-block-copy strong,
+.loading-block-copy em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.loading-block-copy strong {
+  color: var(--mc-text, #f8fafc);
+  font-size: 13px;
+  font-weight: 880;
+  line-height: 1.18;
+  white-space: nowrap;
+}
+
+.loading-block-copy em {
+  color: var(--mc-text-muted, #9fb1c9);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 720;
+  line-height: 1.28;
+}
+
+.loading-rows {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.loading-row {
+  display: block;
+  width: 100%;
+  height: 42px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--mc-control-bg, rgba(7, 16, 29, 0.84)) 90%, transparent), color-mix(in srgb, var(--mc-surface-strong, #111827) 78%, transparent));
+  border: 1px solid color-mix(in srgb, var(--mc-border, rgba(125, 211, 252, 0.26)) 58%, transparent);
+  border-radius: 7px;
+}
+
+.loading-row:nth-child(2n) {
+  width: 92%;
+}
+
+.loading-row:nth-child(3n) {
+  width: 78%;
+}
+
+.loading-rows.compact {
+  gap: 6px;
+}
+
+.loading-rows.compact .loading-row {
+  height: 28px;
+}
+
+.loading-block .loading-rows {
+  grid-column: 1 / -1;
+}
+
+.loading-button-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 104px;
+  white-space: nowrap;
+}
+
+.loading-button-spinner.loading-spinner {
+  --loading-size: 16px;
+}
+
+@keyframes loading-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loading-spinner-counter {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
 .app-shell[data-theme-mode="light"] .payload-chip,
 .app-shell[data-theme-mode="light"] .payload-badge {
   color: color-mix(in srgb, var(--payload-color) 58%, #0f172a 42%);
@@ -632,41 +817,27 @@ button {
   line-height: 1.35;
 }
 
-.node-loading-spinner {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border: 3px solid rgba(125, 211, 252, 0.18);
+.node-loading-spinner.loading-spinner {
+  --loading-size: 34px;
+  border-width: 3px;
   border-top-color: #7dd3fc;
   border-right-color: rgba(45, 212, 191, 0.72);
-  border-radius: 999px;
   box-shadow: 0 0 14px rgba(56, 189, 248, 0.2);
-  animation: node-loading-spin 1.2s linear infinite;
 }
 
-.node-loading-spinner img {
+.node-loading-spinner.loading-spinner img {
   width: 21px;
   height: 21px;
-  border-radius: 50%;
-  object-fit: cover;
-  animation: node-loading-mark 1.2s linear infinite reverse;
-}
-
-@keyframes node-loading-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes node-loading-mark {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .map-wrap,
+  .loading-spinner,
+  .loading-spinner svg,
+  .loading-spinner img,
+  .loading-row,
+  .loading-block,
+  .loading-button-spinner,
   .node-loading-spinner,
   .node-loading-spinner img,
   .toast-spinner,
@@ -1144,6 +1315,7 @@ button {
 .packets-search-status {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   width: fit-content;
   min-width: 0;
   max-width: 100%;
@@ -1182,6 +1354,10 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.packets-search-status .loading-spinner {
+  z-index: 1;
 }
 
 .workspace-panel.workspace-side {
@@ -4027,6 +4203,11 @@ button.status-pill {
   flex: 0 0 auto;
 }
 
+.status-pill .loading-spinner.solar-loading-spinner {
+  --loading-size: 16px;
+  box-shadow: none;
+}
+
 .status-pill span {
   min-width: 0;
   overflow: hidden;
@@ -5316,6 +5497,11 @@ button.status-pill {
   transform: none;
 }
 
+.vcr-button .loading-spinner.vcr-button-spinner {
+  --loading-size: 16px;
+  box-shadow: none;
+}
+
 @keyframes mc-spin {
   to {
     transform: rotate(360deg);
@@ -5385,6 +5571,13 @@ button.status-pill {
 
 .vcr-live-clock.hover .vcr-live-clock-icon {
   color: #facc15;
+}
+
+.vcr-live-clock .loading-spinner.vcr-live-clock-icon.spinning {
+  color: #38bdf8;
+  fill: none;
+  filter: none;
+  animation: loading-spinner-rotate 900ms linear infinite;
 }
 
 .vcr-mini-clock {
@@ -8209,18 +8402,45 @@ button.status-pill {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.panel-skeleton { padding: 16px; }
-.skeleton-header { height: 24px; width: 60%; border-radius: 4px; margin-bottom: 16px; background: var(--surface-2, #1e293b); }
-.skeleton-row { height: 40px; width: 100%; border-radius: 4px; margin-bottom: 8px; background: var(--surface-2, #1e293b); }
-.shimmer { position: relative; overflow: hidden; }
+.panel-skeleton {
+  padding: 16px;
+}
+
+.skeleton-header,
+.skeleton-row {
+  background: color-mix(in srgb, var(--mc-surface-strong, #1e293b) 82%, transparent);
+  border-radius: 7px;
+}
+
+.skeleton-header {
+  width: 60%;
+  height: 24px;
+  margin-bottom: 16px;
+}
+
+.skeleton-row {
+  width: 100%;
+  height: 40px;
+  margin-bottom: 8px;
+}
+
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
 .shimmer::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
-  animation: shimmer 1.5s infinite;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--mc-accent, #38bdf8) 12%, rgba(255, 255, 255, 0.08)), transparent);
+  animation: shimmer 1.45s ease-in-out infinite;
 }
-@keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+@keyframes shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

@@ -4,6 +4,18 @@ This changelog records the public release history at a useful level of detail.
 Detailed patch-by-patch investigation notes and temporary planning material live
 in Git history, not in the active documentation set.
 
+## 3.0.2 - 2026-06-14
+
+- Added shared frontend loading primitives for branded spinners, loading blocks,
+  skeleton rows, and stable busy button labels.
+- Replaced abrupt workspace and data-load waits with contextual animated loading
+  states across lazy panels, Packets, Chat, propagation history, NetGraph, route
+  GIF export, replay/Laser Show, live status, and solar conditions.
+- Kept loading motion subtle and reduced-motion-aware while reusing the existing
+  v3 asset-pack loading mark and lucide spinner icon.
+- Updated focused loading tests, release metadata, OpenAPI version metadata, and
+  docs for the 3.0.2 frontend-only polish patch.
+
 ## 3.0.1 - 2026-06-14
 
 - Reworked the live-map shell around four public modes: Watch, Explore,

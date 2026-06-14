@@ -1,7 +1,8 @@
-import { Download, Loader2, Sparkles } from 'lucide-react';
+import { Download, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { packetEndpointSummary } from '../packets';
 import type { PublicPacketPath } from '../types';
+import { LoadingSpinner } from './LoadingPrimitives';
 
 export type RouteGifExportStatus = 'idle' | 'rendering' | 'done' | 'error';
 
@@ -44,7 +45,7 @@ export default function RouteGifExportButton({ packet, status, progress, cooldow
         title={`Export ${packetEndpointSummary(packet)} as a shareable animated GIF${cooling ? ` — wait ${cooldownLeft}s` : ''}${limited ? ' — limit reached' : ''}`}
         onClick={onExport}
       >
-        {rendering ? <Loader2 size={17} className="route-gif-spinner" /> : status === 'done' ? <Download size={17} /> : <Sparkles size={17} />}
+        {rendering ? <LoadingSpinner size="sm" decorative className="route-gif-spinner" /> : status === 'done' ? <Download size={17} /> : <Sparkles size={17} />}
         <span>{label}</span>
       </button>
       <div className="route-gif-export-detail">

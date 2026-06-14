@@ -10,6 +10,8 @@ describe('NetGraphPanel', () => {
     expect(html).toContain('NetGraph');
     expect(html).not.toContain('Live Network Graph');
     expect(html).toContain('Search nodes, routes, region');
+    expect(html).toContain('Preparing graph layout');
+    expect(html).toContain('loading-block-map');
     expect(html).toContain('Devices');
     expect(html).toContain('Packets');
     expect(html).toContain('Repeater');

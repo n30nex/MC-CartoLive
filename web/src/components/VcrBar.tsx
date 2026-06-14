@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties, type PointerEvent } from 'react';
-import { Gauge, LoaderCircle, Pause, Play, RadioTower, Rewind, RotateCcw, Sparkles } from 'lucide-react';
+import { Gauge, Pause, Play, RadioTower, Rewind, RotateCcw, Sparkles } from 'lucide-react';
 import type { PublicHistorySummaryBucket } from '../types';
 import {
   missedReplayState,
@@ -12,6 +12,7 @@ import {
   type VcrSpeed,
   type VcrStatus
 } from '../vcr';
+import { LoadingSpinner } from './LoadingPrimitives';
 
 interface Props {
   mode: VcrMode;
@@ -73,6 +74,7 @@ export default function VcrBar({
   const primaryLabel = mode === 'live' ? 'Pause live' : mode === 'replay' ? 'Pause replay' : 'Play replay';
   const liveLabel = 'Live';
   const readoutBusy = status === 'loading' || laserShowActive;
+  const laserButtonBusy = status === 'loading' || laserShowActive;
 
   useEffect(() => {
     if (mode === 'live') setHoverTimestamp(null);
@@ -120,7 +122,7 @@ export default function VcrBar({
           disabled={status === 'loading' && !laserShowActive}
           onClick={onLaserShow}
         >
-          <Sparkles size={15} />
+          {laserButtonBusy ? <LoadingSpinner size="sm" decorative className="vcr-button-spinner" /> : <Sparkles size={15} />}
           <span>Laser</span>
         </button>
         <button className="vcr-button icon-only vcr-close" type="button" aria-label="Hide replay controls and return live" title="Hide replay controls and return live" onClick={onClose}>
@@ -132,7 +134,7 @@ export default function VcrBar({
         <strong>{readout.statusLabel}</strong>
         <span className={`vcr-live-clock ${activeHoverTimestamp !== null ? 'hover' : mode}`} title={readout.clockTitle}>
           {readoutBusy ? (
-            <LoaderCircle className="vcr-live-clock-icon spinning" size={13} aria-hidden="true" />
+            <LoadingSpinner size="sm" decorative className="vcr-live-clock-icon spinning" />
           ) : (
             <RadioTower className="vcr-live-clock-icon" size={13} aria-hidden="true" />
           )}

@@ -29,6 +29,8 @@ describe('StatusBar', () => {
     expect(html).toContain('bursts/min');
     expect(html).toContain('unmapped/min');
     expect(html).toContain('total');
+    expect(html).toContain('Loading solar conditions');
+    expect(html).toContain('solar-loading-spinner');
     expect(html).not.toContain('tropo');
     expect(html).not.toContain('long RF');
     expect(html.match(/status-vu/g)).toHaveLength(4);

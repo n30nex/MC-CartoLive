@@ -43,6 +43,7 @@ import {
 import { NODE_ROLE_VISUALS, OBSERVER_NODE_VISUAL, nodeRoleVisual, type NodeIconShape } from '../nodeVisuals';
 import { payloadLegendVisuals, payloadVisual } from '../payloadVisuals';
 import type { PublicActivity, PublicNode, PublicRoute, PublicRoutePulse } from '../types';
+import { LoadingBlock } from './LoadingPrimitives';
 
 export { packedComponentCells };
 
@@ -714,7 +715,14 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
           onPointerCancel={onPointerUp}
           onWheel={onWheel}
         />
-        {!canvasReady && <div className="netgraph-empty">Preparing graph layout...</div>}
+        {!canvasReady && (
+          <LoadingBlock
+            variant="map"
+            title="Preparing graph layout"
+            message="Settling connected public routes."
+            className="netgraph-loading"
+          />
+        )}
         {graph.nodes.length === 0 && <div className="netgraph-empty">No connected public routes are available yet.</div>}
         <NetGraphLegend />
         <div className="netgraph-live-chip">

@@ -26,6 +26,8 @@ describe('RouteGifExportButton', () => {
   it('shows rendering progress while disabled', () => {
     const html = renderToStaticMarkup(<RouteGifExportButton packet={packet} status="rendering" progress={0.42} cooldownUntil={0} remainingExports={5} onExport={() => undefined} />);
     expect(html).toContain('Rendering 42%');
+    expect(html).toContain('loading-spinner');
+    expect(html).toContain('route-gif-spinner');
     expect(html).toContain('disabled=""');
   });
 });
