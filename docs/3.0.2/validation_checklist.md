@@ -31,7 +31,9 @@
 
 ## Deployment
 
-- [ ] Push `main`.
-- [ ] Deploy with `SKIP_DB_BACKUP=1 bash scripts/deploy.sh /opt/MC-CartoLive main`.
-- [ ] Verify `/healthz`, `/readyz`, `/api/v1/public/state`, and
+- [x] Push `main`.
+- [x] Deploy with `SKIP_DB_BACKUP=1 bash scripts/deploy.sh /opt/MC-CartoLive main`.
+- [x] Verify `/healthz`, `/readyz`, `/api/v1/public/state`, and
   `/api/v1/public/schema` report version `3.0.2` and sanitized public data.
+- [x] Clean droplet old containers, dangling images, and old backups while
+  keeping the healthy current container, latest image, and latest backup.
