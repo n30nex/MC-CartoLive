@@ -211,7 +211,7 @@ func (s *Server) publicSchema(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "public, max-age=300")
-	writeJSON(w, http.StatusOK, publicOpenAPISchema())
+	writeJSON(w, http.StatusOK, publicOpenAPISchema(s.Config.AppVersion))
 }
 
 func (s *Server) publicSensorSummary(w http.ResponseWriter, r *http.Request) {
@@ -521,12 +521,12 @@ func topPublicRegion(nodes []live.PublicNode) string {
 	return top
 }
 
-func publicOpenAPISchema() map[string]any {
+func publicOpenAPISchema(version string) map[string]any {
 	return map[string]any{
 		"openapi": "3.1.0",
 		"info": map[string]any{
 			"title":   "MC-CartoLive Public API",
-			"version": "3.0.1",
+			"version": version,
 		},
 		"paths": map[string]any{
 			"/api/v1/public/state":                       map[string]any{"get": publicSchemaOperation("Public live state")},

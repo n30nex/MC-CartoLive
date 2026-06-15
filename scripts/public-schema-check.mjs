@@ -6,10 +6,17 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const version = read('VERSION').trim();
 const schema = JSON.parse(read('docs/public-api.openapi.json'));
+const backendSchema = read('backend/internal/api/public_extended.go');
 const errors = [];
 
 if (schema.openapi !== '3.1.0') errors.push('openapi version must be 3.1.0');
 if (schema.info?.version !== version) errors.push(`schema version ${schema.info?.version} does not match VERSION ${version}`);
+if (!backendSchema.includes('publicOpenAPISchema(s.Config.AppVersion)')) {
+  errors.push('backend public schema endpoint must use Config.AppVersion');
+}
+if (!backendSchema.includes('"version": version')) {
+  errors.push('backend public schema response must populate info.version dynamically');
+}
 
 const requiredPaths = [
   '/api/v1/public/state',
