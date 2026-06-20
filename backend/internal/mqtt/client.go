@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -39,14 +40,22 @@ type Client struct {
 	lastConnectionLostAt atomic.Int64
 	lastForceDisconnect  atomic.Int64
 	shutdown             atomic.Bool
+	clientMu             sync.Mutex
 	client               paho.Client
+	newPahoClient        func(*paho.ClientOptions) paho.Client
 }
 
 func NewClient(cfg ClientConfig, log *slog.Logger, handler Handler) *Client {
 	if cfg.QueueSize < 1 {
 		cfg.QueueSize = 4096
 	}
-	return &Client{cfg: cfg, log: log, handler: handler, queue: make(chan NormalizedMessage, cfg.QueueSize)}
+	return &Client{
+		cfg:           cfg,
+		log:           log,
+		handler:       handler,
+		queue:         make(chan NormalizedMessage, cfg.QueueSize),
+		newPahoClient: paho.NewClient,
+	}
 }
 
 func (c *Client) Start(ctx context.Context) error {
@@ -59,6 +68,31 @@ func (c *Client) Start(ctx context.Context) error {
 	}
 	go c.dispatch(ctx)
 
+	c.clientMu.Lock()
+	c.client = c.buildPahoClient()
+	client := c.client
+	c.clientMu.Unlock()
+
+	c.connect(client)
+
+	go func() {
+		<-ctx.Done()
+		c.shutdown.Store(true)
+		c.clientMu.Lock()
+		client := c.client
+		c.clientMu.Unlock()
+		if client != nil {
+			client.Disconnect(250)
+		}
+		c.connected.Store(false)
+	}()
+
+	go c.watchdog(ctx)
+
+	return nil
+}
+
+func (c *Client) buildPahoClient() paho.Client {
 	opts := paho.NewClientOptions()
 	opts.AddBroker(c.cfg.BrokerURL)
 	opts.SetClientID(c.cfg.ClientID)
@@ -98,8 +132,18 @@ func (c *Client) Start(ctx context.Context) error {
 		c.log.Info("mqtt subscribed", "topic", c.cfg.Topic)
 	})
 
-	c.client = paho.NewClient(opts)
-	token := c.client.Connect()
+	factory := c.newPahoClient
+	if factory == nil {
+		factory = paho.NewClient
+	}
+	return factory(opts)
+}
+
+func (c *Client) connect(client paho.Client) {
+	if client == nil {
+		return
+	}
+	token := client.Connect()
 	go func() {
 		if !token.WaitTimeout(10 * time.Second) {
 			c.log.Warn("mqtt initial connect still pending; continuing startup")
@@ -113,17 +157,6 @@ func (c *Client) Start(ctx context.Context) error {
 			c.log.Error("mqtt connect failed", "error", err)
 		}
 	}()
-
-	go func() {
-		<-ctx.Done()
-		c.shutdown.Store(true)
-		c.client.Disconnect(250)
-		c.connected.Store(false)
-	}()
-
-	go c.watchdog(ctx)
-
-	return nil
 }
 
 func (c *Client) watchdog(ctx context.Context) {
@@ -145,11 +178,30 @@ func (c *Client) watchdog(ctx context.Context) {
 					}
 					c.log.Warn("mqtt watchdog: connected but no messages for >120s; forcing reconnect")
 					c.lastForceDisconnect.Store(now)
-					c.client.Disconnect(0)
+					c.forceReconnect()
 				}
 			}
 		}
 	}
+}
+
+func (c *Client) forceReconnect() {
+	if c.shutdown.Load() {
+		return
+	}
+	c.connected.Store(false)
+	c.lastConnectionLostAt.Store(time.Now().UnixMilli())
+
+	c.clientMu.Lock()
+	oldClient := c.client
+	c.client = c.buildPahoClient()
+	newClient := c.client
+	c.clientMu.Unlock()
+
+	if oldClient != nil {
+		oldClient.Disconnect(250)
+	}
+	c.connect(newClient)
 }
 
 func (c *Client) onMessage() paho.MessageHandler {
