@@ -162,6 +162,8 @@ func (a *Application) Start(ctx context.Context) error {
 	go func() { defer a.wg.Done(); a.refreshPublicStateCacheLoop(ctx) }()
 	a.wg.Add(1)
 	go func() { defer a.wg.Done(); a.backfillPublicPacketPathsLoop(ctx) }()
+	a.wg.Add(1)
+	go func() { defer a.wg.Done(); a.backfillPublicRouteSummariesLoop(ctx) }()
 	if a.Config.PropagationEnabled {
 		a.wg.Add(1)
 		go func() { defer a.wg.Done(); a.propagationLoop(ctx) }()
@@ -843,6 +845,56 @@ func (a *Application) backfillPublicPacketPathsOnce(ctx context.Context, window 
 	return result.Remaining, nil
 }
 
+func (a *Application) backfillPublicRouteSummariesLoop(ctx context.Context) {
+	if !a.Config.PublicPacketPathBackfillEnabled {
+		return
+	}
+	retentionDays := a.effectiveDataRetentionDays()
+	if retentionDays < 0 {
+		return
+	}
+	batch := a.Config.PublicPacketPathBackfillBatch
+	if batch < 2000 {
+		batch = 2000
+	}
+	window := time.Duration(retentionDays) * 24 * time.Hour
+	delay := 500 * time.Millisecond
+	for {
+		remaining, err := a.backfillPublicRouteSummariesOnce(ctx, window, batch)
+		if err != nil {
+			a.Log.Warn("public route summary backfill failed", "error", err)
+			delay = 30 * time.Second
+		} else if !remaining {
+			return
+		} else {
+			delay = 500 * time.Millisecond
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+	}
+}
+
+func (a *Application) backfillPublicRouteSummariesOnce(ctx context.Context, window time.Duration, batch int) (bool, error) {
+	now := time.Now()
+	backfillCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	result, err := a.Store.BackfillPublicRouteSummaries(backfillCtx, now.Add(-window).UnixMilli(), now.UnixMilli(), batch)
+	if err != nil {
+		return true, err
+	}
+	if result.Scanned > 0 {
+		a.Log.Info("public route summary backfill",
+			"scanned", result.Scanned,
+			"counted", result.Counted,
+			"remaining", result.Remaining,
+		)
+	}
+	return result.Remaining, nil
+}
+
 func (a *Application) propagationLoop(ctx context.Context) {
 	interval := time.Duration(a.Config.PropagationFetchIntervalSec) * time.Second
 	if interval <= 0 {
@@ -1066,13 +1118,26 @@ func redactedURL(in string) string {
 }
 
 func (a *Application) pruneLoop(ctx context.Context) {
-	retentionDays := a.Config.DataRetentionDays
+	retentionDays := a.effectiveDataRetentionDays()
 	if retentionDays < 0 {
 		return
 	}
-	if retentionDays == 0 {
-		retentionDays = 30
+	runPrune := func() {
+		beforeMs := time.Now().AddDate(0, 0, -retentionDays).UnixMilli()
+		if err := a.Store.PruneOldData(ctx, beforeMs); err != nil {
+			a.Log.Warn("data prune failed", "error", err)
+		} else {
+			a.Log.Debug("data pruned", "beforeMs", beforeMs)
+		}
+		propagationRetentionDays := a.Config.PropagationEventRetentionDays
+		if propagationRetentionDays > 0 && propagationRetentionDays != retentionDays {
+			propagationBeforeMs := time.Now().AddDate(0, 0, -propagationRetentionDays).UnixMilli()
+			if err := a.Store.PrunePropagationData(ctx, propagationBeforeMs); err != nil {
+				a.Log.Warn("propagation prune failed", "error", err)
+			}
+		}
 	}
+	runPrune()
 	ticker := time.NewTicker(6 * time.Hour)
 	defer ticker.Stop()
 	for {
@@ -1080,21 +1145,17 @@ func (a *Application) pruneLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			beforeMs := time.Now().AddDate(0, 0, -retentionDays).UnixMilli()
-			if err := a.Store.PruneOldData(ctx, beforeMs); err != nil {
-				a.Log.Warn("data prune failed", "error", err)
-			} else {
-				a.Log.Debug("data pruned", "beforeMs", beforeMs)
-			}
-			propagationRetentionDays := a.Config.PropagationEventRetentionDays
-			if propagationRetentionDays > 0 && propagationRetentionDays != retentionDays {
-				propagationBeforeMs := time.Now().AddDate(0, 0, -propagationRetentionDays).UnixMilli()
-				if err := a.Store.PrunePropagationData(ctx, propagationBeforeMs); err != nil {
-					a.Log.Warn("propagation prune failed", "error", err)
-				}
-			}
+			runPrune()
 		}
 	}
+}
+
+func (a *Application) effectiveDataRetentionDays() int {
+	retentionDays := a.Config.DataRetentionDays
+	if retentionDays == 0 {
+		return 7
+	}
+	return retentionDays
 }
 
 func (a *Application) maintenanceLoop(ctx context.Context) {

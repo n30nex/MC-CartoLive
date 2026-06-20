@@ -66,6 +66,9 @@ INSERT INTO live_edge_events (
 	if _, err := insertPublicPacketPathTx(ctx, tx, event, region); err != nil {
 		return event, err
 	}
+	if err := upsertPublicRouteSummariesTx(ctx, tx, event); err != nil {
+		return event, err
+	}
 	if err := tx.Commit(); err != nil {
 		return event, err
 	}

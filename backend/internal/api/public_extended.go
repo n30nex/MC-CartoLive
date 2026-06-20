@@ -27,10 +27,12 @@ func (s *Server) publicEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	now := time.Now().UnixMilli()
+	from, to := publicSevenDayWindow(r, now)
 	events, next, err := s.Store.ListPublicEventsAfter(ctx, store.PublicEventFilter{
 		AfterSeq:        queryInt64(r, "afterSeq", 0),
-		From:            queryInt64(r, "from", 0),
-		To:              queryInt64(r, "to", 0),
+		From:            from,
+		To:              to,
 		Limit:           limit,
 		Region:          firstUpperQuery(r.URL.Query(), "region", "iata"),
 		PayloadTypeName: firstUpperQuery(r.URL.Query(), "payload", "payloadType"),
@@ -44,7 +46,7 @@ func (s *Server) publicEvents(w http.ResponseWriter, r *http.Request) {
 	events = s.filterPublicEvents(events)
 	latestSeq := s.latestPublicSeq(ctx)
 	writeJSON(w, http.StatusOK, live.PublicEventsResponse{
-		ServerTime: time.Now().UnixMilli(),
+		ServerTime: now,
 		LatestSeq:  latestSeq,
 		Events:     events,
 		NextCursor: publicSeqCursor(next),
@@ -93,7 +95,13 @@ func (s *Server) publicViewport(w http.ResponseWriter, r *http.Request) {
 	if since := queryInt64(r, "sinceSeq", 0); since > 0 && s.Config.PublicEventsEnabled {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
-		items, _, err := s.Store.ListPublicEventsAfter(ctx, store.PublicEventFilter{AfterSeq: since, Limit: 250})
+		now := time.Now().UnixMilli()
+		items, _, err := s.Store.ListPublicEventsAfter(ctx, store.PublicEventFilter{
+			AfterSeq: since,
+			From:     now - publicHistoryMaxWindowMs,
+			To:       now,
+			Limit:    250,
+		})
 		if err == nil {
 			for _, event := range s.filterPublicEvents(items) {
 				if publicEventInBBox(event, bbox) {

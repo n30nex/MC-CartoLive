@@ -15,6 +15,10 @@ in Git history, not in the active documentation set.
   v3 asset-pack loading mark and lucide spinner icon.
 - Updated focused loading tests, release metadata, OpenAPI version metadata, and
   docs for the 3.0.2 frontend-only polish patch.
+- Added an operational retention update: raw packet/history/search data defaults
+  to seven days, public search windows are capped to seven days, and compact
+  public route summaries preserve the latest route graph as the live database is
+  pruned.
 
 ## 3.0.1 - 2026-06-14
 

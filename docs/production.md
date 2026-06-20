@@ -111,6 +111,18 @@ rebuild, readiness wait, and rollback on failure.
 - `PUBLIC_BASE_URL` must match the public browser origin for WebSocket origin
   checks.
 - `PUBLIC_MODE=true` should remain enabled on public hosts.
+- `DATA_RETENTION_DAYS` defaults to `7`. It prunes raw packet history,
+  observations, live edge events, public event/search projections, observer
+  status history, propagation weather snapshots, and orphan packet rows.
+- `PROPAGATION_EVENT_RETENTION_DAYS` defaults to `7` unless explicitly set.
+- Public history, packets, chat, event, viewport backfill, and propagation
+  searches are clamped to a maximum seven-day window.
+- Compact `public_route_summaries` rows preserve the latest public-safe route
+  graph after raw rows are pruned. They store only the same sanitized route
+  endpoint fields exposed by public state.
+- SQLite reuses deleted pages until maintenance runs `VACUUM`; retention pruning
+  reduces live row count immediately but file size may shrink after the next
+  maintenance pass or manual vacuum.
 - `MAP_REGION_PRESET=world` is the package default. Use `canada` for the hosted
   Canada map, or `custom` with `MAP_BOUNDS=minLat,minLng,maxLat,maxLng`.
 - `VITE_APP_ASSET_PACK=world` is the package/default image preset. Build the

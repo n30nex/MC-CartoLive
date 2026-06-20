@@ -77,6 +77,14 @@ func (s *Store) LiveState(ctx context.Context, packetLimit int, edgeLimit int) (
 		return nil
 	})
 	g.Go(func() error {
+		routes, err := s.PublicRouteSummaries(gCtx, maxInt(edgeLimit, 2500))
+		if err != nil {
+			return err
+		}
+		state.Routes = routes
+		return nil
+	})
+	g.Go(func() error {
 		packets, err := s.RecentPackets(gCtx, packetLimit)
 		if err != nil {
 			return err
@@ -96,4 +104,11 @@ func (s *Store) LiveState(ctx context.Context, packetLimit int, edgeLimit int) (
 		return live.State{}, err
 	}
 	return state, nil
+}
+
+func maxInt(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

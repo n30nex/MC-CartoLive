@@ -25,9 +25,11 @@
 
 ## Privacy
 
-- [x] No backend public API, DTO, database, or WebSocket changes were made.
+- [x] Backend retention and route-summary schema changes preserve the public data
+  boundary.
 - [x] Public UI still avoids raw packet data, packet hashes, full keys,
   observer public keys, private broker details, and resolver debug reasons.
+- [x] Public history/search APIs clamp requests to at most seven days.
 
 ## Deployment
 

@@ -92,6 +92,7 @@ type State struct {
 	ServerTime       int64               `json:"serverTime"`
 	Nodes            []Node              `json:"nodes"`
 	Observers        []Observer          `json:"observers"`
+	Routes           []PublicRoute       `json:"routes,omitempty"`
 	RecentPackets    []PacketObservation `json:"recentPackets"`
 	RecentEdgeEvents []EdgeEvent         `json:"recentEdgeEvents"`
 }

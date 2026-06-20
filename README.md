@@ -67,6 +67,8 @@ These are public UI captures from the 3.0 Canada surface.
 
 - Read-only MQTT ingest with MeshCore packet decoding.
 - SQLite persistence under `data/` locally or `/app/data` in the container.
+- Seven-day raw/event/search retention by default, with compact latest-route
+  summaries retained so the live route graph survives database pruning.
 - Conservative public route resolution; ambiguous or unsafe paths are not drawn.
 - Public MapLibre dashboard with clusters, nodes, labels, live packet comets,
   fading trails, message bubbles, route plotting, replay, and optional 3D.
@@ -131,6 +133,8 @@ Important variables:
 | `MAP_BOUNDS` | Custom bounds as `minLat,minLng,maxLat,maxLng`. |
 | `PUBLIC_REGIONS` | Public-safe broker region allowlist. Empty allows safe labels. |
 | `DB_PATH` | SQLite path inside the container. |
+| `DATA_RETENTION_DAYS` | Raw packets, observations, live edge events, public history/search rows, and propagation/weather history retention. Defaults to `7`; latest public route summaries are preserved separately. |
+| `PROPAGATION_EVENT_RETENTION_DAYS` | Optional propagation-only override. Defaults to `7`. |
 | `VITE_PMTILES_BASEMAP_URL` | Optional same-origin or CSP-allowed PMTiles basemap for offline profiles. |
 | `VITE_PMTILES_TERRAIN_URL` | Reserved optional PMTiles terrain archive URL for future terrain swaps. |
 

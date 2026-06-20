@@ -45,6 +45,82 @@ func TestRecentEdgeEventsSkipsFarFutureRows(t *testing.T) {
 	}
 }
 
+func TestPublicRouteSummariesTrackLatestRouteAndBackfillIdempotently(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := s.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+	})
+
+	if _, err := s.db.ExecContext(ctx, `PRAGMA foreign_keys=OFF`); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UnixMilli()
+	first, err := s.InsertEdgeEvent(ctx, edgeEventForTest("first", now), "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondEvent := edgeEventForTest("second", now+1000)
+	secondEvent.PayloadTypeName = "TEXT"
+	second, err := s.InsertEdgeEvent(ctx, secondEvent, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	routes, err := s.PublicRouteSummaries(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(routes) != 1 {
+		t.Fatalf("route summaries = %d, want 1", len(routes))
+	}
+	route := routes[0]
+	if route.PacketCount != 2 {
+		t.Fatalf("packet count = %d, want 2", route.PacketCount)
+	}
+	if route.LastHeard != second.HeardAt {
+		t.Fatalf("last heard = %d, want %d", route.LastHeard, second.HeardAt)
+	}
+	if len(route.PayloadTypeNames) != 2 || route.PayloadTypeNames[0] != "ADVERT" || route.PayloadTypeNames[1] != "TEXT" {
+		t.Fatalf("payload types = %#v, want ADVERT,TEXT", route.PayloadTypeNames)
+	}
+
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM public_route_summaries; DELETE FROM public_route_summary_edges`); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.BackfillPublicRouteSummaries(ctx, now-1000, now+2000, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Scanned != 2 || result.Counted != 2 || result.Remaining {
+		t.Fatalf("backfill result = %#v, want two counted and complete", result)
+	}
+	result, err = s.BackfillPublicRouteSummaries(ctx, now-1000, now+2000, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Scanned != 0 || result.Counted != 0 {
+		t.Fatalf("second backfill result = %#v, want no duplicate work", result)
+	}
+
+	routes, err = s.PublicRouteSummaries(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(routes) != 1 || routes[0].PacketCount != 2 || routes[0].LastHeard != second.HeardAt {
+		t.Fatalf("routes after backfill = %#v, want one count=2 latest second", routes)
+	}
+	if first.ID <= 0 {
+		t.Fatalf("first edge ID was not assigned")
+	}
+}
+
 func edgeEventForTest(packetHash string, heardAt int64) live.EdgeEvent {
 	return live.EdgeEvent{
 		PacketHash:      packetHash,

@@ -13,8 +13,7 @@ docker compose build
 docker compose up -d
 ```
 
-For a fast frontend-only patch where a fresh SQLite backup is intentionally
-skipped, use:
+For a fast patch where a fresh SQLite backup is intentionally skipped, use:
 
 ```bash
 SKIP_DB_BACKUP=1 bash scripts/deploy.sh /opt/MC-CartoLive main
@@ -85,6 +84,23 @@ Common overrides:
 The live smoke verifies `/healthz`, `/readyz`, public state, public history,
 WebSocket hello, deployed version/Git metadata, Docker health, and the bundled
 `mc-diagnose` command inside the running container.
+
+## Retention And Database Size
+
+The live container defaults to `DATA_RETENTION_DAYS=7` and
+`PROPAGATION_EVENT_RETENTION_DAYS=7`. Startup and six-hour maintenance pruning
+keep raw packet rows, observations, edge events, public event/search rows,
+observer status history, and propagation/weather history inside that window.
+
+Latest public route information is preserved in compact
+`public_route_summaries` rows so the map can keep drawing known public-safe RF
+routes after older raw rows are removed. These summaries do not store packet
+hashes, full keys, raw path hex, raw payloads, or resolver debug reasons.
+
+SQLite may keep the database file large until a `VACUUM` runs. The app runs
+maintenance every six hours; for emergency manual compaction, first stop or
+quiesce the container, make a backup, then run SQLite vacuum against
+`data/meshcore-live.db`.
 
 ## Soak Check
 

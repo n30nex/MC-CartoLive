@@ -203,6 +203,9 @@ func (s *Store) BackfillPublicPacketPaths(ctx context.Context, from int64, to in
 			if err != nil {
 				return result, err
 			}
+			if err := upsertPublicRouteSummariesTx(ctx, tx, edge); err != nil {
+				return result, err
+			}
 			result.Projected++
 			if mappable {
 				result.Mappable++

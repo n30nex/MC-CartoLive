@@ -7,14 +7,15 @@ import (
 
 func (s *Store) PruneOldData(ctx context.Context, beforeMs int64) error {
 	tables := []struct{ name, column string }{
+		{"propagation_events", "at_ms"},
 		{"public_packet_paths", "heard_at_ms"},
+		{"public_route_summary_edges", "heard_at_ms"},
 		{"public_events", "occurred_at_ms"},
 		{"public_coverage_cells", "updated_at_ms"},
 		{"live_edge_events", "heard_at_ms"},
 		{"packet_observations", "heard_at_ms"},
 		{"observer_status", "received_at_ms"},
 		{"solar_snapshots", "fetched_at_ms"},
-		{"propagation_events", "at_ms"},
 		{"propagation_weather_snapshots", "fetched_at_ms"},
 	}
 	for _, t := range tables {

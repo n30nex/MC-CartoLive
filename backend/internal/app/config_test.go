@@ -121,3 +121,19 @@ func TestLoadConfigAllowsLocalDebugMode(t *testing.T) {
 		t.Fatalf("PublicMode = true, want false when PUBLIC_MODE=false")
 	}
 }
+
+func TestLoadConfigDefaultsToSevenDayDataRetention(t *testing.T) {
+	t.Setenv("MQTT_ENABLED", "false")
+	t.Setenv("DATA_RETENTION_DAYS", "")
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DataRetentionDays != 7 {
+		t.Fatalf("DataRetentionDays = %d, want 7", cfg.DataRetentionDays)
+	}
+	if cfg.PropagationEventRetentionDays != 7 {
+		t.Fatalf("PropagationEventRetentionDays = %d, want 7", cfg.PropagationEventRetentionDays)
+	}
+}

@@ -18,6 +18,33 @@ func TestCanonicalHistorySummaryWindowRoundsDownToStableBuckets(t *testing.T) {
 	}
 }
 
+func TestPublicHistoryWindowCapsRequestsToSevenDays(t *testing.T) {
+	now := int64(1781917200000)
+	request, err := http.NewRequest(http.MethodGet, "/api/v1/public/history?from=0&to=1781917200000", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	from, to := publicHistoryWindow(request, now)
+	if to != now {
+		t.Fatalf("to = %d, want now %d", to, now)
+	}
+	if got := to - from; got != publicHistoryMaxWindowMs {
+		t.Fatalf("window = %d, want seven-day cap %d", got, publicHistoryMaxWindowMs)
+	}
+}
+
+func TestPublicSevenDayWindowDefaultsToFullSearchCap(t *testing.T) {
+	now := int64(1781917200000)
+	request, err := http.NewRequest(http.MethodGet, "/api/v1/public/events", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	from, to := publicSevenDayWindow(request, now)
+	if to != now || to-from != publicHistoryMaxWindowMs {
+		t.Fatalf("window = %d..%d, want default seven-day window ending at %d", from, to, now)
+	}
+}
+
 func TestClientIPRequiresTrustedProxyHeaders(t *testing.T) {
 	request, err := http.NewRequest(http.MethodGet, "/", nil)
 	if err != nil {

@@ -568,7 +568,7 @@ func (s *Server) publicMapConfig() live.PublicMapConfig {
 
 const (
 	publicHistoryDefaultWindowMs  = int64(time.Hour / time.Millisecond)
-	publicHistoryMaxWindowMs      = int64(24 * time.Hour / time.Millisecond)
+	publicHistoryMaxWindowMs      = int64(7 * 24 * time.Hour / time.Millisecond)
 	publicHistoryMaxLimit         = 2000
 	publicHistoryDefaultLimit     = 1000
 	publicChatMaxLimit            = 400
@@ -1805,11 +1805,19 @@ func publicRoutePulseFromPacketPath(packet live.PublicPacketPath) (live.PublicRo
 }
 
 func publicHistoryWindow(r *http.Request, now int64) (int64, int64) {
+	return publicBoundedWindow(r, now, publicHistoryDefaultWindowMs)
+}
+
+func publicSevenDayWindow(r *http.Request, now int64) (int64, int64) {
+	return publicBoundedWindow(r, now, publicHistoryMaxWindowMs)
+}
+
+func publicBoundedWindow(r *http.Request, now int64, defaultWindowMs int64) (int64, int64) {
 	to := queryInt64(r, "to", now)
 	if to <= 0 || to > now {
 		to = now
 	}
-	from := queryInt64(r, "from", to-publicHistoryDefaultWindowMs)
+	from := queryInt64(r, "from", to-defaultWindowMs)
 	if from > to {
 		from = to
 	}

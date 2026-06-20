@@ -409,7 +409,7 @@ func TestPublicChatEndpointReturnsNewestFirstWithStableCursorAndWindow(t *testin
 
 	cappedWindow := httptest.NewRecorder()
 	now := time.Now().UnixMilli()
-	cappedRequest := httptest.NewRequest(http.MethodGet, "/api/v1/public/chat?from="+ms(now-48*60*60_000)+"&to="+ms(now)+"&limit=9999", nil)
+	cappedRequest := httptest.NewRequest(http.MethodGet, "/api/v1/public/chat?from="+ms(now-10*24*60*60_000)+"&to="+ms(now)+"&limit=9999", nil)
 	server.Routes().ServeHTTP(cappedWindow, cappedRequest)
 	if cappedWindow.Code != http.StatusOK {
 		t.Fatalf("capped window status = %d body=%s", cappedWindow.Code, cappedWindow.Body.String())
@@ -418,8 +418,8 @@ func TestPublicChatEndpointReturnsNewestFirstWithStableCursorAndWindow(t *testin
 	if err := json.Unmarshal(cappedWindow.Body.Bytes(), &capped); err != nil {
 		t.Fatal(err)
 	}
-	if capped.Window.To-capped.Window.From > 24*60*60_000 {
-		t.Fatalf("window = %#v, want capped to 24h", capped.Window)
+	if capped.Window.To-capped.Window.From > 7*24*60*60_000 {
+		t.Fatalf("window = %#v, want capped to 7d", capped.Window)
 	}
 	if capped.Window.Count > 400 {
 		t.Fatalf("window count = %d, want <= 400", capped.Window.Count)

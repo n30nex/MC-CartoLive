@@ -135,7 +135,7 @@ func TestPublicHistoryEndpointEnforcesWindowAndLimitCaps(t *testing.T) {
 	now := time.Now().UnixMilli()
 	server := publicHistoryTestServer(st, func(string) bool { return true })
 	response := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/public/history?from="+ms(now-48*60*60_000)+"&to="+ms(now)+"&limit=9999", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/public/history?from="+ms(now-10*24*60*60_000)+"&to="+ms(now)+"&limit=9999", nil)
 	server.Routes().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("history status = %d body=%s", response.Code, response.Body.String())
@@ -144,8 +144,8 @@ func TestPublicHistoryEndpointEnforcesWindowAndLimitCaps(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &history); err != nil {
 		t.Fatal(err)
 	}
-	if history.Window.To-history.Window.From > 24*60*60_000 {
-		t.Fatalf("window = %#v, want capped to 24h", history.Window)
+	if history.Window.To-history.Window.From > 7*24*60*60_000 {
+		t.Fatalf("window = %#v, want capped to 7d", history.Window)
 	}
 	if history.Window.Count > 2000 {
 		t.Fatalf("window count = %d, want <= 2000", history.Window.Count)

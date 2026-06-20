@@ -69,7 +69,7 @@ type Config struct {
 	ConfigYAML                      string
 	FixtureReplayPath               string
 	FixtureRecordEnabled            bool
-	DataRetentionDays               int // 0 = default 30 days, negative = disable pruning
+	DataRetentionDays               int // 0 = default 7 days, negative = disable pruning
 }
 
 func LoadConfig() (Config, error) {
@@ -137,12 +137,12 @@ func LoadConfig() (Config, error) {
 		PropagationEnabled:              envBool("PROPAGATION_ENABLED", true),
 		PropagationMinDistanceKM:        envFloat("PROPAGATION_MIN_DISTANCE_KM", 75),
 		PropagationFetchIntervalSec:     envInt("PROPAGATION_FETCH_INTERVAL_SECONDS", 900),
-		PropagationEventRetentionDays:   envInt("PROPAGATION_EVENT_RETENTION_DAYS", 30),
+		PropagationEventRetentionDays:   envInt("PROPAGATION_EVENT_RETENTION_DAYS", 7),
 		TrustProxyHeaders:               envBool("TRUST_PROXY_HEADERS", false),
 		ConfigYAML:                      envString("CONFIG_YAML", "./data/config.yaml"),
 		FixtureReplayPath:               os.Getenv("FIXTURE_REPLAY_PATH"),
 		FixtureRecordEnabled:            envBool("FIXTURE_RECORD_ENABLED", false),
-		DataRetentionDays:               envInt("DATA_RETENTION_DAYS", 30),
+		DataRetentionDays:               envInt("DATA_RETENTION_DAYS", 7),
 	}
 	if cfg.AuthMode == "subscriber" && cfg.MQTTEnabled && (cfg.MQTTUsername == "" || cfg.MQTTPassword == "") {
 		return cfg, fmt.Errorf("MQTT subscriber auth requires MQTT_USERNAME and MQTT_PASSWORD or MQTT_ENABLED=false")

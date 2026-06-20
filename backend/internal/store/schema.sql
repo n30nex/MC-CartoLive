@@ -175,6 +175,35 @@ CREATE INDEX IF NOT EXISTS idx_public_packet_paths_region_recent ON public_packe
 CREATE INDEX IF NOT EXISTS idx_public_packet_paths_payload_recent ON public_packet_paths(payload_type_name, mappable, heard_at_ms DESC, edge_id DESC);
 CREATE INDEX IF NOT EXISTS idx_public_packet_paths_message_recent ON public_packet_paths(mappable, heard_at_ms DESC, edge_id DESC) WHERE message_text != '';
 
+CREATE TABLE IF NOT EXISTS public_route_summaries (
+  route_id TEXT PRIMARY KEY,
+  from_node_id TEXT NOT NULL,
+  from_label TEXT NOT NULL,
+  from_lat REAL NOT NULL,
+  from_lng REAL NOT NULL,
+  from_path_hash3 TEXT NOT NULL DEFAULT '',
+  to_node_id TEXT NOT NULL,
+  to_label TEXT NOT NULL,
+  to_lat REAL NOT NULL,
+  to_lng REAL NOT NULL,
+  to_path_hash3 TEXT NOT NULL DEFAULT '',
+  distance_km REAL NOT NULL DEFAULT 0,
+  packet_count INTEGER NOT NULL DEFAULT 0,
+  last_heard_ms INTEGER NOT NULL,
+  payload_type_names_json TEXT NOT NULL DEFAULT '[]',
+  updated_at_ms INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_public_route_summaries_last_heard ON public_route_summaries(last_heard_ms DESC);
+CREATE INDEX IF NOT EXISTS idx_public_route_summaries_packet_count ON public_route_summaries(packet_count DESC, last_heard_ms DESC);
+
+CREATE TABLE IF NOT EXISTS public_route_summary_edges (
+  edge_id INTEGER PRIMARY KEY,
+  heard_at_ms INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_public_route_summary_edges_heard ON public_route_summary_edges(heard_at_ms DESC);
+
 CREATE TABLE IF NOT EXISTS public_events (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   event_type TEXT NOT NULL,

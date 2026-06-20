@@ -15,9 +15,9 @@ Keep these out of git, logs, issues, screenshots, and public artifacts:
 ## Public Outputs
 
 Public endpoints should expose only sanitized live-map data needed for display,
-including the public 24h VCR history feed, true-path packet records derived
-from public routed edge events, and sanitized public chat messages derived from
-decoded public text fields.
+including the public retained-window VCR history feed, true-path packet records
+derived from public routed edge events, and sanitized public chat messages
+derived from decoded public text fields.
 They must not expose:
 
 - full public keys
@@ -39,6 +39,11 @@ The public route API may expose a six-character `pathHash3` for positioned
 route endpoints. This is the 3-byte MeshCore route prefix shown in the mobile
 app's Set Path flow. It is intentionally limited to the route-copy workflow and
 must not be expanded into full public keys.
+
+Latest public route summaries may be retained after raw history is pruned. They
+must contain only public-safe endpoint labels, public-safe node IDs, coordinates,
+distances, packet counts, payload type names, last-heard timestamps, and
+six-character `pathHash3` prefixes.
 
 Decoded message text is exposed only as sanitized public bubble or Chat text
 when the backend can decode it from public packet data, the built-in MeshCore
@@ -86,6 +91,11 @@ public map anchors. They must stay inside the same privacy boundary as
 `/api/v1/public/state` and `/ws/public`: no raw packet hashes, raw payloads,
 full public keys, path hex, summaries, channel secrets, or resolver debug
 reasons.
+
+Raw packet, observation, live edge, public event/search, observer status, and
+propagation history retention defaults to seven days. Public history, packet,
+chat, event, viewport backfill, and propagation searches are capped to at most
+seven days even when callers request a larger range.
 
 ## Tests
 

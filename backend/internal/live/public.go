@@ -472,7 +472,8 @@ type PublicHistorySummaryResponse struct {
 
 func BuildPublicLiveState(state State, stats PublicStats) PublicLiveState {
 	pathHash3ByNodeID := BuildPublicPathHash3Index(state.Nodes, state.Observers)
-	routes, routesByPacket := BuildPublicRoutes(state.RecentEdgeEvents, pathHash3ByNodeID)
+	recentRoutes, routesByPacket := BuildPublicRoutes(state.RecentEdgeEvents, pathHash3ByNodeID)
+	routes := publicRoutesWithRecentFallback(state.Routes, recentRoutes)
 	recentPulses := BuildPublicRoutePulses(state.RecentEdgeEvents, 80, state.ServerTime-20_000, pathHash3ByNodeID)
 	observerLocations := BuildPublicObserverLocationIndex(state.Nodes, state.Observers)
 	activity := make([]PublicActivity, 0, len(state.RecentPackets))
@@ -512,6 +513,25 @@ func BuildPublicLiveState(state State, stats PublicStats) PublicLiveState {
 		RecentActivity: activity,
 		UpdatedAt:      time.Now().UnixMilli(),
 	}
+}
+
+func publicRoutesWithRecentFallback(summaries []PublicRoute, recent []PublicRoute) []PublicRoute {
+	if len(summaries) == 0 {
+		return append([]PublicRoute{}, recent...)
+	}
+	out := append([]PublicRoute{}, summaries...)
+	seen := map[string]struct{}{}
+	for _, route := range out {
+		seen[route.ID] = struct{}{}
+	}
+	for _, route := range recent {
+		if _, ok := seen[route.ID]; ok {
+			continue
+		}
+		out = append(out, route)
+		seen[route.ID] = struct{}{}
+	}
+	return out
 }
 
 func PublicNodeFromNode(node Node) (PublicNode, bool) {

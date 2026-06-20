@@ -130,8 +130,8 @@ Use this checklist after map, playback, or styling changes:
   without revealing every idle route.
 - Map Settings layer toggles and packet visual sliders work without unnecessary
   source rebuilds.
-- Replay starts hidden, opens without overlap, scrubs the 24h timeline, and returns
-  cleanly to live mode.
+- Replay starts hidden, opens without overlap, scrubs the retained timeline, and
+  returns cleanly to live mode.
 - Search, compact Legend, panel restore, dark/light mode, and palette choices
   remain readable on desktop and mobile.
 - `mc-diagnose` explains missing nodes/observers by region, coordinate status,
