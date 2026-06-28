@@ -233,6 +233,17 @@ running:
 node .\scripts\check-public-privacy.mjs http://127.0.0.1:39476
 ```
 
+For a focused NetGraph-only performance smoke, use the lighter Playwright
+probe instead of the full browser smoke:
+
+```powershell
+node .\scripts\netgraph-perf-smoke.mjs --base-url http://127.0.0.1:39476
+```
+
+It enables local-only perf diagnostics, opens `#/netgraph`, checks that the
+canvas paints pixels, and prints NetGraph prep/draw counters. It skips
+screenshots unless `--screenshot` is passed.
+
 Check local files before committing:
 
 ```bash

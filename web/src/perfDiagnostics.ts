@@ -18,6 +18,16 @@ export interface PerfCounters {
   geoJSONWorkerTransforms: number;
   geoJSONWorkerFallbacks: number;
   geoJSONWorkerErrors: number;
+  netGraphWorkerTransforms: number;
+  netGraphWorkerFallbacks: number;
+  netGraphWorkerErrors: number;
+  netGraphPrepMs: number;
+  netGraphLayoutMs: number;
+  netGraphLayoutTicks: number;
+  netGraphDrawMs: number;
+  netGraphRenderedNodes: number;
+  netGraphRenderedEdges: number;
+  netGraphHitCandidates: number;
 }
 
 const STORAGE_KEY = 'mc-cartolive-debug-perf';
@@ -71,7 +81,17 @@ export function ensurePerfDiagnostics(): PerfCounters | null {
     visibilityPauses: 0,
     geoJSONWorkerTransforms: 0,
     geoJSONWorkerFallbacks: 0,
-    geoJSONWorkerErrors: 0
+    geoJSONWorkerErrors: 0,
+    netGraphWorkerTransforms: 0,
+    netGraphWorkerFallbacks: 0,
+    netGraphWorkerErrors: 0,
+    netGraphPrepMs: 0,
+    netGraphLayoutMs: 0,
+    netGraphLayoutTicks: 0,
+    netGraphDrawMs: 0,
+    netGraphRenderedNodes: 0,
+    netGraphRenderedEdges: 0,
+    netGraphHitCandidates: 0
   };
   window.__mcCartoLivePerf = counters;
   return counters;
@@ -168,6 +188,40 @@ export function recordGeoJSONWorkerError(): void {
   const counters = ensurePerfDiagnostics();
   if (!counters) return;
   counters.geoJSONWorkerErrors += 1;
+}
+
+export function recordNetGraphWorkerTransform(workerUsed: boolean, prepMs: number, layoutMs: number, layoutTicks: number): void {
+  const counters = ensurePerfDiagnostics();
+  if (!counters) return;
+  if (workerUsed) counters.netGraphWorkerTransforms += 1;
+  else counters.netGraphWorkerFallbacks += 1;
+  counters.netGraphPrepMs = roundedMs(prepMs);
+  counters.netGraphLayoutMs = roundedMs(layoutMs);
+  counters.netGraphLayoutTicks = Math.max(0, Math.floor(layoutTicks));
+}
+
+export function recordNetGraphWorkerError(): void {
+  const counters = ensurePerfDiagnostics();
+  if (!counters) return;
+  counters.netGraphWorkerErrors += 1;
+}
+
+export function recordNetGraphDraw(frameMs: number, renderedNodes: number, renderedEdges: number): void {
+  const counters = ensurePerfDiagnostics();
+  if (!counters) return;
+  counters.netGraphDrawMs = roundedMs(frameMs);
+  counters.netGraphRenderedNodes = Math.max(0, Math.floor(renderedNodes));
+  counters.netGraphRenderedEdges = Math.max(0, Math.floor(renderedEdges));
+}
+
+export function recordNetGraphHitCandidates(candidates: number): void {
+  const counters = ensurePerfDiagnostics();
+  if (!counters) return;
+  counters.netGraphHitCandidates = Math.max(0, Math.floor(candidates));
+}
+
+function roundedMs(ms: number): number {
+  return Math.max(0, Math.round(ms * 10) / 10);
 }
 
 function safeStorage(): Storage | undefined {

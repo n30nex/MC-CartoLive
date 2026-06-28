@@ -3,6 +3,10 @@ import {
   ensurePerfDiagnostics,
   perfDiagnosticsSnapshot,
   recordLivePendingQueueSize,
+  recordNetGraphDraw,
+  recordNetGraphHitCandidates,
+  recordNetGraphWorkerError,
+  recordNetGraphWorkerTransform,
   recordPacketFrame,
   recordPacketSkippedFrame,
   recordRouteReducerDuration,
@@ -37,6 +41,11 @@ describe('perf diagnostics', () => {
     recordLivePendingQueueSize(87.1);
     recordVcrReplayQueueSize(42.8);
     recordVisibilityPause();
+    recordNetGraphWorkerTransform(true, 12.34, 5.67, 16);
+    recordNetGraphWorkerTransform(false, 3.21, 0, 0);
+    recordNetGraphWorkerError();
+    recordNetGraphDraw(9.87, 120.4, 80.9);
+    recordNetGraphHitCandidates(14.7);
 
     expect(window.__mcCartoLivePerf).toMatchObject({
       routeSourceUpdates: 1,
@@ -53,7 +62,17 @@ describe('perf diagnostics', () => {
       packetSkippedFrames: 1,
       livePendingQueueSize: 87,
       vcrReplayQueueSize: 42,
-      visibilityPauses: 1
+      visibilityPauses: 1,
+      netGraphWorkerTransforms: 1,
+      netGraphWorkerFallbacks: 1,
+      netGraphWorkerErrors: 1,
+      netGraphPrepMs: 3.2,
+      netGraphLayoutMs: 0,
+      netGraphLayoutTicks: 0,
+      netGraphDrawMs: 9.9,
+      netGraphRenderedNodes: 120,
+      netGraphRenderedEdges: 80,
+      netGraphHitCandidates: 14
     });
   });
 

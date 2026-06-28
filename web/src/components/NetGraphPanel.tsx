@@ -1,47 +1,47 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject } from 'react';
 import { Activity, Search, X } from 'lucide-react';
 import { clamp } from '../lib/clamp';
-import { fnv1a } from '../lib/hash';
 import { formatRelative } from '../lib/formatRelative';
 import { hexToRgba } from '../lib/color';
 import {
-  forceCenter,
-  forceCollide,
-  forceLink,
-  forceManyBody,
-  forceSimulation,
-  forceX,
-  forceY,
-  type Simulation,
-  type SimulationLinkDatum,
-  type SimulationNodeDatum
-} from 'd3-force';
-import {
-  buildNetGraphData,
-  graphSearchMatches,
   observerActivityToGraphGlow,
   routePulseToGraphComets,
-  selectionForEdge,
-  selectionForNode,
   type NetGraphComet,
   type NetGraphData,
-  type NetGraphEdge,
   type NetGraphGlow,
-  type NetGraphNode
+  type NetGraphSelection
 } from '../netgraph';
 import {
-  buildEdgeRenderPlans,
-  distanceToEdgeCurve,
-  edgeControlPoint,
-  graphTopologySignature,
   packedComponentCells,
-  packedSeedLayout,
-  pointOnEdgeCurve,
-  stableVisibleGraph,
-  type NetGraphEdgeRenderPlan
 } from '../netgraphLayout';
-import { NODE_ROLE_VISUALS, OBSERVER_NODE_VISUAL, nodeRoleVisual, type NodeIconShape } from '../nodeVisuals';
-import { payloadLegendVisuals, payloadVisual } from '../payloadVisuals';
+import { NODE_ROLE_VISUALS, OBSERVER_NODE_VISUAL, nodeRoleVisual } from '../nodeVisuals';
+import { payloadLegendVisuals } from '../payloadVisuals';
+import {
+  edgeIntersectsBounds,
+  netGraphSettlePlan,
+  nodeIntersectsBounds,
+  pointOnPreparedEdge,
+  preparedEdgeByID,
+  preparedGraphToData,
+  preparedHitEdge,
+  preparedHitNode,
+  preparedNodeByID,
+  preparedPositions,
+  preparedSearchMatches,
+  querySpatialIndex,
+  refreshPreparedEdgeGeometry,
+  selectionForPreparedEdge,
+  selectionForPreparedNode,
+  viewportWorldBounds,
+  type GraphTransform,
+  type PreparedNetGraph,
+  type PreparedNetGraphEdge,
+  type PreparedNetGraphNode
+} from '../netgraphPrepared';
+import { netGraphPayloadColor } from '../netgraphVisualModel';
+import { recordNetGraphDraw, recordNetGraphHitCandidates, recordNetGraphWorkerError, recordNetGraphWorkerTransform } from '../perfDiagnostics';
+import { createBrowserNetGraphClient } from '../workers/netgraphWorkerClient';
+import { transformNetGraph } from '../workers/netgraphTransforms';
 import type { PublicActivity, PublicNode, PublicRoute, PublicRoutePulse } from '../types';
 import { LoadingBlock } from './LoadingPrimitives';
 
@@ -71,33 +71,22 @@ export interface NetGraphThemeTokens {
   cometHead: string;
 }
 
-interface SimNode extends NetGraphNode, SimulationNodeDatum {
-  seedX: number;
-  seedY: number;
-  componentID: number;
-  componentX: number;
-  componentY: number;
-  radius: number;
-}
-
-interface SimLink extends SimulationLinkDatum<SimNode>, NetGraphEdge {
-  renderPlan: NetGraphEdgeRenderPlan;
-}
-
-interface GraphTransform {
-  x: number;
-  y: number;
-  k: number;
-}
-
 type DragState =
   | { mode: 'pan'; startX: number; startY: number; origin: GraphTransform; moved: boolean }
-  | { mode: 'node'; node: SimNode; moved: boolean };
+  | { mode: 'node'; node: PreparedNetGraphNode; moved: boolean };
 
 interface PinchState {
   startDistance: number;
   origin: GraphTransform;
   worldAtStart: { x: number; y: number };
+}
+
+interface CanvasDrawState {
+  width: number;
+  height: number;
+  themeMode: 'light' | 'dark';
+  theme: NetGraphThemeTokens;
+  gradient: CanvasGradient;
 }
 
 const MAX_RENDERED_NODES = 2600;
@@ -106,9 +95,6 @@ const MAX_GRAPH_COMETS = 360;
 const MAX_GRAPH_GLOWS = 220;
 const MIN_ZOOM = 0.22;
 const MAX_ZOOM = 4.5;
-const NETGRAPH_INITIAL_SETTLE_TICKS = 90;
-const NETGRAPH_MAJOR_SETTLE_TICKS = 48;
-const NETGRAPH_INCREMENTAL_SETTLE_TICKS = 16;
 const DEFAULT_NETGRAPH_THEME: NetGraphThemeTokens = {
   backgroundInner: 'rgba(20, 32, 51, 0.96)',
   backgroundMid: 'rgba(12, 18, 28, 0.98)',
@@ -122,19 +108,6 @@ const DEFAULT_NETGRAPH_THEME: NetGraphThemeTokens = {
   cometHead: '#ffffff'
 };
 
-interface PreviousNodePosition {
-  x?: number;
-  y?: number;
-  vx?: number;
-  vy?: number;
-}
-
-export interface NetGraphSettlePlan {
-  ticks: number;
-  alpha: number;
-  restart: boolean;
-}
-
 export interface NetGraphFrameState {
   pageHidden: boolean;
   activeComets: boolean;
@@ -145,13 +118,16 @@ export function netGraphShouldRunFrame({ pageHidden, activeComets, activeGlows }
   return !pageHidden && (activeComets || activeGlows);
 }
 
+export { netGraphSettlePlan };
+
+const netGraphClient = createBrowserNetGraphClient(transformNetGraph);
+
 export default function NetGraphPanel({ nodes, routes, pulses, activity, socketStatus, onClose }: NetGraphPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const simulationRef = useRef<Simulation<SimNode, SimLink> | null>(null);
-  const simNodesRef = useRef<SimNode[]>([]);
-  const simLinksRef = useRef<SimLink[]>([]);
-  const simLinksByIDRef = useRef(new Map<string, SimLink>());
-  const graphRef = useRef<NetGraphData>(buildNetGraphData([], []));
+  const canvasContextRef = useRef<CanvasRenderingContext2D | null>(null);
+  const canvasDrawStateRef = useRef<CanvasDrawState | null>(null);
+  const preparedGraphRef = useRef<PreparedNetGraph | null>(null);
+  const graphDataRef = useRef<NetGraphData>(preparedGraphToData(null));
   const transformRef = useRef<GraphTransform>({ x: 0, y: 0, k: 1 });
   const rafRef = useRef(0);
   const dragRef = useRef<DragState | null>(null);
@@ -159,7 +135,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
   const pinchRef = useRef<PinchState | null>(null);
   const hoveredRef = useRef<SelectedGraphItem>(null);
   const selectedRef = useRef<SelectedGraphItem>(null);
-  const selectedHighlightsRef = useRef<ReturnType<typeof selectionForNode>>({ nodeIDs: new Set<string>(), edgeIDs: new Set<string>() });
+  const selectedHighlightsRef = useRef<NetGraphSelection>({ nodeIDs: new Set<string>(), edgeIDs: new Set<string>() });
   const searchMatchesRef = useRef(new Set<string>());
   const seenPulseIDsRef = useRef(new Set<string>());
   const seenActivityIDsRef = useRef(new Set<string>());
@@ -167,23 +143,23 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
   const glowsRef = useRef<NetGraphGlow[]>([]);
   const hasFittedRef = useRef(false);
   const pageHiddenRef = useRef(typeof document !== 'undefined' ? document.hidden : false);
+  const pendingPrepareRef = useRef(false);
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selected, setSelected] = useState<SelectedGraphItem>(null);
   const [hovered, setHovered] = useState<SelectedGraphItem>(null);
   const [canvasReady, setCanvasReady] = useState(false);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const [preparedGraph, setPreparedGraph] = useState<PreparedNetGraph | null>(null);
   const layoutPausedRef = useRef(false);
 
-  const graph = useMemo(() => buildNetGraphData(nodes, routes), [nodes, routes]);
-  const visibleGraph = useMemo(() => stableVisibleGraph(graph, { maxNodes: MAX_RENDERED_NODES, maxEdges: MAX_RENDERED_EDGES }), [graph]);
-  const topologySignature = useMemo(() => graphTopologySignature(visibleGraph), [visibleGraph]);
-  const searchMatches = useMemo(() => graphSearchMatches(graph, query), [graph, query]);
-  const selectedNode = selected?.type === 'node' ? graph.nodeByID.get(selected.id) ?? null : null;
-  const selectedEdge = selected?.type === 'edge' ? graph.edgeByID.get(selected.id) ?? null : null;
+  const selectedNode = selected?.type === 'node' ? preparedNodeByID(preparedGraph, selected.id) : null;
+  const selectedEdge = selected?.type === 'edge' ? preparedEdgeByID(preparedGraph, selected.id) : null;
   const selectedHighlights = useMemo(() => {
-    if (selected?.type === 'node') return selectionForNode(graph, selected.id);
-    if (selected?.type === 'edge') return selectionForEdge(graph, selected.id);
+    if (selected?.type === 'node') return selectionForPreparedNode(preparedGraph, selected.id);
+    if (selected?.type === 'edge') return selectionForPreparedEdge(preparedGraph, selected.id);
     return { nodeIDs: new Set<string>(), edgeIDs: new Set<string>() };
-  }, [graph, selected]);
+  }, [preparedGraph, selected]);
 
   const scheduleDraw = useCallback(() => {
     if (pageHiddenRef.current) return;
@@ -208,9 +184,14 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
   }, [selected, selectedHighlights, scheduleDraw]);
 
   useEffect(() => {
-    searchMatchesRef.current = searchMatches;
+    const timer = window.setTimeout(() => setDebouncedQuery(query), 120);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    searchMatchesRef.current = preparedSearchMatches(preparedGraphRef.current, debouncedQuery);
     scheduleDraw();
-  }, [searchMatches, scheduleDraw]);
+  }, [debouncedQuery, preparedGraph, scheduleDraw]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
@@ -221,11 +202,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
           window.cancelAnimationFrame(rafRef.current);
           rafRef.current = 0;
         }
-        simulationRef.current?.stop();
         return;
-      }
-      if (!layoutPausedRef.current && simulationRef.current && simulationRef.current.alpha() > 0.002) {
-        simulationRef.current.restart();
       }
       scheduleDraw();
     };
@@ -236,10 +213,10 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
 
   const fitGraph = useCallback(() => {
     const canvas = canvasRef.current;
-    const simNodes = simNodesRef.current;
-    if (!canvas || simNodes.length === 0) return;
+    const graph = preparedGraphRef.current;
+    if (!canvas || !graph || graph.nodes.length === 0) return;
     const rect = canvas.getBoundingClientRect();
-    const bounds = boundsForNodes(simNodes);
+    const bounds = boundsForNodes(graph.nodes);
     const scale = Math.max(MIN_ZOOM, Math.min(2.4, Math.min(rect.width / Math.max(1, bounds.width), rect.height / Math.max(1, bounds.height)) * 0.82));
     transformRef.current = {
       k: scale,
@@ -250,17 +227,14 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
   }, [scheduleDraw]);
 
   useEffect(() => {
-    graphRef.current = graph;
-    mergeGraphMetadataIntoSimulation(graph);
-    scheduleDraw();
-  }, [graph, scheduleDraw]);
-
-  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const resize = () => {
-      resizeCanvas(canvas);
+      const next = resizeCanvas(canvas);
+      canvasContextRef.current = next.ctx;
+      canvasDrawStateRef.current = null;
       setCanvasReady(true);
+      setCanvasSize((current) => current.width === next.width && current.height === next.height ? current : { width: next.width, height: next.height });
       scheduleDraw();
     };
     resize();
@@ -268,71 +242,45 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
   }, [scheduleDraw]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const previousPositions = new Map<string, PreviousNodePosition>(
-      simNodesRef.current.map((node) => [node.id, { x: node.x, y: node.y, vx: node.vx, vy: node.vy }])
-    );
-    const seedLayout = packedSeedLayout(visibleGraph, rect.width, rect.height);
-    const simNodes = visibleGraph.nodes.map((node) => simNodeFromGraphNode(node, seedLayout.get(node.id)));
-    let addedNodes = 0;
-    for (const node of simNodes) {
-      const previous = previousPositions.get(node.id);
-      if (previous) {
-        node.x = previous.x ?? node.seedX;
-        node.y = previous.y ?? node.seedY;
-        node.vx = previous.vx ?? 0;
-        node.vy = previous.vy ?? 0;
-        continue;
+    if (!canvasReady || canvasSize.width <= 0 || canvasSize.height <= 0) return undefined;
+    let cancelled = false;
+    const previous = preparedGraphRef.current;
+    pendingPrepareRef.current = true;
+    void netGraphClient.prepare({
+      nodes,
+      routes,
+      width: canvasSize.width,
+      height: canvasSize.height,
+      maxNodes: MAX_RENDERED_NODES,
+      maxEdges: MAX_RENDERED_EDGES,
+      previousTopologySignature: previous?.topologySignature,
+      previousPositions: preparedPositions(previous),
+      layoutPaused: layoutPausedRef.current
+    }).then((response) => {
+      if (cancelled) return;
+      pendingPrepareRef.current = false;
+      preparedGraphRef.current = response.graph;
+      graphDataRef.current = preparedGraphToData(response.graph);
+      searchMatchesRef.current = preparedSearchMatches(response.graph, debouncedQuery);
+      setPreparedGraph(response.graph);
+      recordNetGraphWorkerTransform(response.workerUsed, response.graph.prepMs, response.graph.layoutMs, response.graph.layoutTicks);
+      scheduleDraw();
+      if (!hasFittedRef.current && response.graph.nodes.length > 0) {
+        hasFittedRef.current = true;
+        window.setTimeout(() => {
+          if (!pageHiddenRef.current) fitGraph();
+        }, 40);
       }
-      addedNodes += 1;
-      const neighborSeed = seedNodeNearKnownNeighbors(node, visibleGraph, previousPositions);
-      if (neighborSeed) {
-        node.x = neighborSeed.x;
-        node.y = neighborSeed.y;
-      }
-    }
-    const removedNodes = [...previousPositions.keys()].filter((id) => !visibleGraph.nodeByID.has(id)).length;
-    const settlePlan = netGraphSettlePlan(previousPositions.size, simNodes.length, addedNodes + removedNodes, layoutPausedRef.current);
-    const nodeIDs = new Set(simNodes.map((node) => node.id));
-    const edgeRenderPlans = buildEdgeRenderPlans(visibleGraph.edges);
-    const simLinks = visibleGraph.edges
-      .filter((edge) => nodeIDs.has(edge.sourceID) && nodeIDs.has(edge.targetID))
-      .map((edge) => ({ ...edge, source: edge.sourceID, target: edge.targetID, renderPlan: edgeRenderPlans.get(edge.id)! } satisfies SimLink));
-    simNodesRef.current = simNodes;
-    simLinksRef.current = simLinks;
-    simLinksByIDRef.current = new Map(simLinks.map((edge) => [edge.id, edge]));
-    simulationRef.current?.stop();
-    const simulation = forceSimulation<SimNode, SimLink>(simNodes)
-      .force('link', forceLink<SimNode, SimLink>(simLinks).id((node) => node.id).distance((link) => linkDistance(link)).strength(0.42))
-      .force('charge', forceManyBody<SimNode>().strength((node) => -72 - Math.min(node.degree, 18) * 7))
-      .force('collide', forceCollide<SimNode>().radius((node) => node.radius + 14).strength(0.92))
-      .force('x', forceX<SimNode>((node) => node.componentX).strength(0.11))
-      .force('y', forceY<SimNode>((node) => node.componentY).strength(0.11))
-      .force('center', forceCenter(rect.width / 2, rect.height / 2).strength(0.018))
-      .alphaDecay(0.033)
-      .velocityDecay(0.46)
-      .stop();
-    if (settlePlan.ticks > 0) simulation.tick(settlePlan.ticks);
-    simulation.on('tick', scheduleDraw);
-    simulationRef.current = simulation;
-    if (settlePlan.restart) {
-      simulation.alpha(settlePlan.alpha);
-      if (!pageHiddenRef.current) simulation.restart();
-    }
-    scheduleDraw();
-    if (!hasFittedRef.current) {
-      hasFittedRef.current = true;
-      window.setTimeout(() => {
-        if (!pageHiddenRef.current) fitGraph();
-      }, 40);
-    }
+    }).catch(() => {
+      if (cancelled) return;
+      pendingPrepareRef.current = false;
+      recordNetGraphWorkerError();
+      scheduleDraw();
+    });
     return () => {
-      simulationRef.current?.stop();
-      simulationRef.current = null;
+      cancelled = true;
     };
-  }, [fitGraph, scheduleDraw, topologySignature]);
+  }, [canvasReady, canvasSize.width, canvasSize.height, fitGraph, nodes, routes, scheduleDraw]);
 
   useEffect(() => {
     const now = performance.now();
@@ -340,7 +288,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     for (const pulse of pulses) {
       if (seenPulseIDsRef.current.has(pulse.id)) continue;
       seenPulseIDsRef.current.add(pulse.id);
-      nextComets.push(...routePulseToGraphComets(pulse, graphRef.current, now));
+      nextComets.push(...routePulseToGraphComets(pulse, graphDataRef.current, now));
     }
     cometsRef.current = nextComets.slice(-MAX_GRAPH_COMETS);
     scheduleDraw();
@@ -352,7 +300,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     for (const item of activity) {
       if (seenActivityIDsRef.current.has(item.id)) continue;
       seenActivityIDsRef.current.add(item.id);
-      const glow = observerActivityToGraphGlow(item, graphRef.current, now);
+      const glow = observerActivityToGraphGlow(item, graphDataRef.current, now);
       if (glow) nextGlows.push(glow);
     }
     glowsRef.current = nextGlows.slice(-MAX_GRAPH_GLOWS);
@@ -361,7 +309,6 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
 
   useEffect(() => () => {
     if (rafRef.current !== 0) window.cancelAnimationFrame(rafRef.current);
-    simulationRef.current?.stop();
   }, []);
 
   const clearSelection = () => {
@@ -369,25 +316,6 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     setHovered(null);
     scheduleDraw();
   };
-
-  function mergeGraphMetadataIntoSimulation(latestGraph: NetGraphData) {
-    const latestNodes = new Map(latestGraph.nodes.map((node) => [node.id, node]));
-    for (const node of simNodesRef.current) {
-      const latest = latestNodes.get(node.id);
-      if (!latest) continue;
-      Object.assign(node, latest, { radius: nodeRadius(latest) });
-    }
-    const latestEdges = new Map(latestGraph.edges.map((edge) => [edge.id, edge]));
-    for (const edge of simLinksRef.current) {
-      const latest = latestEdges.get(edge.id);
-      if (!latest) continue;
-      const source = edge.source;
-      const target = edge.target;
-      const renderPlan = edge.renderPlan;
-      Object.assign(edge, latest, { source, target });
-      edge.renderPlan = renderPlan;
-    }
-  }
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -404,9 +332,6 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     const node = hitNode(world);
     if (node) {
       dragRef.current = { mode: 'node', node, moved: false };
-      node.fx = node.x;
-      node.fy = node.y;
-      if (!layoutPausedRef.current) simulationRef.current?.alphaTarget(0.18).restart();
     } else {
       dragRef.current = { mode: 'pan', startX: pointer.x, startY: pointer.y, origin: { ...transformRef.current }, moved: false };
     }
@@ -434,8 +359,13 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     const world = screenToWorld(pointer, transformRef.current);
     const drag = dragRef.current;
     if (drag?.mode === 'node') {
-      drag.node.fx = world.x;
-      drag.node.fy = world.y;
+      drag.node.x = world.x;
+      drag.node.y = world.y;
+      const graph = preparedGraphRef.current;
+      if (graph) {
+        preparedGraphRef.current = refreshPreparedEdgeGeometry(graph);
+        graphDataRef.current = preparedGraphToData(preparedGraphRef.current);
+      }
       drag.moved = true;
       scheduleDraw();
       return;
@@ -467,9 +397,6 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     const world = screenToWorld(pointer, transformRef.current);
     const drag = dragRef.current;
     if (drag?.mode === 'node') {
-      drag.node.fx = null;
-      drag.node.fy = null;
-      simulationRef.current?.alphaTarget(0);
       if (!drag.moved) setSelected({ type: 'node', id: drag.node.id });
     } else if (drag?.mode === 'pan' && !drag.moved) {
       const node = hitNode(world);
@@ -498,43 +425,60 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
 
   function drawGraph() {
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
+    const ctx = canvasContextRef.current ?? canvas?.getContext('2d');
     if (!canvas || !ctx) return;
-    const rect = canvas.getBoundingClientRect();
+    const frameStartedAt = performance.now();
+    const drawState = getCanvasDrawState(canvas, ctx, canvasDrawStateRef);
+    const graph = preparedGraphRef.current;
     const transform = transformRef.current;
     const now = performance.now();
-    const theme = netGraphThemeFromElement(canvas);
     cometsRef.current = cometsRef.current.filter((comet) => now - comet.startedAt < comet.durationMs + 700);
     glowsRef.current = glowsRef.current.filter((glow) => now - glow.startedAt < glow.durationMs);
     ctx.save();
-    ctx.clearRect(0, 0, rect.width, rect.height);
-    drawBackground(ctx, rect.width, rect.height, theme);
+    ctx.clearRect(0, 0, drawState.width, drawState.height);
+    drawBackground(ctx, drawState);
+    if (!graph) {
+      ctx.restore();
+      return;
+    }
+    const bounds = viewportWorldBounds(transform, drawState.width, drawState.height);
+    const edgeIndexes = querySpatialIndex(graph.edgeSpatialIndex, bounds).filter((index) => {
+      const edge = graph.edges[index];
+      return Boolean(edge && edgeIntersectsBounds(edge, bounds));
+    });
+    const nodeIndexes = querySpatialIndex(graph.nodeSpatialIndex, bounds).filter((index) => {
+      const node = graph.nodes[index];
+      return Boolean(node && nodeIntersectsBounds(node, bounds));
+    });
     ctx.translate(transform.x, transform.y);
     ctx.scale(transform.k, transform.k);
     const hover = hoveredRef.current;
-    const hoverSelection = hover?.type === 'node' ? selectionForNode(graphRef.current, hover.id) : hover?.type === 'edge' ? selectionForEdge(graphRef.current, hover.id) : null;
+    const hoverSelection = hover?.type === 'node' ? selectionForPreparedNode(graph, hover.id) : hover?.type === 'edge' ? selectionForPreparedEdge(graph, hover.id) : null;
     const selection = selectedHighlightsRef.current;
-    drawEdges(ctx, selection, hoverSelection, theme);
-    drawComets(ctx, now, theme);
-    drawGlows(ctx, now);
-    drawNodes(ctx, selection, hoverSelection, theme);
-    drawLabels(ctx, selection, hoverSelection, theme);
+    drawEdges(ctx, graph, edgeIndexes, selection, hoverSelection, drawState.theme, transform.k);
+    drawComets(ctx, graph, now, bounds, drawState.theme, transform.k);
+    drawGlows(ctx, graph, now, bounds, transform.k);
+    drawNodes(ctx, graph, nodeIndexes, selection, hoverSelection, drawState.theme, transform.k);
+    drawLabels(ctx, graph, nodeIndexes, selection, hoverSelection, drawState.theme);
     ctx.restore();
+    recordNetGraphDraw(performance.now() - frameStartedAt, nodeIndexes.length, edgeIndexes.length);
   }
 
   function hasActiveMotion(): boolean {
     const now = performance.now();
-    return netGraphShouldRunFrame({
+    return pendingPrepareRef.current || netGraphShouldRunFrame({
       pageHidden: pageHiddenRef.current,
       activeComets: cometsRef.current.some((comet) => now - comet.startedAt < comet.durationMs + 700),
       activeGlows: glowsRef.current.some((glow) => now - glow.startedAt < glow.durationMs)
     });
   }
 
-  function drawEdges(ctx: CanvasRenderingContext2D, selection: ReturnType<typeof selectionForNode>, hoverSelection: ReturnType<typeof selectionForNode> | null, theme: NetGraphThemeTokens) {
-    for (const edge of simLinksRef.current) {
-      const source = linkNode(edge.source);
-      const target = linkNode(edge.target);
+  function drawEdges(ctx: CanvasRenderingContext2D, graph: PreparedNetGraph, edgeIndexes: number[], selection: NetGraphSelection, hoverSelection: NetGraphSelection | null, theme: NetGraphThemeTokens, scale: number) {
+    const lowDetail = scale < 0.42;
+    for (const index of edgeIndexes) {
+      const edge = graph.edges[index];
+      const source = graph.nodes[edge?.sourceIndex ?? -1];
+      const target = graph.nodes[edge?.targetIndex ?? -1];
       if (!source || !target) continue;
       const selectedEdge = selection.edgeIDs.has(edge.id);
       const hover = hoveredRef.current;
@@ -542,32 +486,32 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       const dimmed = selection.edgeIDs.size > 0 && !selectedEdge;
       ctx.globalAlpha = dimmed ? 0.1 : selectedEdge || hoveredEdge ? 0.88 : 0.24;
       ctx.strokeStyle = selectedEdge || hoveredEdge ? theme.selectedEdge : edgeColor(edge, theme);
-      ctx.lineWidth = selectedEdge || hoveredEdge ? 2.8 : Math.max(0.55, Math.min(1.8, Math.log1p(edge.packetCount) * 0.24));
-      const control = edgeControlPoint(source, target, edge, edge.renderPlan);
+      ctx.lineWidth = selectedEdge || hoveredEdge ? 2.8 : lowDetail ? Math.max(0.45, edge.width * 0.78) : edge.width;
       ctx.beginPath();
-      ctx.moveTo(source.x ?? 0, source.y ?? 0);
-      ctx.quadraticCurveTo(control.x, control.y, target.x ?? 0, target.y ?? 0);
+      ctx.moveTo(source.x, source.y);
+      ctx.quadraticCurveTo(edge.controlX, edge.controlY, target.x, target.y);
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
   }
 
-  function drawComets(ctx: CanvasRenderingContext2D, now: number, theme: NetGraphThemeTokens) {
+  function drawComets(ctx: CanvasRenderingContext2D, graph: PreparedNetGraph, now: number, bounds: { minX: number; minY: number; maxX: number; maxY: number }, theme: NetGraphThemeTokens, scale: number) {
+    const shadowBlur = scale < 0.42 ? 8 : 20;
     for (const comet of cometsRef.current) {
-      const edge = simLinksByIDRef.current.get(comet.edgeID);
-      if (!edge) continue;
-      const source = linkNode(edge.source);
-      const target = linkNode(edge.target);
+      const edge = graph.edges[graph.edgeIndexByID[comet.edgeID]];
+      if (!edge || !edgeIntersectsBounds(edge, bounds)) continue;
+      const source = graph.nodes[edge.sourceIndex];
+      const target = graph.nodes[edge.targetIndex];
       if (!source || !target) continue;
       const progress = clamp((now - comet.startedAt) / comet.durationMs, 0, 1);
-      const color = payloadVisual(comet.payloadTypeName).color;
-      const head = pointOnEdgeCurve(source, target, edge, progress, edge.renderPlan);
-      const tail = pointOnEdgeCurve(source, target, edge, Math.max(0, progress - 0.085), edge.renderPlan);
+      const color = netGraphPayloadColor(comet.payloadTypeName);
+      const head = pointOnPreparedEdge(source, target, edge, progress);
+      const tail = pointOnPreparedEdge(source, target, edge, Math.max(0, progress - 0.085));
       ctx.save();
       ctx.globalAlpha = 0.74;
       ctx.strokeStyle = color;
       ctx.lineWidth = 4.2;
-      ctx.shadowBlur = 20;
+      ctx.shadowBlur = shadowBlur;
       ctx.shadowColor = color;
       ctx.beginPath();
       ctx.moveTo(tail.x, tail.y);
@@ -587,38 +531,41 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     }
   }
 
-  function drawGlows(ctx: CanvasRenderingContext2D, now: number) {
-    const nodeByID = new Map(simNodesRef.current.map((node) => [node.id, node]));
+  function drawGlows(ctx: CanvasRenderingContext2D, graph: PreparedNetGraph, now: number, bounds: { minX: number; minY: number; maxX: number; maxY: number }, scale: number) {
+    const shadowBlur = scale < 0.42 ? 10 : 28;
     for (const glow of glowsRef.current) {
-      const node = nodeByID.get(glow.nodeID);
-      if (!node) continue;
+      const node = graph.nodes[graph.nodeIndexByID[glow.nodeID]];
+      if (!node || !nodeIntersectsBounds(node, bounds)) continue;
       const progress = clamp((now - glow.startedAt) / glow.durationMs, 0, 1);
       const alpha = (1 - progress) * 0.44;
-      const color = payloadVisual(glow.payloadTypeName).color;
+      const color = netGraphPayloadColor(glow.payloadTypeName);
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.strokeStyle = color;
       ctx.lineWidth = 2.4;
-      ctx.shadowBlur = 28;
+      ctx.shadowBlur = shadowBlur;
       ctx.shadowColor = color;
       ctx.beginPath();
-      ctx.arc(node.x ?? 0, node.y ?? 0, node.radius + 9 + progress * 32, 0, Math.PI * 2);
+      ctx.arc(node.x, node.y, node.radius + 9 + progress * 32, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
   }
 
-  function drawNodes(ctx: CanvasRenderingContext2D, selection: ReturnType<typeof selectionForNode>, hoverSelection: ReturnType<typeof selectionForNode> | null, theme: NetGraphThemeTokens) {
-    for (const node of simNodesRef.current) {
+  function drawNodes(ctx: CanvasRenderingContext2D, graph: PreparedNetGraph, nodeIndexes: number[], selection: NetGraphSelection, hoverSelection: NetGraphSelection | null, theme: NetGraphThemeTokens, scale: number) {
+    const lowDetail = scale < 0.42;
+    for (const index of nodeIndexes) {
+      const node = graph.nodes[index];
+      if (!node) continue;
       const selectedNode = selection.nodeIDs.has(node.id);
       const hover = hoveredRef.current;
       const matches = searchMatchesRef.current;
       const hoveredNode = hoverSelection?.nodeIDs.has(node.id) || hover?.type === 'node' && hover.id === node.id;
       const searchMatch = matches.has(node.id);
       const dimmed = (selection.nodeIDs.size > 0 && !selectedNode) || (matches.size > 0 && !searchMatch);
-      const color = nodeColor(node);
+      const color = node.color;
       ctx.globalAlpha = dimmed ? 0.22 : 1;
-      ctx.shadowBlur = selectedNode || hoveredNode || searchMatch ? 18 : 7;
+      ctx.shadowBlur = lowDetail && !selectedNode && !hoveredNode && !searchMatch ? 0 : selectedNode || hoveredNode || searchMatch ? 18 : 7;
       ctx.shadowColor = color;
       drawNodeGlyph(ctx, node, node.radius + (selectedNode ? 4 : hoveredNode ? 2 : 0), color);
       ctx.shadowBlur = 0;
@@ -629,7 +576,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     ctx.globalAlpha = 1;
   }
 
-  function drawLabels(ctx: CanvasRenderingContext2D, selection: ReturnType<typeof selectionForNode>, hoverSelection: ReturnType<typeof selectionForNode> | null, theme: NetGraphThemeTokens) {
+  function drawLabels(ctx: CanvasRenderingContext2D, graph: PreparedNetGraph, nodeIndexes: number[], selection: NetGraphSelection, hoverSelection: NetGraphSelection | null, theme: NetGraphThemeTokens) {
     const scale = transformRef.current.k;
     const hasSearch = searchMatchesRef.current.size > 0;
     const hasFocus = Boolean(selectedRef.current || hoveredRef.current || selection.nodeIDs.size > 0 || hoverSelection);
@@ -638,15 +585,17 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     ctx.font = `${Math.max(9, 11 / Math.sqrt(scale))}px Inter, system-ui, sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
-    for (const node of simNodesRef.current) {
+    for (const index of nodeIndexes) {
+      const node = graph.nodes[index];
+      if (!node) continue;
       const matched = searchMatchesRef.current.has(node.id);
       const focused = selection.nodeIDs.has(node.id) || Boolean(hoverSelection?.nodeIDs.has(node.id));
       const important = node.degree >= 8 || node.isObserver || focused || matched;
       if (hasSearch && !matched && !focused) continue;
       if (hasFocus && !important) continue;
       if (!important && (scale < 1.05 || node.degree < 14)) continue;
-      const x = (node.x ?? 0) + node.radius + 6;
-      const y = node.y ?? 0;
+      const x = node.x + node.radius + 6;
+      const y = node.y;
       ctx.lineWidth = 3.5;
       ctx.strokeStyle = theme.labelHalo;
       ctx.strokeText(node.label, x, y);
@@ -656,35 +605,16 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
     ctx.restore();
   }
 
-  function hitNode(point: { x: number; y: number }): SimNode | null {
-    let best: SimNode | null = null;
-    let bestDistance = Infinity;
-    const allowance = 8 / transformRef.current.k;
-    for (const node of simNodesRef.current) {
-      const distance = Math.hypot(point.x - (node.x ?? 0), point.y - (node.y ?? 0));
-      if (distance <= node.radius + allowance && distance < bestDistance) {
-        best = node;
-        bestDistance = distance;
-      }
-    }
-    return best;
+  function hitNode(point: { x: number; y: number }): PreparedNetGraphNode | null {
+    const result = preparedHitNode(preparedGraphRef.current, point, transformRef.current.k);
+    recordNetGraphHitCandidates(result.candidates);
+    return result.item;
   }
 
-  function hitEdge(point: { x: number; y: number }): SimLink | null {
-    let best: SimLink | null = null;
-    let bestDistance = Infinity;
-    const threshold = 14 / transformRef.current.k;
-    for (const edge of simLinksRef.current) {
-      const source = linkNode(edge.source);
-      const target = linkNode(edge.target);
-      if (!source || !target) continue;
-      const distance = distanceToEdgeCurve(point, source, target, edge, edge.renderPlan);
-      if (distance <= threshold && distance < bestDistance) {
-        best = edge;
-        bestDistance = distance;
-      }
-    }
-    return best;
+  function hitEdge(point: { x: number; y: number }): PreparedNetGraphEdge | null {
+    const result = preparedHitEdge(preparedGraphRef.current, point, transformRef.current.k);
+    recordNetGraphHitCandidates(result.candidates);
+    return result.item;
   }
 
   return (
@@ -692,7 +622,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       <header className="netgraph-header">
         <div>
           <span className="panel-eyebrow">NetGraph</span>
-          <p>{graph.nodes.length.toLocaleString()} connected nodes / {graph.edges.length.toLocaleString()} public pathways</p>
+          <p>{(preparedGraph?.totalNodes ?? 0).toLocaleString()} connected nodes / {(preparedGraph?.totalEdges ?? 0).toLocaleString()} public pathways</p>
         </div>
         <div className="netgraph-toolbar">
           <label className="netgraph-search">
@@ -715,7 +645,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
           onPointerCancel={onPointerUp}
           onWheel={onWheel}
         />
-        {!canvasReady && (
+        {(!canvasReady || !preparedGraph) && (
           <LoadingBlock
             variant="map"
             title="Preparing graph layout"
@@ -723,7 +653,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
             className="netgraph-loading"
           />
         )}
-        {graph.nodes.length === 0 && <div className="netgraph-empty">No connected public routes are available yet.</div>}
+        {preparedGraph && preparedGraph.nodes.length === 0 && <div className="netgraph-empty">No connected public routes are available yet.</div>}
         <NetGraphLegend />
         <div className="netgraph-live-chip">
           <Activity size={14} />
@@ -734,7 +664,7 @@ export default function NetGraphPanel({ nodes, routes, pulses, activity, socketS
       <NetGraphInspector
         selectedNode={selectedNode}
         selectedEdge={selectedEdge}
-        directRouteCount={selectedNode ? selectionForNode(graph, selectedNode.id).edgeIDs.size : 0}
+        directRouteCount={selectedNode ? selectionForPreparedNode(preparedGraph, selectedNode.id).edgeIDs.size : 0}
         onClear={clearSelection}
       />
     </section>
@@ -747,8 +677,8 @@ function NetGraphInspector({
   directRouteCount,
   onClear
 }: {
-  selectedNode: NetGraphNode | null;
-  selectedEdge: NetGraphEdge | null;
+  selectedNode: PreparedNetGraphNode | null;
+  selectedEdge: PreparedNetGraphEdge | null;
   directRouteCount: number;
   onClear: () => void;
 }) {
@@ -830,65 +760,14 @@ function NetGraphLegend() {
   );
 }
 
-function simNodeFromGraphNode(node: NetGraphNode, seed = { x: 0, y: 0, componentID: 0, componentX: 0, componentY: 0 }): SimNode {
-  return {
-    ...node,
-    x: seed.x,
-    y: seed.y,
-    seedX: seed.x,
-    seedY: seed.y,
-    componentID: seed.componentID,
-    componentX: seed.componentX,
-    componentY: seed.componentY,
-    radius: nodeRadius(node)
-  };
-}
-
-export function netGraphSettlePlan(previousNodeCount: number, currentNodeCount: number, changedNodeCount: number, layoutPaused: boolean): NetGraphSettlePlan {
-  if (layoutPaused) {
-    return { ticks: 0, alpha: 0, restart: false };
-  }
-  if (previousNodeCount <= 0) {
-    return { ticks: NETGRAPH_INITIAL_SETTLE_TICKS, alpha: 0.18, restart: true };
-  }
-  const denominator = Math.max(previousNodeCount, currentNodeCount, 1);
-  const changeRatio = changedNodeCount / denominator;
-  if (changeRatio >= 0.18) {
-    return { ticks: NETGRAPH_MAJOR_SETTLE_TICKS, alpha: 0.12, restart: true };
-  }
-  return { ticks: NETGRAPH_INCREMENTAL_SETTLE_TICKS, alpha: 0.06, restart: true };
-}
-
-function seedNodeNearKnownNeighbors(node: NetGraphNode, graph: NetGraphData, previousPositions: Map<string, PreviousNodePosition>): { x: number; y: number } | null {
-  const neighbors: PreviousNodePosition[] = [];
-  for (const edge of graph.edges) {
-    const neighborID = edge.sourceID === node.id ? edge.targetID : edge.targetID === node.id ? edge.sourceID : '';
-    if (!neighborID) continue;
-    const previous = previousPositions.get(neighborID);
-    if (typeof previous?.x === 'number' && typeof previous.y === 'number') {
-      neighbors.push(previous);
-    }
-  }
-  if (neighbors.length === 0) return null;
-  const center = neighbors.reduce<{ x: number; y: number }>(
-    (acc, item) => ({ x: acc.x + (item.x ?? 0), y: acc.y + (item.y ?? 0) }),
-    { x: 0, y: 0 }
-  );
-  const angle = stableNodeAngle(node.id);
-  const radius = 32 + (stableNodeHash(node.id) % 24);
-  return {
-    x: center.x / neighbors.length + Math.cos(angle) * radius,
-    y: center.y / neighbors.length + Math.sin(angle) * radius
-  };
-}
-
-function resizeCanvas(canvas: HTMLCanvasElement): void {
+function resizeCanvas(canvas: HTMLCanvasElement): { width: number; height: number; ctx: CanvasRenderingContext2D | null } {
   const rect = canvas.getBoundingClientRect();
   const dpr = Math.min(1.6, window.devicePixelRatio || 1);
   canvas.width = Math.max(1, Math.floor(rect.width * dpr));
   canvas.height = Math.max(1, Math.floor(rect.height * dpr));
   const ctx = canvas.getContext('2d');
   ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { width: rect.width, height: rect.height, ctx };
 }
 
 export function observeNetGraphResize(element: Element, resize: () => void, win: Pick<Window, 'addEventListener' | 'removeEventListener'> = window): () => void {
@@ -960,13 +839,25 @@ function tintColor(color: string, alpha: number): string {
   return trimmed;
 }
 
-function drawBackground(ctx: CanvasRenderingContext2D, width: number, height: number, theme: NetGraphThemeTokens): void {
-  const gradient = ctx.createRadialGradient(width * 0.52, height * 0.46, 0, width * 0.52, height * 0.46, Math.max(width, height));
+function getCanvasDrawState(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D, stateRef: MutableRefObject<CanvasDrawState | null>): CanvasDrawState {
+  const rect = canvas.getBoundingClientRect();
+  const shell = canvas.closest<HTMLElement>('.app-shell');
+  const themeMode: 'light' | 'dark' = (shell?.dataset.themeMode ?? document.documentElement.dataset.themeMode) === 'light' ? 'light' : 'dark';
+  const cached = stateRef.current;
+  if (cached && cached.width === rect.width && cached.height === rect.height && cached.themeMode === themeMode) return cached;
+  const theme = netGraphThemeFromElement(canvas);
+  const gradient = ctx.createRadialGradient(rect.width * 0.52, rect.height * 0.46, 0, rect.width * 0.52, rect.height * 0.46, Math.max(rect.width, rect.height));
   gradient.addColorStop(0, theme.backgroundInner);
   gradient.addColorStop(0.56, theme.backgroundMid);
   gradient.addColorStop(1, theme.backgroundOuter);
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, height);
+  const next = { width: rect.width, height: rect.height, themeMode, theme, gradient };
+  stateRef.current = next;
+  return next;
+}
+
+function drawBackground(ctx: CanvasRenderingContext2D, state: CanvasDrawState): void {
+  ctx.fillStyle = state.gradient;
+  ctx.fillRect(0, 0, state.width, state.height);
 }
 
 function canvasPointer(event: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement): { x: number; y: number } {
@@ -998,9 +889,9 @@ function screenToWorld(point: { x: number; y: number }, transform: GraphTransfor
   return { x: (point.x - transform.x) / transform.k, y: (point.y - transform.y) / transform.k };
 }
 
-function boundsForNodes(nodes: SimNode[]): { x: number; y: number; width: number; height: number } {
-  const xs = nodes.map((node) => node.x ?? 0);
-  const ys = nodes.map((node) => node.y ?? 0);
+function boundsForNodes(nodes: PreparedNetGraphNode[]): { x: number; y: number; width: number; height: number } {
+  const xs = nodes.map((node) => node.x);
+  const ys = nodes.map((node) => node.y);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
   const minY = Math.min(...ys);
@@ -1008,26 +899,10 @@ function boundsForNodes(nodes: SimNode[]): { x: number; y: number; width: number
   return { x: minX, y: minY, width: maxX - minX || 1, height: maxY - minY || 1 };
 }
 
-function linkNode(value: string | number | SimNode | undefined): SimNode | null {
-  return typeof value === 'object' && value !== null ? value : null;
-}
-
-function nodeRadius(node: NetGraphNode): number {
-  return Math.max(4.5, Math.min(16, 4.5 + Math.sqrt(node.degree) * 2.2 + Math.log1p(node.activityCount) * 0.55 + (node.isObserver ? 1.5 : 0)));
-}
-
-function nodeColor(node: NetGraphNode): string {
-  return node.isObserver ? OBSERVER_NODE_VISUAL.color : nodeRoleVisual(node.role).color;
-}
-
-function nodeShape(node: NetGraphNode): NodeIconShape {
-  return node.isObserver ? OBSERVER_NODE_VISUAL.shape : nodeRoleVisual(node.role).shape;
-}
-
-function drawNodeGlyph(ctx: CanvasRenderingContext2D, node: SimNode, radius: number, color: string): void {
-  const x = node.x ?? 0;
-  const y = node.y ?? 0;
-  const shape = nodeShape(node);
+function drawNodeGlyph(ctx: CanvasRenderingContext2D, node: PreparedNetGraphNode, radius: number, color: string): void {
+  const x = node.x;
+  const y = node.y;
+  const shape = node.shape;
   ctx.beginPath();
   switch (shape) {
     case 'diamond':
@@ -1079,21 +954,8 @@ function drawNodeGlyph(ctx: CanvasRenderingContext2D, node: SimNode, radius: num
   }
 }
 
-function edgeColor(edge: NetGraphEdge, theme: NetGraphThemeTokens): string {
-  const latestPayload = edge.payloadTypeNames[0] ?? '';
-  return latestPayload ? payloadVisual(latestPayload).color : theme.edgeFallback;
-}
-
-function linkDistance(edge: SimLink): number {
-  return Math.max(48, Math.min(132, 52 + Math.sqrt(Math.max(1, edge.distanceKm)) * 3.5));
-}
-
-function stableNodeAngle(value: string): number {
-  return ((stableNodeHash(value) % 3600) / 3600) * Math.PI * 2;
-}
-
-function stableNodeHash(value: string): number {
-  return fnv1a(value);
+function edgeColor(edge: PreparedNetGraphEdge, theme: NetGraphThemeTokens): string {
+  return edge.color || theme.edgeFallback;
 }
 
 function formatAge(ageMs: number): string {
