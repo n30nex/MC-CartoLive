@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"meshcore-canada-live-map/backend/internal/live"
@@ -31,8 +32,9 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(8)
-	db.SetMaxIdleConns(8)
+	maxOpenConns := sqliteEnvInt("SQLITE_MAX_OPEN_CONNS", 1)
+	db.SetMaxOpenConns(maxOpenConns)
+	db.SetMaxIdleConns(maxOpenConns)
 	s := &Store{db: db, path: path, coordinatePolicy: live.CurrentCoordinatePolicy()}
 	if err := s.Migrate(ctx); err != nil {
 		_ = db.Close()
@@ -180,15 +182,29 @@ func sqliteDSN(path string) string {
 	if strings.Contains(path, "?") {
 		sep = "&"
 	}
+	cacheKB := sqliteEnvInt("SQLITE_CACHE_SIZE_KB", 16000)
+	mmapSizeBytes := sqliteEnvInt("SQLITE_MMAP_SIZE_BYTES", 67108864)
 	return path + sep + strings.Join([]string{
 		"_pragma=busy_timeout%3d5000",
 		"_pragma=foreign_keys%3dON",
 		"_pragma=journal_mode%3dWAL",
 		"_pragma=synchronous%3dNORMAL",
-		"_pragma=cache_size%3d-64000",
+		"_pragma=cache_size%3d-" + strconv.Itoa(cacheKB),
 		"_pragma=temp_store%3dMEMORY",
-		"_pragma=mmap_size%3d268435456",
+		"_pragma=mmap_size%3d" + strconv.Itoa(mmapSizeBytes),
 	}, "&")
+}
+
+func sqliteEnvInt(name string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 1 {
+		return fallback
+	}
+	return parsed
 }
 
 func (s *Store) Close() error {

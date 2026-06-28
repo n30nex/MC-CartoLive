@@ -112,6 +112,12 @@ maintenance every six hours; for emergency manual compaction, first stop or
 quiesce the container, make a backup, then run SQLite vacuum against
 `data/meshcore-live.db`.
 
+The live container intentionally keeps SQLite conservative on the 1GB droplet:
+`SQLITE_MAX_OPEN_CONNS=1`, `SQLITE_CACHE_SIZE_KB=16000`, and
+`SQLITE_MMAP_SIZE_BYTES=67108864`. If `/readyz` shows fresh MQTT ingest but the
+public UI says stale, check Docker memory pressure and `SQLITE_BUSY` warnings
+before changing public freshness thresholds.
+
 ## Soak Check
 
 Use a short soak after deploys and a 24h soak before production-candidate tags.

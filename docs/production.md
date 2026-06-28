@@ -127,6 +127,10 @@ rollback guard.
   observations, live edge events, public event/search projections, observer
   status history, propagation weather snapshots, and orphan packet rows.
 - `PROPAGATION_EVENT_RETENTION_DAYS` defaults to `7` unless explicitly set.
+- SQLite defaults are tuned for the small live droplet: `SQLITE_MAX_OPEN_CONNS=1`
+  serializes writes, `SQLITE_CACHE_SIZE_KB=16000` caps page cache growth, and
+  `SQLITE_MMAP_SIZE_BYTES=67108864` avoids cgroup memory pressure while keeping
+  public cache refreshes responsive.
 - Public history, packets, chat, event, viewport backfill, and propagation
   searches are clamped to a maximum seven-day window.
 - Compact `public_route_summaries` rows preserve the latest public-safe route

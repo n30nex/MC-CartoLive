@@ -30,6 +30,9 @@ services:
       APP_VERSION: ${APP_VERSION:-3.1.0}
       GIT_SHA: ${GIT_SHA:-${VITE_GIT_SHA:-}}
       BUILD_TIME: ${BUILD_TIME:-${VITE_BUILD_TIME:-}}
+      SQLITE_MAX_OPEN_CONNS: ${SQLITE_MAX_OPEN_CONNS:-1}
+      SQLITE_CACHE_SIZE_KB: ${SQLITE_CACHE_SIZE_KB:-16000}
+      SQLITE_MMAP_SIZE_BYTES: ${SQLITE_MMAP_SIZE_BYTES:-67108864}
       VITE_ENABLE_SERVICE_WORKER: ${VITE_ENABLE_SERVICE_WORKER:-false}
       VITE_PUBLIC_WS_SUBSCRIPTIONS_ENABLED: ${VITE_PUBLIC_WS_SUBSCRIPTIONS_ENABLED:-false}
     volumes:
@@ -47,7 +50,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 768M
     stop_grace_period: 30s
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
