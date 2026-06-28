@@ -900,7 +900,7 @@ func (a *Application) propagationLoop(ctx context.Context) {
 	if interval <= 0 {
 		interval = 15 * time.Minute
 	}
-	initialDelay := 8 * time.Second
+	initialDelay := 5 * time.Minute
 	select {
 	case <-ctx.Done():
 		return
@@ -1136,6 +1136,12 @@ func (a *Application) pruneLoop(ctx context.Context) {
 				a.Log.Warn("propagation prune failed", "error", err)
 			}
 		}
+	}
+	initialDelay := 30 * time.Minute
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(initialDelay):
 	}
 	runPrune()
 	ticker := time.NewTicker(6 * time.Hour)

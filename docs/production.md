@@ -138,7 +138,8 @@ rollback guard.
   graph after raw rows are pruned. They store only the same sanitized route
   endpoint fields exposed by public state.
 - SQLite reuses deleted pages until maintenance runs `VACUUM`; retention pruning
-  reduces live row count immediately but file size may shrink after the next
+  starts 30 minutes after process start and then runs every six hours. It
+  reduces live row count, but file size may shrink only after the next
   maintenance pass or manual vacuum.
 - `MAP_REGION_PRESET=world` is the package default. Use `canada` for the hosted
   Canada map, or `custom` with `MAP_BOUNDS=minLat,minLng,maxLat,maxLng`.

@@ -119,6 +119,10 @@ The live container intentionally keeps SQLite conservative on the 1GB droplet:
 memory pressure and `SQLITE_BUSY` warnings before changing public freshness
 thresholds.
 
+Retention pruning starts 30 minutes after process start, and propagation
+classification starts 5 minutes after process start. This keeps deploys from
+competing with live packet ingest while the public cache warms.
+
 ## Soak Check
 
 Use a short soak after deploys and a 24h soak before production-candidate tags.
