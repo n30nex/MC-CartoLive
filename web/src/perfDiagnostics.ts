@@ -7,6 +7,7 @@ export interface PerfCounters {
   nodeSourceUpdates: number;
   otherSourceUpdates: number;
   skippedSourceUpdates: number;
+  signatureSourceSkips: number;
   heatmapSourceUpdates: number;
   snapshotReplacements: number;
   snapshotSkips: number;
@@ -14,6 +15,9 @@ export interface PerfCounters {
   livePendingQueueSize: number;
   vcrReplayQueueSize: number;
   visibilityPauses: number;
+  geoJSONWorkerTransforms: number;
+  geoJSONWorkerFallbacks: number;
+  geoJSONWorkerErrors: number;
 }
 
 const STORAGE_KEY = 'mc-cartolive-debug-perf';
@@ -57,13 +61,17 @@ export function ensurePerfDiagnostics(): PerfCounters | null {
     nodeSourceUpdates: 0,
     otherSourceUpdates: 0,
     skippedSourceUpdates: 0,
+    signatureSourceSkips: 0,
     heatmapSourceUpdates: 0,
     snapshotReplacements: 0,
     snapshotSkips: 0,
     routeReducerMs: 0,
     livePendingQueueSize: 0,
     vcrReplayQueueSize: 0,
-    visibilityPauses: 0
+    visibilityPauses: 0,
+    geoJSONWorkerTransforms: 0,
+    geoJSONWorkerFallbacks: 0,
+    geoJSONWorkerErrors: 0
   };
   window.__mcCartoLivePerf = counters;
   return counters;
@@ -91,6 +99,12 @@ export function recordSkippedSourceUpdate(): void {
   const counters = ensurePerfDiagnostics();
   if (!counters) return;
   counters.skippedSourceUpdates += 1;
+}
+
+export function recordSignatureSourceSkip(): void {
+  const counters = ensurePerfDiagnostics();
+  if (!counters) return;
+  counters.signatureSourceSkips += 1;
 }
 
 export function recordSnapshotReplacement(skipped: boolean): void {
@@ -136,6 +150,24 @@ export function recordVisibilityPause(): void {
   const counters = ensurePerfDiagnostics();
   if (!counters) return;
   counters.visibilityPauses += 1;
+}
+
+export function recordGeoJSONWorkerTransform(): void {
+  const counters = ensurePerfDiagnostics();
+  if (!counters) return;
+  counters.geoJSONWorkerTransforms += 1;
+}
+
+export function recordGeoJSONWorkerFallback(): void {
+  const counters = ensurePerfDiagnostics();
+  if (!counters) return;
+  counters.geoJSONWorkerFallbacks += 1;
+}
+
+export function recordGeoJSONWorkerError(): void {
+  const counters = ensurePerfDiagnostics();
+  if (!counters) return;
+  counters.geoJSONWorkerErrors += 1;
 }
 
 function safeStorage(): Storage | undefined {

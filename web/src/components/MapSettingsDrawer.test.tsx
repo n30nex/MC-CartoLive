@@ -10,6 +10,8 @@ describe('MapSettingsDrawer', () => {
     );
 
     expect(LAYER_GROUPS.map((group) => group.label)).toEqual(['Base', 'Activity', 'Routes', 'Analysis', 'Visuals']);
+    expect(html).toContain('Settings');
+    expect(html).toContain('Active map setup');
     expect(html).toContain('Modes');
     expect(html).toContain('Watch');
     expect(html).toContain('Explore');

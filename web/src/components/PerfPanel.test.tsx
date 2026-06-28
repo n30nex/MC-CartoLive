@@ -44,6 +44,6 @@ describe('PerfPanel helpers', () => {
     expect(html).not.toContain('local-only');
     expect(html).not.toContain('Git SHA');
     expect(html).not.toContain('packet hash');
-    expect(html).toContain('Public-safe live checks only.');
+    expect(html).toContain('Public-safe deploy evidence');
   });
 });

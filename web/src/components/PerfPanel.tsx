@@ -163,7 +163,7 @@ export default function PerfPanel({ onClose }: PerfPanelProps) {
       </div>
 
       <p className="perf-note">
-        Public-safe live checks only.
+        Public-safe deploy evidence: health, readiness, state, and smoke checks only.
       </p>
     </section>
   );

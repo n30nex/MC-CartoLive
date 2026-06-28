@@ -1,0 +1,264 @@
+.map-wrap,
+.map-container,
+.rf-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.map-wrap {
+  filter: none;
+  opacity: 1;
+  transform: none;
+  transition: filter 240ms ease, opacity 240ms ease, transform 240ms ease;
+}
+
+.map-wrap::before,
+.map-wrap::after {
+  position: absolute;
+  inset: 0;
+  display: none;
+  content: "";
+  pointer-events: none;
+}
+
+.map-wrap::before {
+  z-index: 1;
+  background:
+    radial-gradient(circle at 26% 28%, rgba(45, 212, 191, 0.1), rgba(45, 212, 191, 0) 28%),
+    radial-gradient(circle at 78% 22%, rgba(168, 85, 247, 0.09), rgba(168, 85, 247, 0) 30%),
+    radial-gradient(circle at 62% 78%, rgba(56, 189, 248, 0.08), rgba(56, 189, 248, 0) 34%);
+  mix-blend-mode: screen;
+}
+
+.map-wrap::after {
+  z-index: 4;
+  background:
+    repeating-linear-gradient(180deg, rgba(125, 211, 252, 0.018) 0 1px, transparent 1px 7px),
+    linear-gradient(90deg, rgba(45, 212, 191, 0.025), transparent 28%, transparent 72%, rgba(168, 85, 247, 0.022));
+  opacity: 0.22;
+  mix-blend-mode: screen;
+}
+
+.map-wrap.loading {
+  filter: none;
+  opacity: 1;
+  transform: none;
+}
+
+.map-container {
+  background: #000;
+}
+
+.map-wrap[data-map-theme-mode="light"] .map-container {
+  background: #eef5fb;
+}
+
+.rf-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.node-label-overlay,
+.packet-message-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.node-label-overlay {
+  z-index: calc(var(--z-map-overlay, 5) - 1);
+}
+
+.packet-message-overlay {
+  z-index: var(--z-map-overlay, 5);
+}
+
+.node-screen-label {
+  position: absolute;
+  min-width: 54px;
+  max-width: 148px;
+  color: var(--node-label-color, #eaf6ff);
+  opacity: var(--node-label-opacity, 0.18);
+  text-align: center;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.92),
+    0 -1px 2px rgba(0, 0, 0, 0.92),
+    1px 0 2px rgba(0, 0, 0, 0.92),
+    -1px 0 2px rgba(0, 0, 0, 0.92);
+  filter:
+    drop-shadow(0 0 calc(1px + var(--node-label-glow, 0) * 5px) color-mix(in srgb, var(--node-label-color, #38bdf8) 26%, transparent));
+  transition:
+    opacity 4200ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 5200ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 4800ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
+  contain: layout style paint;
+  backface-visibility: hidden;
+}
+
+.node-screen-label-name,
+.node-screen-label-age {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-screen-label-name {
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 1.05;
+}
+
+.node-screen-label-age {
+  margin-top: 1px;
+  color: color-mix(in srgb, var(--node-label-color, #38bdf8) 42%, #dbeafe 58%);
+  font-size: 8px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.node-screen-label.active,
+.node-screen-label.neighbor,
+.node-screen-label.path,
+.node-screen-label.selected {
+  z-index: 2;
+}
+
+.node-screen-label.neighbor .node-screen-label-name,
+.node-screen-label.path .node-screen-label-name,
+.node-screen-label.selected .node-screen-label-name {
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.node-screen-label.observer {
+  z-index: 3;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.96),
+    0 -1px 2px rgba(0, 0, 0, 0.96),
+    1px 0 2px rgba(0, 0, 0, 0.96),
+    -1px 0 2px rgba(0, 0, 0, 0.96),
+    0 0 9px color-mix(in srgb, var(--node-label-color, #fbbf24) 42%, transparent);
+  filter:
+    drop-shadow(0 0 calc(2px + var(--node-label-glow, 0) * 7px) color-mix(in srgb, var(--node-label-color, #fbbf24) 42%, transparent));
+}
+
+.node-screen-label.observer .node-screen-label-name {
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.node-screen-label.observer .node-screen-label-age {
+  color: color-mix(in srgb, var(--node-label-color, #fbbf24) 58%, #ffffff 42%);
+  font-weight: 780;
+}
+
+.node-screen-label.neighbor {
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.94),
+    0 -1px 2px rgba(0, 0, 0, 0.94),
+    1px 0 2px rgba(0, 0, 0, 0.94),
+    -1px 0 2px rgba(0, 0, 0, 0.94),
+    0 0 7px color-mix(in srgb, var(--node-label-color, #67e8f9) 24%, transparent);
+}
+
+.node-screen-label.path {
+  z-index: 3;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.96),
+    0 -1px 2px rgba(0, 0, 0, 0.96),
+    1px 0 2px rgba(0, 0, 0, 0.96),
+    -1px 0 2px rgba(0, 0, 0, 0.96),
+    0 0 10px color-mix(in srgb, var(--node-label-color, #facc15) 42%, transparent);
+}
+
+.packet-message-bubble {
+  position: absolute;
+  display: grid;
+  gap: 3px;
+  width: max-content;
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 7px 9px 8px;
+  color: #f8fbff;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--message-color, #a78bfa) 22%, rgba(3, 7, 18, 0.93) 78%), rgba(3, 7, 18, 0.88));
+  border: 1px solid color-mix(in srgb, var(--message-color, #a78bfa) 62%, rgba(248, 250, 252, 0.16) 38%);
+  border-radius: 9px;
+  box-shadow:
+    0 0 18px color-mix(in srgb, var(--message-color, #a78bfa) 42%, transparent),
+    0 10px 26px rgba(0, 0, 0, 0.44),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.78);
+  animation: packet-message-fade 5.2s ease-out forwards;
+  will-change: opacity, transform;
+}
+
+.packet-message-bubble::after {
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 10px;
+  height: 10px;
+  content: "";
+  background: color-mix(in srgb, var(--message-color, #a78bfa) 30%, rgba(3, 7, 18, 0.95) 70%);
+  border-right: 1px solid color-mix(in srgb, var(--message-color, #a78bfa) 58%, rgba(248, 250, 252, 0.12) 42%);
+  border-bottom: 1px solid color-mix(in srgb, var(--message-color, #a78bfa) 58%, rgba(248, 250, 252, 0.12) 42%);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.packet-message-sender {
+  overflow: hidden;
+  color: color-mix(in srgb, var(--message-color, #a78bfa) 64%, #ffffff 36%);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.packet-message-text {
+  overflow: visible;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.16;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+@keyframes packet-message-fade {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.92;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.map-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  display: none;
+}
+
+.maplibregl-map {
+  font: inherit;
+}
+
+.maplibregl-ctrl-bottom-right {
+  right: 10px;
+  bottom: calc(var(--vcr-bar-height, 0px) + var(--ui-edge-gap, 10px) + var(--ui-safe-bottom, 0px));
+}

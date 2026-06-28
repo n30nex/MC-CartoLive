@@ -1,0 +1,87 @@
+.visitor-guide {
+  right: 10px;
+  bottom: calc(var(--vcr-bar-height, 0px) + 56px);
+  z-index: var(--z-map-chrome, 8);
+  display: grid;
+  gap: 8px;
+  width: min(340px, calc(100vw - 20px));
+  padding: 12px;
+  color: var(--mc-text, #f8fafc);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--mc-surface, #060b12) 94%, transparent), color-mix(in srgb, var(--mc-surface-strong, #111827) 88%, transparent)),
+    radial-gradient(circle at 0 0, color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent), transparent 42%);
+  border: 1px solid color-mix(in srgb, var(--mc-border-strong, rgba(125, 211, 252, 0.5)) 72%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 24px 58px var(--mc-shadow, rgba(0, 0, 0, 0.44)), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(18px) saturate(1.16);
+  pointer-events: auto;
+}
+
+.visitor-guide h2 {
+  margin: -4px 26px 0 0;
+  color: var(--mc-text, #f8fafc);
+  font-size: 17px;
+  line-height: 1.12;
+}
+
+.visitor-guide p {
+  margin: 0;
+  color: var(--mc-text-normal, #cbd5e1);
+  font-size: 12px;
+  line-height: 1.42;
+}
+
+.visitor-guide-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 25px;
+  height: 25px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--mc-text-normal, #dbeafe);
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(15, 23, 42, 0.86)) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-border, rgba(125, 211, 252, 0.24)) 80%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.visitor-guide-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.visitor-guide-actions button {
+  min-width: 0;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 7px;
+  color: var(--mc-text-normal, #dbeafe);
+  background: color-mix(in srgb, var(--mc-control-bg, rgba(15, 23, 42, 0.86)) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mc-border, rgba(125, 211, 252, 0.24)) 80%, transparent);
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 850;
+}
+
+.visitor-guide-actions button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visitor-guide-actions button.active,
+.visitor-guide-actions button:hover,
+.visitor-guide-actions button:focus-visible,
+.visitor-guide-close:hover,
+.visitor-guide-close:focus-visible {
+  color: var(--mc-text, #ffffff);
+  border-color: color-mix(in srgb, var(--mc-accent, #38bdf8) 52%, transparent);
+  outline: none;
+}

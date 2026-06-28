@@ -14,6 +14,13 @@ is preserved by version.
 | [Privacy model](privacy.md) | Private inputs, public outputs, route truth, and test expectations. |
 | [Roadmap](roadmap.md) | Current baseline and active 3.x direction. |
 
+## 3.1.0 Release Package
+
+| Document | Purpose |
+| --- | --- |
+| [Release notes](3.1.0/release_notes.md) | Product-facing 3.1.0 overhaul summary and compatibility notes. |
+| [Validation checklist](3.1.0/validation_checklist.md) | Local, package, privacy, browser, and live deployment validation checklist. |
+
 ## 3.0.2 Release Package
 
 | Document | Purpose |

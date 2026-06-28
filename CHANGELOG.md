@@ -4,6 +4,23 @@ This changelog records the public release history at a useful level of detail.
 Detailed patch-by-patch investigation notes and temporary planning material live
 in Git history, not in the active documentation set.
 
+## 3.1.0 - 2026-06-28
+
+- Refreshed frontend dependency lockfile state with `npm audit fix` and kept the
+  public API/schema boundary stable.
+- Replaced Vite manual chunking with Vite 8/Rolldown `codeSplitting.groups`
+  while preserving the React, MapLibre, Three, D3 force, GIF export, icons, and
+  vendor chunk intent.
+- Added caller-provided MapLibre source-data signatures and worker-backed route
+  and heatmap GeoJSON transforms with main-thread fallback and performance
+  counters.
+- Split major map shell, status/chrome, map settings, visitor-guide, and
+  selection/phonebook CSS surfaces into imported files.
+- Tightened Map Settings hierarchy, live deployment evidence copy, and draggable
+  panel keyboard/focus affordances.
+- Added 3.1.0 release validation notes and a Windows live-deploy wrapper for the
+  documented droplet smoke path.
+
 ## 3.0.2 - 2026-06-14
 
 - Added shared frontend loading primitives for branded spinners, loading blocks,

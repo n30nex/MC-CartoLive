@@ -63,7 +63,7 @@ podman run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:3.0.2
+  ghcr.io/n30nex/mc-cartolive:3.1.0
 ```
 
 Persistent deployment:
@@ -73,7 +73,7 @@ podman run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:3.0.2
+  ghcr.io/n30nex/mc-cartolive:3.1.0
 ```
 
 The image runs as non-root `appuser`, includes the bundled `mc-diagnose`
@@ -102,9 +102,21 @@ The repo includes `scripts/deploy.sh`, which performs a tracked-tree check,
 SQLite backup when available, fetch/reset to the requested branch, Compose
 rebuild, readiness wait, and rollback on failure.
 
+From a Windows workstation, use `scripts/deploy-live.ps1` to validate the
+expected local version/SHA, SSH to the documented droplet, run `deploy.sh`, and
+then run the live smoke check:
+
+```powershell
+.\scripts\deploy-live.ps1 -BaseUrl https://carto.canadaverse.org -SshTarget root@134.122.45.228 -KeyPath "$env:USERPROFILE\.ssh\neonx" -ExpectedVersion 3.1.0 -DiagnoseRegion YTR
+```
+
+If browser or smoke automation is intentionally disabled on the workstation,
+append `-SkipSmoke`; the remote deploy still performs its readiness wait and
+rollback guard.
+
 ## Runtime Notes
 
-- Version 3.0.2 exposes app version, Git SHA, build number, and build time in
+- Version 3.1.0 exposes app version, Git SHA, build number, and build time in
   the top project bar and in health/readiness responses.
 - `/healthz` is cheap liveness. `/readyz` checks DB, static assets, public state
   readiness, cache freshness, and public-safe runtime status.

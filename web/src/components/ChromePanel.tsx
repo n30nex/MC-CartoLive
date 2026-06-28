@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { GripHorizontal, X } from 'lucide-react';
 import {
   anchorPosition,
@@ -97,6 +97,22 @@ export default function ChromePanel({ panel, title, anchor, hidden, viewportBoun
     setDraftPosition(null);
   };
 
+  const snapWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+    const onRightSide = anchor.includes('right');
+    const nextAnchorByKey: Partial<Record<string, ChromePanelAnchor>> = {
+      ArrowUp: onRightSide ? 'top-right' : 'top-left',
+      ArrowDown: onRightSide ? 'bottom-right' : 'bottom-left',
+      ArrowLeft: anchor.startsWith('bottom') ? 'bottom-left' : 'left',
+      ArrowRight: anchor.startsWith('bottom') ? 'bottom-right' : 'right',
+      Home: 'top-left',
+      End: 'bottom-right'
+    };
+    const nextAnchor = nextAnchorByKey[event.key];
+    if (!nextAnchor) return;
+    event.preventDefault();
+    onAnchorChange(panel, nextAnchor);
+  };
+
   const anchoredPosition = draftPosition ?? anchorPosition(anchor, panelSize, viewportBounds);
   const style = {
     left: anchoredPosition.x,
@@ -107,8 +123,19 @@ export default function ChromePanel({ panel, title, anchor, hidden, viewportBoun
   } as CSSProperties;
 
   return (
-    <div ref={frameRef} className={`chrome-panel-frame panel-${panel} anchor-${anchor} ${draftPosition ? 'dragging' : ''} ${className}`} style={style}>
-      <div className="chrome-panel-toolbar" onPointerDown={startDrag} onPointerMove={updateDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag}>
+    <div ref={frameRef} className={`chrome-panel-frame panel-${panel} anchor-${anchor} ${draftPosition ? 'dragging' : ''} ${className}`} style={style} role="dialog" aria-label={`${title} panel`}>
+      <div
+        className="chrome-panel-toolbar"
+        role="button"
+        tabIndex={0}
+        title="Drag panel"
+        aria-label={`${title} panel drag handle`}
+        onKeyDown={snapWithKeyboard}
+        onPointerDown={startDrag}
+        onPointerMove={updateDrag}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+      >
         <GripHorizontal size={14} aria-hidden="true" />
         <span>{title}</span>
         <button type="button" aria-label={`Hide ${title}`} title={`Hide ${title}`} onPointerDown={(event) => event.stopPropagation()} onClick={() => onHide(panel)}>

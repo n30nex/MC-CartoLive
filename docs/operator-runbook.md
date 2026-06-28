@@ -19,6 +19,16 @@ For a fast patch where a fresh SQLite backup is intentionally skipped, use:
 SKIP_DB_BACKUP=1 bash scripts/deploy.sh /opt/MC-CartoLive main
 ```
 
+From a Windows workstation, prefer the live wrapper for the documented droplet:
+
+```powershell
+.\scripts\deploy-live.ps1 -BaseUrl https://carto.canadaverse.org -SshTarget root@134.122.45.228 -KeyPath "$env:USERPROFILE\.ssh\neonx" -ExpectedVersion 3.1.0 -DiagnoseRegion YTR
+```
+
+Append `-SkipSmoke` only when smoke automation is intentionally disabled on the
+workstation; `deploy.sh` still performs the remote readiness wait and rollback
+guard.
+
 ## Smoke Check
 
 ```bash
@@ -49,7 +59,7 @@ The package smoke can also be run directly against a local image, a GHCR tag, or
 a GHCR digest:
 
 ```powershell
-node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:3.0.1 --pull
+node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:3.1.0 --pull
 ```
 
 It starts temporary containers for the synthetic fixture and worldwide `r1`
@@ -78,7 +88,7 @@ your workstation:
 Common overrides:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -SshTarget root@134.122.45.228 -KeyPath "$env:USERPROFILE\.ssh\neonx" -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -SshTarget root@134.122.45.228 -KeyPath "$env:USERPROFILE\.ssh\neonx" -ExpectedVersion 3.1.0 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
 The live smoke verifies `/healthz`, `/readyz`, public state, public history,

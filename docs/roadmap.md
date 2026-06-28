@@ -6,19 +6,21 @@ in [CHANGELOG.md](../CHANGELOG.md); operator procedures live in
 
 ## Current Baseline
 
-Version `3.0.2` is the current loading motion polish release on the public-safe
-event, operations, Labs, map-runtime, and world-ready packaging foundation.
+Version `3.1.0` is the current end-to-end overhaul on the public-safe event,
+operations, Labs, map-runtime, and world-ready packaging foundation.
 
-- Public API shapes remain stable across the 2.8.x, 2.9.x, and 3.0.2 line.
+- Public API shapes remain stable across the 2.8.x, 2.9.x, 3.0.x, and 3.1.0
+  line.
 - The default public map is traffic-first: terrain relief, propagation overlays,
   and route lines are opt-in for new visitors.
 - The supported deployment shape is one container with the Go backend serving
   the embedded React frontend and SQLite under `/app/data`.
 - Local release validation uses Podman; the production droplet can continue to
   use Docker Compose.
-- The 3.0.2 frontend keeps committed `world` and `canada` asset presets for
-  branding, map/layer affordances, node/packet visuals, workspace states,
-  motion effects, and Waterfall backdrops without changing public API shapes.
+- The 3.1.0 frontend keeps committed `world` and `canada` asset presets while
+  adding worker-backed map GeoJSON transforms, Vite 8/Rolldown chunk groups,
+  source-data signature guards, and extracted CSS surfaces without changing
+  public API shapes.
 
 ## Active Focus
 
@@ -32,13 +34,13 @@ event, operations, Labs, map-runtime, and world-ready packaging foundation.
 - Keep release evidence concise and current instead of adding more planning
   documents.
 - Keep production deployment repeatable with backup, smoke, rollback, privacy
-  scan, and live diagnostics.
+  scan, live diagnostics, and the Windows workstation deploy wrapper.
 
 ## Candidate 3.x Work
 
 - Expand the new public event log into more history/replay workflows.
-- Iterate on Waterfall Labs with workerized transforms, exportable clips, and
-  deeper replay sampling once the public event log grows.
+- Iterate on Waterfall Labs with exportable clips and deeper replay sampling
+  once the public event log grows.
 - Continue extracting CanadaMap into runtime overlays using the new registry
   contracts.
 - Add a human review lane for future OpenAI-generated asset candidates before

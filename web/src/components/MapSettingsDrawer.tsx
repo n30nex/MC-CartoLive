@@ -123,6 +123,11 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
   const activePresetID = mapLayerPresetIDForSettings(settings.layers);
   const activeStyleProfile = mapStyleProfileByID(settings.style.profileID);
   const activeMode = mapModeForSettings(settings);
+  const enabledLayerCount = Object.values(settings.layers).filter(Boolean).length;
+  const activeCommonLayers = COMMON_LAYER_CONTROLS.filter((control) => settings.layers[control.key])
+    .map((control) => control.label)
+    .slice(0, 2);
+  const commonLayerSummary = activeCommonLayers.length > 0 ? activeCommonLayers.join(', ') : 'Minimal';
   const applyStyle = (profileID: MapStyleProfileID) => {
     onChange(applyMapStyleProfile(settings, profileID));
   };
@@ -160,15 +165,26 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
       <header className="map-settings-header">
         <div>
           <span className="panel-eyebrow">Map</span>
-          <h2>Modes</h2>
+          <h2>Settings</h2>
         </div>
         <button type="button" className="icon-button" title="Close map settings" onClick={onClose}>
           <X size={17} />
         </button>
       </header>
 
+      <div className="map-settings-summary" aria-label="Active map setup">
+        <span>
+          <strong>{activeMode.label}</strong>
+          <small>{activeStyleProfile.label}</small>
+        </span>
+        <span>
+          <strong>{enabledLayerCount}</strong>
+          <small>{commonLayerSummary}</small>
+        </span>
+      </div>
+
       <section className="map-settings-section">
-        <h3>Choose a view</h3>
+        <h3>Modes</h3>
         <div className="map-settings-preset-grid map-mode-grid" role="group" aria-label="Map modes">
           {MAP_MODES.map((mode) => {
             const Icon = MODE_ICONS[mode.id];

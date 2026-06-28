@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v3.0.2
+# MeshCore MQTT Live Map v3.1.0
 
 **MC-CartoLive** is a single-container public live map for MeshCore MQTT
 observations. It ingests broker traffic, stores normalized observations in
@@ -10,30 +10,24 @@ Public instance: [carto.canadaverse.org](https://carto.canadaverse.org/).
 
 ## Current Release
 
-Version 3.0.2 is the loading motion polish release. It keeps the one-container
+Version 3.1.0 is the end-to-end production overhaul. It keeps the one-container
 SQLite deployment shape and stable public API while adding:
 
-- shared branded loading primitives for spinners, skeleton rows, loading blocks,
-  and stable busy button labels
-- animated loading states for Packets, Chat, NetGraph, propagation history,
-  route GIF export, replay/Laser Show, live status, and solar fetches
-- contextual lazy-workspace fallbacks for Setup, Packets, Nodes, Chat, NetGraph,
-  Labs, and Help
-- four map modes for Watch, Explore, Terrain, and Studio workflows
-- a mobile app-style tabbar and calmer desktop shell for first-class live use
-- unified snackbars and reduced-motion-aware app polish
-- first-class workspaces for Map, Packets, Chat, Node List, NetGraph, and Labs
-- committed `world` and `canada` v3 asset presets for branding, PWA icons,
-  social cards, node roles, packet classes, map layers, workspace states, and
-  motion effects
-- `VITE_APP_ASSET_PACK=world` as the default GHCR/easy-deploy image preset and
-  `VITE_APP_ASSET_PACK=canada` for the hosted Canadaverse deployment
-- asset-backed packet chips, node role labels, map/layer thumbnails, live comet
-  effects, route GIF overlays, OpenFreeMap 3D visuals, and Waterfall backdrops
-- an optional manifest-driven Image API/Batch API workflow for future curated
-  asset generations; normal builds and runtime stay fully static
+- audited frontend dependency fixes with a clean npm advisory report
+- Vite 8/Rolldown chunk groups for React, MapLibre, Three, D3 force, GIF export,
+  icons, and generic vendor code
+- caller-provided GeoJSON source signatures so repeated map effects avoid
+  serializing full feature collections before deciding nothing changed
+- browser-worker GeoJSON transforms for route and heatmap sources with a
+  main-thread fallback
+- smaller, imported CSS surfaces for map shell, status/chrome, map settings,
+  visitor guide, and selection/phonebook styles
+- clearer Map Settings hierarchy, public-safe live deploy evidence copy, and
+  keyboard-focusable draggable panel handles
+- `scripts/deploy-live.ps1` as the Windows workstation wrapper for the documented
+  droplet deploy plus live smoke
 
-The recommended v3.0.2 release path is clone + Compose on a VPS or local host,
+The recommended v3.1.0 release path is clone + Compose on a VPS or local host,
 optionally behind Cloudflare Tunnel, Caddy, nginx, or another HTTPS reverse
 proxy.
 
@@ -98,7 +92,7 @@ podman run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:3.0.2
+  ghcr.io/n30nex/mc-cartolive:3.1.0
 ```
 
 For a persistent deployment:
@@ -108,7 +102,7 @@ podman run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:3.0.2
+  ghcr.io/n30nex/mc-cartolive:3.1.0
 ```
 
 The production droplet currently uses Docker Compose; local release validation
@@ -166,13 +160,13 @@ node scripts/check-asset-pack.mjs
 node scripts/check-frontend-budget.mjs
 node scripts/check-public-privacy.mjs http://127.0.0.1:39476
 podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
-node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:3.0.2 --pull
+node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:3.1.0 --pull
 ```
 
 Live post-deploy smoke:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.0.2 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.1.0 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
 ```
 
 ## Documentation
@@ -184,6 +178,8 @@ Live post-deploy smoke:
 - [Privacy model](docs/privacy.md)
 - [Roadmap](docs/roadmap.md)
 - [Changelog](CHANGELOG.md)
+- [3.1.0 release notes](docs/3.1.0/release_notes.md)
+- [3.1.0 validation checklist](docs/3.1.0/validation_checklist.md)
 - [3.0.2 release notes](docs/3.0.2/release_notes.md)
 - [3.0.2 validation checklist](docs/3.0.2/validation_checklist.md)
 - [3.0.1 release notes](docs/3.0.1/release_notes.md)

@@ -78,6 +78,9 @@ import {
 import type { OpenFreeMap3DController } from './openFreeMap3D';
 import { installPMTilesProtocol } from './styles/pmtiles';
 import { mapStyleProfileByID, type MapStyleProfileID } from './styles/styleRegistry';
+import { createBrowserGeoJSONClient } from '../workers/geojsonWorkerClient';
+import { transformGeoJSON } from '../workers/geojsonTransforms';
+import { recordGeoJSONWorkerError, recordGeoJSONWorkerFallback, recordGeoJSONWorkerTransform } from '../perfDiagnostics';
 
 export type MapAction =
   | { type: 'reset'; token: number }
@@ -87,6 +90,8 @@ export type MapAction =
   | { type: 'packet'; token: number; segments: PublicRoutePulse['segments'] }
   | { type: 'packet-replay'; token: number; segments: PublicRoutePulse['segments']; pulse: PublicRoutePulse; settleMs: number; travelDurationMs: number }
   | null;
+
+const geoJSONClient = createBrowserGeoJSONClient(transformGeoJSON);
 
 interface Props {
   nodes: PublicNode[];
@@ -3962,7 +3967,7 @@ function updateNodeRendering(
   const nextSignature = nodeSourceSignature(nodes, focus, labelClock, meshActivityAtByNodeID);
   if (!force && nextSignature === signatureRef.current) return;
   signatureRef.current = nextSignature;
-  setSourceData(map, NODE_SOURCE, nodesToGeoJSON(nodes, focus, labelClock, meshActivityAtByNodeID));
+  setSourceData(map, NODE_SOURCE, nodesToGeoJSON(nodes, focus, labelClock, meshActivityAtByNodeID), nextSignature);
 }
 
 function setActivityHeatmapSource(
@@ -3984,7 +3989,31 @@ function setActivityHeatmapSource(
     if (elapsed < ACTIVITY_HEATMAP_CHANGED_MIN_MS) return;
   }
   activityHeatmapRenderState.set(map, { lastRenderedAt: now, signature, nodes });
-  setSourceData(map, ACTIVITY_HEATMAP_SOURCE, activityHeatmapToGeoJSON(nodes, activities, meshActivityAtByNodeID));
+  const sourceSignature = `heatmap:${signature}`;
+  const epochNow = Date.now();
+  void geoJSONClient.transform({
+    type: 'heatmap',
+    payload: {
+      sourceId: ACTIVITY_HEATMAP_SOURCE,
+      signature: sourceSignature,
+      nodes,
+      activities,
+      meshActivityAtByNodeID,
+      epochNow,
+      performanceNow: now
+    }
+  }).then((response) => {
+    recordGeoJSONWorkerTransform();
+    const latest = activityHeatmapRenderState.get(map);
+    if (latest?.signature !== signature || latest.nodes !== nodes) return;
+    setSourceData(map, ACTIVITY_HEATMAP_SOURCE, response.geojson, response.signature);
+  }).catch(() => {
+    recordGeoJSONWorkerError();
+    const latest = activityHeatmapRenderState.get(map);
+    if (latest?.signature !== signature || latest.nodes !== nodes) return;
+    recordGeoJSONWorkerFallback();
+    setSourceData(map, ACTIVITY_HEATMAP_SOURCE, activityHeatmapToGeoJSON(nodes, activities, meshActivityAtByNodeID, epochNow, now), sourceSignature);
+  });
 }
 
 function activityHeatmapVisible(map: maplibregl.Map): boolean {
@@ -4018,8 +4047,29 @@ function updateRouteRendering(
   const now = Date.now();
   const nextRouteSignature = routeSourceSignature(routes, selectedRouteID, focus, now);
   if (force || nextRouteSignature !== routeSignatureRef.current) {
+    const sourceSignature = `routes:${themeMode}:${nextRouteSignature}`;
     routeSignatureRef.current = nextRouteSignature;
-    setSourceData(map, ROUTE_SOURCE, routesToGeoJSON(routes, selectedRouteID, focus, now, themeMode));
+    void geoJSONClient.transform({
+      type: 'routes',
+      payload: {
+        sourceId: ROUTE_SOURCE,
+        signature: sourceSignature,
+        routes,
+        selectedRouteID,
+        focus,
+        now,
+        themeMode
+      }
+    }).then((response) => {
+      recordGeoJSONWorkerTransform();
+      if (routeSignatureRef.current !== nextRouteSignature) return;
+      setSourceData(map, ROUTE_SOURCE, response.geojson, response.signature);
+    }).catch(() => {
+      recordGeoJSONWorkerError();
+      if (routeSignatureRef.current !== nextRouteSignature) return;
+      recordGeoJSONWorkerFallback();
+      setSourceData(map, ROUTE_SOURCE, routesToGeoJSON(routes, selectedRouteID, focus, now, themeMode), sourceSignature);
+    });
   }
 
   const nextColorSignature = `${themeMode}:${routeColorSignature(routes)}`;
@@ -4042,7 +4092,7 @@ function updateAnalysisRouteRendering(
   const signature = `${themeMode}:${analysisRouteSignature(routes, selectedRouteID, focus, analysisSegments)}`;
   if (!force && signature === signatureRef.current) return;
   signatureRef.current = signature;
-  setSourceData(map, ANALYSIS_ROUTE_SOURCE, analysisRoutesToGeoJSON(routes, selectedRouteID, focus, analysisSegments, themeMode));
+  setSourceData(map, ANALYSIS_ROUTE_SOURCE, analysisRoutesToGeoJSON(routes, selectedRouteID, focus, analysisSegments, themeMode), `analysis:${signature}`);
 }
 
 function updatePropagationRendering(
@@ -4054,7 +4104,7 @@ function updatePropagationRendering(
   const signature = propagationEventsSignature(events);
   if (!force && signature === signatureRef.current) return;
   signatureRef.current = signature;
-  setSourceData(map, PROPAGATION_SOURCE, propagationEventsToGeoJSON(events));
+  setSourceData(map, PROPAGATION_SOURCE, propagationEventsToGeoJSON(events), `propagation:${signature}`);
 }
 
 function propagationEventsToGeoJSON(events: PublicPropagationEvent[]): FeatureCollection {

@@ -93,7 +93,7 @@ async function runScenario(scenario) {
     '--name',
     scenario.container,
     '-p',
-    `${scenario.port}:8080`,
+    publishSpec(smokeHost, scenario.port),
     ...envArgs,
     image
   ];
@@ -262,6 +262,13 @@ function formatHost(host) {
   const trimmed = host.trim();
   if (trimmed.startsWith('[') || !trimmed.includes(':')) return trimmed;
   return `[${trimmed}]`;
+}
+
+function publishSpec(host, port) {
+  const trimmed = host.trim();
+  if (!trimmed || trimmed === 'localhost') return `${port}:8080`;
+  if (trimmed.startsWith('[') || !trimmed.includes(':')) return `${trimmed}:${port}:8080`;
+  return `[${trimmed}]:${port}:8080`;
 }
 
 async function readVersion() {

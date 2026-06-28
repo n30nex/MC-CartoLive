@@ -46,6 +46,25 @@ describe('sourceDataQueue', () => {
     expect(callbacks).toHaveLength(0);
   });
 
+  it('skips identical caller signatures without requiring the same data object', () => {
+    const setData = vi.fn();
+    const map = {
+      getSource: () => ({ setData })
+    };
+    const callbacks: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return callbacks.length;
+    });
+
+    setSourceData(map as any, 'routes', { type: 'FeatureCollection', features: [{ id: 'same', properties: { value: 1 } }] }, 'route-signature');
+    callbacks.shift()?.(0);
+    setSourceData(map as any, 'routes', { type: 'FeatureCollection', features: [{ id: 'same', properties: { value: 2 } }] }, 'route-signature');
+
+    expect(setData).toHaveBeenCalledTimes(1);
+    expect(callbacks).toHaveLength(0);
+  });
+
   it('retries identical data when the source was missing during the first frame', () => {
     const setData = vi.fn();
     let ready = false;

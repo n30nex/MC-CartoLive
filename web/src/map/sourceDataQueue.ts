@@ -1,5 +1,5 @@
 import type maplibregl from 'maplibre-gl';
-import { recordSkippedSourceUpdate, recordSourceUpdate } from '../perfDiagnostics';
+import { recordSignatureSourceSkip, recordSkippedSourceUpdate, recordSourceUpdate } from '../perfDiagnostics';
 
 export type FeatureCollection = {
   type: 'FeatureCollection';
@@ -14,18 +14,19 @@ interface SourceUpdateQueue {
 
 const sourceUpdateQueues = new WeakMap<maplibregl.Map, SourceUpdateQueue>();
 
-export function setSourceData(map: maplibregl.Map, sourceID: string, data: FeatureCollection) {
+export function setSourceData(map: maplibregl.Map, sourceID: string, data: FeatureCollection, signature?: string) {
   let queue = sourceUpdateQueues.get(map);
   if (!queue) {
     queue = { frame: 0, pending: new Map(), signatures: new Map() };
     sourceUpdateQueues.set(map, queue);
   }
-  const signature = featureCollectionSignature(data);
-  if (queue.signatures.get(sourceID) === signature) {
-    recordSkippedSourceUpdate();
+  const nextSignature = signature ?? featureCollectionSignature(data);
+  if (queue.signatures.get(sourceID) === nextSignature) {
+    if (signature) recordSignatureSourceSkip();
+    else recordSkippedSourceUpdate();
     return;
   }
-  queue.signatures.set(sourceID, signature);
+  queue.signatures.set(sourceID, nextSignature);
   queue.pending.set(sourceID, data);
   if (queue.frame !== 0) return;
   queue.frame = window.requestAnimationFrame(() => {

@@ -46,17 +46,18 @@ export default defineConfig({
   ],
   build: {
     chunkSizeWarningLimit: 1200,
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return undefined;
-          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) return 'react-vendor';
-          if (id.includes('/maplibre-gl/')) return 'maplibre';
-          if (id.includes('/three/')) return 'three';
-          if (id.includes('/d3-force/') || id.includes('/d3-dispatch/') || id.includes('/d3-quadtree/') || id.includes('/d3-timer/')) return 'd3-force';
-          if (id.includes('/gifenc/')) return 'gif-export';
-          if (id.includes('/lucide-react/')) return 'icons';
-          return 'vendor';
+        codeSplitting: {
+          groups: [
+            { name: 'react-vendor', test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+            { name: 'maplibre', test: /[\\/]node_modules[\\/]maplibre-gl[\\/]/ },
+            { name: 'three', test: /[\\/]node_modules[\\/]three[\\/]/ },
+            { name: 'd3-force', test: /[\\/]node_modules[\\/](d3-force|d3-dispatch|d3-quadtree|d3-timer)[\\/]/ },
+            { name: 'gif-export', test: /[\\/]node_modules[\\/]gifenc[\\/]/ },
+            { name: 'icons', test: /[\\/]node_modules[\\/]lucide-react[\\/]/ },
+            { name: 'vendor', test: /[\\/]node_modules[\\/]/ }
+          ]
         }
       }
     }

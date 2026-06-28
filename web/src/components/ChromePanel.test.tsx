@@ -21,6 +21,8 @@ describe('ChromePanel', () => {
     expect(html).toContain('Search');
     expect(html).toContain('Search body');
     expect(html).toContain('Hide Search');
+    expect(html).toContain('Search panel drag handle');
+    expect(html).toContain('tabindex="0"');
     expect(html).not.toContain('snap position');
     expect(html).not.toContain('<select');
   });
