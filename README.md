@@ -127,7 +127,8 @@ Important variables:
 | `MAP_BOUNDS` | Custom bounds as `minLat,minLng,maxLat,maxLng`. |
 | `PUBLIC_REGIONS` | Public-safe broker region allowlist. Empty allows safe labels. |
 | `DB_PATH` | SQLite path inside the container. |
-| `SQLITE_MAX_OPEN_CONNS` | SQLite connection ceiling. Defaults to `1` for the write-heavy live map so public activity stays fresh under ingest load. |
+| `SQLITE_MAX_OPEN_CONNS` | SQLite connection ceiling. Defaults to `4` for read headroom without the old high-memory pool. |
+| `SQLITE_BUSY_TIMEOUT_MS` | SQLite lock wait before a query gives up. Defaults to `15000`. |
 | `SQLITE_CACHE_SIZE_KB` | SQLite page cache budget in KiB. Defaults to `16000`. |
 | `SQLITE_MMAP_SIZE_BYTES` | SQLite mmap budget in bytes. Defaults to `67108864`. |
 | `DATA_RETENTION_DAYS` | Raw packets, observations, live edge events, public history/search rows, and propagation/weather history retention. Defaults to `7`; latest public route summaries are preserved separately. |

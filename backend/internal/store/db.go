@@ -32,7 +32,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	maxOpenConns := sqliteEnvInt("SQLITE_MAX_OPEN_CONNS", 1)
+	maxOpenConns := sqliteEnvInt("SQLITE_MAX_OPEN_CONNS", 4)
 	db.SetMaxOpenConns(maxOpenConns)
 	db.SetMaxIdleConns(maxOpenConns)
 	s := &Store{db: db, path: path, coordinatePolicy: live.CurrentCoordinatePolicy()}
@@ -182,10 +182,11 @@ func sqliteDSN(path string) string {
 	if strings.Contains(path, "?") {
 		sep = "&"
 	}
+	busyTimeoutMs := sqliteEnvInt("SQLITE_BUSY_TIMEOUT_MS", 15000)
 	cacheKB := sqliteEnvInt("SQLITE_CACHE_SIZE_KB", 16000)
 	mmapSizeBytes := sqliteEnvInt("SQLITE_MMAP_SIZE_BYTES", 67108864)
 	return path + sep + strings.Join([]string{
-		"_pragma=busy_timeout%3d5000",
+		"_pragma=busy_timeout%3d" + strconv.Itoa(busyTimeoutMs),
 		"_pragma=foreign_keys%3dON",
 		"_pragma=journal_mode%3dWAL",
 		"_pragma=synchronous%3dNORMAL",
