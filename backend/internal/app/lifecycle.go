@@ -208,7 +208,9 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 		return
 	}
 	if msg.TopicInfo.Subtopic == "status" {
-		if err := a.Store.UpsertObserver(ctx, msg); err != nil {
+		if err := a.retryStoreWrite(ctx, "status upsert", func(ctx context.Context) error {
+			return a.Store.UpsertObserver(ctx, msg)
+		}); err != nil {
 			a.Log.Warn("status upsert failed", "error", err)
 		}
 		if node, err := a.Store.NodeByPublicKey(ctx, msg.TopicInfo.PublisherPK); err == nil && hasCoords(node) {
@@ -219,7 +221,9 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 	if msg.TopicInfo.Subtopic != "packets" {
 		return
 	}
-	if err := a.Store.IncrementObserverPacket(ctx, msg); err != nil {
+	if err := a.retryStoreWrite(ctx, "observer packet update", func(ctx context.Context) error {
+		return a.Store.IncrementObserverPacket(ctx, msg)
+	}); err != nil {
 		a.Log.Warn("observer packet update failed", "error", err)
 	}
 	if msg.RawHex == "" {
@@ -243,7 +247,12 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 	}
 	summary := meshcore.Summary(parsed, advert)
 	decodedMessage := meshcore.DecodePublicMessage(parsed.PayloadType, parsed.Payload, msg.RawJSON, a.Config.MeshcoreChannelSecrets)
-	observationID, err := a.Store.UpsertPacketAndObservation(ctx, parsed, msg.HeardAtMs, store.ObservationInsert{Message: msg, Parsed: parsed, Summary: summary, MessageSender: decodedMessage.Sender, MessageText: decodedMessage.Text})
+	var observationID int64
+	err = a.retryStoreWrite(ctx, "packet/observation upsert", func(ctx context.Context) error {
+		id, err := a.Store.UpsertPacketAndObservation(ctx, parsed, msg.HeardAtMs, store.ObservationInsert{Message: msg, Parsed: parsed, Summary: summary, MessageSender: decodedMessage.Sender, MessageText: decodedMessage.Text})
+		observationID = id
+		return err
+	})
 	if err != nil {
 		a.Log.Warn("packet/observation upsert failed", "error", err)
 		return
@@ -251,7 +260,12 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 
 	var advertNode *live.Node
 	if advert != nil {
-		node, err := a.Store.UpsertAdvertNode(ctx, msg.TopicInfo.IATA, *advert, msg.HeardAtMs)
+		var node live.Node
+		err := a.retryStoreWrite(ctx, "advert node upsert", func(ctx context.Context) error {
+			var err error
+			node, err = a.Store.UpsertAdvertNode(ctx, msg.TopicInfo.IATA, *advert, msg.HeardAtMs)
+			return err
+		})
 		if err != nil {
 			a.Log.Warn("advert node upsert failed", "packetHash", parsed.PacketHash, "error", err)
 		} else {
@@ -263,14 +277,18 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 	resolution, err := a.Resolver.Resolve(ctx, msg.TopicInfo.IATA, parsed)
 	if err != nil {
 		a.Log.Warn("resolver failed", "error", err)
-		if updateErr := a.Store.UpdateObservationResolution(ctx, observationID, resolve.StatusUnresolved, fmt.Sprintf("resolver_error: %v", err)); updateErr != nil {
+		if updateErr := a.retryStoreWrite(ctx, "observation resolution update", func(ctx context.Context) error {
+			return a.Store.UpdateObservationResolution(ctx, observationID, resolve.StatusUnresolved, fmt.Sprintf("resolver_error: %v", err))
+		}); updateErr != nil {
 			a.Log.Warn("observation resolution update on resolver error failed", "error", updateErr)
 		}
 		return
 	}
 	status, reason := a.edgeDecision(ctx, msg, parsed, resolution, advertNode)
 	if status != resolve.StatusHigh {
-		if err := a.Store.UpdateObservationResolution(ctx, observationID, status, reason); err != nil {
+		if err := a.retryStoreWrite(ctx, "observation resolution update", func(ctx context.Context) error {
+			return a.Store.UpdateObservationResolution(ctx, observationID, status, reason)
+		}); err != nil {
 			a.Log.Warn("observation resolution update failed", "error", err)
 		}
 	}
@@ -289,7 +307,12 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 		a.PublicCache.RecordExcludedIATA(msg.TopicInfo.IATA)
 	}
 	if ok {
-		stored, insertErr := a.Store.InsertEdgeEvent(ctx, edge, status, reason)
+		var stored live.EdgeEvent
+		insertErr := a.retryStoreWrite(ctx, "edge insert", func(ctx context.Context) error {
+			var err error
+			stored, err = a.Store.InsertEdgeEvent(ctx, edge, status, reason)
+			return err
+		})
 		if insertErr != nil {
 			a.Log.Warn("edge insert failed", "error", insertErr)
 		} else {
@@ -340,7 +363,12 @@ func (a *Application) publishPublicEvent(ctx context.Context, eventType string, 
 		return data
 	}
 	event := live.PublicEventFromData(eventType, data)
-	stored, err := a.Store.InsertPublicEvent(ctx, event)
+	var stored live.PublicEvent
+	err := a.retryStoreWrite(ctx, "public event insert", func(ctx context.Context) error {
+		var err error
+		stored, err = a.Store.InsertPublicEvent(ctx, event)
+		return err
+	})
 	if err != nil {
 		a.Log.Warn("public event insert failed", "event", eventType, "error", err)
 		a.PublicHub.Broadcast(eventType, data)
@@ -351,6 +379,42 @@ func (a *Application) publishPublicEvent(ctx context.Context, eventType string, 
 	event.Data = data
 	a.PublicHub.BroadcastPublicEvent(event)
 	return data
+}
+
+func (a *Application) retryStoreWrite(ctx context.Context, label string, fn func(context.Context) error) error {
+	delays := []time.Duration{0, 100 * time.Millisecond, 250 * time.Millisecond}
+	var err error
+	for attempt, delay := range delays {
+		if delay > 0 {
+			select {
+			case <-ctx.Done():
+				if err != nil {
+					return err
+				}
+				return ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+		err = fn(ctx)
+		if err == nil {
+			if attempt > 0 && a != nil && a.Log != nil {
+				a.Log.Debug("sqlite write recovered after retry", "operation", label, "attempt", attempt+1)
+			}
+			return nil
+		}
+		if !isSQLiteBusy(err) {
+			return err
+		}
+	}
+	return err
+}
+
+func isSQLiteBusy(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "sqlite_busy") || strings.Contains(text, "database is locked") || strings.Contains(text, "database table is locked")
 }
 
 func (a *Application) publicActivityFromPacket(ctx context.Context, observation live.PacketObservation, routeIDs []string) live.PublicActivity {
@@ -1172,7 +1236,7 @@ func (a *Application) maintenanceLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := a.Store.VacuumAndAnalyze(ctx); err != nil {
+			if err := a.Store.Analyze(ctx); err != nil {
 				a.Log.Warn("database maintenance failed", "error", err)
 			} else {
 				a.Log.Info("database maintenance complete")

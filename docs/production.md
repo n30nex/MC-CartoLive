@@ -137,10 +137,10 @@ rollback guard.
 - Compact `public_route_summaries` rows preserve the latest public-safe route
   graph after raw rows are pruned. They store only the same sanitized route
   endpoint fields exposed by public state.
-- SQLite reuses deleted pages until maintenance runs `VACUUM`; retention pruning
-  starts 30 minutes after process start and then runs every six hours. It
-  reduces live row count, but file size may shrink only after the next
-  maintenance pass or manual vacuum.
+- SQLite reuses deleted pages until `VACUUM` runs. Retention pruning starts 30
+  minutes after process start and then runs every six hours. Automatic
+  maintenance runs `ANALYZE` only; file compaction is a manual operator-window
+  task.
 - `MAP_REGION_PRESET=world` is the package default. Use `canada` for the hosted
   Canada map, or `custom` with `MAP_BOUNDS=minLat,minLng,maxLat,maxLng`.
 - `VITE_APP_ASSET_PACK=world` is the package/default image preset. Build the

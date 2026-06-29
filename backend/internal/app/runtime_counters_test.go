@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -47,5 +48,23 @@ func TestRuntimeCounterLogSnapshotUsesCachedStateWithoutStore(t *testing.T) {
 	}
 	if snapshot.PacketCountRefreshFailures != 1 || snapshot.PacketCountRefreshLatencyMs != 17 {
 		t.Fatalf("packet count refresh stats = failures:%d latency:%d, want 1/17", snapshot.PacketCountRefreshFailures, snapshot.PacketCountRefreshLatencyMs)
+	}
+}
+
+func TestIsSQLiteBusy(t *testing.T) {
+	for _, msg := range []string{
+		"database is locked (5) (SQLITE_BUSY)",
+		"database table is locked",
+		"SQLITE_BUSY: lock conflict",
+	} {
+		if !isSQLiteBusy(errors.New(msg)) {
+			t.Fatalf("isSQLiteBusy(%q) = false, want true", msg)
+		}
+	}
+	if isSQLiteBusy(errors.New("syntax error")) {
+		t.Fatalf("isSQLiteBusy(non-lock error) = true, want false")
+	}
+	if isSQLiteBusy(nil) {
+		t.Fatalf("isSQLiteBusy(nil) = true, want false")
 	}
 }

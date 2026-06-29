@@ -107,10 +107,10 @@ Latest public route information is preserved in compact
 routes after older raw rows are removed. These summaries do not store packet
 hashes, full keys, raw path hex, raw payloads, or resolver debug reasons.
 
-SQLite may keep the database file large until a `VACUUM` runs. The app runs
-maintenance every six hours; for emergency manual compaction, first stop or
-quiesce the container, make a backup, then run SQLite vacuum against
-`data/meshcore-live.db`.
+SQLite may keep the database file large until a `VACUUM` runs. Automatic
+maintenance runs `ANALYZE` every six hours and does not vacuum the live DB. For
+emergency manual compaction, first stop or quiesce the container, make a backup,
+then run SQLite vacuum against `data/meshcore-live.db`.
 
 The live container intentionally keeps SQLite conservative on the 1GB droplet:
 `SQLITE_MAX_OPEN_CONNS=4`, `SQLITE_BUSY_TIMEOUT_MS=15000`,
