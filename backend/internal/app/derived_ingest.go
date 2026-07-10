@@ -111,17 +111,22 @@ func (a *Application) enqueueDerivedIngest(job derivedIngestJob) bool {
 
 func (a *Application) derivedIngestLoop(ctx context.Context) {
 	for {
-		for a.derivedWorkPaused() {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Second):
-			}
-		}
 		select {
 		case <-ctx.Done():
 			return
 		case job := <-a.derivedQueue:
+			// Re-check pressure after receiving. Pressure can rise while the
+			// worker is blocked on an empty queue; checking only before receive
+			// would let the first derived job jump ahead of a newly backlogged
+			// primary writer. Keep the FIFO timestamp in place while paused so
+			// readiness and metrics continue to report the held job's real age.
+			for a.derivedWorkPaused() {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Second):
+				}
+			}
 			a.derivedQueueMu.Lock()
 			a.popDerivedQueueTimestampLocked()
 			a.Runtime.UpdateDerivedQueue(len(a.derivedQueue), cap(a.derivedQueue), a.derivedQueueOldestLocked())

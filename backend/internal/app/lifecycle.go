@@ -1205,9 +1205,26 @@ func (a *Application) pruneLoop(ctx context.Context) {
 		return
 	}
 	runPrune := func() {
-		mqttStatus := a.MQTT.Status(time.Now())
-		if mqttStatus.QueueCapacity > 0 && mqttStatus.QueueDepth*2 >= mqttStatus.QueueCapacity {
-			a.Log.Warn("data prune deferred; ingest queue is pressured", "queueDepth", mqttStatus.QueueDepth, "queueCapacity", mqttStatus.QueueCapacity)
+		now := time.Now()
+		mqttStatus := a.MQTT.Status(now)
+		runtimeStatus := a.Runtime.Snapshot()
+		derivedOldestAge := int64(0)
+		if runtimeStatus.DerivedOldestAtMs > 0 {
+			derivedOldestAge = max(now.UnixMilli()-runtimeStatus.DerivedOldestAtMs, 0)
+		}
+		primaryPressured := (mqttStatus.QueueCapacity > 0 && mqttStatus.QueueDepth*2 >= mqttStatus.QueueCapacity) || mqttStatus.OldestQueueItemAgeMs > 2_000
+		derivedPressured := (runtimeStatus.DerivedQueueCapacity > 0 && runtimeStatus.DerivedQueueDepth*2 >= runtimeStatus.DerivedQueueCapacity) || derivedOldestAge > 2_000
+		if primaryPressured || derivedPressured {
+			a.Log.Warn("data prune deferred; ingest lag is not healthy",
+				"queueDepth", mqttStatus.QueueDepth, "queueCapacity", mqttStatus.QueueCapacity,
+				"queueOldestAgeMs", mqttStatus.OldestQueueItemAgeMs,
+				"derivedQueueDepth", runtimeStatus.DerivedQueueDepth, "derivedQueueCapacity", runtimeStatus.DerivedQueueCapacity,
+				"derivedOldestAgeMs", derivedOldestAge,
+			)
+			return
+		}
+		if a.Store.StorageInfo().PressureState == "critical" {
+			a.Log.Warn("data prune deferred; storage is critical")
 			return
 		}
 		pruneCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -1262,17 +1279,37 @@ func (a *Application) effectiveDataRetentionDays() int {
 }
 
 func (a *Application) maintenanceLoop(ctx context.Context) {
-	ticker := time.NewTicker(6 * time.Hour)
+	// Check for a quiet window hourly, reclaim only a small number of pages,
+	// and run SQLite's normal optimize pass no more than once per day. The
+	// initial 0x10002 optimize pass already runs when the Store opens.
+	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()
+	lastOptimize := time.Now()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			maintenanceCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			if err := a.Store.Optimize(maintenanceCtx, false); err != nil {
-				a.Log.Warn("database maintenance failed", "error", err)
-			} else if err := a.Store.IncrementalVacuum(maintenanceCtx, 256); err != nil {
+			mqttStatus := a.MQTT.Status(time.Now())
+			runtimeStatus := a.Runtime.Snapshot()
+			if mqttStatus.QueueDepth > 0 || mqttStatus.OldestQueueItemAgeMs > 0 || runtimeStatus.DerivedQueueDepth > 0 {
+				a.Log.Debug("database maintenance deferred; ingest is not idle")
+				continue
+			}
+			if a.Store.StorageInfo().PressureState == "critical" {
+				a.Log.Warn("database maintenance deferred; storage is critical")
+				continue
+			}
+			maintenanceCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			if time.Since(lastOptimize) >= 24*time.Hour {
+				if err := a.Store.Optimize(maintenanceCtx, false); err != nil {
+					a.Log.Warn("database optimize failed", "error", err)
+					cancel()
+					continue
+				}
+				lastOptimize = time.Now()
+			}
+			if err := a.Store.IncrementalVacuum(maintenanceCtx, 64); err != nil {
 				a.Log.Warn("database incremental vacuum failed", "error", err)
 			} else {
 				a.Log.Info("database maintenance complete")

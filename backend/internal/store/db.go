@@ -68,7 +68,11 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		return nil, fmt.Errorf("open sqlite read pool: %w", err)
 	}
 	s.readDB = readDB
-	_ = s.Optimize(ctx, true)
+	if err := s.Optimize(ctx, true); err != nil {
+		_ = readDB.Close()
+		_ = db.Close()
+		return nil, err
+	}
 	return s, nil
 }
 
