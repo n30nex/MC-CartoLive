@@ -45,4 +45,23 @@ describe('RFReplayStudio', () => {
     expect(html).not.toContain('abc123');
     expect(html).not.toContain('def456');
   });
+
+  it('shows a clear expired deep-link state without selecting unrelated traffic', () => {
+    const html = renderToStaticMarkup(
+      <RFReplayStudio
+        packet={null}
+        deepLinkStatus="unavailable"
+        mode="explore"
+        onModeChange={vi.fn()}
+        onReplay={vi.fn()}
+        onPause={vi.fn()}
+        onSeek={vi.fn()}
+        onShare={vi.fn()}
+        onOpenWaterfall={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+    expect(html).toContain('Replay unavailable');
+    expect(html).toContain('no longer retained');
+  });
 });

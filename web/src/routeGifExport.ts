@@ -6,8 +6,8 @@ import { packetEndpointSummary, packetRegion } from './packets';
 import { payloadVisual } from './payloadVisuals';
 import type { PublicPacketPath, PublicRoutePulse, PublicRouteSegment } from './types';
 
-export const ROUTE_GIF_WIDTH = 1280;
-export const ROUTE_GIF_HEIGHT = 720;
+export const ROUTE_GIF_WIDTH = 960;
+export const ROUTE_GIF_HEIGHT = 540;
 export const ROUTE_GIF_FRAMES = 60;
 export const ROUTE_GIF_FPS = 12;
 
@@ -103,12 +103,13 @@ export async function createRouteMapGifBlob(
 ): Promise<Blob> {
   if (routeGifRoutePoints(packet).length < 2) throw new Error('Packet route needs at least two mappable endpoints');
 
-  const width = options.width ?? ROUTE_GIF_WIDTH;
-  const height = options.height ?? ROUTE_GIF_HEIGHT;
-  const frames = options.frames ?? ROUTE_GIF_FRAMES;
-  const fps = options.fps ?? ROUTE_GIF_FPS;
+  const width = Math.max(2, Math.min(ROUTE_GIF_WIDTH, Math.round(options.width ?? ROUTE_GIF_WIDTH)));
+  const height = Math.max(2, Math.min(ROUTE_GIF_HEIGHT, Math.round(options.height ?? ROUTE_GIF_HEIGHT)));
+  const frames = Math.max(2, Math.min(ROUTE_GIF_FRAMES, Math.round(options.frames ?? ROUTE_GIF_FRAMES)));
+  const fps = Math.max(1, Math.min(ROUTE_GIF_FPS, Math.round(options.fps ?? ROUTE_GIF_FPS)));
   const delay = Math.round(1000 / fps);
-  const capturedFrames: ImageData[] = [];
+  const { GIFEncoder, quantize, applyPalette } = await import('gifenc');
+  const gif = GIFEncoder({ initialCapacity: Math.min(width * height, 2_000_000) });
 
   for (let frameIndex = 0; frameIndex < frames; frameIndex += 1) {
     const progress = routeGifFrameProgress(frameIndex, frames);
@@ -116,21 +117,11 @@ export async function createRouteMapGifBlob(
     if (image.width !== width || image.height !== height) {
       throw new Error(`Captured map frame size ${image.width}x${image.height} does not match GIF size ${width}x${height}`);
     }
-    capturedFrames.push(image);
-    options.onProgress?.(((frameIndex + 1) / frames) * 0.7);
-    if (frameIndex % 8 === 7) await yieldToBrowser();
-  }
-
-  const { GIFEncoder, quantize, applyPalette } = await import('gifenc');
-  const gif = GIFEncoder({ initialCapacity: width * height });
-
-  for (let frameIndex = 0; frameIndex < capturedFrames.length; frameIndex += 1) {
-    const image = capturedFrames[frameIndex];
     const palette = quantize(image.data, 192, { format: 'rgb565' });
     const index = applyPalette(image.data, palette, 'rgb565');
     gif.writeFrame(index, width, height, { palette, delay, repeat: 0 });
-    options.onProgress?.(0.7 + ((frameIndex + 1) / frames) * 0.3);
-    if (frameIndex % 4 === 3) await yieldToBrowser();
+    options.onProgress?.((frameIndex + 1) / frames);
+    if (frameIndex % 2 === 1) await yieldToBrowser();
   }
 
   gif.finish();

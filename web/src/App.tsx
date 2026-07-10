@@ -1,6 +1,6 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Check, CloudSun, Columns3, Eye, EyeOff, History, List, MessageSquareText, Monitor, Moon, MoreHorizontal, Palette, Pause, Play, RadioTower, RotateCcw, Route, Search, Share2, SlidersHorizontal, Sparkles, Sun, X } from 'lucide-react';
-import { fetchPublicBootstrap, fetchPublicEvents, fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicPropagation, fetchPublicState } from './api';
+import { fetchPublicBootstrap, fetchPublicEvents, fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicPropagation, fetchPublicState, fetchPublicStateWithFallback, type PublicStateFetchResult } from './api';
 import { connectPublicSocket } from './ws';
 import {
   applyPublicEnvelope,
@@ -86,11 +86,12 @@ import {
   type SelectionState
 } from './selection';
 import { buildSharedViewURL, parseSharedView, type MapViewState } from './shareView';
-import { routeToReplayPacket } from './replayStudio';
+import { resolveReplayDeepLink, routeToReplayPacket } from './replayStudio';
 import type { DashboardAction } from './uiActions';
-import { SERVICE_WORKER_UPDATE_EVENT } from './serviceWorker';
+import { SERVICE_WORKER_UPDATE_EVENT, activateWaitingServiceWorker, waitingServiceWorkerUpdateAvailable } from './serviceWorker';
 import { useAccessibleDialog } from './lib/useAccessibleDialog';
-import { bootstrapToLiveState, startBootstrapFirstHydration } from './bootstrapHydration';
+import { bootstrapToLiveState, publicStateSnapshotIsCurrent, startBootstrapFirstHydration } from './bootstrapHydration';
+import type { ReplayExportSurfaceProvider } from './replayExportSurface';
 import { recordLivePendingQueueSize, recordSnapshotReplacement, recordVcrReplayQueueSize, recordVisibilityPause } from './perfDiagnostics';
 import { appendBufferedRoutePulses, routePulseMessages } from './playbackController';
 import { applyMapMode, MAP_MODES, mapModeForSettings, normalizeMapSettings, readStoredMapSettings, writeStoredMapSettings, type MapModeID, type MapSettings } from './mapSettings';
@@ -162,7 +163,7 @@ function PublicDashboardApp() {
   const [clearToken, setClearToken] = useState(0);
   const [mapAction, setMapAction] = useState<MapAction>(null);
   const [selectedNodeID, setSelectedNodeID] = useState<string | null>(() => sharedViewRef.current?.node ?? null);
-  const [selectedRouteID, setSelectedRouteID] = useState<string | null>(() => sharedViewRef.current?.route ?? null);
+  const [selectedRouteID, setSelectedRouteID] = useState<string | null>(() => sharedViewRef.current?.route ?? sharedViewRef.current?.replayRoute ?? null);
   const [selectedPacket, setSelectedPacket] = useState<PublicPacketPath | null>(null);
   const [highlightedPathTargetID, setHighlightedPathTargetID] = useState<string | null>(null);
   const [plotMode, setPlotMode] = useState<PlotMode>('off');
@@ -183,7 +184,10 @@ function PublicDashboardApp() {
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [replayStudioOpen, setReplayStudioOpen] = useState(() => sharedViewRef.current?.studio === true);
+  const [replayDeepLinkStatus, setReplayDeepLinkStatus] = useState<'pending' | 'resolved' | 'fallback' | 'unavailable' | null>(() => sharedViewRef.current?.studio ? 'pending' : null);
+  const [fullStateHydrated, setFullStateHydrated] = useState(false);
   const [serviceWorkerUpdateReady, setServiceWorkerUpdateReady] = useState(false);
+  const [serviceWorkerActivating, setServiceWorkerActivating] = useState(false);
   const [mapSettings, setMapSettings] = useState<MapSettings>(() => readStoredMapSettings());
   const [packetsOpen, setPacketsOpen] = useState(() => window.location.hash === '#/packets');
   const [netGraphOpen, setNetGraphOpen] = useState(() => window.location.hash === '#/netgraph');
@@ -230,12 +234,14 @@ function PublicDashboardApp() {
   const closeMobileControls = useCallback(() => setMobileControlsOpen(false), []);
   const mobileControlsRef = useAccessibleDialog<HTMLElement>(mobileControlsOpen, closeMobileControls);
   const actionTokenRef = useRef(0);
+  const replayExportProviderRef = useRef<ReplayExportSurfaceProvider | null>(null);
   const gifExportTimestampsRef = useRef<number[]>([]);
   const gifCooldownUntilRef = useRef(0);
   const GIF_EXPORT_MAX_PER_WINDOW = 5;
   const GIF_EXPORT_WINDOW_MS = 10 * 60_000;
   const GIF_EXPORT_COOLDOWN_MS = 30_000;
   const stateRef = useRef<AppState>(emptyState);
+  const latestObservedSeqRef = useRef(0);
   const lastSnapshotSignatureRef = useRef('');
   const pendingMessagesRef = useRef<PublicLiveEnvelope[]>([]);
   const vcrBufferedMessagesRef = useRef<PublicLiveEnvelope[]>([]);
@@ -251,15 +257,21 @@ function PublicDashboardApp() {
 
   useEffect(() => {
     stateRef.current = state;
+    latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, state.latestSeq);
   }, [state]);
 
   const applyPublicSnapshot = useCallback((liveState: PublicLiveState): boolean => {
+    if (!publicStateSnapshotIsCurrent(Math.max(stateRef.current.latestSeq, latestObservedSeqRef.current), liveState)) {
+      recordSnapshotReplacement(true);
+      return false;
+    }
     const signature = publicLiveStateSignature(liveState);
     if (signature === lastSnapshotSignatureRef.current) {
       recordSnapshotReplacement(true);
       return false;
     }
     lastSnapshotSignatureRef.current = signature;
+    latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, liveState.stats?.latestSeq ?? 0);
     setState(initialAppState(liveState));
     recordSnapshotReplacement(false);
     return true;
@@ -459,8 +471,9 @@ function PublicDashboardApp() {
     fetchPublicState()
       .then((liveState) => {
         if (vcrModeRef.current !== 'live') return;
+        setFullStateHydrated(true);
+        if (!applyPublicSnapshot(liveState)) return;
         setPublicMapConfig(liveState.map ?? null);
-        applyPublicSnapshot(liveState);
         if ((liveState.nodes?.length ?? 0) > 0) {
           setInitialNodesReceived(true);
           setNodeLoadFailed(false);
@@ -712,16 +725,19 @@ function PublicDashboardApp() {
   useEffect(() => {
     let cancelled = false;
     let cancelDeferredState: () => void = () => undefined;
-    const applyFullState = (liveState: PublicLiveState) => {
+    const applyFullState = (result: PublicStateFetchResult) => {
       if (cancelled) return;
+      setFullStateHydrated(true);
+      const liveState = result.state;
+      if (!applyPublicSnapshot(liveState)) return;
       setPublicMapConfig(liveState.map ?? null);
-      applyPublicSnapshot(liveState);
       setInitialNodesReceived((liveState.nodes?.length ?? 0) > 0);
       setNodeLoadFailed(false);
+      if (result.source === 'offline-cache') setSocketStatus('offline-cache');
     };
     void startBootstrapFirstHydration({
       fetchBootstrap: fetchPublicBootstrap,
-      fetchState: fetchPublicState,
+      fetchState: fetchPublicStateWithFallback,
       applyBootstrap: (bootstrap) => {
         if (cancelled) return;
         setPublicMapConfig(bootstrap.map ?? null);
@@ -785,8 +801,9 @@ function PublicDashboardApp() {
       fetchPublicState().then((liveState) => {
         if (!active) return;
         if (vcrModeRef.current !== 'live') return;
+        setFullStateHydrated(true);
+        if (!applyPublicSnapshot(liveState)) return;
         setPublicMapConfig(liveState.map ?? null);
-        applyPublicSnapshot(liveState);
         if ((liveState.nodes?.length ?? 0) > 0) {
           setInitialNodesReceived(true);
           setNodeLoadFailed(false);
@@ -807,6 +824,7 @@ function PublicDashboardApp() {
       fetchPublicEvents({ afterSeq, limit: 1000 })
         .then((response) => {
           if (!active || vcrModeRef.current !== 'live') return;
+          latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, response.latestSeq);
           if (response.resetRequired || (response.events.length === 0 && response.latestSeq > afterSeq)) {
             refreshState();
             return;
@@ -820,6 +838,7 @@ function PublicDashboardApp() {
         });
     };
     const socket = connectPublicSocket((message) => {
+      latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, message.latestSeq ?? message.seq ?? 0);
       if (message.type === 'hello') {
         setState((current) => applyPublicEnvelope(current, message));
         if (openedOnce) backfillOrRefresh(message.latestSeq ?? message.seq);
@@ -882,8 +901,9 @@ function PublicDashboardApp() {
         .then((liveState) => {
           if (!active) return;
           if (vcrModeRef.current !== 'live') return;
+          setFullStateHydrated(true);
+          if (!applyPublicSnapshot(liveState)) return;
           setPublicMapConfig(liveState.map ?? null);
-          applyPublicSnapshot(liveState);
           if ((liveState.nodes?.length ?? 0) > 0) {
             setInitialNodesReceived(true);
             setNodeLoadFailed(false);
@@ -1114,7 +1134,7 @@ function PublicDashboardApp() {
     setMapAction({ type: 'packet', token, segments: packet.segments });
   }, [applySelection]);
 
-  const replayPacketPath = useCallback((packet: PublicPacketPath, speedOverride?: number) => {
+  const replayPacketPath = useCallback((packet: PublicPacketPath, speedOverride?: number, forceCanvas = false) => {
     if (vcrModeRef.current !== 'live') {
       stopReplay();
       clearPendingLiveFlush();
@@ -1151,7 +1171,8 @@ function PublicDashboardApp() {
       segments: packet.segments,
       pulse,
       settleMs: 650,
-      travelDurationMs
+      travelDurationMs,
+      forceCanvas
     });
   }, [applySelection, clearPendingLiveFlush, mapSettings.packets, stopReplay]);
 
@@ -1316,8 +1337,12 @@ function PublicDashboardApp() {
   }, []);
 
   useEffect(() => {
-    const handleUpdate = () => setServiceWorkerUpdateReady(true);
+    const handleUpdate = () => {
+      setServiceWorkerActivating(false);
+      setServiceWorkerUpdateReady(true);
+    };
     window.addEventListener(SERVICE_WORKER_UPDATE_EVENT, handleUpdate);
+    if (waitingServiceWorkerUpdateAvailable()) handleUpdate();
     return () => window.removeEventListener(SERVICE_WORKER_UPDATE_EVENT, handleUpdate);
   }, []);
 
@@ -1431,19 +1456,21 @@ function PublicDashboardApp() {
 
   const exportReplayWebM = useCallback(async (packet: PublicPacketPath, speed: number) => {
     if (routeWebmExport.status === 'recording') return;
-    const canvas = document.querySelector<HTMLCanvasElement>('.maplibregl-canvas');
-    if (!canvas) {
+    const provider = replayExportProviderRef.current;
+    if (!provider) {
       showToast({ tone: 'warning', title: 'Map not ready', message: 'Wait for the map canvas to finish loading, then record again.' });
       return;
     }
     setRouteWebmExport({ status: 'recording', progress: 0 });
+    let surface: Awaited<ReturnType<ReplayExportSurfaceProvider>> | null = null;
     try {
-      const { downloadRouteWebM, recordMapCanvasWebM } = await import('./routeWebmExport');
+      surface = await provider({ width: 1280, height: 720, segments: packet.segments });
+      const { downloadRouteWebM, recordCanvasLayersWebM } = await import('./routeWebmExport');
       const durationMs = Math.min(30_000, cinematicPacketReplayDuration(packet.segmentCount, speed) + 2_000);
-      const blob = await recordMapCanvasWebM(canvas, {
+      const blob = await recordCanvasLayersWebM(surface.canvases, {
         durationMs,
         frameRate: 30,
-        onStarted: () => replayPacketPath(packet, speed),
+        onStarted: () => replayPacketPath(packet, speed, true),
         onProgress: (progress) => setRouteWebmExport({ status: 'recording', progress })
       });
       downloadRouteWebM(packet.id, blob);
@@ -1451,6 +1478,7 @@ function PublicDashboardApp() {
     } catch (error) {
       showToast({ tone: 'error', title: 'WebM export unavailable', message: error instanceof Error ? error.message : 'Use GIF export in this browser.' });
     } finally {
+      surface?.cleanup();
       setRouteWebmExport({ status: 'idle', progress: 0 });
     }
   }, [replayPacketPath, routeWebmExport.status, showToast]);
@@ -1481,7 +1509,24 @@ function PublicDashboardApp() {
     () => selectedPacket ?? (selectedRoute ? routeToReplayPacket(selectedRoute) : null),
     [selectedPacket, selectedRoute]
   );
+  useEffect(() => {
+    const shared = sharedViewRef.current;
+    if (!shared?.studio || replayDeepLinkStatus !== 'pending' || !fullStateHydrated) return;
+    const resolution = resolveReplayDeepLink(shared, state.pulses, state.routes);
+    setReplayDeepLinkStatus(resolution.status);
+    if (resolution.packet) {
+      focusPacketPath(resolution.packet);
+      return;
+    }
+    if (resolution.route) {
+      selectRoute(resolution.route.id);
+      return;
+    }
+    setSelectedPacket(null);
+    setSelectedRouteID(null);
+  }, [focusPacketPath, fullStateHydrated, replayDeepLinkStatus, selectRoute, state.pulses, state.routes]);
   const openReplayStudio = useCallback(() => {
+    setReplayDeepLinkStatus(null);
     if (!selectedPacket && !selectedRoute) {
       const latest = [...visibleRoutes].sort((a, b) => b.lastHeard - a.lastHeard)[0];
       if (latest) selectRoute(latest.id);
@@ -1564,8 +1609,11 @@ function PublicDashboardApp() {
       {serviceWorkerUpdateReady && (
         <div className="app-update-banner" role="status">
           <span><strong>Update ready</strong><small>A new verified map build is available.</small></span>
-          <button type="button" onClick={() => window.location.reload()}>Reload now</button>
-          <button type="button" aria-label="Dismiss update notice" onClick={() => setServiceWorkerUpdateReady(false)}><X size={14} /></button>
+          <button type="button" disabled={serviceWorkerActivating} onClick={() => {
+            setServiceWorkerActivating(true);
+            if (!activateWaitingServiceWorker()) window.location.reload();
+          }}>{serviceWorkerActivating ? 'Activating…' : 'Reload now'}</button>
+          <button type="button" disabled={serviceWorkerActivating} aria-label="Dismiss update notice" onClick={() => setServiceWorkerUpdateReady(false)}><X size={14} /></button>
         </div>
       )}
       <ErrorBoundary fallback={<div className="panel-error">Something went wrong. <button onClick={() => window.location.reload()}>Reload</button></div>}>
@@ -1591,6 +1639,7 @@ function PublicDashboardApp() {
         plotMode={plotMode}
         mapAction={mapAction}
         routeGifExportRequest={routeGifExportRequest}
+        onReplayExportProviderChange={(provider) => { replayExportProviderRef.current = provider; }}
         themeMode={mapThemeMode}
         initialView={sharedViewRef.current}
         mapConfig={publicMapConfig}
@@ -1967,6 +2016,7 @@ function PublicDashboardApp() {
           <Suspense fallback={<LoadingSpinner label="Opening RF Replay Studio" />}>
             <RFReplayStudio
               packet={replayStudioPacket}
+              deepLinkStatus={replayDeepLinkStatus}
               mode={activeMapMode.id}
               exportBusy={routeGifExport.status === 'rendering'}
               webmSupported={routeWebmSupported}

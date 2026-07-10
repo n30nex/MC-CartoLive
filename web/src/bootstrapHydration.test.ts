@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { bootstrapToLiveState, startBootstrapFirstHydration } from './bootstrapHydration';
+import { bootstrapToLiveState, publicStateSnapshotIsCurrent, startBootstrapFirstHydration } from './bootstrapHydration';
 import type { PublicBootstrapResponse, PublicLiveState } from './types';
 
 const state = { serverTime: 2, stats: { packets: 2 }, nodes: [{ id: 'node' }], routes: [], recentActivity: [] } as unknown as PublicLiveState;
@@ -47,5 +47,11 @@ describe('bootstrap-first hydration', () => {
 
   it('turns bootstrap into an immediate stats/activity-only live state', () => {
     expect(bootstrapToLiveState(bootstrap)).toMatchObject({ serverTime: 1, stats: { packets: 1, latestSeq: 9 }, nodes: [], routes: [], recentActivity: [] });
+  });
+
+  it('rejects deferred snapshots older than bootstrap or websocket state', () => {
+    expect(publicStateSnapshotIsCurrent(13, { ...state, stats: { ...state.stats, latestSeq: 12 } })).toBe(false);
+    expect(publicStateSnapshotIsCurrent(12, { ...state, stats: { ...state.stats, latestSeq: 12 } })).toBe(true);
+    expect(publicStateSnapshotIsCurrent(12, { ...state, stats: { ...state.stats, latestSeq: 14 } })).toBe(true);
   });
 });

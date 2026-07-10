@@ -34,6 +34,12 @@ export function preferredWebMMimeType(recorder: Pick<typeof MediaRecorder, 'isTy
 }
 
 export async function recordMapCanvasWebM(sourceCanvas: HTMLCanvasElement, options: RouteWebMOptions): Promise<Blob> {
+  return recordCanvasLayersWebM([sourceCanvas], options);
+}
+
+export async function recordCanvasLayersWebM(sourceCanvases: readonly HTMLCanvasElement[], options: RouteWebMOptions): Promise<Blob> {
+  const sourceCanvas = sourceCanvases[0];
+  if (!sourceCanvas) throw new Error('No export canvas layers are available.');
   const support = routeWebMSupport(sourceCanvas);
   if (!support.supported || !support.mimeType) throw new Error(support.reason ?? 'WebM recording is unavailable.');
   const durationMs = Math.max(1_000, Math.min(ROUTE_WEBM_MAX_DURATION_MS, Math.round(options.durationMs)));
@@ -46,8 +52,9 @@ export async function recordMapCanvasWebM(sourceCanvas: HTMLCanvasElement, optio
   if (!context) throw new Error('The browser could not create an export canvas.');
 
   let drawFrame = 0;
+  const composite = () => drawCanvasLayers(context, sourceCanvases, output.width, output.height);
   try {
-    context.drawImage(sourceCanvas, 0, 0, output.width, output.height);
+    composite();
   } catch (error) {
     throw mapCanvasRecordingError(error);
   }
@@ -74,7 +81,7 @@ export async function recordMapCanvasWebM(sourceCanvas: HTMLCanvasElement, optio
     };
     const draw = () => {
       try {
-        context.drawImage(sourceCanvas, 0, 0, output.width, output.height);
+        composite();
       } catch (error) {
         fail(error);
         return;
@@ -108,6 +115,12 @@ export async function recordMapCanvasWebM(sourceCanvas: HTMLCanvasElement, optio
       fail(error);
     }
   });
+}
+
+export function drawCanvasLayers(context: CanvasRenderingContext2D, layers: readonly HTMLCanvasElement[], width: number, height: number): void {
+  context.fillStyle = '#020617';
+  context.fillRect(0, 0, width, height);
+  for (const layer of layers) context.drawImage(layer, 0, 0, width, height);
 }
 
 export function downloadRouteWebM(packetID: string, blob: Blob): void {

@@ -1,4 +1,4 @@
-import type { PublicPacketPath, PublicRoute, PublicRouteSegment } from './types';
+import type { PublicPacketPath, PublicRoute, PublicRoutePulse, PublicRouteSegment } from './types';
 
 export interface ReplayTimelineSegment {
   segment: PublicRouteSegment;
@@ -18,6 +18,48 @@ export function routeToReplayPacket(route: PublicRoute): PublicPacketPath {
     endpointLabels: [route.from.label, route.to.label],
     segments: [{ routeId: route.id, from: route.from, to: route.to, distanceKm: route.distanceKm }]
   };
+}
+
+export function pulseToReplayPacket(pulse: PublicRoutePulse): PublicPacketPath {
+  const routeIds = [...new Set(pulse.segments.map((segment) => segment.routeId).filter(Boolean))];
+  const endpointLabels = pulse.segments.length > 0
+    ? [pulse.segments[0].from.label, ...pulse.segments.map((segment) => segment.to.label)]
+    : [];
+  return {
+    id: pulse.id,
+    at: pulse.heardAt,
+    iata: pulse.iata,
+    region: pulse.region,
+    payloadTypeName: pulse.payloadTypeName,
+    messageSender: pulse.messageSender,
+    messageText: pulse.messageText,
+    hopCount: pulse.segments.length + 1,
+    segmentCount: pulse.segments.length,
+    distanceKm: pulse.segments.reduce((sum, segment) => sum + Math.max(0, segment.distanceKm), 0),
+    routeIds,
+    endpointLabels,
+    segments: pulse.segments
+  };
+}
+
+export type ReplayDeepLinkResolution =
+  | { status: 'resolved'; packet: PublicPacketPath; route: null }
+  | { status: 'resolved'; packet: null; route: PublicRoute }
+  | { status: 'fallback'; packet: null; route: PublicRoute }
+  | { status: 'unavailable'; packet: null; route: null };
+
+export function resolveReplayDeepLink(input: { replayPacket?: string; replayRoute?: string; route?: string }, pulses: PublicRoutePulse[], routes: PublicRoute[]): ReplayDeepLinkResolution {
+  const packetID = safeReplayIdentifier(input.replayPacket);
+  const routeID = safeReplayIdentifier(input.replayRoute ?? input.route);
+  if (packetID) {
+    const pulse = pulses.find((candidate) => candidate.id === packetID && candidate.segments.length > 0);
+    if (pulse) return { status: 'resolved', packet: pulseToReplayPacket(pulse), route: null };
+  }
+  if (routeID) {
+    const route = routes.find((candidate) => candidate.id === routeID);
+    if (route) return { status: packetID ? 'fallback' : 'resolved', packet: null, route };
+  }
+  return { status: 'unavailable', packet: null, route: null };
 }
 
 export function replayTimeline(packet: PublicPacketPath): ReplayTimelineSegment[] {

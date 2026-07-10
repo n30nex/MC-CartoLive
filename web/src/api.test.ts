@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { JSON_REQUEST_TIMEOUT_MS, fetchPublicBootstrap, fetchPublicChat, fetchPublicEvents, fetchPublicPackets, fetchPublicPropagation } from './api';
+import { JSON_REQUEST_TIMEOUT_MS, PUBLIC_STATE_CACHE_MAX_AGE_MS, fetchPublicBootstrap, fetchPublicChat, fetchPublicEvents, fetchPublicPackets, fetchPublicPropagation, fetchPublicState, fetchPublicStateWithFallback, readCachedPublicStateSnapshot } from './api';
 
 describe('public transport contracts', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    window.localStorage.clear();
   });
 
   it('normalizes event reset metadata without scanning history', async () => {
@@ -36,7 +37,33 @@ describe('public transport contracts', () => {
     await vi.advanceTimersByTimeAsync(JSON_REQUEST_TIMEOUT_MS);
     await rejection;
   });
+
+  it('never silently substitutes localStorage for the network state API', async () => {
+    seedPublicStateCache(Date.now());
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('offline'); }));
+    await expect(fetchPublicState()).rejects.toThrow('offline');
+    await expect(fetchPublicStateWithFallback()).resolves.toMatchObject({ source: 'offline-cache', cachedAt: expect.any(Number), state: { stats: { latestSeq: 12 } } });
+  });
+
+  it('rejects offline snapshots outside the bounded freshness window', () => {
+    const now = Date.now();
+    seedPublicStateCache(now - PUBLIC_STATE_CACHE_MAX_AGE_MS - 1);
+    expect(readCachedPublicStateSnapshot(now)).toBeNull();
+    seedPublicStateCache(now - PUBLIC_STATE_CACHE_MAX_AGE_MS);
+    expect(readCachedPublicStateSnapshot(now)).toMatchObject({ source: 'offline-cache' });
+  });
 });
+
+function seedPublicStateCache(cachedAt: number) {
+  window.localStorage.setItem('mc-cartolive:last-public-state', JSON.stringify({
+    cachedAt,
+    state: {
+      serverTime: cachedAt,
+      stats: { packets: 1, activeNodes: 1, activeRoutes: 0, mqttConnected: false, mqttMessages: 0, wsClients: 0, serverTime: cachedAt, latestSeq: 12 },
+      nodes: [], routes: [], recentActivity: []
+    }
+  }));
+}
 
 describe('fetchPublicPackets', () => {
   afterEach(() => {

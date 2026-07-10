@@ -12,6 +12,10 @@ export function bootstrapToLiveState(bootstrap: PublicBootstrapResponse): Public
   };
 }
 
+export function publicStateSnapshotIsCurrent(currentSeq: number, snapshot: PublicLiveState): boolean {
+  return (snapshot.stats?.latestSeq ?? 0) >= Math.max(0, currentSeq);
+}
+
 interface BootstrapFirstOptions<TBootstrap, TState> {
   fetchBootstrap: () => Promise<TBootstrap>;
   fetchState: () => Promise<TState>;

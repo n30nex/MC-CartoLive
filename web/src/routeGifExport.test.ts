@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   createRouteMapGifBlob,
+  ROUTE_GIF_HEIGHT,
+  ROUTE_GIF_WIDTH,
   routeGifAnimationDurationMs,
   routeGifFilename,
   routeGifFrameProgress,
@@ -86,5 +88,15 @@ describe('route GIF export helpers', () => {
     expect(calls).toHaveLength(8);
     expect(calls[0]).toBe(0);
     expect(calls.at(-1)).toBe(1);
+  });
+
+  it('caps export dimensions to the mobile-safe 960 by 540 envelope', async () => {
+    const seen: Array<[number, number]> = [];
+    await createRouteMapGifBlob(packet(), ({ width, height }) => {
+      seen.push([width, height]);
+      return { data: new Uint8ClampedArray(width * height * 4), width, height } as ImageData;
+    }, { width: 1280, height: 720, frames: 2 });
+    expect([ROUTE_GIF_WIDTH, ROUTE_GIF_HEIGHT]).toEqual([960, 540]);
+    expect(seen).toEqual([[960, 540], [960, 540]]);
   });
 });

@@ -16,7 +16,10 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(SHELL_CACHE).then((cache) => cache.addAll(APP_SHELL_URLS))
   );
-  self.skipWaiting();
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'ACTIVATE_UPDATE') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -25,10 +28,6 @@ self.addEventListener('activate', (event) => {
       Promise.all(names.filter((name) => name.startsWith(CACHE_PREFIX) && ![SHELL_CACHE, RUNTIME_CACHE, SNAPSHOT_CACHE].includes(name)).map((name) => caches.delete(name)))
     )
   );
-  event.waitUntil(self.clients.claim().then(async () => {
-    const clients = await self.clients.matchAll({ type: 'window' });
-    for (const client of clients) client.postMessage({ type: 'SW_ACTIVATED', release: RELEASE_ID });
-  }));
 });
 
 self.addEventListener('fetch', (event) => {

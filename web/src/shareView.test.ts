@@ -9,7 +9,7 @@ describe('share view URLs', () => {
       z: 9.5,
       route: 'r-1',
       node: undefined,
-      q: 'Toronto'
+      q: undefined
     });
   });
 
@@ -26,7 +26,7 @@ describe('share view URLs', () => {
       node: 'node-123',
       q: 'Ottawa'
     });
-    expect(url).toBe('https://routes.canadaverse.org/?old=1&lat=45.42153&lng=-75.69719&z=8.13&node=node-123&q=Ottawa');
+    expect(url).toBe('https://routes.canadaverse.org/?old=1&lat=45.42153&lng=-75.69719&z=8.13&node=node-123');
   });
 
   it('prefers route selection over node selection', () => {
@@ -61,5 +61,10 @@ describe('share view URLs', () => {
     expect(buildSharedViewURL('https://routes.canadaverse.org/', { lat: 43, lng: -79, z: 8 }, {
       studio: true, replayPacket: 'secret / raw payload'
     })).not.toContain('secret');
+  });
+
+  it('drops free-form queries and malformed selection identifiers', () => {
+    expect(parseSharedView('?lat=43&lng=-79&z=8&route=raw%20packet%20%2F%20secret&q=private')).toMatchObject({ route: undefined, node: undefined, q: undefined });
+    expect(buildSharedViewURL('https://routes.canadaverse.org/?q=private', { lat: 43, lng: -79, z: 8 }, { q: 'private' })).not.toContain('q=');
   });
 });

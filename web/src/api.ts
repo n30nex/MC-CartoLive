@@ -35,6 +35,7 @@ import type {
 
 const PUBLIC_STATE_CACHE_KEY = 'mc-cartolive:last-public-state';
 export const JSON_REQUEST_TIMEOUT_MS = 10_000;
+export const PUBLIC_STATE_CACHE_MAX_AGE_MS = 5 * 60_000;
 const PUBLIC_STATE_CACHE_WRITE_INTERVAL_MS = 60_000;
 let lastPublicStateCacheWriteAt = 0;
 let pendingPublicStateCacheWrite = false;
@@ -67,18 +68,29 @@ function withRequestTimeout(signal?: AbortSignal): { signal: AbortSignal; cleanu
   };
 }
 
-export function fetchPublicState(): Promise<PublicLiveState> {
-  return getJSON<PublicLiveState>('/api/v1/public/state')
-    .then((response) => {
-      const state = sanitizePublicState(response);
-      cachePublicStateSnapshot(state);
-      return state;
-    })
-    .catch((error) => {
-      const cached = readCachedPublicStateSnapshot();
-      if (cached) return cached;
-      throw error;
-    });
+export interface PublicStateFetchResult {
+  state: PublicLiveState;
+  source: 'network' | 'offline-cache';
+  cachedAt?: number;
+}
+
+export function fetchPublicState(signal?: AbortSignal): Promise<PublicLiveState> {
+  return getJSON<PublicLiveState>('/api/v1/public/state', signal).then((response) => {
+    const state = sanitizePublicState(response);
+    cachePublicStateSnapshot(state);
+    return state;
+  });
+}
+
+export async function fetchPublicStateWithFallback(signal?: AbortSignal): Promise<PublicStateFetchResult> {
+  try {
+    return { state: await fetchPublicState(signal), source: 'network' };
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    const cached = readCachedPublicStateSnapshot();
+    if (cached) return cached;
+    throw error;
+  }
 }
 
 export function fetchPublicBootstrap(signal?: AbortSignal): Promise<PublicBootstrapResponse> {
@@ -661,6 +673,7 @@ function sanitizePublicStats(raw: unknown): PublicStats {
     mqttMessages: sanitizeNumber(stats.mqttMessages, 0),
     wsClients: sanitizeNumber(stats.wsClients, 0),
     serverTime: sanitizeNumber(stats.serverTime, Date.now()),
+    latestSeq: sanitizeOptionalNumber(stats.latestSeq),
     ...(resolutionBuckets ? { resolutionBuckets } : {}),
     ...(excludedIatas ? { excludedIatas } : {}),
     ...(excludedRegions ? { excludedRegions } : {})
@@ -1074,17 +1087,15 @@ function cachePublicStateSnapshot(state: PublicLiveState): void {
   }
 }
 
-function readCachedPublicStateSnapshot(): PublicLiveState | null {
+export function readCachedPublicStateSnapshot(now = Date.now()): PublicStateFetchResult | null {
   if (typeof window === 'undefined' || !window.localStorage) return null;
   try {
     const raw = window.localStorage.getItem(PUBLIC_STATE_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { cachedAt?: unknown; state?: unknown };
-    const state = sanitizePublicState(parsed.state);
-    return {
-      ...state,
-      serverTime: sanitizeNumber(parsed.cachedAt, state.serverTime)
-    };
+    const cachedAt = sanitizeNumber(parsed.cachedAt, 0);
+    if (cachedAt <= 0 || now - cachedAt < 0 || now - cachedAt > PUBLIC_STATE_CACHE_MAX_AGE_MS) return null;
+    return { state: sanitizePublicState(parsed.state), source: 'offline-cache', cachedAt };
   } catch {
     return null;
   }

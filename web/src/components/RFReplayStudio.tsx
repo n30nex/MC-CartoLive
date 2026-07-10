@@ -9,6 +9,7 @@ import './rf-replay-studio.css';
 
 interface Props {
   packet: PublicPacketPath | null;
+  deepLinkStatus?: 'pending' | 'resolved' | 'fallback' | 'unavailable' | null;
   mode: MapModeID;
   exportBusy?: boolean;
   webmSupported?: boolean;
@@ -26,7 +27,7 @@ interface Props {
 
 const REPLAY_DURATION_MS = 8_000;
 
-export default function RFReplayStudio({ packet, mode, exportBusy = false, webmSupported = false, webmBusy = false, onModeChange, onReplay, onPause, onSeek, onShare, onExportGif, onExportWebM, onOpenWaterfall, onClose }: Props) {
+export default function RFReplayStudio({ packet, deepLinkStatus = null, mode, exportBusy = false, webmSupported = false, webmBusy = false, onModeChange, onReplay, onPause, onSeek, onShare, onExportGif, onExportWebM, onOpenWaterfall, onClose }: Props) {
   const dialogRef = useAccessibleDialog<HTMLDivElement>(true, onClose);
   const [speed, setSpeed] = useState(1);
   const [progress, setProgress] = useState(0);
@@ -94,8 +95,8 @@ export default function RFReplayStudio({ packet, mode, exportBusy = false, webmS
         {!packet || packet.segments.length === 0 ? (
           <div className="rf-studio-empty">
             <RadioTower size={30} />
-            <h3>Choose a public pathway</h3>
-            <p>Select a route or routed packet, then reopen Replay Studio. Expired packet links fall back to the retained route when available.</p>
+            <h3>{deepLinkStatus === 'pending' ? 'Resolving replay…' : deepLinkStatus === 'unavailable' ? 'Replay unavailable' : 'Choose a public pathway'}</h3>
+            <p>{deepLinkStatus === 'unavailable' ? 'This public event and its route are no longer retained. Select a current route or packet to start a new story.' : 'Select a route or routed packet, then reopen Replay Studio. Expired packet links fall back to the retained route when available.'}</p>
           </div>
         ) : (
           <>

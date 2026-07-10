@@ -28,4 +28,16 @@ describe('route WebM export', () => {
     const { routeWebMSupport } = await import('./routeWebmExport');
     expect(routeWebMSupport().reason).toContain('Canvas recording');
   });
+
+  it('composites the preserved base map and live RF overlay in order', async () => {
+    const { drawCanvasLayers } = await import('./routeWebmExport');
+    const drawImage = vi.fn();
+    const fillRect = vi.fn();
+    const context = { fillStyle: '', fillRect, drawImage } as unknown as CanvasRenderingContext2D;
+    const base = document.createElement('canvas');
+    const rfOverlay = document.createElement('canvas');
+    drawCanvasLayers(context, [base, rfOverlay], 960, 540);
+    expect(fillRect).toHaveBeenCalledWith(0, 0, 960, 540);
+    expect(drawImage.mock.calls.map((call) => call[0])).toEqual([base, rfOverlay]);
+  });
 });

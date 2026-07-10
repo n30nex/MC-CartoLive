@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import indexHTML from '../index.html?raw';
 import {
   GITHUB_STATS_CACHE_KEY,
   commitURLForSha,
@@ -25,6 +26,10 @@ class MemoryStorage {
 }
 
 describe('release metadata helpers', () => {
+  it('ships the 3.2.0 browser title without stale release identity', () => {
+    expect(indexHTML).toContain('<title>MC-CartoLive v3.2.0');
+    expect(indexHTML).not.toContain('v3.1.0');
+  });
   it('builds release and commit links from version and git sha', () => {
     expect(releaseURLForVersion('2.1.0')).toBe('https://github.com/n30nex/MC-CartoLive/releases/tag/v2.1.0');
     expect(commitURLForSha('0dec7aecfb3e5c4eea96081472e623b9234d92dd')).toBe(

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { addReplayStudioParams, replaySegmentAt, replayTimeline, routeToReplayPacket, safeReplayIdentifier } from './replayStudio';
-import type { PublicPacketPath, PublicRoute } from './types';
+import { addReplayStudioParams, pulseToReplayPacket, replaySegmentAt, replayTimeline, resolveReplayDeepLink, routeToReplayPacket, safeReplayIdentifier } from './replayStudio';
+import type { PublicPacketPath, PublicRoute, PublicRoutePulse } from './types';
 
 const route: PublicRoute = {
   id: 'route:abc',
@@ -44,5 +44,13 @@ describe('RF Replay Studio model', () => {
     expect(url.searchParams.get('studio')).toBe('1');
     expect(url.searchParams.get('replayRoute')).toBe('route:abc');
     expect(url.searchParams.get('replayPacket')).toBe('route-route:abc');
+  });
+
+  it('resolves retained packet links and falls back to their sanitized route', () => {
+    const pulse: PublicRoutePulse = { id: 'packet-1', payloadTypeName: 'TRACE', heardAt: 1000, segments: routeToReplayPacket(route).segments };
+    expect(pulseToReplayPacket(pulse)).toMatchObject({ id: 'packet-1', routeIds: ['route:abc'], segmentCount: 1 });
+    expect(resolveReplayDeepLink({ replayPacket: 'packet-1', replayRoute: route.id }, [pulse], [route])).toMatchObject({ status: 'resolved', packet: { id: 'packet-1' } });
+    expect(resolveReplayDeepLink({ replayPacket: 'expired', replayRoute: route.id }, [], [route])).toMatchObject({ status: 'fallback', route: { id: route.id } });
+    expect(resolveReplayDeepLink({ replayPacket: 'expired', replayRoute: 'missing' }, [], [route])).toEqual({ status: 'unavailable', packet: null, route: null });
   });
 });
