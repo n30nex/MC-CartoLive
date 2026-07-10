@@ -265,7 +265,7 @@ function scanValue(value, endpoint, path, key) {
   }
 
   if (typeof value === 'string') {
-    if (!isAllowedKey(key || '')) {
+    if (!isAllowedKey(key || '') && !isLocalSchemaRef(key, value)) {
       const stringFinding = publicStringFinding(value);
       if (stringFinding) {
         findings.push(`${endpoint} ${path}: ${stringFinding}`);
@@ -289,6 +289,10 @@ function isForbiddenKey(key) {
 
 function isAllowedKey(key) {
   return allowedKeyPatterns.some((pattern) => pattern.test(key));
+}
+
+function isLocalSchemaRef(key, value) {
+  return key === '$ref' && /^#\/components\/schemas\/[A-Za-z][A-Za-z0-9]*$/.test(value);
 }
 
 function publicStringFinding(value) {
