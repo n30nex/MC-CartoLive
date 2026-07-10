@@ -44,6 +44,7 @@ type client struct {
 	scope     *SubscriptionScope
 	onClose   func()
 	closeOnce sync.Once
+	resetting atomic.Bool
 }
 
 type SubscriptionScope struct {
@@ -173,11 +174,11 @@ func safeSend(h *Hub, c *client, env Envelope) {
 	default:
 		dropped := c.dropped.Add(1)
 		h.totalDropped.Add(1)
-		now := time.Now().UnixMilli()
-		lag := Envelope{Version: 1, Type: "lagged", Seq: h.LatestSeq(), LatestSeq: h.LatestSeq(), FromSeq: env.Seq, ToSeq: h.LatestSeq(), ServerTime: now, ReceivedAt: now, DisplayAt: now, DroppedCount: int(dropped), Since: c.created.UnixMilli()}
-		select {
-		case c.send <- lag:
-		default:
+		if c.resetting.CompareAndSwap(false, true) {
+			// A full queue cannot reliably carry a lag marker. Close this client
+			// asynchronously so broadcast/ingest never blocks; the reconnecting
+			// client resumes from its retained event cursor.
+			go h.removeWithReason(c, websocket.CloseTryAgainLater, fmt.Sprintf("client lagged; dropped=%d", dropped))
 		}
 	}
 }
@@ -297,6 +298,10 @@ func (h *Hub) observeQueueDepth(depth int) {
 }
 
 func (h *Hub) remove(c *client) {
+	h.removeWithReason(c, websocket.CloseGoingAway, "server shutting down")
+}
+
+func (h *Hub) removeWithReason(c *client, closeCode int, reason string) {
 	removed := false
 	h.mu.Lock()
 	if _, ok := h.clients[c]; ok {
@@ -313,10 +318,12 @@ func (h *Hub) remove(c *client) {
 			c.onClose()
 		}
 	})
-	c.conn.WriteControl(websocket.CloseMessage,
-		websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"),
-		time.Now().Add(2*time.Second))
-	_ = c.conn.Close()
+	if c.conn != nil {
+		_ = c.conn.WriteControl(websocket.CloseMessage,
+			websocket.FormatCloseMessage(closeCode, reason),
+			time.Now().Add(250*time.Millisecond))
+		_ = c.conn.Close()
+	}
 }
 
 func (h *Hub) writePump(c *client) {

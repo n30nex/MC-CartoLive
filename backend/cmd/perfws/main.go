@@ -193,6 +193,10 @@ func run(clientCount int, duration, quiet time.Duration, queueSize, isolationEve
 		r.BroadcastEvents++
 	}
 	isolationTicker.Stop()
+	r.SlowClientReset = waitForDisconnect(slow, 10*time.Second)
+	if r.SlowClientReset {
+		slow.active.Store(false)
+	}
 
 	quietStartAt := started.Add(duration - quiet)
 	regularTicker := time.NewTicker(time.Second)
@@ -226,7 +230,6 @@ steady:
 	}
 	hubStats := hub.Stats()
 	r.SlowClientDrops = hubStats.DroppedMessages
-	r.SlowClientReset = hubStats.DroppedMessages > 0 || hubStats.Clients < clientCount
 	r.HubQueueHighWater = hubStats.QueueHighWater
 	r.HubPingFailures = hubStats.PingFailures
 
@@ -237,7 +240,13 @@ steady:
 		r.Failures = append(r.Failures, fmt.Sprintf("normal clients received %d lagged frames", r.NormalLaggedMessages))
 	}
 	if !r.SlowClientReset {
-		r.Failures = append(r.Failures, "slow client did not trigger queue isolation/reset")
+		r.Failures = append(r.Failures, "slow client did not receive a server disconnect after queue overflow")
+	}
+	if r.SlowClientDrops == 0 {
+		r.Failures = append(r.Failures, "slow client disconnected without a measured queue overflow")
+	}
+	if hubStats.Clients != clientCount-1 {
+		r.Failures = append(r.Failures, fmt.Sprintf("hub clients after slow reset=%d want=%d", hubStats.Clients, clientCount-1))
 	}
 	if r.QuietClientsBefore != clientCount-1 || r.QuietClientsAfter != r.QuietClientsBefore {
 		r.Failures = append(r.Failures, fmt.Sprintf("normal clients changed during quiet interval: %d -> %d", r.QuietClientsBefore, r.QuietClientsAfter))
@@ -281,6 +290,22 @@ func readNormal(receiver *receiver, wg *sync.WaitGroup) {
 			receiver.events.Add(1)
 		case "lagged":
 			receiver.lagged.Add(1)
+		}
+	}
+}
+
+func waitForDisconnect(receiver *receiver, timeout time.Duration) bool {
+	if receiver == nil || receiver.conn == nil {
+		return false
+	}
+	_ = receiver.conn.SetReadDeadline(time.Now().Add(timeout))
+	defer receiver.conn.SetReadDeadline(time.Time{})
+	for {
+		if _, _, err := receiver.conn.ReadMessage(); err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				return false
+			}
+			return true
 		}
 	}
 }

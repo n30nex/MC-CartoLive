@@ -55,3 +55,22 @@ func TestSafeSendDropAccountingIsAtomic(t *testing.T) {
 		t.Fatalf("client dropped count = %d, want 2", got)
 	}
 }
+
+func TestSafeSendOverflowRemovesRegisteredSlowClient(t *testing.T) {
+	hub := NewHub(slog.New(slog.NewTextHandler(io.Discard, nil)), 1)
+	client := &client{send: make(chan Envelope, 1), created: time.Now()}
+	client.send <- Envelope{Version: 1, Type: "event"}
+	hub.clients[client] = struct{}{}
+
+	safeSend(hub, client, Envelope{Version: 1, Type: "event"})
+	deadline := time.Now().Add(time.Second)
+	for hub.ClientCount() != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := hub.ClientCount(); got != 0 {
+		t.Fatalf("slow client remained registered: %d", got)
+	}
+	if !client.resetting.Load() {
+		t.Fatal("slow client was not marked for reset")
+	}
+}
