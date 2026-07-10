@@ -40,7 +40,8 @@ func (a *Application) replayFixture(ctx context.Context, path string) {
 		}
 	}
 	scanner := bufio.NewScanner(f)
-	first := true
+	var replayStarted time.Time
+	emitted := 0
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
@@ -61,8 +62,10 @@ func (a *Application) replayFixture(ctx context.Context, path string) {
 			a.Log.Debug("fixture normalize failed", "error", err)
 			continue
 		}
-		if !first {
-			timer := time.NewTimer(interval)
+		if replayStarted.IsZero() {
+			replayStarted = time.Now()
+		} else if wait := time.Until(replayStarted.Add(time.Duration(emitted) * interval)); wait > 0 {
+			timer := time.NewTimer(wait)
 			select {
 			case <-ctx.Done():
 				timer.Stop()
@@ -70,8 +73,8 @@ func (a *Application) replayFixture(ctx context.Context, path string) {
 			case <-timer.C:
 			}
 		}
-		first = false
 		a.MQTT.SubmitNormalized(msg)
+		emitted++
 	}
 	if err := scanner.Err(); err != nil {
 		a.Log.Warn("fixture replay read failed", "path", path, "error", err)

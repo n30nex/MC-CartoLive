@@ -71,7 +71,7 @@ const config = {
   wsIsolationBytes: envNumber('PERF_WS_ISOLATION_BYTES', defaults.wsIsolationBytes),
   mqttQueueCapacity: envNumber('PERF_MQTT_QUEUE_CAPACITY', 4096),
   derivedQueueCapacity: envNumber('PERF_DERIVED_QUEUE_CAPACITY', 1024),
-  metricSampleMs: envNumber('PERF_METRIC_SAMPLE_MS', 250),
+  metricSampleMs: envNumber('PERF_METRIC_SAMPLE_MS', profileName === 'full' ? 250 : 50),
   memoryLimitBytes: envNumber('PERF_MEMORY_LIMIT_BYTES', 600 * 1024 * 1024),
 };
 

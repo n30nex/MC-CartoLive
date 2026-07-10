@@ -323,6 +323,14 @@ func (h *Hub) removeWithReason(c *client, closeCode int, reason string) {
 		_ = c.conn.WriteControl(websocket.CloseMessage,
 			websocket.FormatCloseMessage(closeCode, reason),
 			time.Now().Add(250*time.Millisecond))
+		if closeCode == websocket.CloseTryAgainLater {
+			// A lagging peer can have enough buffered frames to delay observing a
+			// graceful FIN. The client must reconnect and resume from its cursor, so
+			// abort only this overflow path after the best-effort close frame.
+			if aborter, ok := c.conn.UnderlyingConn().(interface{ SetLinger(int) error }); ok {
+				_ = aborter.SetLinger(0)
+			}
+		}
 		_ = c.conn.Close()
 	}
 }
