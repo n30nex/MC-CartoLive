@@ -67,7 +67,8 @@ collected for the exact candidate digest and commit.
   smoke and privacy checks pass.
 - [ ] Fresh-delete confirmation is recorded; `.env` and `data/config.yaml` are
   preserved while stale identity variables, DB/WAL/SHM, and backups are removed.
-- [ ] Schema 32000 initializes cleanly; `quick_check=ok`, foreign-key check is
+- [ ] The MQTT-disabled proof boot initializes schema 32000 with zero
+  packet/node/observer/route/event rows; `quick_check=ok`, foreign-key check is
   empty, event reset is immediate, and release metadata matches.
 - [ ] Root has at least 25 GiB free after deletion.
 - [ ] MQTT session is ready within 60 seconds. Traffic advances sequence/packet

@@ -11,6 +11,10 @@ services:
     env_file:
       - .env
     environment:
+      # Explicit interpolation lets the deployment script perform its
+      # one-time empty-schema proof with MQTT_ENABLED=false, then return to the
+      # preserved production value from .env without editing credentials.
+      MQTT_ENABLED: ${MQTT_ENABLED:?Set MQTT_ENABLED=true or false in .env}
       DATA_RETENTION_DAYS: "7"
       PUBLIC_EVENT_RETENTION_HOURS: "24"
       ALLOW_UNBOUNDED_RETENTION: "false"

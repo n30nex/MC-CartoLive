@@ -9,9 +9,11 @@ recovery path. During the authorized maintenance window:
 - preserve `.env` and `data/config.yaml`
 - remove stale `APP_VERSION`, `GIT_SHA`, `BUILD_TIME`, `VITE_GIT_SHA`, and
   `VITE_BUILD_TIME` lines from `.env`
+- replace stale retention overrides with the locked seven-day/24-hour policy
 - permanently delete `data/meshcore-live.db`, `-wal`, and `-shm`
 - permanently delete all contents of the dedicated `backups/` directory
-- start schema 32000 from an empty database
+- boot schema 32000 with MQTT disabled and prove zero packet, node, observer,
+  route, and event rows before enabling the preserved production MQTT setting
 
 `scripts/deploy.sh` implements those boundaries. It validates canonical paths,
 rejects symlinked data/backup directories, requires immutable candidate and

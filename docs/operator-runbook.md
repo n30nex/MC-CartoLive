@@ -82,8 +82,9 @@ systemctl enable --now mc-cartolive-watchdog.timer
 The watchdog waits for three consecutive recoverable failures and permits at
 most two restarts per rolling six hours, with 10/20-minute cooldowns. It can
 restart a dead process, failed cache, DB-unavailable state, or lost MQTT
-session. It does not restart for quiet RF, `fresh_start`, `warming`, or storage
-pressure.
+session. Quiet RF, `fresh_start`, or `warming` alone never cause a restart, and
+storage pressure always suppresses one; those dataset states do not mask a
+separately confirmed process, cache, database, or MQTT-session failure.
 
 ```bash
 systemctl list-timers mc-cartolive-watchdog.timer

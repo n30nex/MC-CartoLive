@@ -76,7 +76,7 @@ grep -q 'reason=window_limit' "$tmp/watchdog.log"
 # container runtime. All candidate identity labels are bound to MERGE_SHA.
 cat >"$tmp/bin/docker" <<'EOF'
 #!/usr/bin/env sh
-printf '%s image=%s\n' "$*" "${MC_CARTOLIVE_IMAGE:-}" >>"$MOCK_DOCKER_LOG"
+printf '%s image=%s mqtt=%s\n' "$*" "${MC_CARTOLIVE_IMAGE:-}" "${MQTT_ENABLED:-}" >>"$MOCK_DOCKER_LOG"
 if [ "${1:-}" = "image" ] && [ "${2:-}" = "inspect" ]; then
 	case " $* " in
 		*org.opencontainers.image.revision*) printf '%s\n' "$MOCK_MERGE_SHA" ;;
@@ -97,6 +97,7 @@ if [ "${1:-}" = "compose" ]; then
 		*" up "*)
 			if [ "$MOCK_SCENARIO" = "rollback_fail" ] && [ "$MC_CARTOLIVE_IMAGE" = "$MOCK_PREVIOUS_IMAGE" ]; then exit 1; fi
 			printf '%s' "$MC_CARTOLIVE_IMAGE" >"$MOCK_CURRENT_IMAGE_FILE"
+			: >"$MOCK_DATABASE_FILE"
 			;;
 	esac
 	exit 0
@@ -111,15 +112,23 @@ cat >"$tmp/bin/curl" <<'EOF'
 #!/usr/bin/env sh
 out=""
 write_code=0
+url=""
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 		-o) out="$2"; shift 2 ;;
 		-w) write_code=1; shift 2 ;;
+		http://*|https://*) url="$1"; shift ;;
 		*) shift ;;
 	esac
 done
 if [ "$(cat "$MOCK_CURRENT_IMAGE_FILE" 2>/dev/null)" = "$MOCK_PREVIOUS_IMAGE" ]; then
 	body='{"ready":true}'
+elif [ "$MOCK_SCENARIO" = "fresh_success" ]; then
+	case "$url" in
+		*/api/v1/public/events*) body='{"resetRequired":true}' ;;
+		*/api/v1/public/state*) body='{"stats":{"packets":0,"activeNodes":0,"activeRoutes":0}}' ;;
+		*) body="{\"ready\":true,\"version\":\"3.2.0\",\"gitSha\":\"$MOCK_MERGE_SHA\"}" ;;
+	esac
 else
 	body='{"ready":false}'
 fi
@@ -139,14 +148,26 @@ printf '%s' "$count" >"$MOCK_DF_COUNT_FILE"
 if [ "$MOCK_SCENARIO" = "after_delete" ] && [ "$count" -eq 2 ]; then exit 1; fi
 printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\nmock 100000000 1 99999999 1%% /\n'
 EOF
-chmod +x "$tmp/bin/docker" "$tmp/bin/curl" "$tmp/bin/systemctl" "$tmp/bin/df"
+cat >"$tmp/bin/sqlite3" <<'EOF'
+#!/usr/bin/env sh
+query="${2:-}"
+case "$query" in
+	*quick_check*) printf 'ok\n' ;;
+	*foreign_key_check*) ;;
+	*user_version*) printf '32000\n' ;;
+	*'SELECT COUNT'*) printf '0\n' ;;
+	*) printf '0\n' ;;
+esac
+EOF
+chmod +x "$tmp/bin/docker" "$tmp/bin/curl" "$tmp/bin/systemctl" "$tmp/bin/df" "$tmp/bin/sqlite3"
 
 prepare_repo() {
 	name="$1"
 	repo="$tmp/$name/repo"
 	mkdir -p "$repo/data" "$repo/backups" "$tmp/$name/deploy-state"
 	printf '3.2.0\n' >"$repo/VERSION"
-	printf 'PUBLIC_MODE=true\nAPP_VERSION=old\nGIT_SHA=old\n' >"$repo/.env"
+	printf 'PUBLIC_MODE=true\nMQTT_ENABLED=true\nAPP_VERSION=old\nGIT_SHA=old\nDATA_RETENTION_DAYS=-1\nPUBLIC_EVENT_RETENTION_HOURS=-1\nALLOW_UNBOUNDED_RETENTION=true\n' >"$repo/.env"
+	printf '{"database":{"schemaVersion":32000}}\n' >"$repo/release-manifest.json"
 	printf 'operator-config\n' >"$repo/data/config.yaml"
 	printf 'old-db\n' >"$repo/data/meshcore-live.db"
 	printf 'old-backup\n' >"$repo/backups/legacy.db"
@@ -167,6 +188,7 @@ run_failed_deploy() {
 	repo="$tmp/$name/repo"
 	if MOCK_SCENARIO="$scenario" \
 	  MOCK_CURRENT_IMAGE_FILE="$tmp/$name/current-image" \
+	  MOCK_DATABASE_FILE="$repo/data/meshcore-live.db" \
 	  MOCK_PREVIOUS_IMAGE="$PREVIOUS" \
 	  MOCK_MERGE_SHA="$MERGE_SHA" \
 	  MOCK_SYSTEMCTL_LOG="$tmp/$name/systemctl.log" \
@@ -181,6 +203,26 @@ run_failed_deploy() {
 		echo "deploy scenario $name unexpectedly succeeded" >&2
 		exit 1
 	fi
+}
+
+run_successful_fresh_deploy() {
+	name="$1"
+	repo="$tmp/$name/repo"
+	MOCK_SCENARIO=fresh_success \
+	  MOCK_CURRENT_IMAGE_FILE="$tmp/$name/current-image" \
+	  MOCK_DATABASE_FILE="$repo/data/meshcore-live.db" \
+	  MOCK_PREVIOUS_IMAGE="$PREVIOUS" \
+	  MOCK_MERGE_SHA="$MERGE_SHA" \
+	  MOCK_SYSTEMCTL_LOG="$tmp/$name/systemctl.log" \
+	  MOCK_DOCKER_LOG="$tmp/$name/docker.log" \
+	  MOCK_DOWN_COUNT_FILE="$tmp/$name/down-count" \
+	  MOCK_DF_COUNT_FILE="$tmp/$name/df-count" \
+	  MC_CARTOLIVE_DEPLOY_STATE_DIR="$tmp/$name/deploy-state" \
+	  MC_CARTOLIVE_READY_TIMEOUT_SECONDS=1 \
+	  MC_CARTOLIVE_MIN_FREE_GB=1 \
+	  PATH="$tmp/bin:$PATH" \
+	  "$ROOT/scripts/deploy.sh" --repo "$repo" --image "$DIGEST" --previous-image "$PREVIOUS" --expected-git-sha "$MERGE_SHA" \
+	    --fresh-database --confirm-fresh-database DELETE-MC-CARTOLIVE-PRODUCTION-DATA >/dev/null
 }
 
 # Explicit candidate-readiness failure: rollback succeeds and restores timer.
@@ -202,11 +244,14 @@ grep -q '^start mc-cartolive-watchdog.timer$' "$tmp/after_stop/systemctl.log"
 # digest with another empty DB, restores timer, and keeps config/secrets.
 prepare_repo after_delete
 run_failed_deploy after_delete after_delete --fresh-database --confirm-fresh-database DELETE-MC-CARTOLIVE-PRODUCTION-DATA
-test ! -e "$tmp/after_delete/repo/data/meshcore-live.db"
+test -f "$tmp/after_delete/repo/data/meshcore-live.db"
 test ! -e "$tmp/after_delete/repo/backups/legacy.db"
 test -f "$tmp/after_delete/repo/data/config.yaml"
 grep -q '^PUBLIC_MODE=true$' "$tmp/after_delete/repo/.env"
 if grep -Eq '^(APP_VERSION|GIT_SHA)=' "$tmp/after_delete/repo/.env"; then exit 1; fi
+test "$(grep -c '^DATA_RETENTION_DAYS=7$' "$tmp/after_delete/repo/.env")" -eq 1
+test "$(grep -c '^PUBLIC_EVENT_RETENTION_HOURS=24$' "$tmp/after_delete/repo/.env")" -eq 1
+test "$(grep -c '^ALLOW_UNBOUNDED_RETENTION=false$' "$tmp/after_delete/repo/.env")" -eq 1
 grep -q '^start mc-cartolive-watchdog.timer$' "$tmp/after_delete/systemctl.log"
 
 # Failed rollback readiness/up remains fail-closed with watchdog disabled.
@@ -216,5 +261,18 @@ if grep -q '^start mc-cartolive-watchdog.timer$' "$tmp/rollback_fail/systemctl.l
 	echo "watchdog restarted despite failed rollback" >&2
 	exit 1
 fi
+
+# A successful destructive cutover proves the schema while MQTT is disabled,
+# then starts the same immutable candidate with the preserved production MQTT
+# setting. No historical database or backup survives.
+prepare_repo fresh_success
+run_successful_fresh_deploy fresh_success
+test ! -e "$tmp/fresh_success/repo/backups/legacy.db"
+test -f "$tmp/fresh_success/repo/data/meshcore-live.db"
+test -f "$tmp/fresh_success/repo/data/config.yaml"
+grep -q ' up .*image=.*mqtt=false$' "$tmp/fresh_success/docker.log"
+test "$(grep -c ' up .*image=.*mqtt=$' "$tmp/fresh_success/docker.log")" -eq 1
+grep -q '^start mc-cartolive-watchdog.timer$' "$tmp/fresh_success/systemctl.log"
+grep -q "^MC_CARTOLIVE_IMAGE=$DIGEST$" "$tmp/fresh_success/deploy-state/current.env"
 
 echo "release operations contracts ok"

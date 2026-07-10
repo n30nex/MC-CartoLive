@@ -71,6 +71,7 @@ fi
 [[ "$READY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] || die "MC_CARTOLIVE_READY_TIMEOUT_SECONDS must be a positive integer"
 if [ "$FRESH_DATABASE" -eq 1 ]; then
 	[ "$CONFIRM_FRESH_DATABASE" = "$CONFIRM_TOKEN" ] || die "fresh database requires --confirm-fresh-database $CONFIRM_TOKEN"
+	command -v sqlite3 >/dev/null 2>&1 || die "sqlite3 is required to prove the fresh database schema"
 elif [ -n "$CONFIRM_FRESH_DATABASE" ]; then
 	die "confirmation token supplied without --fresh-database"
 fi
@@ -104,6 +105,16 @@ compose() {
 
 hash_if_present() {
 	if [ -f "$1" ]; then sha256sum "$1" | awk '{print $1}'; else printf 'missing'; fi
+}
+
+expected_schema_version() {
+	manifest="$REPO/release-manifest.json"
+	source="$REPO/backend/internal/store/db.go"
+	if [ -f "$manifest" ]; then
+		sed -n 's/.*"schemaVersion"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$manifest" | head -n 1
+	elif [ -f "$source" ]; then
+		sed -n 's/.*SchemaVersion[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$source" | head -n 1
+	fi
 }
 
 free_kb() {
@@ -144,15 +155,46 @@ delete_database() {
 	fi
 }
 
-sanitize_release_identity_env() {
+sanitize_release_runtime_env() {
 	env_tmp="$REPO/.env.release.$$"
 	awk '
-		/^[[:space:]]*(export[[:space:]]+)?(APP_VERSION|GIT_SHA|BUILD_TIME|VITE_GIT_SHA|VITE_BUILD_TIME)[[:space:]]*=/ { removed++; next }
+		/^[[:space:]]*(export[[:space:]]+)?(APP_VERSION|GIT_SHA|BUILD_TIME|VITE_GIT_SHA|VITE_BUILD_TIME|DATA_RETENTION_DAYS|PUBLIC_EVENT_RETENTION_HOURS|ALLOW_UNBOUNDED_RETENTION)[[:space:]]*=/ { removed++; next }
 		{ print }
-		END { if (removed > 0) printf "removed %d stale release identity override(s)\n", removed > "/dev/stderr" }
+		END { if (removed > 0) printf "removed %d stale release/runtime override(s)\n", removed > "/dev/stderr" }
 	' "$REPO/.env" >"$env_tmp"
+	cat >>"$env_tmp" <<'EOF'
+DATA_RETENTION_DAYS=7
+PUBLIC_EVENT_RETENTION_HOURS=24
+ALLOW_UNBOUNDED_RETENTION=false
+EOF
 	chmod --reference="$REPO/.env" "$env_tmp" 2>/dev/null || chmod 0600 "$env_tmp"
 	mv -f "$env_tmp" "$REPO/.env"
+}
+
+verify_empty_database() {
+	db="$DATA_DIR/meshcore-live.db"
+	expected_schema="$(expected_schema_version)"
+	[ -n "$expected_schema" ] || die "could not determine packaged schema version"
+	[ -f "$db" ] || die "candidate did not create the fresh SQLite database"
+	[ "$(sqlite3 "$db" 'PRAGMA quick_check;' 2>/dev/null)" = "ok" ] || die "fresh database quick_check failed"
+	[ -z "$(sqlite3 "$db" 'PRAGMA foreign_key_check;' 2>/dev/null)" ] || die "fresh database foreign-key check failed"
+	actual_schema="$(sqlite3 "$db" 'PRAGMA user_version;' 2>/dev/null)"
+	[ "$actual_schema" = "$expected_schema" ] || die "fresh database schema $actual_schema does not match packaged schema $expected_schema"
+	row_count="$(sqlite3 "$db" '
+SELECT
+  (SELECT COUNT(*) FROM packets) +
+  (SELECT COUNT(*) FROM packet_observations) +
+  (SELECT COUNT(*) FROM nodes) +
+  (SELECT COUNT(*) FROM node_iatas) +
+  (SELECT COUNT(*) FROM node_short_ids) +
+  (SELECT COUNT(*) FROM observers) +
+  (SELECT COUNT(*) FROM observer_status) +
+  (SELECT COUNT(*) FROM live_edge_events) +
+  (SELECT COUNT(*) FROM public_packet_paths) +
+  (SELECT COUNT(*) FROM public_route_summaries) +
+  (SELECT COUNT(*) FROM public_route_summary_edges) +
+  (SELECT COUNT(*) FROM public_events);' 2>/dev/null)"
+	[ "$row_count" = "0" ] || die "fresh database contained $row_count packet/node/route/event rows before MQTT enablement"
 }
 
 verify_release() {
@@ -272,7 +314,7 @@ if [ "$FRESH_DATABASE" -eq 1 ]; then
 	printf 'Stopping writer and permanently deleting live SQLite data and backups.\n'
 	service_mutated=1
 	compose "$IMAGE" down --remove-orphans
-	sanitize_release_identity_env
+	sanitize_release_runtime_env
 	fresh_database_started=1
 	delete_database
 	actual_free_kb="$(free_kb)"
@@ -280,6 +322,15 @@ if [ "$FRESH_DATABASE" -eq 1 ]; then
 		printf 'Free space after deletion is below %s GiB.\n' "$MIN_FREE_GB" >&2
 		exit 1
 	fi
+	printf 'Booting candidate with MQTT disabled to prove a latest-schema empty database.\n'
+	if ! MQTT_ENABLED=false compose "$IMAGE" up -d --no-build --remove-orphans "$SERVICE"; then
+		exit 1
+	fi
+	if ! wait_ready || ! verify_empty_database; then
+		compose "$IMAGE" logs --tail=240 "$SERVICE" >&2 || true
+		exit 1
+	fi
+	compose "$IMAGE" down --remove-orphans
 fi
 
 printf 'Starting candidate without an on-host build.\n'

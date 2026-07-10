@@ -35,14 +35,20 @@ bash scripts/deploy.sh \
 ```
 
 The script pre-pulls both images, stops the watchdog, stops the writer, removes
-stale release identity variables, permanently deletes the database and backup
-directory contents, checks free space, starts without `--build`, and waits up
-to 120 seconds for readiness. It additionally requires:
+stale release identity/runtime variables, fixes the production retention values,
+permanently deletes the database and backup directory contents, and checks free
+space. It then boots the candidate once with MQTT disabled, proves schema 32000
+and zero packet/node/observer/route/event rows, stops that proof instance, and
+starts the same database and digest with the preserved production MQTT setting.
+No on-host build occurs. Each start has up to 120 seconds for readiness. It
+additionally requires:
 
 - the compiled version to match `VERSION`
+- the fresh database schema to match the packaged manifest
+- zero packet/node/observer/route/event rows before MQTT is enabled
 - `afterSeq=0` to return `resetRequired=true`
 - public state to serialize successfully
-- SQLite `quick_check=ok` and no foreign-key violations when `sqlite3` exists
+- SQLite `quick_check=ok` and no foreign-key violations
 
 An empty database may be ready with `datasetState=warming`. The watchdog must
 not restart it merely because no RF traffic has arrived yet.
