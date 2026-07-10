@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -13,9 +13,20 @@ const { chromium } = requireFromWeb('playwright');
 const DEFAULT_BASE_URL = 'http://127.0.0.1:39476';
 const DEFAULT_OUTPUT_DIR = path.join(rootDir, 'artifacts', 'browser-smoke');
 const appVersion = readFileSync(path.join(rootDir, 'VERSION'), 'utf8').trim();
+const RELEASE_GATE_THRESHOLDS = Object.freeze({
+  listenerGrowth: 16,
+  instrumentedListenerGrowth: 64,
+  intervalGrowth: 3,
+  timeoutGrowth: 16,
+  animationFrameGrowth: 6,
+  domNodeGrowth: 240,
+  retainedDomNodeGrowth: 900,
+  heapGrowthBytes: 48 * 1024 * 1024,
+  heapGrowthRatio: 1.8
+});
 
 const viewports = [
-  { name: 'desktop-1920', width: 1920, height: 1080, isMobile: false, hasTouch: false },
+  { name: 'desktop-1440', width: 1440, height: 900, isMobile: false, hasTouch: false },
   { name: 'mobile-390', width: 390, height: 844, isMobile: true, hasTouch: true }
 ];
 
@@ -108,6 +119,7 @@ const outputDir = path.resolve(String(args['output-dir'] ?? process.env.BROWSER_
 const headless = args.headed === undefined;
 const keepOpen = args['keep-open'] !== undefined;
 const skipScreenshots = args['skip-screenshots'] !== undefined;
+const releaseGateOnly = args['release-gate-only'] !== undefined;
 const channel = args.channel ? String(args.channel) : (process.env.PLAYWRIGHT_CHROME_CHANNEL || 'chrome');
 
 await mkdir(outputDir, { recursive: true });
@@ -115,11 +127,20 @@ await mkdir(outputDir, { recursive: true });
 const browser = await launchBrowser({ channel, headless });
 const startedAt = new Date().toISOString();
 const results = [];
+const releaseGates = [];
 let hardFailures = 0;
 
 try {
   for (const viewport of viewports) {
-    for (const scenario of scenarios) {
+    console.log(`[run] ${viewport.name} release-gate`);
+    const gate = await runReleaseGate(browser, viewport);
+    releaseGates.push(gate);
+    if (gate.errors.length > 0) hardFailures += 1;
+    const gateStatus = gate.errors.length === 0 ? 'pass' : 'fail';
+    console.log(`[${gateStatus}] ${viewport.name} release-gate trace=${path.relative(rootDir, gate.trace)}`);
+    for (const error of gate.errors) console.log(`  - ${error}`);
+
+    for (const scenario of releaseGateOnly ? [] : scenarios) {
       console.log(`[run] ${viewport.name} ${scenario.name}`);
       const result = await runScenario(browser, viewport, scenario);
       results.push(result);
@@ -136,14 +157,19 @@ try {
 const summary = {
   baseUrl,
   startedAt,
+  finishedAt: new Date().toISOString(),
   viewports: viewports.map(({ name, width, height }) => ({ name, width, height })),
   scenarios: scenarios.map(({ name, hash }) => ({ name, hash })),
+  releaseGates,
   passed: hardFailures === 0,
   failures: hardFailures,
   results
 };
 
+const summaryPath = path.join(outputDir, 'browser-smoke-summary.json');
+await writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
 console.log(JSON.stringify(summary, null, 2));
+console.log(`[artifact] ${path.relative(rootDir, summaryPath)}`);
 
 if (hardFailures > 0) process.exit(1);
 
@@ -232,6 +258,701 @@ async function runScenario(browser, viewport, scenario) {
   } finally {
     await context.close();
   }
+}
+
+async function runReleaseGate(browser, viewport) {
+  const context = await browser.newContext({
+    viewport: { width: viewport.width, height: viewport.height },
+    screen: { width: viewport.width, height: viewport.height },
+    deviceScaleFactor: 1,
+    isMobile: viewport.isMobile,
+    hasTouch: viewport.hasTouch,
+    reducedMotion: 'reduce',
+    serviceWorkers: 'allow',
+    acceptDownloads: true
+  });
+  const page = await context.newPage();
+  const trace = path.join(outputDir, `${viewport.name}-release-gate-trace.zip`);
+  const screenshot = skipScreenshots ? null : path.join(outputDir, `${viewport.name}-release-gate.png`);
+  const errors = [];
+  const checks = [];
+  const consoleErrors = [];
+  const pageErrors = [];
+  const downloads = [];
+  const stateRequests = { count: 0 };
+  const expectedNetworkErrors = { offline: false };
+  let ignoredFailedResourceCount = 0;
+  let ignoredFailedResourceConsoleCount = 0;
+  let baselineMetrics = null;
+  let postStyleMetrics = null;
+  let finalMetrics = null;
+  let metricDeltas = null;
+  let finalMetricDeltas = null;
+  let serviceWorker = null;
+  let eventReset = null;
+  let visibilityRecovery = null;
+  let exportCleanup = null;
+  let cdp = null;
+
+  await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
+  await page.addInitScript(installBrowserSmokeInstrumentation);
+
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.origin === new URL(baseUrl).origin && url.pathname === '/api/v1/public/state') stateRequests.count += 1;
+  });
+  page.on('response', (response) => {
+    if (isIgnoredFailedResource(response.status(), response.url())) ignoredFailedResourceCount += 1;
+  });
+  page.on('console', (message) => {
+    if (message.type() !== 'error' || isIgnoredConsoleMessage(message.text())) return;
+    if (expectedNetworkErrors.offline && /net::(?:ERR_INTERNET_DISCONNECTED|ERR_FAILED)/i.test(message.text())) return;
+    if (isGenericFailedResourceConsoleMessage(message.text()) && ignoredFailedResourceConsoleCount < ignoredFailedResourceCount) {
+      ignoredFailedResourceConsoleCount += 1;
+      return;
+    }
+    consoleErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => pageErrors.push(error.message || String(error)));
+  page.on('download', (download) => {
+    downloads.push(download.suggestedFilename());
+    void download.cancel().catch(() => undefined);
+  });
+
+  try {
+    cdp = await context.newCDPSession(page);
+    await cdp.send('Performance.enable');
+    await cdp.send('HeapProfiler.enable').catch(() => undefined);
+
+    await page.goto(urlForScenario(baseUrl, ''), { waitUntil: 'domcontentloaded', timeout: 45_000 });
+    await page.waitForSelector('.maplibregl-canvas', { state: 'visible', timeout: 45_000 });
+    await page.waitForTimeout(1_000);
+
+    await runGateStep(errors, checks, 'first-run compact coach, primary layout, and no horizontal overflow', () => assertFirstRunLayout(page, viewport));
+    const dismissGuide = page.getByRole('button', { name: /Dismiss map guide/i });
+    if (await dismissGuide.isVisible().catch(() => false)) {
+      await dismissGuide.click();
+      await page.getByRole('region', { name: /First visit map guide/i }).waitFor({ state: 'hidden', timeout: 5_000 });
+    }
+
+    eventReset = await runGateStep(errors, checks, 'public cursor reset semantics for zero and ahead cursors', () => smokePublicEventReset(page));
+
+    serviceWorker = await runGateStep(errors, checks, 'service-worker registration/update, no-cache metadata, and bounded versioned caches', () => smokeServiceWorkerSafety(page, context));
+
+    exportCleanup = await runGateStep(errors, checks, 'Ctrl/Cmd+K, focus trap/restore, reduced-motion Replay Studio, and bounded export cleanup', () => smokeCommandReplayAndExport(page, viewport));
+    await recoverReleaseGateUI(page);
+
+    const styleDrawer = await runGateStep(errors, checks, 'style library opens as an accessible modal', () => openStyleChangeSurface(page));
+    if (styleDrawer) {
+      await runGateStep(errors, checks, 'first 20 style changes warm lazy map paths with one live map surface', () => cycleMapStyles(page, styleDrawer, 20));
+      await page.waitForTimeout(1_500);
+      baselineMetrics = await runGateStep(errors, checks, 'post-warmup browser metrics captured with the style surface still mounted', () => collectReleaseGateMetrics(page, cdp, true));
+
+      await runGateStep(errors, checks, 'second 20 style changes exercise accumulation with the same live style surface', () => cycleMapStyles(page, styleDrawer, 20));
+      await page.waitForTimeout(1_500);
+      postStyleMetrics = await runGateStep(errors, checks, 'post-style browser metrics captured with the same style surface mounted', () => collectReleaseGateMetrics(page, cdp, true));
+      if (baselineMetrics && postStyleMetrics) {
+        metricDeltas = await runGateStep(errors, checks, 'second-batch listener, DOM-node, and JS-heap growth plateaus', async () => assertReleaseGateMetricGrowth(baselineMetrics, postStyleMetrics));
+      }
+      await page.keyboard.press('Escape');
+      await styleDrawer.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined);
+    }
+    await recoverReleaseGateUI(page);
+
+    visibilityRecovery = await runGateStep(errors, checks, 'visibility resume rehydrates the public snapshot', () => smokeVisibilityRecovery(context, page, stateRequests));
+
+    await runGateStep(errors, checks, 'offline banner, retained map surface, and online API recovery', () => smokeOfflineRecovery(context, page, expectedNetworkErrors));
+
+    await runGateStep(errors, checks, 'post-interaction layout remains within the viewport', () => assertNoHorizontalOverflow(page, viewport, 'after release interactions'));
+    await page.waitForTimeout(1_500);
+    finalMetrics = await runGateStep(errors, checks, 'final browser metrics captured', () => collectReleaseGateMetrics(page, cdp, true));
+    if (baselineMetrics && finalMetrics) {
+      finalMetricDeltas = await runGateStep(errors, checks, 'recovery listener, timer, animation-frame, DOM-node, and JS-heap growth heuristics', async () => assertReleaseGateMetricGrowth(baselineMetrics, finalMetrics));
+    }
+
+    await runGateStep(errors, checks, 'single map and zero hidden export surfaces after cleanup', async () => {
+      const mapCount = await page.locator('.map-wrap .maplibregl-canvas').count();
+      if (mapCount !== 1) throw new Error(`expected one live MapLibre canvas after release gate, found ${mapCount}`);
+      const hiddenExportSurfaces = await countHiddenExportSurfaces(page);
+      if (hiddenExportSurfaces !== 0) throw new Error(`temporary export surfaces leaked after release gate: ${hiddenExportSurfaces}`);
+    });
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : String(error));
+  } finally {
+    if (consoleErrors.length > 0) errors.push(...consoleErrors.map((item) => `console error: ${item}`));
+    if (pageErrors.length > 0) errors.push(...pageErrors.map((item) => `page error: ${item}`));
+    if (screenshot) {
+      await page.screenshot({ path: screenshot, fullPage: false }).catch((error) => {
+        errors.push(`release screenshot failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
+    await context.tracing.stop({ path: trace }).catch((error) => {
+      errors.push(`trace write failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+    await cdp?.detach().catch(() => undefined);
+    await context.setOffline(false).catch(() => undefined);
+    await context.close();
+  }
+
+  return {
+    viewport: viewport.name,
+    url: page.url(),
+    screenshot,
+    trace,
+    checks,
+    eventReset,
+    serviceWorker,
+    visibilityRecovery,
+    exportCleanup,
+    downloads,
+    metrics: { baseline: baselineMetrics, postStyles: postStyleMetrics, final: finalMetrics, styleDeltas: metricDeltas, finalDeltas: finalMetricDeltas, thresholds: RELEASE_GATE_THRESHOLDS },
+    errors
+  };
+}
+
+async function runGateStep(errors, checks, label, operation) {
+  try {
+    const value = await operation();
+    checks.push(label);
+    return value;
+  } catch (error) {
+    errors.push(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
+}
+
+async function recoverReleaseGateUI(page) {
+  await page.evaluate(() => {
+    if (window.__mcBrowserSmoke) window.__mcBrowserSmoke.timeoutCapMs = null;
+  }).catch(() => undefined);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const modal = page.locator('[role="dialog"][aria-modal="true"]:visible').last();
+    if (!await modal.isVisible().catch(() => false)) break;
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await page.waitForTimeout(100);
+  }
+}
+
+async function assertFirstRunLayout(page, viewport) {
+  const guide = page.getByRole('region', { name: /First visit map guide/i });
+  await guide.waitFor({ state: 'visible', timeout: 12_000 });
+  await assertVisibleInViewport(page, '.visitor-guide', 'compact first-run coach', viewport);
+  const role = await guide.getAttribute('role');
+  if (role !== 'region') throw new Error(`first-run coach must be a region, got ${role || 'no role'}`);
+  if ((await guide.getAttribute('aria-modal')) === 'true') throw new Error('compact first-run coach unexpectedly blocks the map as a modal');
+  const legacyOverlayCount = await page.locator('.welcome-guide, .welcome-guide-popover, [data-version-onboarding]').count();
+  if (legacyOverlayCount !== 0) throw new Error(`legacy version onboarding overlay rendered: ${legacyOverlayCount}`);
+
+  const map = page.getByRole('region', { name: /Live MeshCore Canada network map/i });
+  await map.waitFor({ state: 'visible', timeout: 10_000 });
+  if (await page.locator('.map-wrap[role="application"], [role="application"].map-wrap').count()) {
+    throw new Error('map uses opaque application role instead of a named region');
+  }
+
+  const searchVisible = await page.locator('.panel-search').first().isVisible().catch(() => false);
+  const legendVisible = await page.locator('.panel-legend').first().isVisible().catch(() => false);
+  if (searchVisible && legendVisible) throw new Error('Search and Legend opened together on first run');
+  await assertNoHorizontalOverflow(page, viewport, 'first-run layout');
+}
+
+async function smokePublicEventReset(page) {
+  const result = await page.evaluate(async () => {
+    const bootstrapResponse = await fetch('/api/v1/public/bootstrap', { headers: { accept: 'application/json' } });
+    if (!bootstrapResponse.ok) throw new Error(`bootstrap HTTP ${bootstrapResponse.status}`);
+    const bootstrap = await bootstrapResponse.json();
+    const latest = Number(bootstrap.latestSeq ?? 0);
+    const queries = [0, Math.max(1, latest + 1_000_000)];
+    const responses = [];
+    for (const afterSeq of queries) {
+      const started = performance.now();
+      const response = await fetch(`/api/v1/public/events?afterSeq=${afterSeq}&limit=25`, { headers: { accept: 'application/json' } });
+      const body = await response.json().catch(() => null);
+      responses.push({ afterSeq, status: response.status, elapsedMs: performance.now() - started, body });
+    }
+    return { latest, responses };
+  });
+
+  for (const item of result.responses) {
+    if (item.status !== 200) throw new Error(`event reset afterSeq=${item.afterSeq} returned HTTP ${item.status}`);
+    const body = item.body;
+    if (!body || body.resetRequired !== true) throw new Error(`event reset afterSeq=${item.afterSeq} did not set resetRequired=true`);
+    if (!Array.isArray(body.events) || body.events.length !== 0) throw new Error(`event reset afterSeq=${item.afterSeq} scanned history instead of returning no events`);
+    if (!Number.isFinite(Number(body.oldestSeq)) || !Number.isFinite(Number(body.latestSeq))) {
+      throw new Error(`event reset afterSeq=${item.afterSeq} omitted numeric sequence bounds`);
+    }
+    if (typeof body.nextCursor !== 'string') throw new Error(`event reset afterSeq=${item.afterSeq} omitted string nextCursor`);
+    if (item.elapsedMs > 5_000) throw new Error(`event reset afterSeq=${item.afterSeq} exceeded 5s: ${item.elapsedMs.toFixed(0)}ms`);
+  }
+  return {
+    latestSeq: result.latest,
+    zeroCursorMs: Number(result.responses[0].elapsedMs.toFixed(1)),
+    aheadCursorMs: Number(result.responses[1].elapsedMs.toFixed(1)),
+    nextCursor: result.responses[0].body.nextCursor
+  };
+}
+
+async function smokeCommandReplayAndExport(page, viewport) {
+  const origin = viewport.isMobile
+    ? page.locator('.mobile-tabbar').getByRole('button', { name: /^Map$/i })
+    : page.locator('.command-palette-toggle').first();
+  await origin.waitFor({ state: 'visible', timeout: 10_000 });
+  await origin.focus();
+  await page.keyboard.press('Control+K');
+
+  const command = page.getByRole('dialog', { name: /Search commands, nodes, and routes/i });
+  await command.waitFor({ state: 'visible', timeout: 10_000 });
+  await assertAccessibleModal(page, command, 'command palette');
+  const input = command.locator('#command-palette-input');
+  if (!await input.evaluate((element) => element === document.activeElement)) throw new Error('command search did not receive initial focus');
+  const options = command.getByRole('option');
+  const optionCount = await options.count();
+  if (optionCount < 2) throw new Error(`command palette exposed too few keyboard results: ${optionCount}`);
+  const firstSelected = await command.getByRole('option', { selected: true }).textContent();
+  await input.press('ArrowDown');
+  const secondSelected = await command.getByRole('option', { selected: true }).textContent();
+  if (compactText(firstSelected) === compactText(secondSelected)) throw new Error('ArrowDown did not move command selection');
+  await input.press('ArrowUp');
+  await page.keyboard.press('Escape');
+  await command.waitFor({ state: 'hidden', timeout: 5_000 });
+  if (!await origin.evaluate((element) => element === document.activeElement)) throw new Error('command palette did not restore focus to its opener');
+
+  await page.keyboard.press('Control+K');
+  await command.waitFor({ state: 'visible', timeout: 10_000 });
+  await page.locator('.command-palette-backdrop').dispatchEvent('mousedown', { button: 0 });
+  await command.waitFor({ state: 'hidden', timeout: 5_000 });
+
+  await page.keyboard.press('Control+K');
+  await command.waitFor({ state: 'visible', timeout: 10_000 });
+  await input.fill('RF Replay Studio');
+  const replayOption = command.getByRole('option').filter({ hasText: 'RF Replay Studio' }).first();
+  await replayOption.waitFor({ state: 'visible', timeout: 8_000 });
+  await input.press('Enter');
+  await command.waitFor({ state: 'hidden', timeout: 5_000 });
+
+  const replay = page.getByRole('dialog', { name: /RF Replay Studio/i });
+  await replay.waitFor({ state: 'visible', timeout: 15_000 });
+  await assertAccessibleModal(page, replay, 'RF Replay Studio');
+  const reduced = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
+  if (!reduced) throw new Error('release context did not emulate reduced motion');
+  await replay.getByText(/Reduced motion is active: Replay Studio uses a static route story/i).waitFor({ state: 'visible', timeout: 8_000 });
+  await replay.getByRole('slider', { name: /Route replay position/i }).waitFor({ state: 'visible', timeout: 8_000 });
+  await replay.getByRole('button', { name: /^2D$/i }).click();
+  await page.locator('.toast-viewport[role="status"][aria-live="polite"]').waitFor({ state: 'visible', timeout: 5_000 });
+  const showStory = replay.getByRole('button', { name: /Show story/i });
+  await showStory.click();
+  await page.waitForTimeout(500);
+  if (await replay.getByRole('button', { name: /^Pause$/i }).isVisible().catch(() => false)) {
+    throw new Error('reduced-motion replay started continuous camera animation');
+  }
+  const runningAnimations = await replay.evaluate((element) => element.getAnimations({ subtree: true }).filter((animation) => animation.playState === 'running').length);
+  if (runningAnimations > 0) throw new Error(`reduced-motion Replay Studio has ${runningAnimations} running animations`);
+
+  const exportButton = replay.getByRole('button', { name: /^Export WebM$/i });
+  if (!await exportButton.isEnabled()) throw new Error('Chromium fixture gate did not expose local WebM export');
+  const beforeSurfaces = await countHiddenExportSurfaces(page);
+  await page.evaluate(() => { window.__mcBrowserSmoke.timeoutCapMs = 1_250; });
+  await exportButton.click();
+  const exportStarted = await replay.getByRole('button', { name: /Recording/i }).waitFor({ state: 'visible', timeout: 8_000 }).then(() => true, () => false);
+  if (!exportStarted) {
+    const toast = await page.locator('.toast, [role="status"]').filter({ hasText: /WebM|record|export/i }).last().textContent().catch(() => '');
+    throw new Error(`WebM export did not enter its bounded recording path: ${compactText(toast)}`);
+  }
+  await page.waitForFunction(() => {
+    const recording = [...document.querySelectorAll('button')].some((button) => /Recording/i.test(button.textContent ?? ''));
+    const exportSurface = [...document.body.children].some((element) => element instanceof HTMLElement && element.getAttribute('aria-hidden') === 'true' && element.style.left.startsWith('-100000'));
+    return !recording && !exportSurface;
+  }, null, { timeout: 12_000 });
+  await page.evaluate(() => { window.__mcBrowserSmoke.timeoutCapMs = null; });
+  const afterSurfaces = await countHiddenExportSurfaces(page);
+  if (afterSurfaces !== beforeSurfaces) throw new Error(`WebM export surface cleanup mismatch: before=${beforeSurfaces} after=${afterSurfaces}`);
+  if (await page.locator('a[download]').count()) throw new Error('temporary export download anchor remained in the document');
+
+  await page.keyboard.press('Escape');
+  await replay.waitFor({ state: 'hidden', timeout: 5_000 });
+  await assertNoHorizontalOverflow(page, viewport, 'after Replay Studio');
+  return { boundedTimeoutMs: 1_250, exportStarted, hiddenSurfacesBefore: beforeSurfaces, hiddenSurfacesAfter: afterSurfaces };
+}
+
+async function openStyleChangeSurface(page) {
+  await page.keyboard.press('Control+K');
+  const command = page.getByRole('dialog', { name: /Search commands, nodes, and routes/i });
+  await command.waitFor({ state: 'visible', timeout: 10_000 });
+  const input = command.locator('#command-palette-input');
+  await input.fill('Map settings');
+  await command.getByRole('option').filter({ hasText: 'Map settings' }).first().waitFor({ state: 'visible', timeout: 8_000 });
+  await input.press('Enter');
+
+  const drawer = page.getByRole('dialog', { name: /^Map settings$/i });
+  await drawer.waitFor({ state: 'visible', timeout: 10_000 });
+  await assertAccessibleModal(page, drawer, 'map settings');
+  await drawer.getByRole('button', { name: /Style Library/i }).click();
+  const profiles = drawer.getByRole('group', { name: /Map style profiles/i });
+  await profiles.waitFor({ state: 'visible', timeout: 8_000 });
+  return drawer;
+}
+
+async function cycleMapStyles(page, drawer, count) {
+  const profiles = drawer.getByRole('group', { name: /Map style profiles/i });
+  const dark = profiles.getByRole('button', { name: /Classic Dark/i });
+  const light = profiles.getByRole('button', { name: /Classic Light/i });
+  for (let index = 0; index < count; index += 1) {
+    const expected = index % 2 === 0 ? 'classic-light' : 'classic-dark';
+    await (index % 2 === 0 ? light : dark).click();
+    await page.waitForFunction((profile) => document.querySelector('.map-wrap')?.getAttribute('data-map-style-profile') === profile, expected, { timeout: 8_000 });
+    await page.waitForSelector('.maplibregl-canvas', { state: 'visible', timeout: 8_000 });
+  }
+  await page.waitForTimeout(800);
+  const canvases = await page.locator('.map-wrap .maplibregl-canvas').count();
+  if (canvases !== 1) throw new Error(`style cycling left ${canvases} MapLibre canvases mounted`);
+}
+
+async function smokeVisibilityRecovery(context, page, stateRequests) {
+  const before = stateRequests.count;
+  const method = 'cdp-lifecycle+resume-event';
+  const lifecycle = await context.newCDPSession(page);
+  await lifecycle.send('Page.setWebLifecycleState', { state: 'frozen' });
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  await lifecycle.send('Page.setWebLifecycleState', { state: 'active' });
+  await lifecycle.detach();
+  await page.waitForFunction(() => document.visibilityState === 'visible', null, { timeout: 5_000 });
+  // Chromium's experimental lifecycle command does not consistently emit the
+  // DOM Page Lifecycle `resume` event in headless mode. Dispatch the standard
+  // signal after the real frozen/active transition so the application path is
+  // deterministic across desktop and mobile CI runners.
+  await page.evaluate(() => document.dispatchEvent(new Event('resume')));
+  const refreshed = await waitForCondition(() => stateRequests.count > before, 10_000, 100);
+  if (!refreshed) throw new Error(`visibility resume did not request a fresh public snapshot (before=${before}, after=${stateRequests.count})`);
+  return { method, stateRequestsBefore: before, stateRequestsAfter: stateRequests.count };
+}
+
+async function smokeOfflineRecovery(context, page, expectedNetworkErrors) {
+  expectedNetworkErrors.offline = true;
+  await context.setOffline(true);
+  try {
+    await page.locator('.offline-banner').waitFor({ state: 'visible', timeout: 5_000 });
+    await page.waitForSelector('.maplibregl-canvas', { state: 'visible', timeout: 5_000 });
+    const offlineFetchFailed = await page.evaluate(async () => {
+      try {
+        await fetch(`/readyz?offline-smoke=${Date.now()}`, { cache: 'no-store' });
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    if (!offlineFetchFailed) throw new Error('offline emulation still reached the readiness endpoint');
+  } finally {
+    await context.setOffline(false);
+  }
+  await page.locator('.offline-banner').waitFor({ state: 'hidden', timeout: 8_000 });
+  const ready = await page.evaluate(async () => {
+    const response = await fetch(`/readyz?online-smoke=${Date.now()}`, { cache: 'no-store' });
+    return response.ok;
+  });
+  if (!ready) throw new Error('public readiness did not recover after returning online');
+  await page.waitForTimeout(150);
+  expectedNetworkErrors.offline = false;
+}
+
+async function smokeServiceWorkerSafety(page, context) {
+  const metadata = await page.evaluate(async () => {
+    const manifestURL = document.querySelector('link[rel="manifest"]')?.href;
+    const [worker, manifest] = await Promise.all([
+      fetch(`/sw.js?browser-smoke=${Date.now()}`, { cache: 'no-store' }),
+      manifestURL ? fetch(manifestURL, { cache: 'no-store' }) : Promise.resolve(null)
+    ]);
+    const workerText = await worker.text();
+    return {
+      workerStatus: worker.status,
+      workerCacheControl: worker.headers.get('cache-control') ?? '',
+      workerText,
+      manifestURL: manifestURL ?? '',
+      manifestStatus: manifest?.status ?? 0,
+      manifestCacheControl: manifest?.headers.get('cache-control') ?? ''
+    };
+  });
+  if (metadata.workerStatus !== 200) throw new Error(`service worker script returned HTTP ${metadata.workerStatus}`);
+  if (!/no-cache/i.test(metadata.workerCacheControl) || !/must-revalidate/i.test(metadata.workerCacheControl)) {
+    throw new Error(`service worker cache-control is unsafe: ${metadata.workerCacheControl || '<missing>'}`);
+  }
+  if (!metadata.manifestURL || metadata.manifestStatus !== 200) throw new Error(`web manifest unavailable: ${metadata.manifestStatus}`);
+  if (!/no-cache/i.test(metadata.manifestCacheControl) || !/must-revalidate/i.test(metadata.manifestCacheControl)) {
+    throw new Error(`manifest cache-control is unsafe: ${metadata.manifestCacheControl || '<missing>'}`);
+  }
+  for (const contract of ['RUNTIME_CACHE_LIMIT', 'RELEASE_ID', "event.request.mode === 'navigate'", 'networkFirst']) {
+    if (!metadata.workerText.includes(contract)) throw new Error(`service worker script is missing ${contract}`);
+  }
+
+  await page.waitForTimeout(1_200);
+  let registrations = await page.evaluate(async () => {
+    if (!navigator.serviceWorker) return [];
+    return (await navigator.serviceWorker.getRegistrations()).map((registration) => ({
+      scope: registration.scope,
+      active: registration.active?.scriptURL ?? '',
+      waiting: registration.waiting?.scriptURL ?? '',
+      installing: registration.installing?.scriptURL ?? ''
+    }));
+  });
+  if (registrations.length === 0) {
+    const disabledState = await page.evaluate(async () => ({
+      controlled: Boolean(navigator.serviceWorker?.controller),
+      caches: 'caches' in window ? (await caches.keys()).filter((key) => key.startsWith('mc-cartolive')) : []
+    }));
+    if (disabledState.controlled) throw new Error('service worker disabled build remained controlled');
+    if (disabledState.caches.length > 0) throw new Error(`service worker disabled build retained caches: ${disabledState.caches.join(', ')}`);
+    return { mode: 'disabled-clean', registrations: 0, cacheNames: [], workerCacheControl: metadata.workerCacheControl, manifestCacheControl: metadata.manifestCacheControl };
+  }
+
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  if (!await page.evaluate(() => Boolean(navigator.serviceWorker.controller))) {
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await page.waitForSelector('.maplibregl-canvas', { state: 'visible', timeout: 30_000 });
+    await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  }
+  registrations = await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).map((registration) => ({
+    scope: registration.scope,
+    active: registration.active?.scriptURL ?? '',
+    waiting: registration.waiting?.scriptURL ?? '',
+    installing: registration.installing?.scriptURL ?? ''
+  })));
+  if (registrations.length !== 1) throw new Error(`expected one service-worker registration, found ${registrations.length}`);
+  const activeURL = new URL(registrations[0].active);
+  if (activeURL.pathname !== '/sw.js') throw new Error(`unexpected service worker path: ${activeURL.pathname}`);
+  if (activeURL.searchParams.get('version') !== appVersion) throw new Error(`service worker version query is not ${appVersion}: ${activeURL.search}`);
+  const sha = activeURL.searchParams.get('sha') ?? '';
+  if (!/^[0-9a-f]{7,12}$/i.test(sha)) throw new Error(`service worker SHA is not an immutable short Git SHA: ${sha || '<missing>'}`);
+  const cacheNames = await page.evaluate(async () => (await caches.keys()).filter((key) => key.startsWith('mc-cartolive')));
+  const releaseID = `${appVersion}-${sha}`;
+  const invalidCache = cacheNames.find((name) => !new RegExp(`^mc-cartolive-(?:shell|runtime|snapshot)-${escapeRegExp(releaseID)}$`).test(name));
+  if (invalidCache) throw new Error(`unversioned or stale service-worker cache remains: ${invalidCache}`);
+  if (cacheNames.length > 3) throw new Error(`service worker opened too many release caches: ${cacheNames.length}`);
+
+  const beforeURL = page.url();
+  await page.evaluate(async () => { await (await navigator.serviceWorker.getRegistration())?.update(); });
+  await page.waitForTimeout(1_000);
+  if (page.url() !== beforeURL) throw new Error('same-build service-worker update reloaded the page without an explicit prompt');
+  const workers = context.serviceWorkers().map((worker) => worker.url());
+  return {
+    mode: 'enabled-versioned',
+    registrations: registrations.length,
+    activeURL: registrations[0].active,
+    cacheNames,
+    workers,
+    workerCacheControl: metadata.workerCacheControl,
+    manifestCacheControl: metadata.manifestCacheControl
+  };
+}
+
+async function assertAccessibleModal(page, dialog, label) {
+  if ((await dialog.getAttribute('aria-modal')) !== 'true') throw new Error(`${label} is missing aria-modal=true`);
+  await page.waitForFunction((selector) => {
+    const element = document.querySelector(selector);
+    return element instanceof HTMLElement && element.contains(document.activeElement);
+  }, await uniqueSelector(dialog), { timeout: 3_000 });
+  const result = await dialog.evaluate(async (element) => {
+    const focusable = [...element.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter((candidate) => candidate instanceof HTMLElement && (candidate.offsetParent !== null || candidate === document.activeElement));
+    if (focusable.length < 2) return { count: focusable.length, shiftWrapped: false, tabWrapped: false };
+    focusable[0].focus();
+    return { count: focusable.length };
+  });
+  if (result.count < 2) throw new Error(`${label} has fewer than two keyboard-focusable controls`);
+  await page.keyboard.press('Shift+Tab');
+  const shiftWrapped = await dialog.evaluate((element) => {
+    const focusable = [...element.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter((candidate) => candidate instanceof HTMLElement && (candidate.offsetParent !== null || candidate === document.activeElement));
+    return document.activeElement === focusable.at(-1);
+  });
+  if (!shiftWrapped) throw new Error(`${label} did not wrap Shift+Tab from first to last control`);
+  await page.keyboard.press('Tab');
+  const tabWrapped = await dialog.evaluate((element) => {
+    const focusable = [...element.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter((candidate) => candidate instanceof HTMLElement && (candidate.offsetParent !== null || candidate === document.activeElement));
+    return document.activeElement === focusable[0];
+  });
+  if (!tabWrapped) throw new Error(`${label} did not wrap Tab from last to first control`);
+}
+
+async function uniqueSelector(locator) {
+  return locator.evaluate((element) => {
+    const token = `browser-smoke-${Math.random().toString(36).slice(2)}`;
+    element.setAttribute('data-browser-smoke-dialog', token);
+    return `[data-browser-smoke-dialog="${token}"]`;
+  });
+}
+
+async function assertNoHorizontalOverflow(page, viewport, label) {
+  const layout = await page.evaluate(() => ({
+    innerWidth: window.innerWidth,
+    documentWidth: document.documentElement.scrollWidth,
+    bodyWidth: document.body.scrollWidth
+  }));
+  const overflow = Math.max(layout.documentWidth, layout.bodyWidth) - layout.innerWidth;
+  if (overflow > 2) throw new Error(`${label} horizontally overflows by ${overflow}px: ${JSON.stringify(layout)}`);
+  if (layout.innerWidth !== viewport.width) throw new Error(`${label} viewport drifted from ${viewport.width}px to ${layout.innerWidth}px`);
+}
+
+async function countHiddenExportSurfaces(page) {
+  return page.evaluate(() => [...document.body.children].filter((element) => {
+    if (!(element instanceof HTMLElement)) return false;
+    return element.getAttribute('aria-hidden') === 'true' && element.style.left.startsWith('-100000');
+  }).length);
+}
+
+async function collectReleaseGateMetrics(page, cdp, forceGC) {
+  if (forceGC) await cdp.send('HeapProfiler.collectGarbage').catch(() => undefined);
+  const browser = await cdp.send('Performance.getMetrics');
+  const values = Object.fromEntries(browser.metrics.map((metric) => [metric.name, metric.value]));
+  const pageState = await page.evaluate(() => ({
+    instrumentation: window.__mcBrowserSmoke.snapshot(),
+    liveDomNodes: document.querySelectorAll('*').length
+  }));
+  return {
+    jsHeapUsedBytes: Math.round(values.JSHeapUsedSize ?? 0),
+    domNodes: Math.round(values.Nodes ?? 0),
+    documents: Math.round(values.Documents ?? 0),
+    browserEventListeners: Math.round(values.JSEventListeners ?? 0),
+    liveDomNodes: pageState.liveDomNodes,
+    instrumentation: pageState.instrumentation
+  };
+}
+
+function assertReleaseGateMetricGrowth(baseline, final) {
+  const deltas = {
+    listeners: final.browserEventListeners - baseline.browserEventListeners,
+    instrumentedListeners: final.instrumentation.listeners - baseline.instrumentation.listeners,
+    intervals: final.instrumentation.intervals - baseline.instrumentation.intervals,
+    timeouts: final.instrumentation.timeouts - baseline.instrumentation.timeouts,
+    animationFrames: final.instrumentation.animationFrames - baseline.instrumentation.animationFrames,
+    domNodes: final.liveDomNodes - baseline.liveDomNodes,
+    retainedDomNodes: (final.domNodes - final.liveDomNodes) - (baseline.domNodes - baseline.liveDomNodes),
+    jsHeapUsedBytes: final.jsHeapUsedBytes - baseline.jsHeapUsedBytes,
+    jsHeapRatio: baseline.jsHeapUsedBytes > 0 ? Number((final.jsHeapUsedBytes / baseline.jsHeapUsedBytes).toFixed(3)) : 1
+  };
+  const failures = [];
+  if (deltas.listeners > RELEASE_GATE_THRESHOLDS.listenerGrowth) failures.push(`browser listeners +${deltas.listeners}`);
+  if (deltas.instrumentedListeners > RELEASE_GATE_THRESHOLDS.instrumentedListenerGrowth) failures.push(`instrumented listeners +${deltas.instrumentedListeners}`);
+  if (deltas.intervals > RELEASE_GATE_THRESHOLDS.intervalGrowth) failures.push(`intervals +${deltas.intervals}`);
+  if (deltas.timeouts > RELEASE_GATE_THRESHOLDS.timeoutGrowth) failures.push(`timeouts +${deltas.timeouts}`);
+  if (deltas.animationFrames > RELEASE_GATE_THRESHOLDS.animationFrameGrowth) failures.push(`animation frames +${deltas.animationFrames}`);
+  if (deltas.domNodes > RELEASE_GATE_THRESHOLDS.domNodeGrowth) failures.push(`live DOM nodes +${deltas.domNodes}`);
+  if (deltas.retainedDomNodes > RELEASE_GATE_THRESHOLDS.retainedDomNodeGrowth) failures.push(`retained DOM nodes +${deltas.retainedDomNodes}`);
+  if (deltas.jsHeapUsedBytes > RELEASE_GATE_THRESHOLDS.heapGrowthBytes && deltas.jsHeapRatio > RELEASE_GATE_THRESHOLDS.heapGrowthRatio) {
+    failures.push(`JS heap +${(deltas.jsHeapUsedBytes / 1024 / 1024).toFixed(1)} MiB (${deltas.jsHeapRatio}x)`);
+  }
+  if (failures.length > 0) throw new Error(`release interaction growth exceeded heuristic thresholds: ${failures.join(', ')}`);
+  return deltas;
+}
+
+async function waitForCondition(predicate, timeoutMs, pollMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return true;
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+  return false;
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function installBrowserSmokeInstrumentation() {
+  if (window.__mcBrowserSmoke) return;
+  const state = {
+    listeners: 0,
+    listenerTypes: Object.create(null),
+    timeouts: new Set(),
+    intervals: new Set(),
+    animationFrames: new Set(),
+    timeoutCapMs: null
+  };
+  const listenerRecords = new WeakMap();
+  const nativeAdd = EventTarget.prototype.addEventListener;
+  const nativeRemove = EventTarget.prototype.removeEventListener;
+  const captureFor = (options) => typeof options === 'boolean' ? options : Boolean(options?.capture);
+  const onceFor = (options) => typeof options === 'object' && options !== null && Boolean(options.once);
+  const recordsFor = (target) => {
+    let records = listenerRecords.get(target);
+    if (!records) {
+      records = [];
+      listenerRecords.set(target, records);
+    }
+    return records;
+  };
+  const deactivate = (record) => {
+    if (!record.active) return;
+    record.active = false;
+    state.listeners -= 1;
+    state.listenerTypes[record.type] = Math.max(0, (state.listenerTypes[record.type] ?? 1) - 1);
+  };
+  EventTarget.prototype.addEventListener = function (type, listener, options) {
+    if (!listener) return nativeAdd.call(this, type, listener, options);
+    const capture = captureFor(options);
+    const records = recordsFor(this);
+    if (records.some((record) => record.active && record.type === type && record.listener === listener && record.capture === capture)) return;
+    const record = { type, listener, capture, active: true, wrapped: listener };
+    if (onceFor(options)) {
+      record.wrapped = typeof listener === 'function'
+        ? function (...args) { deactivate(record); return listener.apply(this, args); }
+        : { handleEvent(...args) { deactivate(record); return listener.handleEvent(...args); } };
+    }
+    records.push(record);
+    state.listeners += 1;
+    state.listenerTypes[type] = (state.listenerTypes[type] ?? 0) + 1;
+    return nativeAdd.call(this, type, record.wrapped, options);
+  };
+  EventTarget.prototype.removeEventListener = function (type, listener, options) {
+    const capture = captureFor(options);
+    const record = listenerRecords.get(this)?.find((candidate) => candidate.active && candidate.type === type && candidate.listener === listener && candidate.capture === capture);
+    if (!record) return nativeRemove.call(this, type, listener, options);
+    deactivate(record);
+    return nativeRemove.call(this, type, record.wrapped, options);
+  };
+
+  const nativeSetTimeout = window.setTimeout.bind(window);
+  const nativeClearTimeout = window.clearTimeout.bind(window);
+  const nativeSetInterval = window.setInterval.bind(window);
+  const nativeClearInterval = window.clearInterval.bind(window);
+  const nativeRAF = window.requestAnimationFrame.bind(window);
+  const nativeCancelRAF = window.cancelAnimationFrame.bind(window);
+  window.setTimeout = (handler, delay = 0, ...args) => {
+    let id = 0;
+    const requested = Number(delay) || 0;
+    const effective = Number.isFinite(state.timeoutCapMs) && requested >= state.timeoutCapMs ? state.timeoutCapMs : requested;
+    const wrapped = typeof handler === 'function' ? (...callbackArgs) => {
+      state.timeouts.delete(id);
+      return handler(...callbackArgs);
+    } : handler;
+    id = nativeSetTimeout(wrapped, effective, ...args);
+    state.timeouts.add(id);
+    return id;
+  };
+  window.clearTimeout = (id) => { state.timeouts.delete(id); return nativeClearTimeout(id); };
+  window.setInterval = (handler, delay = 0, ...args) => {
+    const id = nativeSetInterval(handler, delay, ...args);
+    state.intervals.add(id);
+    return id;
+  };
+  window.clearInterval = (id) => { state.intervals.delete(id); return nativeClearInterval(id); };
+  window.requestAnimationFrame = (callback) => {
+    let id = 0;
+    id = nativeRAF((timestamp) => { state.animationFrames.delete(id); callback(timestamp); });
+    state.animationFrames.add(id);
+    return id;
+  };
+  window.cancelAnimationFrame = (id) => { state.animationFrames.delete(id); return nativeCancelRAF(id); };
+
+  window.__mcBrowserSmoke = {
+    get timeoutCapMs() { return state.timeoutCapMs; },
+    set timeoutCapMs(value) { state.timeoutCapMs = Number.isFinite(value) ? Math.max(1, Number(value)) : null; },
+    snapshot: () => ({
+      listeners: state.listeners,
+      listenerTypes: { ...state.listenerTypes },
+      timeouts: state.timeouts.size,
+      intervals: state.intervals.size,
+      animationFrames: state.animationFrames.size
+    })
+  };
 }
 
 async function smokeLiveMapControls(page, viewport) {
