@@ -9,6 +9,7 @@ HEALTH_URL="${MC_CARTOLIVE_READY_URL:-http://127.0.0.1:39476/readyz}"
 LOCAL_BASE_URL="${MC_CARTOLIVE_LOCAL_BASE_URL:-http://127.0.0.1:39476}"
 STATE_DIR="${MC_CARTOLIVE_DEPLOY_STATE_DIR:-/var/lib/mc-cartolive-deploy}"
 MIN_FREE_GB="${MC_CARTOLIVE_MIN_FREE_GB:-25}"
+READY_TIMEOUT_SECONDS="${MC_CARTOLIVE_READY_TIMEOUT_SECONDS:-120}"
 IMAGE=""
 PREVIOUS_IMAGE=""
 EXPECTED_GIT_SHA=""
@@ -66,6 +67,7 @@ if [ -n "$EXPECTED_GIT_SHA" ] && [[ ! "$EXPECTED_GIT_SHA" =~ ^[0-9a-f]{40}$ ]]; 
 	die "--expected-git-sha must be a full lowercase Git SHA"
 fi
 [[ "$MIN_FREE_GB" =~ ^[1-9][0-9]*$ ]] || die "MC_CARTOLIVE_MIN_FREE_GB must be a positive integer"
+[[ "$READY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] || die "MC_CARTOLIVE_READY_TIMEOUT_SECONDS must be a positive integer"
 if [ "$FRESH_DATABASE" -eq 1 ]; then
 	[ "$CONFIRM_FRESH_DATABASE" = "$CONFIRM_TOKEN" ] || die "fresh database requires --confirm-fresh-database $CONFIRM_TOKEN"
 elif [ -n "$CONFIRM_FRESH_DATABASE" ]; then
@@ -112,7 +114,7 @@ database_kb() {
 }
 
 wait_ready() {
-	deadline=$((SECONDS + 120))
+	deadline=$((SECONDS + READY_TIMEOUT_SECONDS))
 	while [ "$SECONDS" -lt "$deadline" ]; do
 		body="$(curl -fsS --max-time 5 "$HEALTH_URL" 2>/dev/null || true)"
 		if printf '%s' "$body" | grep -q '"ready"[[:space:]]*:[[:space:]]*true'; then
