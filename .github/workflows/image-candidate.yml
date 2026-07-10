@@ -40,6 +40,7 @@ jobs:
       verified_main_sha: ${{ steps.trust.outputs.verified_main_sha }}
       premerge_head_sha: ${{ steps.premerge.outputs.head_sha }}
       premerge_run_id: ${{ steps.premerge.outputs.run_id }}
+      premerge_proof_deferred: ${{ steps.premerge.outputs.proof_deferred }}
     steps:
       - name: Verify successful push CI is current repository main
         id: trust
@@ -72,11 +73,12 @@ jobs:
           echo "source_ci_head_branch=$SOURCE_CI_HEAD_BRANCH" >> "$GITHUB_OUTPUT"
           echo "source_ci_head_repository=$SOURCE_CI_HEAD_REPOSITORY" >> "$GITHUB_OUTPUT"
           echo "verified_main_sha=$current_main_sha" >> "$GITHUB_OUTPUT"
-      - name: Require canonical full proof on the merged release head
+      - name: Authorize canonical proof or exact-SHA fast track
         id: premerge
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ steps.trust.outputs.source_sha }}
+          FAST_TRACK_SHA: ${{ vars.MC_CARTOLIVE_RELEASE_FAST_TRACK_SHA }}
         run: |
           prs_json="$(gh api --method GET -H "Accept: application/vnd.github+json" \
             "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/pulls")"
@@ -91,6 +93,17 @@ jobs:
           test "$release_pr_count" -eq 1
           head_sha="$(printf '%s' "$release_pr" | jq -r '.[0].head.sha')"
           [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          if [ -n "$FAST_TRACK_SHA" ]; then
+            [[ "$FAST_TRACK_SHA" =~ ^[0-9a-f]{40}$ ]]
+            test "$FAST_TRACK_SHA" = "$head_sha"
+            echo "::warning::Canonical full proof explicitly deferred for reviewed PR head $head_sha"
+            echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+            echo "run_id=0" >> "$GITHUB_OUTPUT"
+            echo "proof_deferred=true" >> "$GITHUB_OUTPUT"
+            echo "authorized=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           artifact_name="release-performance-full-$head_sha"
           artifact_json="$(gh api --method GET \
@@ -129,6 +142,7 @@ jobs:
              .phases.sustainedIngest.passed == true and .phases.burstIngest.passed == true and .phases.api.passed == true and .phases.websocket.passed == true' "$report" >/dev/null
           echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "proof_deferred=false" >> "$GITHUB_OUTPUT"
           echo "authorized=true" >> "$GITHUB_OUTPUT"
 
   candidate:
@@ -261,6 +275,7 @@ jobs:
           CANDIDATE_TAG: ${{ steps.source.outputs.tag }}
           PREMERGE_HEAD_SHA: ${{ needs.authorize.outputs.premerge_head_sha }}
           PREMERGE_RUN_ID: ${{ needs.authorize.outputs.premerge_run_id }}
+          PREMERGE_PROOF_DEFERRED: ${{ needs.authorize.outputs.premerge_proof_deferred }}
         run: |
           jq -n \
             --arg repository "${REGISTRY}/${IMAGE_NAME}" \
@@ -273,7 +288,8 @@ jobs:
             --arg sourceCiHeadRepository "$SOURCE_CI_HEAD_REPOSITORY" --arg verifiedMainSha "$VERIFIED_MAIN_SHA" \
             --arg candidateWorkflowRunId "$CANDIDATE_WORKFLOW_RUN_ID" --arg candidateWorkflowRunAttempt "$CANDIDATE_WORKFLOW_RUN_ATTEMPT" \
             --arg candidateTag "$CANDIDATE_TAG" --arg premergeHeadSha "$PREMERGE_HEAD_SHA" --arg premergeRunId "$PREMERGE_RUN_ID" \
-            '{repository:$repository,image:$image,digest:$digest,gitSha:$gitSha,version:$version,buildTime:$buildTime,platforms:["linux/amd64","linux/arm64"],sourceCiRunId:$sourceCiRunId,sourceCiHeadSha:$sourceCiHeadSha,sourceCiConclusion:$sourceCiConclusion,sourceCiWorkflow:$sourceCiWorkflow,sourceCiEvent:$sourceCiEvent,sourceCiHeadBranch:$sourceCiHeadBranch,sourceCiHeadRepository:$sourceCiHeadRepository,verifiedMainRef:"refs/heads/main",verifiedMainSha:$verifiedMainSha,candidateWorkflowRunId:$candidateWorkflowRunId,candidateWorkflowRunAttempt:$candidateWorkflowRunAttempt,candidateTag:$candidateTag,premergeHeadRef:"refs/heads/codex/release-3.2.0",premergeHeadSha:$premergeHeadSha,premergeRunId:$premergeRunId}' \
+            --argjson premergeProofDeferred "$PREMERGE_PROOF_DEFERRED" \
+            '{repository:$repository,image:$image,digest:$digest,gitSha:$gitSha,version:$version,buildTime:$buildTime,platforms:["linux/amd64","linux/arm64"],sourceCiRunId:$sourceCiRunId,sourceCiHeadSha:$sourceCiHeadSha,sourceCiConclusion:$sourceCiConclusion,sourceCiWorkflow:$sourceCiWorkflow,sourceCiEvent:$sourceCiEvent,sourceCiHeadBranch:$sourceCiHeadBranch,sourceCiHeadRepository:$sourceCiHeadRepository,verifiedMainRef:"refs/heads/main",verifiedMainSha:$verifiedMainSha,candidateWorkflowRunId:$candidateWorkflowRunId,candidateWorkflowRunAttempt:$candidateWorkflowRunAttempt,candidateTag:$candidateTag,premergeHeadRef:"refs/heads/codex/release-3.2.0",premergeHeadSha:$premergeHeadSha,premergeRunId:$premergeRunId,premergeProofDeferred:$premergeProofDeferred}' \
             > candidate-manifest.json
       - name: Upload candidate evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

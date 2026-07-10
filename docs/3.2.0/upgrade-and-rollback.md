@@ -25,6 +25,13 @@ a mutable tag and do not pass the destructive fresh-database flags.
    uniquely named artifact, attestation, full merge SHA, and `@sha256:` digest.
    Pre-pull that digest and the previous immutable digest.
 
+An operator may explicitly defer the long pre-merge performance proof by
+setting repository variable `MC_CARTOLIVE_RELEASE_FAST_TRACK_SHA` to the exact
+reviewed PR head SHA. The candidate manifest records
+`premergeProofDeferred=true`; unset the variable immediately after the candidate
+build. This does not bypass CI, image scanning, provenance, immutable identity,
+or the full proof required for final tag promotion.
+
 ## Data-preserving cutover
 
 ```bash
