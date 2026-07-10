@@ -1,6 +1,7 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Check, CloudSun, Columns3, Eye, EyeOff, History, List, MessageSquareText, Monitor, Moon, MoreHorizontal, Palette, Pause, Play, RadioTower, RotateCcw, Route, Search, Share2, SlidersHorizontal, Sparkles, Sun, X } from 'lucide-react';
 import { fetchPublicBootstrap, fetchPublicEvents, fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicPropagation, fetchPublicState, fetchPublicStateWithFallback, type PublicStateFetchResult } from './api';
+import { recoverPublicEventPages } from './eventRecovery';
 import { connectPublicSocket } from './ws';
 import {
   applyPublicEnvelope,
@@ -243,6 +244,7 @@ function PublicDashboardApp() {
   const GIF_EXPORT_COOLDOWN_MS = 30_000;
   const stateRef = useRef<AppState>(emptyState);
   const latestObservedSeqRef = useRef(0);
+  const eventRecoveryRef = useRef<((latestSeq?: number) => void) | null>(null);
   const lastSnapshotSignatureRef = useRef('');
   const pendingMessagesRef = useRef<PublicLiveEnvelope[]>([]);
   const vcrBufferedMessagesRef = useRef<PublicLiveEnvelope[]>([]);
@@ -768,8 +770,10 @@ function PublicDashboardApp() {
   }, [applyPublicSnapshot]);
 
   useEffect(() => {
-    let openedOnce = false;
     let active = true;
+    let recoveryInFlight = false;
+    let queuedRecoveryTarget = 0;
+    let queuedRecoveryPoll = false;
     const scheduleMessagesFlush = () => {
       if (flushMessagesTimerRef.current !== null) return;
       const delay = nextLiveEnvelopeDelayMs(pendingMessagesRef.current, Date.now());
@@ -817,32 +821,66 @@ function PublicDashboardApp() {
     };
     const backfillOrRefresh = (latestSeq?: number) => {
       if (vcrModeRef.current !== 'live') return;
-      const afterSeq = stateRef.current.latestSeq;
-      if (!latestSeq || latestSeq <= afterSeq) {
-        setState((current) => applyPublicEnvelope(current, { v: 1, type: 'hello', seq: latestSeq, latestSeq, serverTime: Date.now(), connectionId: 'resume' }));
-        return;
+      if (latestSeq !== undefined && Number.isFinite(latestSeq)) {
+        queuedRecoveryTarget = Math.max(queuedRecoveryTarget, Math.floor(latestSeq));
+      } else {
+        queuedRecoveryPoll = true;
       }
-      fetchPublicEvents({ afterSeq, limit: 1000 })
-        .then((response) => {
-          if (!active || vcrModeRef.current !== 'live') return;
-          latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, response.latestSeq);
-          if (response.resetRequired || (response.events.length === 0 && response.latestSeq > afterSeq)) {
+      if (recoveryInFlight) return;
+      recoveryInFlight = true;
+
+      const recover = async () => {
+        while (active && vcrModeRef.current === 'live' && (queuedRecoveryPoll || queuedRecoveryTarget > stateRef.current.latestSeq)) {
+          const requestedTarget = queuedRecoveryTarget > 0 ? queuedRecoveryTarget : undefined;
+          queuedRecoveryTarget = 0;
+          queuedRecoveryPoll = false;
+          const result = await recoverPublicEventPages({
+            afterSeq: stateRef.current.latestSeq,
+            targetSeq: requestedTarget,
+            fetchPage: (afterSeq, limit) => fetchPublicEvents({ afterSeq, limit }),
+            applyPage: (events) => {
+              if (!active || vcrModeRef.current !== 'live') return;
+              setState((current) => events.reduce((next, event) => applyPublicEvent(next, event), current));
+            },
+            isActive: () => active && vcrModeRef.current === 'live'
+          });
+          latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, result.latestSeq);
+          if (result.status === 'reset-required' || result.status === 'unrecoverable-gap') {
             refreshState();
             return;
           }
-          setState((current) => response.events.reduce((next, event) => applyPublicEvent(next, event), current));
-          setSocketStatus('live');
-        })
+          if (result.status === 'empty') {
+            setState((current) => applyPublicEnvelope(current, {
+              v: 1,
+              type: 'hello',
+              seq: 0,
+              latestSeq: 0,
+              serverTime: Date.now(),
+              connectionId: 'empty-recovery'
+            }));
+          }
+        }
+      };
+
+      void recover()
         .catch(() => {
-          if (!active) return;
-          refreshState();
+          // Transient transport failures stay on cursor polling. A complete
+          // snapshot is reserved for a server-declared reset or proven gap.
+          if (active) setSocketStatus((current) => (current === 'live' ? current : 'polling'));
+        })
+        .finally(() => {
+          recoveryInFlight = false;
+          if (active && (queuedRecoveryPoll || queuedRecoveryTarget > stateRef.current.latestSeq)) {
+            backfillOrRefresh(queuedRecoveryTarget || undefined);
+          }
         });
     };
+    eventRecoveryRef.current = backfillOrRefresh;
     const socket = connectPublicSocket((message) => {
       latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, message.latestSeq ?? message.seq ?? 0);
       if (message.type === 'hello') {
         setState((current) => applyPublicEnvelope(current, message));
-        if (openedOnce) backfillOrRefresh(message.latestSeq ?? message.seq);
+        backfillOrRefresh(message.latestSeq ?? message.seq);
         return;
       }
       if (message.type === 'pong') {
@@ -865,11 +903,10 @@ function PublicDashboardApp() {
         return;
       }
       enqueueMessage(message);
-    }, setSocketStatus, () => {
-      openedOnce = true;
-    });
+    }, setSocketStatus);
     return () => {
       active = false;
+      if (eventRecoveryRef.current === backfillOrRefresh) eventRecoveryRef.current = null;
       if (flushMessagesTimerRef.current !== null) window.clearTimeout(flushMessagesTimerRef.current);
       flushMessagesTimerRef.current = null;
       pendingMessagesRef.current = [];
@@ -891,38 +928,17 @@ function PublicDashboardApp() {
   useEffect(() => {
     if (socketStatus === 'live') return;
     let active = true;
-    let inFlight = false;
-    const refresh = () => {
-      if (vcrModeRef.current !== 'live') return;
-      if (inFlight) return;
-      inFlight = true;
-      fetchPublicState()
-        .then((liveState) => {
-          if (!active) return;
-          if (vcrModeRef.current !== 'live') return;
-          setFullStateHydrated(true);
-          if (!applyPublicSnapshot(liveState)) return;
-          setPublicMapConfig(liveState.map ?? null);
-          if ((liveState.nodes?.length ?? 0) > 0) {
-            setInitialNodesReceived(true);
-            setNodeLoadFailed(false);
-          }
-          setSocketStatus((current) => (current === 'live' ? current : 'polling'));
-        })
-        .catch(() => {
-          if (!active) return;
-          if (!initialNodesReceived) setNodeLoadFailed(true);
-        })
-        .finally(() => {
-          inFlight = false;
-        });
+    const recover = () => {
+      if (!active || vcrModeRef.current !== 'live') return;
+      eventRecoveryRef.current?.();
     };
-    const interval = window.setInterval(refresh, PUBLIC_STATE_FALLBACK_POLL_MS);
+    recover();
+    const interval = window.setInterval(recover, PUBLIC_STATE_FALLBACK_POLL_MS);
     return () => {
       active = false;
       window.clearInterval(interval);
     };
-  }, [applyPublicSnapshot, initialNodesReceived, socketStatus]);
+  }, [socketStatus]);
 
   useEffect(() => {
     if (!initialNodesReceived || positionedNodesRendered) return;
