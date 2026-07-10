@@ -51,6 +51,9 @@ export default defineConfig({
     }
   ],
   build: {
+    // Keep role and packet artwork as immutable cacheable files instead of
+    // inflating the eagerly loaded asset-pack JavaScript with base64 payloads.
+    assetsInlineLimit: 0,
     chunkSizeWarningLimit: 1200,
     rolldownOptions: {
       output: {
