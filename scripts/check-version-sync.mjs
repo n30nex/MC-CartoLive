@@ -122,7 +122,7 @@ for (const boundary of [
   'verifiedMainSha:$verifiedMainSha',
   'candidate-$SOURCE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT',
   'release-candidate-${{ steps.source.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}',
-  'Require canonical full proof on the merged release head',
+  'Authorize canonical proof or exact-SHA fast track',
   'refs/heads/codex/release-3.2.0',
   '.canonicalReleaseProof == true',
   'candidateWorkflowRunAttempt:$candidateWorkflowRunAttempt',
