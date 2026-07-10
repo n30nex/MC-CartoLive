@@ -74,7 +74,11 @@ export default defineConfig({
     __APP_ASSET_PACK__: JSON.stringify(APP_ASSET_PACK)
   },
   test: {
-    environment: 'jsdom'
+    environment: 'jsdom',
+    // Fork pools can stall on Windows when this suite creates many jsdom
+    // processes. Worker threads keep local and CI behavior deterministic.
+    pool: 'threads',
+    maxWorkers: 4
   }
 });
 
