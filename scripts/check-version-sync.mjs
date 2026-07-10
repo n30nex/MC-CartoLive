@@ -66,6 +66,30 @@ if (!publishWorkflow.includes('candidate-manifest.json') || !publishWorkflow.inc
 if (!publishWorkflow.includes('git cat-file -t') || !publishWorkflow.includes('org.opencontainers.image.revision')) {
   errors.push('tag workflow must require an annotated tag and exact OCI revision');
 }
+for (const proof of [
+  '.sourceCiEvent == "push"',
+  '.sourceCiHeadRepository == $sourceRepository',
+  '.verifiedMainSha == $sha',
+  '.head_repository.full_name == $repository',
+  'test "$current_main_sha" = "$MERGE_SHA"',
+]) {
+  if (!publishWorkflow.includes(proof)) errors.push(`tag workflow does not reverify candidate trust proof: ${proof}`);
+}
+
+const candidateWorkflow = read('.github/workflows/image-candidate.yml');
+for (const boundary of [
+  'permissions: {}',
+  "github.event.workflow_run.event == 'push'",
+  'github.event.workflow_run.head_repository.full_name == github.repository',
+  'needs: authorize',
+  'test "$SOURCE_SHA" = "$current_main_sha"',
+  'persist-credentials: false',
+  'sourceCiEvent:$sourceCiEvent',
+  'sourceCiHeadRepository:$sourceCiHeadRepository',
+  'verifiedMainSha:$verifiedMainSha',
+]) {
+  if (!candidateWorkflow.includes(boundary)) errors.push(`candidate workflow trust boundary is missing: ${boundary}`);
+}
 
 const deployScript = read('scripts/deploy.sh');
 if (!deployScript.includes('[ -n "$EXPECTED_GIT_SHA" ] || die')) errors.push('deploy must require an expected merge SHA');

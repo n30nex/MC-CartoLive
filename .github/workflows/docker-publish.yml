@@ -30,6 +30,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Verify tag, VERSION, and ancestry
         id: release
         run: |
@@ -40,7 +41,7 @@ jobs:
           version="$(tr -d '\r\n' < VERSION)"
           test "$GITHUB_REF_NAME" = "v$version"
           git fetch origin main --depth=1
-          git merge-base --is-ancestor "$merge_sha" origin/main
+          test "$merge_sha" = "$(git rev-parse origin/main)"
           node scripts/check-version-sync.mjs
           echo "merge_sha=$merge_sha" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -50,11 +51,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          count="$(gh api --method GET \
+          runs_json="$(gh api --method GET \
             "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
-            -f head_sha="$MERGE_SHA" -f status=completed -f per_page=100 \
-            --jq '[.workflow_runs[] | select(.conclusion == "success" and .head_branch == "main")] | length')"
+            -f head_sha="$MERGE_SHA" -f status=completed -f per_page=100)"
+          count="$(printf '%s' "$runs_json" | jq --arg repository "$REPOSITORY" \
+            '[.workflow_runs[] | select(.conclusion == "success" and .event == "push" and .head_branch == "main" and .head_repository.full_name == $repository)] | length')"
           test "$count" -gt 0
       - name: Load immutable candidate evidence
         id: evidence
@@ -63,6 +66,8 @@ jobs:
           MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
           VERSION: ${{ steps.release.outputs.version }}
         run: |
+          current_main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          test "$current_main_sha" = "$MERGE_SHA"
           artifact_name="release-candidate-$MERGE_SHA"
           artifact_json="$(gh api --method GET \
             "repos/$GITHUB_REPOSITORY/actions/artifacts" \
@@ -73,7 +78,8 @@ jobs:
           test -n "$run_id"
           run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")"
           printf '%s' "$run_json" | jq -e \
-            '.conclusion == "success" and .path == ".github/workflows/image-candidate.yml" and .event == "workflow_run" and .head_branch == "main"' >/dev/null
+            --arg sha "$MERGE_SHA" --arg repository "$GITHUB_REPOSITORY" \
+            '.conclusion == "success" and .path == ".github/workflows/image-candidate.yml" and .event == "workflow_run" and .head_branch == "main" and .head_sha == $sha and .head_repository.full_name == $repository' >/dev/null
           rm -rf /tmp/mc-cartolive-candidate-evidence
           mkdir -p /tmp/mc-cartolive-candidate-evidence
           gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > /tmp/mc-cartolive-candidate.zip
@@ -82,12 +88,13 @@ jobs:
           test -f "$manifest"
           printf '%s' "$(cat "$manifest")" | jq -e \
             --arg sha "$MERGE_SHA" --arg version "$VERSION" --arg repository "${REGISTRY}/${IMAGE_NAME}" \
-            '.gitSha == $sha and .sourceCiHeadSha == $sha and .sourceCiConclusion == "success" and .sourceCiWorkflow == "CI" and .version == $version and .repository == $repository' >/dev/null
+            --arg sourceRepository "$GITHUB_REPOSITORY" --arg candidateRunId "$run_id" \
+            '.gitSha == $sha and .sourceCiHeadSha == $sha and .sourceCiConclusion == "success" and .sourceCiWorkflow == "CI" and .sourceCiEvent == "push" and .sourceCiHeadBranch == "main" and .sourceCiHeadRepository == $sourceRepository and .verifiedMainRef == "refs/heads/main" and .verifiedMainSha == $sha and .candidateWorkflowRunId == $candidateRunId and .version == $version and .repository == $repository' >/dev/null
           source_ci_run_id="$(jq -r '.sourceCiRunId' "$manifest")"
           [[ "$source_ci_run_id" =~ ^[0-9]+$ ]]
           source_ci_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_ci_run_id")"
-          printf '%s' "$source_ci_json" | jq -e --arg sha "$MERGE_SHA" \
-            '.name == "CI" and .conclusion == "success" and .head_branch == "main" and .head_sha == $sha' >/dev/null
+          printf '%s' "$source_ci_json" | jq -e --arg sha "$MERGE_SHA" --arg repository "$GITHUB_REPOSITORY" \
+            '.name == "CI" and .path == ".github/workflows/ci.yml" and .conclusion == "success" and .event == "push" and .head_branch == "main" and .head_sha == $sha and .head_repository.full_name == $repository' >/dev/null
           digest="$(jq -r '.digest' "$manifest")"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           test "$(jq -r '.image' "$manifest")" = "${REGISTRY}/${IMAGE_NAME}@$digest"
