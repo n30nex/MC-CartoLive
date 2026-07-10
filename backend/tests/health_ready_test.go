@@ -59,6 +59,7 @@ func TestHealthzIncludesPublicSafeOperationalFields(t *testing.T) {
 		MQTTTotal:         func() int64 { return 77 },
 		PublicState:       cache.Snapshot,
 		PublicCacheStatus: cache.Status,
+		StaticAssetsReady: func() bool { return true },
 	}
 
 	response := httptest.NewRecorder()
@@ -71,7 +72,7 @@ func TestHealthzIncludesPublicSafeOperationalFields(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"cacheAgeMs", "cacheTruncatedNodes", "cacheTruncatedRoutes", "cacheTruncatedRecentPulses", "cacheTruncatedRecentActivity", "mqttConnected", "wsDroppedMessages", "publicStateReady", "dbReady", "version", "gitSha", "buildTime", "publicHistoryRequests", "publicPacketsRequests", "publicPacketsErrors", "publicPacketsLatencyMs", "publicPacketsLastScan", "publicPacketsScanCapped", "publicPacketsProjectionServed", "publicPacketsProjectionFallback", "publicPacketsProjectionErrors", "publicPacketsProjectionLastAt", "publicPacketsProjectionComplete", "publicPacketsSearchFTS", "publicPacketsSearchSubstring", "publicPacketsSearchNoQuery", "packetPathBackfillFailures", "packetPathBackfillLatencyMs", "packetPathBackfillLastAt", "packetPathBackfillLastScan", "packetPathBackfillProjected", "packetPathBackfillMappable", "packetPathBackfillInvalid", "packetPathSearchIndexSynced", "packetPathSearchIndexRemaining", "packetPathBackfillRemaining", "packetCountRefreshFailures", "packetCountRefreshLatencyMs", "packetCountRefreshLastAt", "recentRoutePulseAgeMs", "recentObserverBurstAgeMs", "packetIngestState", "publicCacheState", "routeMotionState", "observerMotionState", "mapMotionState", "liveConfidenceState", "packetIngestFresh", "mapMotionFresh", "publicLiveFresh"} {
+	for _, key := range []string{"cacheAgeMs", "fullReconciledAt", "fullReconcileAgeMs", "cacheTruncatedNodes", "cacheTruncatedRoutes", "cacheTruncatedRecentPulses", "cacheTruncatedRecentActivity", "mqttConnected", "mqttSessionReady", "datasetState", "datasetStartedAt", "storagePressureState", "wsDroppedMessages", "publicStateReady", "dbReady", "version", "gitSha", "buildTime", "publicHistoryRequests", "publicPacketsRequests", "publicPacketsErrors", "publicPacketsLatencyMs", "publicPacketsLastScan", "publicPacketsScanCapped", "publicPacketsProjectionServed", "publicPacketsProjectionFallback", "publicPacketsProjectionErrors", "publicPacketsProjectionLastAt", "publicPacketsProjectionComplete", "publicPacketsSearchFTS", "publicPacketsSearchSubstring", "publicPacketsSearchNoQuery", "packetPathBackfillFailures", "packetPathBackfillLatencyMs", "packetPathBackfillLastAt", "packetPathBackfillLastScan", "packetPathBackfillProjected", "packetPathBackfillMappable", "packetPathBackfillInvalid", "packetPathSearchIndexSynced", "packetPathSearchIndexRemaining", "packetPathBackfillRemaining", "packetCountRefreshFailures", "packetCountRefreshLatencyMs", "packetCountRefreshLastAt", "recentRoutePulseAgeMs", "recentObserverBurstAgeMs", "packetIngestState", "publicCacheState", "routeMotionState", "observerMotionState", "mapMotionState", "liveConfidenceState", "packetIngestFresh", "mapMotionFresh", "publicLiveFresh"} {
 		if _, ok := payload[key]; !ok {
 			t.Fatalf("healthz missing %q in %#v", key, payload)
 		}
@@ -120,6 +121,7 @@ func TestHealthzSeparatesPacketIngestFromQuietMapMotion(t *testing.T) {
 		PublicHub:         live.NewHub(slog.New(slog.NewTextHandler(io.Discard, nil)), 4),
 		PublicState:       cache.Snapshot,
 		PublicCacheStatus: cache.Status,
+		StaticAssetsReady: func() bool { return true },
 		MQTTConnected:     func() bool { return true },
 		MQTTTotal:         func() int64 { return 100 },
 		MQTTStatus: func(time.Time) imqtt.Status {
@@ -186,6 +188,7 @@ func TestReadyzFailsUntilPublicCacheReady(t *testing.T) {
 		PublicCacheStatus: cache.Status,
 		MQTTConnected:     func() bool { return false },
 		MQTTTotal:         func() int64 { return 0 },
+		StaticAssetsReady: func() bool { return true },
 	}
 
 	notReady := httptest.NewRecorder()
@@ -199,5 +202,32 @@ func TestReadyzFailsUntilPublicCacheReady(t *testing.T) {
 	server.Routes().ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if ready.Code != http.StatusOK {
 		t.Fatalf("readyz after cache = %d body=%s", ready.Code, ready.Body.String())
+	}
+}
+
+func TestReadyzUsesCurrentStoragePressureNotHistoricalFullCounter(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	cache := live.NewPublicStateCache(live.NewPublicIATAFilter(nil))
+	cache.Replace(live.PublicLiveState{ServerTime: time.Now().UnixMilli()}, nil)
+	runtimeStats := live.NewRuntimeStats()
+	runtimeStats.RecordStoreWrite(time.Millisecond, 0, true, false, true)
+	server := api.Server{
+		Config:            api.Config{PublicMode: true},
+		Store:             st,
+		PublicHub:         live.NewHub(slog.New(slog.NewTextHandler(io.Discard, nil)), 4),
+		Runtime:           runtimeStats,
+		PublicState:       cache.Snapshot,
+		PublicCacheStatus: cache.Status,
+		StaticAssetsReady: func() bool { return true },
+	}
+	response := httptest.NewRecorder()
+	server.Routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("readyz status=%d body=%s", response.Code, response.Body.String())
 	}
 }

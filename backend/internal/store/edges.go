@@ -81,7 +81,7 @@ func (s *Store) RecentEdgeEvents(ctx context.Context, limit int) ([]live.EdgeEve
 		limit = 200
 	}
 	maxHeardAt := time.Now().Add(maxFutureEdgeSkew).UnixMilli()
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 SELECT e.id, e.packet_hash, e.observation_id, COALESCE(o.iata, ''), e.payload_type, e.payload_type_name,
   e.message_sender, e.message_text, e.message_anchor_json, e.heard_at_ms, e.segments_json, e.render_reason
 FROM live_edge_events e

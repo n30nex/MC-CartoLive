@@ -151,6 +151,7 @@ func (a *Application) Start(ctx context.Context) error {
 		"journalMode", dbInfo.JournalMode,
 		"busyTimeoutMs", dbInfo.BusyTimeout,
 		"maxOpenConns", dbInfo.MaxOpenConns,
+		"readMaxOpenConns", dbInfo.ReadMaxOpenConns,
 	)
 	a.wg.Add(1)
 	go func() { defer a.wg.Done(); a.refreshPacketCountOnce(ctx) }()
@@ -247,9 +248,13 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 	}
 	summary := meshcore.Summary(parsed, advert)
 	decodedMessage := meshcore.DecodePublicMessage(parsed.PayloadType, parsed.Payload, msg.RawJSON, a.Config.MeshcoreChannelSecrets)
+	ingestID := msg.IngestID
+	if ingestID == "" {
+		ingestID = fmt.Sprintf("fixture-%d-%d", time.Now().UnixNano(), msg.HeardAtMs)
+	}
 	var observationID int64
 	err = a.retryStoreWrite(ctx, "packet/observation upsert", func(ctx context.Context) error {
-		id, err := a.Store.UpsertPacketAndObservation(ctx, parsed, msg.HeardAtMs, store.ObservationInsert{Message: msg, Parsed: parsed, Summary: summary, MessageSender: decodedMessage.Sender, MessageText: decodedMessage.Text})
+		id, err := a.Store.UpsertPacketAndObservation(ctx, parsed, msg.HeardAtMs, store.ObservationInsert{IngestID: ingestID, Message: msg, Parsed: parsed, Summary: summary, MessageSender: decodedMessage.Sender, MessageText: decodedMessage.Text})
 		observationID = id
 		return err
 	})
@@ -382,37 +387,48 @@ func (a *Application) publishPublicEvent(ctx context.Context, eventType string, 
 }
 
 func (a *Application) retryStoreWrite(ctx context.Context, label string, fn func(context.Context) error) error {
+	started := time.Now()
+	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	delays := []time.Duration{
 		0,
+		50 * time.Millisecond,
 		100 * time.Millisecond,
-		250 * time.Millisecond,
-		500 * time.Millisecond,
-		time.Second,
-		2 * time.Second,
+		200 * time.Millisecond,
+		400 * time.Millisecond,
+		800 * time.Millisecond,
 	}
 	var err error
+	retries := 0
 	for attempt, delay := range delays {
 		if delay > 0 {
 			select {
-			case <-ctx.Done():
+			case <-writeCtx.Done():
 				if err != nil {
+					a.Runtime.RecordStoreWrite(time.Since(started), retries, true, isSQLiteBusy(err), isSQLiteFull(err))
 					return err
 				}
-				return ctx.Err()
+				err = writeCtx.Err()
+				a.Runtime.RecordStoreWrite(time.Since(started), retries, true, false, false)
+				return err
 			case <-time.After(delay):
 			}
 		}
-		err = fn(ctx)
+		err = fn(writeCtx)
 		if err == nil {
 			if attempt > 0 && a != nil && a.Log != nil {
 				a.Log.Debug("sqlite write recovered after retry", "operation", label, "attempt", attempt+1)
 			}
+			a.Runtime.RecordStoreWrite(time.Since(started), retries, false, false, false)
 			return nil
 		}
 		if !isSQLiteBusy(err) {
+			a.Runtime.RecordStoreWrite(time.Since(started), retries, true, false, isSQLiteFull(err))
 			return err
 		}
+		retries++
 	}
+	a.Runtime.RecordStoreWrite(time.Since(started), retries, true, isSQLiteBusy(err), isSQLiteFull(err))
 	return err
 }
 
@@ -422,6 +438,14 @@ func isSQLiteBusy(err error) bool {
 	}
 	text := strings.ToLower(err.Error())
 	return strings.Contains(text, "sqlite_busy") || strings.Contains(text, "database is locked") || strings.Contains(text, "database table is locked")
+}
+
+func isSQLiteFull(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "sqlite_full") || strings.Contains(text, "database or disk is full") || strings.Contains(text, "disk full")
 }
 
 func (a *Application) publicActivityFromPacket(ctx context.Context, observation live.PacketObservation, routeIDs []string) live.PublicActivity {
@@ -723,6 +747,13 @@ func (a *Application) RefreshPublicStateCache(ctx context.Context) error {
 		publicStats.Packets = count
 	}
 	publicState := live.BuildPublicLiveState(filtered, publicStats)
+	publicState.Map = live.PublicMapConfig{
+		RegionPreset:  a.Config.MapRegionPreset,
+		DefaultRegion: a.Config.DefaultRegion,
+		DefaultCenter: []float64{a.Config.DefaultCenterLng, a.Config.DefaultCenterLat},
+		DefaultZoom:   a.Config.DefaultZoom,
+		Bounds:        a.Config.MapBounds,
+	}
 	a.PublicCache.Replace(publicState, excluded)
 	failed = false
 	return nil
@@ -1200,6 +1231,14 @@ func (a *Application) pruneLoop(ctx context.Context) {
 		} else {
 			a.Log.Debug("data pruned", "beforeMs", beforeMs)
 		}
+		publicEventHours := a.Config.PublicEventRetentionHours
+		if publicEventHours <= 0 {
+			publicEventHours = 24
+		}
+		publicEventBeforeMs := time.Now().Add(-time.Duration(publicEventHours) * time.Hour).UnixMilli()
+		if err := a.Store.PrunePublicEvents(ctx, publicEventBeforeMs); err != nil {
+			a.Log.Warn("public event prune failed", "error", err)
+		}
 		propagationRetentionDays := a.Config.PropagationEventRetentionDays
 		if propagationRetentionDays > 0 && propagationRetentionDays != retentionDays {
 			propagationBeforeMs := time.Now().AddDate(0, 0, -propagationRetentionDays).UnixMilli()
@@ -1243,11 +1282,15 @@ func (a *Application) maintenanceLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := a.Store.Analyze(ctx); err != nil {
+			maintenanceCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			if err := a.Store.Optimize(maintenanceCtx, false); err != nil {
 				a.Log.Warn("database maintenance failed", "error", err)
+			} else if err := a.Store.IncrementalVacuum(maintenanceCtx, 256); err != nil {
+				a.Log.Warn("database incremental vacuum failed", "error", err)
 			} else {
 				a.Log.Info("database maintenance complete")
 			}
+			cancel()
 		}
 	}
 }

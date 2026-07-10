@@ -1,6 +1,10 @@
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
-PRAGMA busy_timeout = 30000;
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  applied_at_ms INTEGER NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS packets (
   packet_hash TEXT PRIMARY KEY,
@@ -23,6 +27,7 @@ CREATE TABLE IF NOT EXISTS packets (
 
 CREATE TABLE IF NOT EXISTS packet_observations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ingest_id TEXT NOT NULL DEFAULT '',
   packet_hash TEXT NOT NULL,
   topic TEXT NOT NULL,
   iata TEXT NOT NULL,
@@ -53,6 +58,8 @@ CREATE TABLE IF NOT EXISTS packet_observations (
 );
 
 CREATE INDEX IF NOT EXISTS idx_observations_recent_id ON packet_observations(heard_at_ms DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_observations_packet_hash ON packet_observations(packet_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_observations_ingest_id ON packet_observations(ingest_id) WHERE ingest_id != '';
 CREATE INDEX IF NOT EXISTS idx_observations_resolution ON packet_observations(resolution_status, heard_at_ms DESC);
 CREATE INDEX IF NOT EXISTS idx_observations_iata ON packet_observations(iata, heard_at_ms DESC);
 CREATE INDEX IF NOT EXISTS idx_observations_observer_recent ON packet_observations(observer_public_key, heard_at_ms DESC);
@@ -219,6 +226,7 @@ CREATE TABLE IF NOT EXISTS public_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_public_events_time ON public_events(occurred_at_ms DESC, seq DESC);
+CREATE INDEX IF NOT EXISTS idx_public_events_seq_time ON public_events(seq, occurred_at_ms);
 CREATE INDEX IF NOT EXISTS idx_public_events_seq ON public_events(seq);
 CREATE INDEX IF NOT EXISTS idx_public_events_region_seq ON public_events(region, seq);
 CREATE INDEX IF NOT EXISTS idx_public_events_payload_seq ON public_events(payload_type_name, seq);

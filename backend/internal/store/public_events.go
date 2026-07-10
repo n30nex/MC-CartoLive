@@ -15,6 +15,7 @@ type PublicEventStore interface {
 	InsertPublicEvent(ctx context.Context, event live.PublicEvent) (live.PublicEvent, error)
 	ListPublicEventsAfter(ctx context.Context, filter PublicEventFilter) ([]live.PublicEvent, int64, error)
 	LatestPublicSeq(ctx context.Context) (int64, error)
+	PublicSeqBounds(ctx context.Context) (int64, int64, error)
 }
 
 type PublicEventFilter struct {
@@ -84,17 +85,29 @@ INSERT INTO public_events (
 }
 
 func (s *Store) LatestPublicSeq(ctx context.Context) (int64, error) {
+	_, latest, err := s.PublicSeqBounds(ctx)
+	return latest, err
+}
+
+// PublicSeqBounds uses primary-key index seeks instead of aggregating the
+// retained event table. This must remain fast even with millions of events.
+func (s *Store) PublicSeqBounds(ctx context.Context) (int64, int64, error) {
 	if s == nil || s.db == nil {
-		return 0, nil
+		return 0, 0, nil
 	}
-	var seq sql.NullInt64
-	if err := s.db.QueryRowContext(ctx, `SELECT MAX(seq) FROM public_events`).Scan(&seq); err != nil {
-		return 0, err
+	var oldest sql.NullInt64
+	var latest sql.NullInt64
+	err := s.reader().QueryRowContext(ctx, `
+SELECT
+  (SELECT seq FROM public_events ORDER BY seq ASC LIMIT 1),
+  (SELECT seq FROM public_events ORDER BY seq DESC LIMIT 1)`).Scan(&oldest, &latest)
+	if err != nil {
+		return 0, 0, err
 	}
-	if !seq.Valid {
-		return 0, nil
+	if !oldest.Valid || !latest.Valid {
+		return 0, 0, nil
 	}
-	return seq.Int64, nil
+	return oldest.Int64, latest.Int64, nil
 }
 
 func (s *Store) ListPublicEventsAfter(ctx context.Context, filter PublicEventFilter) ([]live.PublicEvent, int64, error) {
@@ -139,7 +152,7 @@ ORDER BY seq ASC
 LIMIT ?`
 	args = append(args, limit+1)
 
-	rows, err := s.db.QueryContext(ctx, sqlText, args...)
+	rows, err := s.reader().QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return nil, 0, err
 	}

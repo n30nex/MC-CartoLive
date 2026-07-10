@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"meshcore-canada-live-map/backend/internal/live"
 
@@ -18,8 +19,11 @@ import (
 //go:embed schema.sql
 var schemaSQL string
 
+const SchemaVersion = 32000
+
 type Store struct {
 	db               *sql.DB
+	readDB           *sql.DB
 	path             string
 	coordinatePolicy live.CoordinatePolicy
 }
@@ -28,18 +32,42 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", sqliteDSN(path))
+	fresh := true
+	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+		fresh = false
+	}
+	db, err := sql.Open("sqlite", sqliteDSNForOpen(path, fresh))
 	if err != nil {
 		return nil, err
 	}
-	maxOpenConns := sqliteEnvInt("SQLITE_MAX_OPEN_CONNS", 4)
-	db.SetMaxOpenConns(maxOpenConns)
-	db.SetMaxIdleConns(maxOpenConns)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	s := &Store{db: db, path: path, coordinatePolicy: live.CurrentCoordinatePolicy()}
+	if fresh {
+		if _, err := db.ExecContext(ctx, `PRAGMA auto_vacuum=INCREMENTAL`); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("enable incremental auto vacuum: %w", err)
+		}
+	}
 	if err := s.Migrate(ctx); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
+	readDB, err := sql.Open("sqlite", sqliteDSN(path))
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	readConns := sqliteEnvInt("SQLITE_READ_OPEN_CONNS", 2)
+	readDB.SetMaxOpenConns(readConns)
+	readDB.SetMaxIdleConns(readConns)
+	if err := readDB.PingContext(ctx); err != nil {
+		_ = readDB.Close()
+		_ = db.Close()
+		return nil, fmt.Errorf("open sqlite read pool: %w", err)
+	}
+	s.readDB = readDB
+	_ = s.Optimize(ctx, true)
 	return s, nil
 }
 
@@ -50,6 +78,11 @@ func OpenMemory(ctx context.Context) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 	s := &Store{db: db, path: "file::memory:?cache=shared", coordinatePolicy: live.CurrentCoordinatePolicy()}
+	s.readDB = db
+	if _, err := db.ExecContext(ctx, `PRAGMA auto_vacuum=INCREMENTAL`); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if err := s.Migrate(ctx); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -58,6 +91,13 @@ func OpenMemory(ctx context.Context) (*Store, error) {
 }
 
 func (s *Store) Migrate(ctx context.Context) error {
+	var current int
+	if err := s.db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&current); err != nil {
+		return fmt.Errorf("read sqlite schema version: %w", err)
+	}
+	if current > SchemaVersion {
+		return fmt.Errorf("sqlite schema version %d is newer than supported version %d", current, SchemaVersion)
+	}
 	if err := s.ensureBaseTables(ctx); err != nil {
 		return err
 	}
@@ -66,6 +106,21 @@ func (s *Store) Migrate(ctx context.Context) error {
 	}
 	if _, err := s.db.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("migrate sqlite: %w", err)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("record sqlite schema version: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)`, SchemaVersion, time.Now().UnixMilli()); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("record sqlite schema migration: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version=%d`, SchemaVersion)); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("set sqlite schema version: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit sqlite schema version: %w", err)
 	}
 	return nil
 }
@@ -92,6 +147,7 @@ type columnMigration struct {
 func (s *Store) migrateColumns(ctx context.Context) error {
 	migrations := []columnMigration{
 		{table: "nodes", column: "supports_multibyte", alterSQL: `ALTER TABLE nodes ADD COLUMN supports_multibyte TEXT NOT NULL DEFAULT 'unknown'`},
+		{table: "packet_observations", column: "ingest_id", alterSQL: `ALTER TABLE packet_observations ADD COLUMN ingest_id TEXT NOT NULL DEFAULT ''`},
 		{table: "packet_observations", column: "message_sender", alterSQL: `ALTER TABLE packet_observations ADD COLUMN message_sender TEXT NOT NULL DEFAULT ''`},
 		{table: "packet_observations", column: "message_text", alterSQL: `ALTER TABLE packet_observations ADD COLUMN message_text TEXT NOT NULL DEFAULT ''`},
 		{table: "live_edge_events", column: "message_sender", alterSQL: `ALTER TABLE live_edge_events ADD COLUMN message_sender TEXT NOT NULL DEFAULT ''`},
@@ -178,22 +234,31 @@ func sqliteStatements(sqlText string) []string {
 }
 
 func sqliteDSN(path string) string {
+	return sqliteDSNForOpen(path, false)
+}
+
+func sqliteDSNForOpen(path string, fresh bool) string {
 	sep := "?"
 	if strings.Contains(path, "?") {
 		sep = "&"
 	}
-	busyTimeoutMs := sqliteEnvInt("SQLITE_BUSY_TIMEOUT_MS", 30000)
+	busyTimeoutMs := sqliteEnvInt("SQLITE_BUSY_TIMEOUT_MS", 750)
 	cacheKB := sqliteEnvInt("SQLITE_CACHE_SIZE_KB", 16000)
 	mmapSizeBytes := sqliteEnvInt("SQLITE_MMAP_SIZE_BYTES", 67108864)
-	return path + sep + strings.Join([]string{
-		"_pragma=busy_timeout%3d" + strconv.Itoa(busyTimeoutMs),
+	pragmas := []string{}
+	if fresh {
+		pragmas = append(pragmas, "_pragma=auto_vacuum%3dINCREMENTAL")
+	}
+	pragmas = append(pragmas,
+		"_pragma=busy_timeout%3d"+strconv.Itoa(busyTimeoutMs),
 		"_pragma=foreign_keys%3dON",
 		"_pragma=journal_mode%3dWAL",
 		"_pragma=synchronous%3dNORMAL",
-		"_pragma=cache_size%3d-" + strconv.Itoa(cacheKB),
+		"_pragma=cache_size%3d-"+strconv.Itoa(cacheKB),
 		"_pragma=temp_store%3dMEMORY",
-		"_pragma=mmap_size%3d" + strconv.Itoa(mmapSizeBytes),
-	}, "&")
+		"_pragma=mmap_size%3d"+strconv.Itoa(mmapSizeBytes),
+	)
+	return path + sep + strings.Join(pragmas, "&")
 }
 
 func sqliteEnvInt(name string, fallback int) int {
@@ -209,7 +274,18 @@ func sqliteEnvInt(name string, fallback int) int {
 }
 
 func (s *Store) Close() error {
-	return s.db.Close()
+	if s == nil {
+		return nil
+	}
+	var readErr error
+	if s.readDB != nil && s.readDB != s.db {
+		readErr = s.readDB.Close()
+	}
+	writeErr := s.db.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	return readErr
 }
 
 func (s *Store) SetCoordinatePolicy(policy live.CoordinatePolicy) {
@@ -234,10 +310,38 @@ func (s *Store) Ping(ctx context.Context) error {
 }
 
 func (s *Store) Analyze(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, "ANALYZE"); err != nil {
-		return fmt.Errorf("analyze: %w", err)
+	return s.Optimize(ctx, false)
+}
+
+func (s *Store) Optimize(ctx context.Context, initial bool) error {
+	pragma := `PRAGMA optimize`
+	if initial {
+		pragma = `PRAGMA optimize=0x10002`
+	}
+	if _, err := s.db.ExecContext(ctx, pragma); err != nil {
+		return fmt.Errorf("optimize: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) IncrementalVacuum(ctx context.Context, pages int) error {
+	if pages <= 0 {
+		pages = 256
+	}
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA incremental_vacuum(%d)`, pages)); err != nil {
+		return fmt.Errorf("incremental vacuum: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) reader() *sql.DB {
+	if s != nil && s.readDB != nil {
+		return s.readDB
+	}
+	if s == nil {
+		return nil
+	}
+	return s.db
 }
 
 func (s *Store) Vacuum(ctx context.Context) error {
@@ -248,13 +352,47 @@ func (s *Store) Vacuum(ctx context.Context) error {
 }
 
 type RuntimeInfo struct {
-	Path         string `json:"path"`
-	JournalMode  string `json:"journalMode"`
-	BusyTimeout  int    `json:"busyTimeoutMs"`
-	MaxOpenConns int    `json:"maxOpenConns"`
-	OpenConns    int    `json:"openConns"`
-	InUse        int    `json:"inUse"`
-	Idle         int    `json:"idle"`
+	Path             string `json:"path"`
+	JournalMode      string `json:"journalMode"`
+	BusyTimeout      int    `json:"busyTimeoutMs"`
+	MaxOpenConns     int    `json:"maxOpenConns"`
+	OpenConns        int    `json:"openConns"`
+	InUse            int    `json:"inUse"`
+	Idle             int    `json:"idle"`
+	ReadMaxOpenConns int    `json:"readMaxOpenConns"`
+	ReadOpenConns    int    `json:"readOpenConns"`
+	ReadInUse        int    `json:"readInUse"`
+	ReadIdle         int    `json:"readIdle"`
+}
+
+type StorageInfo struct {
+	TotalBytes    uint64  `json:"totalBytes"`
+	FreeBytes     uint64  `json:"freeBytes"`
+	FreePercent   float64 `json:"freePercent"`
+	PressureState string  `json:"pressureState"`
+}
+
+func (s *Store) StorageInfo() StorageInfo {
+	if s == nil || strings.HasPrefix(s.path, "file:") || s.path == "" {
+		return StorageInfo{PressureState: "ok"}
+	}
+	info, err := filesystemSpace(filepath.Dir(s.path))
+	if err != nil || info.TotalBytes == 0 {
+		return StorageInfo{PressureState: "ok"}
+	}
+	info.FreePercent = float64(info.FreeBytes) * 100 / float64(info.TotalBytes)
+	info.PressureState = storagePressureState(info.FreePercent)
+	return info
+}
+
+func storagePressureState(freePercent float64) string {
+	if freePercent <= 10 {
+		return "critical"
+	}
+	if freePercent <= 20 {
+		return "warn"
+	}
+	return "ok"
 }
 
 func (s *Store) RuntimeInfo(ctx context.Context) RuntimeInfo {
@@ -269,6 +407,13 @@ func (s *Store) RuntimeInfo(ctx context.Context) RuntimeInfo {
 	info.OpenConns = stats.OpenConnections
 	info.InUse = stats.InUse
 	info.Idle = stats.Idle
+	if s.readDB != nil {
+		readStats := s.readDB.Stats()
+		info.ReadMaxOpenConns = readStats.MaxOpenConnections
+		info.ReadOpenConns = readStats.OpenConnections
+		info.ReadInUse = readStats.InUse
+		info.ReadIdle = readStats.Idle
+	}
 	return info
 }
 

@@ -99,8 +99,8 @@ func (rl *rateLimiter) allow(ip string) bool {
 	return true
 }
 
-func clientIP(r *http.Request, trustProxyHeaders bool) string {
-	if trustProxyHeaders {
+func clientIP(r *http.Request, trustProxyHeaders bool, trustedProxyCIDRs []string) string {
+	if trustProxyHeaders && remoteInCIDRs(r.RemoteAddr, trustedProxyCIDRs) {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			parts := strings.SplitN(xff, ",", 2)
 			if ip := strings.TrimSpace(parts[0]); ip != "" {
@@ -116,6 +116,24 @@ func clientIP(r *http.Request, trustProxyHeaders bool) string {
 		return host
 	}
 	return r.RemoteAddr
+}
+
+func remoteInCIDRs(remoteAddr string, cidrs []string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(strings.TrimSpace(host))
+	if ip == nil {
+		return false
+	}
+	for _, raw := range cidrs {
+		_, network, err := net.ParseCIDR(strings.TrimSpace(raw))
+		if err == nil && network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 type Config struct {
@@ -137,6 +155,8 @@ type Config struct {
 	PublicRegionRestricted    bool
 	PublicIATAs               []string
 	TrustProxyHeaders         bool
+	TrustedProxyCIDRs         []string
+	MetricsPublic             bool
 	PublicEventsEnabled       bool
 	PublicViewportEnabled     bool
 	PublicNOCEnabled          bool
@@ -144,26 +164,30 @@ type Config struct {
 	PublicLOSEnabled          bool
 	PublicSchemaEnabled       bool
 	PublicIntegrationsEnabled bool
+	UnboundedRetention        bool
 }
 
 type Server struct {
-	Config            Config
-	Store             *store.Store
-	Hub               *live.Hub
-	PublicHub         *live.Hub
-	Runtime           *live.RuntimeStats
-	Log               *slog.Logger
-	MQTTConnected     func() bool
-	MQTTTotal         func() int64
-	MQTTStatus        func(time.Time) imqtt.Status
-	PublicState       func() (live.PublicLiveState, bool)
-	PublicCacheStatus func(time.Time) live.PublicCacheStatus
-	PublicAllowsIATA  func(string) bool
-	SolarConditions   func() *solar.Conditions
+	Config                Config
+	Store                 *store.Store
+	Hub                   *live.Hub
+	PublicHub             *live.Hub
+	Runtime               *live.RuntimeStats
+	Log                   *slog.Logger
+	MQTTConnected         func() bool
+	MQTTTotal             func() int64
+	MQTTStatus            func(time.Time) imqtt.Status
+	PublicState           func() (live.PublicLiveState, bool)
+	PublicStateSerialized func() (live.PublicStateSerialization, bool)
+	PublicCacheStatus     func(time.Time) live.PublicCacheStatus
+	PublicAllowsIATA      func(string) bool
+	SolarConditions       func() *solar.Conditions
+	StaticAssetsReady     func() bool
 
 	historyLocations *historyLocationCache
 	summaryCache     *historySummaryCache
 	rateLimiter      *rateLimiter
+	wsAdmission      *wsAdmissionLimiter
 	startTime        time.Time
 	memStatsMu       sync.Mutex
 	memStatsCached   runtime.MemStats
@@ -187,11 +211,15 @@ func (s *Server) Routes() http.Handler {
 	if s.rateLimiter == nil {
 		s.rateLimiter = newRateLimiter(60, 30)
 	}
+	if s.wsAdmission == nil {
+		s.wsAdmission = newWSAdmissionLimiter(5)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /metrics", s.metrics)
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /readyz", s.readyz)
 	mux.HandleFunc("GET /api/v1/public/state", s.rateLimited(s.publicState))
+	mux.HandleFunc("GET /api/v1/public/bootstrap", s.rateLimited(s.publicBootstrap))
 	mux.HandleFunc("GET /api/v1/public/history", s.rateLimited(s.publicHistory))
 	mux.HandleFunc("GET /api/v1/public/history/summary", s.rateLimited(s.publicHistorySummary))
 	mux.HandleFunc("GET /api/v1/public/events", s.rateLimited(s.publicEvents))
@@ -205,7 +233,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/public/los/profile", s.rateLimited(s.publicLOSProfile))
 	mux.HandleFunc("GET /api/v1/public/schema", s.rateLimited(s.publicSchema))
 	mux.HandleFunc("GET /api/v1/public/integrations/home-assistant", s.rateLimited(s.publicSensorSummary))
-	mux.Handle("GET /ws/public", s.PublicHub)
+	mux.HandleFunc("GET /ws/public", s.publicWebSocket)
 	if !s.Config.PublicMode {
 		mux.HandleFunc("GET /api/v1/live/state", s.liveState)
 		mux.HandleFunc("GET /api/v1/nodes", s.nodes)
@@ -221,9 +249,25 @@ func (s *Server) Routes() http.Handler {
 	return withSecurityHeaders(mux)
 }
 
+func (s *Server) publicWebSocket(w http.ResponseWriter, r *http.Request) {
+	if s.PublicHub == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("public websocket unavailable"))
+		return
+	}
+	ip := clientIP(r, s.Config.TrustProxyHeaders, s.Config.TrustedProxyCIDRs)
+	if !s.wsAdmission.acquire(ip) {
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, errors.New("public websocket connection limit exceeded"))
+		return
+	}
+	if upgraded := s.PublicHub.ServeHTTPWithClose(w, r, func() { s.wsAdmission.release(ip) }); !upgraded {
+		s.wsAdmission.release(ip)
+	}
+}
+
 func (s *Server) rateLimited(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.rateLimiter.allow(clientIP(r, s.Config.TrustProxyHeaders)) {
+		if !s.rateLimiter.allow(clientIP(r, s.Config.TrustProxyHeaders, s.Config.TrustedProxyCIDRs)) {
 			w.Header().Set("Retry-After", "60")
 			writeError(w, http.StatusTooManyRequests, errors.New("rate limit exceeded"))
 			return
@@ -264,6 +308,9 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 	}
 	publicHubStats := s.publicHubStats()
 	staticReady := StaticReady()
+	if s.StaticAssetsReady != nil {
+		staticReady = s.StaticAssetsReady()
+	}
 	runtimeStats := live.RuntimeStatsSnapshot{}
 	if s.Runtime != nil {
 		runtimeStats = s.Runtime.Snapshot()
@@ -287,11 +334,17 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 		"publicStateReady":                cacheStatus.Ready,
 		"cacheAgeMs":                      cacheStatus.CacheAgeMs,
 		"cacheUpdatedAt":                  cacheStatus.UpdatedAt,
+		"fullReconciledAt":                cacheStatus.FullReconciledAt,
+		"fullReconcileAgeMs":              cacheStatus.FullReconcileAgeMs,
 		"cacheTruncatedNodes":             cacheStatus.TruncatedNodes,
 		"cacheTruncatedRoutes":            cacheStatus.TruncatedRoutes,
 		"cacheTruncatedRecentPulses":      cacheStatus.TruncatedRecentPulses,
 		"cacheTruncatedRecentActivity":    cacheStatus.TruncatedRecentActivity,
 		"mqttConnected":                   mqttStatus.Connected,
+		"mqttSubscribed":                  mqttStatus.Subscribed,
+		"mqttSessionReady":                !mqttStatus.Enabled || mqttStatus.SessionReady,
+		"mqttQueueDepth":                  mqttStatus.QueueDepth,
+		"mqttQueueCapacity":               mqttStatus.QueueCapacity,
 		"mqttLastMessageAgeMs":            mqttStatus.LastMessageAgeMs,
 		"mqttMessages":                    mqttStatus.TotalMessages,
 		"mqttDroppedMessages":             mqttStatus.DroppedMessages,
@@ -340,14 +393,28 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 		"packetPathSearchIndexSynced":     runtimeStats.PacketPathSearchIndexLastSync,
 		"packetPathSearchIndexRemaining":  runtimeStats.PacketPathSearchIndexRemaining,
 		"packetPathBackfillRemaining":     runtimeStats.PacketPathBackfillRemaining,
+		"storeWriteAttempts":              runtimeStats.StoreWriteAttempts,
+		"storeWriteRetries":               runtimeStats.StoreWriteRetries,
+		"storeWriteFailures":              runtimeStats.StoreWriteFailures,
+		"storeWriteBusyErrors":            runtimeStats.StoreWriteBusyErrors,
+		"storeWriteFullErrors":            runtimeStats.StoreWriteFullErrors,
+		"storeWriteLatencyMs":             runtimeStats.StoreWriteLastLatencyMs,
 		"cacheRefreshFailures":            runtimeStats.CacheRefreshFailures,
 		"packetCountRefreshFailures":      runtimeStats.PacketCountRefreshFailures,
 		"packetCountRefreshLatencyMs":     runtimeStats.PacketCountRefreshLastLatencyMs,
 		"packetCountRefreshLastAt":        runtimeStats.PacketCountRefreshLastAtMs,
 		"cached":                          cacheStatus.Ready,
 	}
+	runtimeHealth := s.publicRuntimeHealth(now, live.PublicLiveState{})
+	payload["datasetState"] = runtimeHealth.DatasetState
+	payload["datasetStartedAt"] = runtimeHealth.DatasetStartedAt
+	payload["storagePressureState"] = runtimeHealth.StoragePressureState
 	if s.PublicState != nil {
 		if state, ok := s.PublicState(); ok {
+			runtimeHealth := s.publicRuntimeHealth(now, state)
+			payload["datasetState"] = runtimeHealth.DatasetState
+			payload["datasetStartedAt"] = runtimeHealth.DatasetStartedAt
+			payload["storagePressureState"] = runtimeHealth.StoragePressureState
 			payload["packets"] = state.Stats.Packets
 			payload["nodesWithPosition"] = state.Stats.ActiveNodes
 			payload["edgeEvents"] = state.Stats.ActiveRoutes
@@ -369,9 +436,42 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 		}
 	}
 	if includeDB {
-		payload["ready"] = dbReady && cacheStatus.Ready && staticReady
+		mqttReady := !mqttStatus.Enabled || mqttStatus.SessionReady
+		storageReady := s.Store == nil || s.Store.StorageInfo().PressureState != "critical"
+		payload["ready"] = dbReady && cacheStatus.Ready && staticReady && mqttReady && storageReady && !s.Config.UnboundedRetention
 	}
 	return payload
+}
+
+func (s *Server) publicRuntimeHealth(now time.Time, state live.PublicLiveState) live.PublicRuntimeHealth {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	mqttStatus := imqtt.Status{Connected: s.mqttConnected()}
+	if s.MQTTStatus != nil {
+		mqttStatus = s.MQTTStatus(now)
+	}
+	sessionReady := !mqttStatus.Enabled || mqttStatus.SessionReady
+	datasetState := "fresh_start"
+	if state.Stats.Packets > 0 {
+		datasetState = "live"
+	} else if sessionReady {
+		datasetState = "warming"
+	}
+	storageState := "ok"
+	if s.Store != nil {
+		storageState = s.Store.StorageInfo().PressureState
+	}
+	startedAt := s.startTime.UnixMilli()
+	if s.startTime.IsZero() {
+		startedAt = now.UnixMilli()
+	}
+	return live.PublicRuntimeHealth{
+		MQTTSessionReady:     sessionReady,
+		DatasetState:         datasetState,
+		DatasetStartedAt:     startedAt,
+		StoragePressureState: storageState,
+	}
 }
 
 func publicLatestAgeMs(now time.Time, latest int64) int64 {
@@ -502,6 +602,31 @@ func (s *Server) publicState(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		s.recordPublicState(time.Since(start), failed)
 	}()
+	if s.PublicStateSerialized != nil {
+		if serialized, ok := s.PublicStateSerialized(); ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("ETag", serialized.ETag)
+			w.Header().Set("Cache-Control", "public, max-age=5")
+			w.Header().Add("Vary", "Accept-Encoding")
+			if r.Header.Get("If-None-Match") == serialized.ETag {
+				w.WriteHeader(http.StatusNotModified)
+				failed = false
+				return
+			}
+			body := serialized.JSON
+			if strings.Contains(strings.ToLower(r.Header.Get("Accept-Encoding")), "gzip") && len(serialized.Gzip) > 0 {
+				w.Header().Set("Content-Encoding", "gzip")
+				body = serialized.Gzip
+			}
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			w.WriteHeader(http.StatusOK)
+			if _, err := w.Write(body); err != nil {
+				return
+			}
+			failed = false
+			return
+		}
+	}
 	if s.PublicState != nil {
 		if state, ok := s.PublicState(); ok {
 			now := time.Now().UnixMilli()
@@ -2222,6 +2347,9 @@ func (w gzipResponseWriter) Write(data []byte) (int, error) {
 }
 
 func shouldGzip(r *http.Request) bool {
+	if r.URL.Path == "/api/v1/public/state" {
+		return false
+	}
 	if strings.Contains(strings.ToLower(r.Header.Get("Upgrade")), "websocket") {
 		return false
 	}

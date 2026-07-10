@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -28,9 +29,30 @@ func (s *Server) publicEvents(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	now := time.Now().UnixMilli()
-	from, to := publicSevenDayWindow(r, now)
+	afterSeq := queryInt64(r, "afterSeq", 0)
+	oldestSeq, latestSeq, err := s.Store.PublicSeqBounds(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	belowRetainedFloor := oldestSeq > 0 && afterSeq < oldestSeq-1
+	if afterSeq <= 0 || belowRetainedFloor || afterSeq > latestSeq {
+		writeJSON(w, http.StatusOK, live.PublicEventsResponse{
+			ServerTime:    now,
+			OldestSeq:     oldestSeq,
+			LatestSeq:     latestSeq,
+			Events:        []live.PublicEvent{},
+			NextCursor:    publicSeqCursor(latestSeq),
+			ResetRequired: true,
+		})
+		return
+	}
+	var from, to int64
+	if r.URL.Query().Has("from") || r.URL.Query().Has("to") {
+		from, to = publicSevenDayWindow(r, now)
+	}
 	events, next, err := s.Store.ListPublicEventsAfter(ctx, store.PublicEventFilter{
-		AfterSeq:        queryInt64(r, "afterSeq", 0),
+		AfterSeq:        afterSeq,
 		From:            from,
 		To:              to,
 		Limit:           limit,
@@ -44,12 +66,48 @@ func (s *Server) publicEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	events = s.filterPublicEvents(events)
-	latestSeq := s.latestPublicSeq(ctx)
+	responseCursor := next
+	if responseCursor == 0 {
+		responseCursor = afterSeq
+		if len(events) > 0 {
+			responseCursor = events[len(events)-1].Seq
+		}
+	}
 	writeJSON(w, http.StatusOK, live.PublicEventsResponse{
-		ServerTime: now,
-		LatestSeq:  latestSeq,
-		Events:     events,
-		NextCursor: publicSeqCursor(next),
+		ServerTime:    now,
+		OldestSeq:     oldestSeq,
+		LatestSeq:     latestSeq,
+		Events:        events,
+		NextCursor:    publicSeqCursor(responseCursor),
+		ResetRequired: false,
+	})
+}
+
+func (s *Server) publicBootstrap(w http.ResponseWriter, r *http.Request) {
+	if s.PublicState == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("public state cache is warming"))
+		return
+	}
+	state, ok := s.PublicState()
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, errors.New("public state cache is warming"))
+		return
+	}
+	now := time.Now()
+	latestSeq := s.latestPublicSeq(r.Context())
+	state.Stats.LatestSeq = latestSeq
+	activity := state.RecentActivity
+	if len(activity) > 40 {
+		activity = activity[:40]
+	}
+	writeJSON(w, http.StatusOK, live.PublicBootstrapResponse{
+		ServerTime:     now.UnixMilli(),
+		Map:            state.Map,
+		Stats:          state.Stats,
+		LatestSeq:      latestSeq,
+		Health:         s.publicRuntimeHealth(now, state),
+		Clusters:       publicMapClusters(state.Nodes),
+		RecentActivity: append([]live.PublicActivity{}, activity...),
 	})
 }
 
@@ -115,11 +173,58 @@ func (s *Server) publicViewport(w http.ResponseWriter, r *http.Request) {
 		LatestSeq:  s.PublicHub.LatestSeq(),
 		Nodes:      nodes,
 		Routes:     routes,
+		Clusters:   publicMapClusters(nodes),
 		Events:     events,
 		BBox:       bbox,
 		Zoom:       zoom,
 		Includes:   publicViewportIncludes(r.URL.Query().Get("include")),
 	})
+}
+
+func publicMapClusters(nodes []live.PublicNode) []live.PublicMapCluster {
+	type aggregate struct {
+		cluster live.PublicMapCluster
+		latSum  float64
+		lngSum  float64
+	}
+	byRegion := map[string]*aggregate{}
+	for _, node := range nodes {
+		region := ""
+		if len(node.RegionsHeardIn) > 0 {
+			region = strings.ToUpper(strings.TrimSpace(node.RegionsHeardIn[0]))
+		} else if len(node.IATAsHeardIn) > 0 {
+			region = strings.ToUpper(strings.TrimSpace(node.IATAsHeardIn[0]))
+		}
+		key := region
+		if key == "" {
+			key = "UNASSIGNED"
+		}
+		item := byRegion[key]
+		if item == nil {
+			item = &aggregate{cluster: live.PublicMapCluster{ID: "region-" + strings.ToLower(key), Region: region}}
+			byRegion[key] = item
+		}
+		item.cluster.Count++
+		item.cluster.ActivityCount += node.ActivityCount
+		if node.LastSeen > item.cluster.LastSeen {
+			item.cluster.LastSeen = node.LastSeen
+		}
+		item.latSum += node.Latitude
+		item.lngSum += node.Longitude
+	}
+	out := make([]live.PublicMapCluster, 0, len(byRegion))
+	for _, item := range byRegion {
+		item.cluster.Latitude = item.latSum / float64(item.cluster.Count)
+		item.cluster.Longitude = item.lngSum / float64(item.cluster.Count)
+		out = append(out, item.cluster)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count == out[j].Count {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].Count > out[j].Count
+	})
+	return out
 }
 
 func (s *Server) publicNOC(w http.ResponseWriter, r *http.Request) {
@@ -537,20 +642,97 @@ func publicOpenAPISchema(version string) map[string]any {
 			"version": version,
 		},
 		"paths": map[string]any{
+			"/healthz":                                   map[string]any{"get": publicSchemaOperation("Public-safe process health")},
+			"/readyz":                                    map[string]any{"get": publicSchemaOperation("Public-safe serving readiness")},
 			"/api/v1/public/state":                       map[string]any{"get": publicSchemaOperation("Public live state")},
-			"/api/v1/public/events":                      map[string]any{"get": publicSchemaOperation("Public event backfill")},
-			"/api/v1/public/viewport":                    map[string]any{"get": publicSchemaOperation("Viewport-scoped public map data")},
+			"/api/v1/public/bootstrap":                   map[string]any{"get": publicSchemaOperationRef("Compact public map bootstrap", "PublicBootstrapResponse")},
+			"/api/v1/public/history":                     map[string]any{"get": publicSchemaOperation("Bounded public history")},
+			"/api/v1/public/history/summary":             map[string]any{"get": publicSchemaOperation("Public history summary")},
+			"/api/v1/public/events":                      map[string]any{"get": publicSchemaOperationRef("Public event resume", "PublicEventsResponse")},
+			"/api/v1/public/viewport":                    map[string]any{"get": publicSchemaOperationRef("Viewport-scoped public map data", "PublicViewportResponse")},
 			"/api/v1/public/noc":                         map[string]any{"get": publicSchemaOperation("Public-safe NOC dashboard")},
 			"/api/v1/public/packets":                     map[string]any{"get": publicSchemaOperation("Public packet paths")},
 			"/api/v1/public/chat":                        map[string]any{"get": publicSchemaOperation("Public chat messages")},
+			"/api/v1/public/solar":                       map[string]any{"get": publicSchemaOperation("Public solar conditions")},
 			"/api/v1/public/coverage":                    map[string]any{"get": publicSchemaOperation("Coarse public coverage cells")},
 			"/api/v1/public/los/profile":                 map[string]any{"get": publicSchemaOperation("Public LOS profile")},
 			"/api/v1/public/schema":                      map[string]any{"get": publicSchemaOperation("Static checked public API schema")},
 			"/api/v1/public/propagation":                 map[string]any{"get": publicSchemaOperation("Public propagation events")},
 			"/api/v1/public/integrations/home-assistant": map[string]any{"get": publicSchemaOperation("Public-safe sensor summary")},
+			"/ws/public": map[string]any{
+				"get": publicSchemaOperation("Public WebSocket upgrade"),
+				"x-websocket": map[string]any{
+					"clientMessages": []string{"hello", "pong", "subscribe"},
+					"serverMessages": []string{"hello", "event", "ping", "reset"},
+				},
+			},
 		},
+		"components":                map[string]any{"schemas": public320Schemas()},
 		"x-public-forbidden-fields": []string{"publicKey", "observerPublicKey", "packetHash", "rawHex", "rawJson", "payloadHex", "pathHex", "resolver", "debug", "secret", "token", "password"},
 	}
+}
+
+func public320Schemas() map[string]any {
+	integer := func() map[string]any { return map[string]any{"type": "integer", "format": "int64"} }
+	stringType := func() map[string]any { return map[string]any{"type": "string"} }
+	return map[string]any{
+		"PublicMapCluster": map[string]any{
+			"type":     "object",
+			"required": []string{"id", "latitude", "longitude", "count"},
+			"properties": map[string]any{
+				"id": stringType(), "latitude": map[string]any{"type": "number"}, "longitude": map[string]any{"type": "number"},
+				"count": map[string]any{"type": "integer"}, "activityCount": integer(), "lastSeen": integer(), "region": stringType(),
+			},
+		},
+		"PublicRuntimeHealth": map[string]any{
+			"type":     "object",
+			"required": []string{"mqttSessionReady", "datasetState", "datasetStartedAt", "storagePressureState"},
+			"properties": map[string]any{
+				"mqttSessionReady":     map[string]any{"type": "boolean"},
+				"datasetState":         map[string]any{"type": "string", "enum": []string{"fresh_start", "warming", "live"}},
+				"datasetStartedAt":     integer(),
+				"storagePressureState": map[string]any{"type": "string", "enum": []string{"ok", "warn", "critical"}},
+			},
+		},
+		"PublicEventsResponse": map[string]any{
+			"type":     "object",
+			"required": []string{"serverTime", "oldestSeq", "latestSeq", "events", "resetRequired"},
+			"properties": map[string]any{
+				"serverTime": integer(), "oldestSeq": integer(), "latestSeq": integer(),
+				"events":     map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+				"nextCursor": stringType(), "resetRequired": map[string]any{"type": "boolean"},
+			},
+		},
+		"PublicBootstrapResponse": map[string]any{
+			"type":     "object",
+			"required": []string{"serverTime", "map", "stats", "latestSeq", "health", "clusters", "recentActivity"},
+			"properties": map[string]any{
+				"serverTime": integer(), "map": map[string]any{"type": "object"}, "stats": map[string]any{"type": "object"}, "latestSeq": integer(),
+				"health":         map[string]any{"$ref": "#/components/schemas/PublicRuntimeHealth"},
+				"clusters":       map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/PublicMapCluster"}},
+				"recentActivity": map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+			},
+		},
+		"PublicViewportResponse": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"serverTime": integer(), "latestSeq": integer(),
+				"nodes":    map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+				"routes":   map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+				"events":   map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+				"clusters": map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/PublicMapCluster"}},
+			},
+		},
+	}
+}
+
+func publicSchemaOperationRef(summary, schema string) map[string]any {
+	operation := publicSchemaOperation(summary)
+	responses := operation["responses"].(map[string]any)
+	ok := responses["200"].(map[string]any)
+	content := ok["content"].(map[string]any)
+	content["application/json"] = map[string]any{"schema": map[string]any{"$ref": "#/components/schemas/" + schema}}
+	return operation
 }
 
 func publicSchemaOperation(summary string) map[string]any {

@@ -136,4 +136,45 @@ func TestLoadConfigDefaultsToSevenDayDataRetention(t *testing.T) {
 	if cfg.PropagationEventRetentionDays != 7 {
 		t.Fatalf("PropagationEventRetentionDays = %d, want 7", cfg.PropagationEventRetentionDays)
 	}
+	if cfg.PublicEventRetentionHours != 24 {
+		t.Fatalf("PublicEventRetentionHours = %d, want 24", cfg.PublicEventRetentionHours)
+	}
+}
+
+func TestLoadConfigRejectsUnboundedPublicRetentionByDefault(t *testing.T) {
+	t.Setenv("MQTT_ENABLED", "false")
+	t.Setenv("PUBLIC_MODE", "true")
+	t.Setenv("DATA_RETENTION_DAYS", "-1")
+	t.Setenv("ALLOW_UNBOUNDED_RETENTION", "false")
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("expected unbounded public retention to be rejected")
+	}
+}
+
+func TestLoadConfigExplicitUnboundedOverrideRemainsVisible(t *testing.T) {
+	t.Setenv("MQTT_ENABLED", "false")
+	t.Setenv("PUBLIC_MODE", "true")
+	t.Setenv("DATA_RETENTION_DAYS", "-1")
+	t.Setenv("ALLOW_UNBOUNDED_RETENTION", "true")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DataRetentionDays != -1 || !cfg.AllowUnboundedRetention {
+		t.Fatalf("retention config = %#v", cfg)
+	}
+}
+
+func TestLoadConfigBuildIdentityIgnoresEnvironmentOverrides(t *testing.T) {
+	t.Setenv("MQTT_ENABLED", "false")
+	t.Setenv("APP_VERSION", "stale-env-version")
+	t.Setenv("GIT_SHA", "stale-env-sha")
+	t.Setenv("BUILD_TIME", "stale-env-time")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AppVersion != BuildVersion || cfg.GitSHA != BuildGitSHA || cfg.BuildTime != BuildTime {
+		t.Fatalf("build identity was overridden by environment: %#v", cfg)
+	}
 }

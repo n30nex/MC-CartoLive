@@ -65,11 +65,15 @@ type Config struct {
 	PropagationMinDistanceKM        float64
 	PropagationFetchIntervalSec     int
 	PropagationEventRetentionDays   int
+	PublicEventRetentionHours       int
+	AllowUnboundedRetention         bool
 	TrustProxyHeaders               bool
+	TrustedProxyCIDRs               []string
+	MetricsPublic                   bool
 	ConfigYAML                      string
 	FixtureReplayPath               string
 	FixtureRecordEnabled            bool
-	DataRetentionDays               int // 0 = default 7 days, negative = disable pruning
+	DataRetentionDays               int // 0 = default 7 days; negative requires an explicit non-production override
 }
 
 func LoadConfig() (Config, error) {
@@ -86,9 +90,9 @@ func LoadConfig() (Config, error) {
 	publicRegions := configuredPublicRegions(mapPreset)
 	cfg := Config{
 		ListenAddr:                      envString("LISTEN_ADDR", ":8080"),
-		AppVersion:                      envString("APP_VERSION", "3.1.0"),
-		GitSHA:                          envString("GIT_SHA", envString("VITE_GIT_SHA", "")),
-		BuildTime:                       envString("BUILD_TIME", envString("VITE_BUILD_TIME", "")),
+		AppVersion:                      BuildVersion,
+		GitSHA:                          BuildGitSHA,
+		BuildTime:                       BuildTime,
 		PublicBaseURL:                   envString("PUBLIC_BASE_URL", "http://localhost:8080"),
 		DataDir:                         envString("DATA_DIR", "./data"),
 		DBPath:                          envString("DB_PATH", "./data/meshcore-live.db"),
@@ -138,7 +142,11 @@ func LoadConfig() (Config, error) {
 		PropagationMinDistanceKM:        envFloat("PROPAGATION_MIN_DISTANCE_KM", 75),
 		PropagationFetchIntervalSec:     envInt("PROPAGATION_FETCH_INTERVAL_SECONDS", 900),
 		PropagationEventRetentionDays:   envInt("PROPAGATION_EVENT_RETENTION_DAYS", 7),
+		PublicEventRetentionHours:       envInt("PUBLIC_EVENT_RETENTION_HOURS", 24),
+		AllowUnboundedRetention:         envBool("ALLOW_UNBOUNDED_RETENTION", false),
 		TrustProxyHeaders:               envBool("TRUST_PROXY_HEADERS", false),
+		TrustedProxyCIDRs:               envList("TRUSTED_PROXY_CIDRS"),
+		MetricsPublic:                   envBool("METRICS_PUBLIC", false),
 		ConfigYAML:                      envString("CONFIG_YAML", "./data/config.yaml"),
 		FixtureReplayPath:               os.Getenv("FIXTURE_REPLAY_PATH"),
 		FixtureRecordEnabled:            envBool("FIXTURE_RECORD_ENABLED", false),
@@ -146,6 +154,9 @@ func LoadConfig() (Config, error) {
 	}
 	if cfg.AuthMode == "subscriber" && cfg.MQTTEnabled && (cfg.MQTTUsername == "" || cfg.MQTTPassword == "") {
 		return cfg, fmt.Errorf("MQTT subscriber auth requires MQTT_USERNAME and MQTT_PASSWORD or MQTT_ENABLED=false")
+	}
+	if cfg.PublicMode && cfg.DataRetentionDays < 0 && !cfg.AllowUnboundedRetention {
+		return cfg, fmt.Errorf("negative DATA_RETENTION_DAYS is forbidden in PUBLIC_MODE unless ALLOW_UNBOUNDED_RETENTION=true")
 	}
 	return cfg, nil
 }

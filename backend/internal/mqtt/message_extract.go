@@ -12,6 +12,7 @@ import (
 const maxAcceptedTimestampSkew = 5 * time.Minute
 
 type NormalizedMessage struct {
+	IngestID     string         `json:"-"`
 	Topic        string         `json:"topic"`
 	TopicInfo    TopicInfo      `json:"topicInfo"`
 	RawHex       string         `json:"rawHex,omitempty"`

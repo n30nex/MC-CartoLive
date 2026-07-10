@@ -59,7 +59,7 @@ type PublicPacketPathBackfillResult struct {
 
 func (s *Store) PublicPacketPathProjectionComplete(ctx context.Context, from int64, to int64) (bool, error) {
 	var missing int
-	err := s.db.QueryRowContext(ctx, `
+	err := s.reader().QueryRowContext(ctx, `
 SELECT EXISTS (
   SELECT 1
   FROM live_edge_events e
@@ -133,7 +133,7 @@ LIMIT ?`
 	}
 	args = append(args, limit+1)
 
-	rows, err := s.db.QueryContext(ctx, sqlText, args...)
+	rows, err := s.reader().QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return nil, nil, searchMode, err
 	}
@@ -165,7 +165,7 @@ func (s *Store) publicPacketPathSearchIndexComplete(ctx context.Context, from in
 		return false
 	}
 	var missing int
-	err := s.db.QueryRowContext(ctx, `
+	err := s.reader().QueryRowContext(ctx, `
 SELECT EXISTS (
   SELECT 1
   FROM public_packet_paths p
@@ -227,7 +227,7 @@ func (s *Store) BackfillPublicPacketPaths(ctx context.Context, from int64, to in
 	result.SearchIndexRemaining = searchRemaining
 
 	var remaining int
-	if err := s.db.QueryRowContext(ctx, `
+	if err := s.reader().QueryRowContext(ctx, `
 SELECT EXISTS (
   SELECT 1
   FROM live_edge_events e
@@ -245,7 +245,7 @@ func (s *Store) syncPublicPacketPathSearchIndex(ctx context.Context, from int64,
 	if limit <= 0 || limit > 2000 {
 		limit = 500
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 SELECT p.edge_id, p.search_text
 FROM public_packet_paths p
 WHERE p.mappable=1
@@ -298,7 +298,7 @@ LIMIT ?`, from, boundedHistoryTo(to), limit)
 	committed = true
 
 	var remaining int
-	if err := s.db.QueryRowContext(ctx, `
+	if err := s.reader().QueryRowContext(ctx, `
 SELECT EXISTS (
   SELECT 1
   FROM public_packet_paths p
@@ -314,7 +314,7 @@ SELECT EXISTS (
 }
 
 func (s *Store) publicPacketPathMissingEdges(ctx context.Context, from int64, to int64, limit int) ([]live.EdgeEvent, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 SELECT e.id, e.packet_hash, e.observation_id, COALESCE(po.iata, '') AS edge_iata,
   e.payload_type, e.payload_type_name, e.message_sender, e.message_text,
   e.message_anchor_json, e.heard_at_ms, e.segments_json, e.render_reason

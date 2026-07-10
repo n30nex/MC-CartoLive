@@ -16,7 +16,6 @@ func (s *Store) PruneOldData(ctx context.Context, beforeMs int64) error {
 		{"propagation_events", "at_ms"},
 		{"public_packet_paths", "heard_at_ms"},
 		{"public_route_summary_edges", "heard_at_ms"},
-		{"public_events", "occurred_at_ms"},
 		{"public_coverage_cells", "updated_at_ms"},
 		{"live_edge_events", "heard_at_ms"},
 		{"packet_observations", "heard_at_ms"},
@@ -31,7 +30,15 @@ func (s *Store) PruneOldData(ctx context.Context, beforeMs int64) error {
 	}
 	for {
 		result, err := s.db.ExecContext(ctx,
-			fmt.Sprintf("DELETE FROM packets WHERE rowid IN (SELECT rowid FROM packets WHERE packet_hash NOT IN (SELECT DISTINCT packet_hash FROM packet_observations) LIMIT %d)", pruneBatchSize))
+			fmt.Sprintf(`DELETE FROM packets
+WHERE rowid IN (
+  SELECT p.rowid
+  FROM packets p
+  WHERE NOT EXISTS (
+    SELECT 1 FROM packet_observations po WHERE po.packet_hash = p.packet_hash
+  )
+  LIMIT %d
+)`, pruneBatchSize))
 		if err != nil {
 			return fmt.Errorf("prune packets: %w", err)
 		}
@@ -44,6 +51,10 @@ func (s *Store) PruneOldData(ctx context.Context, beforeMs int64) error {
 		}
 	}
 	return nil
+}
+
+func (s *Store) PrunePublicEvents(ctx context.Context, beforeMs int64) error {
+	return s.pruneTableBefore(ctx, "public_events", "occurred_at_ms", beforeMs)
 }
 
 func (s *Store) PrunePropagationData(ctx context.Context, beforeMs int64) error {

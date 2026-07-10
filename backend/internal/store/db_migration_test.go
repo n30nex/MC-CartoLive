@@ -43,7 +43,7 @@ func TestMigrateUpgradesOldSchemaColumns(t *testing.T) {
 
 	for table, columns := range map[string][]string{
 		"nodes":                         {"supports_multibyte"},
-		"packet_observations":           {"message_sender", "message_text"},
+		"packet_observations":           {"ingest_id", "message_sender", "message_text"},
 		"live_edge_events":              {"message_sender", "message_text", "message_anchor_json"},
 		"public_packet_paths":           {"mappable", "region", "route_ids_json", "endpoint_labels_json", "search_text", "message_sender", "message_text"},
 		"public_route_summaries":        {"route_id", "from_node_id", "to_node_id", "last_heard_ms"},

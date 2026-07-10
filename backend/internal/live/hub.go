@@ -35,13 +35,15 @@ type Hub struct {
 }
 
 type client struct {
-	id      string
-	conn    *websocket.Conn
-	send    chan Envelope
-	created time.Time
-	dropped atomic.Int64
-	scopeMu sync.RWMutex
-	scope   *SubscriptionScope
+	id        string
+	conn      *websocket.Conn
+	send      chan Envelope
+	created   time.Time
+	dropped   atomic.Int64
+	scopeMu   sync.RWMutex
+	scope     *SubscriptionScope
+	onClose   func()
+	closeOnce sync.Once
 }
 
 type SubscriptionScope struct {
@@ -90,23 +92,30 @@ func (h *Hub) SetSubscriptionsEnabled(enabled bool) {
 }
 
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.ServeHTTPWithClose(w, r, nil)
+}
+
+// ServeHTTPWithClose reports whether the WebSocket upgrade succeeded and
+// invokes onClose exactly once when that admitted connection is removed.
+func (h *Hub) ServeHTTPWithClose(w http.ResponseWriter, r *http.Request, onClose func()) bool {
 	h.mu.RLock()
 	clientCount := len(h.clients)
 	h.mu.RUnlock()
 	if clientCount >= maxClients {
 		http.Error(w, "too many connections", http.StatusServiceUnavailable)
-		return
+		return false
 	}
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.log.Warn("websocket upgrade failed", "error", err)
-		return
+		return false
 	}
 	c := &client{
 		id:      uuid.NewString(),
 		conn:    conn,
 		send:    make(chan Envelope, h.queueSize),
 		created: time.Now(),
+		onClose: onClose,
 	}
 	h.mu.Lock()
 	h.clients[c] = struct{}{}
@@ -121,6 +130,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c.send <- Envelope{Version: 1, Type: "hello", Seq: helloSeq, LatestSeq: latestSeq, ServerTime: now, ReceivedAt: now, DisplayAt: now, ConnectionID: c.id}
 	go h.writePump(c)
 	go h.readPump(c)
+	return true
 }
 
 func (h *Hub) Broadcast(event string, data any) {
@@ -298,6 +308,11 @@ func (h *Hub) remove(c *client) {
 	if !removed {
 		return
 	}
+	c.closeOnce.Do(func() {
+		if c.onClose != nil {
+			c.onClose()
+		}
+	})
 	c.conn.WriteControl(websocket.CloseMessage,
 		websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"),
 		time.Now().Add(2*time.Second))

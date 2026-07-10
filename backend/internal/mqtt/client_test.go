@@ -53,6 +53,32 @@ func TestForceReconnectReplacesPahoClient(t *testing.T) {
 	}
 }
 
+func TestOnMessageAssignsIngestIDBeforeQueue(t *testing.T) {
+	client := NewClient(ClientConfig{QueueSize: 2}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	client.onMessage()(nil, fakeMessage{topic: "meshcore/YYZ/ABCDEF012345/packets", payload: []byte(`{"raw":"0102"}`)})
+	select {
+	case msg := <-client.queue:
+		if msg.IngestID == "" {
+			t.Fatal("queued normalized message has empty ingest ID")
+		}
+	default:
+		t.Fatal("normalized message was not queued")
+	}
+}
+
+type fakeMessage struct {
+	topic   string
+	payload []byte
+}
+
+func (f fakeMessage) Duplicate() bool   { return false }
+func (f fakeMessage) Qos() byte         { return 0 }
+func (f fakeMessage) Retained() bool    { return false }
+func (f fakeMessage) Topic() string     { return f.topic }
+func (f fakeMessage) MessageID() uint16 { return 1 }
+func (f fakeMessage) Payload() []byte   { return f.payload }
+func (f fakeMessage) Ack()              {}
+
 type fakePahoClient struct {
 	token       paho.Token
 	connects    int

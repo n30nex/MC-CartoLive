@@ -44,6 +44,12 @@ type RuntimeStats struct {
 	packetPathSearchIndexLastSync   atomic.Int64
 	packetPathSearchIndexRemaining  atomic.Int64
 	packetPathBackfillRemaining     atomic.Int64
+	storeWriteAttempts              atomic.Int64
+	storeWriteRetries               atomic.Int64
+	storeWriteFailures              atomic.Int64
+	storeWriteBusyErrors            atomic.Int64
+	storeWriteFullErrors            atomic.Int64
+	storeWriteLastLatencyMs         atomic.Int64
 }
 
 type RuntimeStatsSnapshot struct {
@@ -85,6 +91,12 @@ type RuntimeStatsSnapshot struct {
 	PacketPathSearchIndexLastSync   int64 `json:"packetPathSearchIndexLastSync"`
 	PacketPathSearchIndexRemaining  bool  `json:"packetPathSearchIndexRemaining"`
 	PacketPathBackfillRemaining     bool  `json:"packetPathBackfillRemaining"`
+	StoreWriteAttempts              int64 `json:"storeWriteAttempts"`
+	StoreWriteRetries               int64 `json:"storeWriteRetries"`
+	StoreWriteFailures              int64 `json:"storeWriteFailures"`
+	StoreWriteBusyErrors            int64 `json:"storeWriteBusyErrors"`
+	StoreWriteFullErrors            int64 `json:"storeWriteFullErrors"`
+	StoreWriteLastLatencyMs         int64 `json:"storeWriteLastLatencyMs"`
 }
 
 func NewRuntimeStats() *RuntimeStats {
@@ -230,6 +242,26 @@ func (s *RuntimeStats) RecordPacketPathBackfill(duration time.Duration, failed b
 	}
 }
 
+func (s *RuntimeStats) RecordStoreWrite(duration time.Duration, retries int, failed bool, busy bool, full bool) {
+	if s == nil {
+		return
+	}
+	s.storeWriteAttempts.Add(1)
+	if retries > 0 {
+		s.storeWriteRetries.Add(int64(retries))
+	}
+	if failed {
+		s.storeWriteFailures.Add(1)
+	}
+	if busy {
+		s.storeWriteBusyErrors.Add(1)
+	}
+	if full {
+		s.storeWriteFullErrors.Add(1)
+	}
+	s.storeWriteLastLatencyMs.Store(duration.Milliseconds())
+}
+
 func (s *RuntimeStats) Snapshot() RuntimeStatsSnapshot {
 	if s == nil {
 		return RuntimeStatsSnapshot{}
@@ -273,5 +305,11 @@ func (s *RuntimeStats) Snapshot() RuntimeStatsSnapshot {
 		PacketPathSearchIndexLastSync:   s.packetPathSearchIndexLastSync.Load(),
 		PacketPathSearchIndexRemaining:  s.packetPathSearchIndexRemaining.Load() == 1,
 		PacketPathBackfillRemaining:     s.packetPathBackfillRemaining.Load() == 1,
+		StoreWriteAttempts:              s.storeWriteAttempts.Load(),
+		StoreWriteRetries:               s.storeWriteRetries.Load(),
+		StoreWriteFailures:              s.storeWriteFailures.Load(),
+		StoreWriteBusyErrors:            s.storeWriteBusyErrors.Load(),
+		StoreWriteFullErrors:            s.storeWriteFullErrors.Load(),
+		StoreWriteLastLatencyMs:         s.storeWriteLastLatencyMs.Load(),
 	}
 }
