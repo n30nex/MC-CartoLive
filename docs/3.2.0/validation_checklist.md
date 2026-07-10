@@ -12,7 +12,7 @@ collected for the exact candidate digest and commit.
   only from current Cloudflare IPv4/IPv6 ranges, blocks direct port 39476, and
   leaves required outbound traffic available; a second SSH session and public
   Cloudflare readiness were verified after attachment.
-- [x] Disk 80/90, memory 85, CPU 90, five-minute global readiness downtime, and
+- [x] Disk 80/90, memory 85, CPU 90, three-minute global readiness downtime, and
   TLS-expiry alerts exist. DigitalOcean's supported CPU window is ten minutes,
   so that platform constraint replaces the planned 15-minute window.
 
