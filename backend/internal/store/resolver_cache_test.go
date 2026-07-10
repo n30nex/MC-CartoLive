@@ -88,3 +88,26 @@ func TestResolverCandidateGenerationTracksNodeMutationsAndCollision(t *testing.T
 		t.Fatal("candidate generation did not advance after status-node mutation")
 	}
 }
+
+func TestCandidateMutationGenerationIsOddAndExcludesSnapshots(t *testing.T) {
+	st := &Store{}
+	if got := st.CandidateGeneration(); got != 0 {
+		t.Fatalf("initial candidate generation = %d, want 0", got)
+	}
+	finish := st.beginCandidateMutation()
+	if got := st.CandidateGeneration(); got != 1 || got%2 == 0 {
+		t.Fatalf("in-progress candidate generation = %d, want odd 1", got)
+	}
+	if st.candidateMu.TryRLock() {
+		st.candidateMu.RUnlock()
+		t.Fatal("candidate snapshot acquired while mutation held the exclusive lock")
+	}
+	finish()
+	if got := st.CandidateGeneration(); got != 2 || got%2 != 0 {
+		t.Fatalf("stable candidate generation = %d, want even 2", got)
+	}
+	if !st.candidateMu.TryRLock() {
+		t.Fatal("candidate snapshot remained blocked after mutation finished")
+	}
+	st.candidateMu.RUnlock()
+}

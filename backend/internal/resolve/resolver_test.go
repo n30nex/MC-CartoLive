@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"meshcore-canada-live-map/backend/internal/meshcore"
 )
@@ -23,6 +24,78 @@ type countingGenerationProvider struct {
 	candidates map[string][]Candidate
 	calls      map[string]int
 	generation uint64
+}
+
+type snapshotCollisionProvider struct {
+	gate              sync.RWMutex
+	mu                sync.Mutex
+	candidates        map[string][]Candidate
+	generation        uint64
+	snapshotAttempted chan struct{}
+	snapshotOnce      sync.Once
+}
+
+func (p *snapshotCollisionProvider) BeginCandidateSnapshot() (uint64, func()) {
+	p.snapshotOnce.Do(func() { close(p.snapshotAttempted) })
+	p.gate.RLock()
+	return p.CandidateGeneration(), p.gate.RUnlock
+}
+
+func (p *snapshotCollisionProvider) CandidateGeneration() uint64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.generation
+}
+
+func (p *snapshotCollisionProvider) CandidatesByPrefix(_ context.Context, iata string, hashSize int, prefix string) ([]Candidate, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return cloneCandidates(p.candidates[fmt.Sprintf("%s/%d/%s", iata, hashSize, prefix)]), nil
+}
+
+func (p *snapshotCollisionProvider) beginMutation() {
+	p.gate.Lock()
+	p.mu.Lock()
+	p.generation++
+	p.mu.Unlock()
+}
+
+func (p *snapshotCollisionProvider) finishMutation(key string, candidates []Candidate) {
+	p.mu.Lock()
+	p.candidates[key] = cloneCandidates(candidates)
+	p.generation++
+	p.mu.Unlock()
+	p.gate.Unlock()
+}
+
+type midResolveMutationProvider struct {
+	mu         sync.Mutex
+	candidates map[string][]Candidate
+	calls      map[string]int
+	generation uint64
+	mutated    bool
+}
+
+func (p *midResolveMutationProvider) CandidateGeneration() uint64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.generation
+}
+
+func (p *midResolveMutationProvider) CandidatesByPrefix(_ context.Context, iata string, hashSize int, prefix string) ([]Candidate, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	key := fmt.Sprintf("%s/%d/%s", iata, hashSize, prefix)
+	p.calls[key]++
+	result := cloneCandidates(p.candidates[key])
+	if prefix == "BB" && !p.mutated {
+		p.mutated = true
+		p.candidates["YKF/1/AA"] = append(p.candidates["YKF/1/AA"], Candidate{
+			NodeID: "n-collision", PublicKey: "AA1000", Role: "repeater", IATA: "YKF",
+		})
+		p.generation++
+	}
+	return result, nil
 }
 
 func (p *countingGenerationProvider) CandidatesByPrefix(_ context.Context, iata string, hashSize int, prefix string) ([]Candidate, error) {
@@ -351,5 +424,83 @@ func TestProviderGenerationCollisionInvalidatesHighConfidence(t *testing.T) {
 	}
 	if got := provider.callCount(key); got != 2 {
 		t.Fatalf("provider calls = %d, want 2", got)
+	}
+}
+
+func TestResolveWaitsForSerializedCandidateMutation(t *testing.T) {
+	key := "YKF/1/AA"
+	first := Candidate{NodeID: "n1", PublicKey: "AA0000", Role: "repeater", IATA: "YKF"}
+	second := Candidate{NodeID: "n2", PublicKey: "AA1000", Role: "repeater", IATA: "YKF"}
+	provider := &snapshotCollisionProvider{
+		candidates:        map[string][]Candidate{key: {first}},
+		snapshotAttempted: make(chan struct{}),
+	}
+	provider.beginMutation()
+	mutationFinished := false
+	defer func() {
+		if !mutationFinished {
+			provider.finishMutation(key, []Candidate{first, second})
+		}
+	}()
+
+	parsed, err := meshcore.ParsePacket([]byte{byte((meshcore.PayloadPlainText << 2) | meshcore.RouteFlood), 0x01, 0xAA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type resolveResult struct {
+		result Result
+		err    error
+	}
+	resolved := make(chan resolveResult, 1)
+	go func() {
+		result, err := New(provider, []string{"repeater"}).Resolve(context.Background(), "YKF", parsed)
+		resolved <- resolveResult{result: result, err: err}
+	}()
+
+	select {
+	case <-provider.snapshotAttempted:
+	case <-time.After(time.Second):
+		t.Fatal("resolver did not request a serialized candidate snapshot")
+	}
+	provider.finishMutation(key, []Candidate{first, second})
+	mutationFinished = true
+
+	select {
+	case got := <-resolved:
+		if got.err != nil {
+			t.Fatal(got.err)
+		}
+		if got.result.Status != StatusAmbiguous {
+			t.Fatalf("status after concurrent collision = %s, want %s", got.result.Status, StatusAmbiguous)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("resolver did not finish after candidate mutation committed")
+	}
+}
+
+func TestResolveRetriesWholePacketWhenGenerationChangesBetweenPrefixes(t *testing.T) {
+	provider := &midResolveMutationProvider{
+		candidates: map[string][]Candidate{
+			"YKF/1/AA": {{NodeID: "n1", PublicKey: "AA0000", Role: "repeater", IATA: "YKF"}},
+			"YKF/1/BB": {{NodeID: "n2", PublicKey: "BB0000", Role: "repeater", IATA: "YKF"}},
+		},
+		calls: make(map[string]int),
+	}
+	parsed, err := meshcore.ParsePacket([]byte{byte((meshcore.PayloadPlainText << 2) | meshcore.RouteFlood), 0x02, 0xAA, 0xBB})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := New(provider, []string{"repeater"}).Resolve(context.Background(), "YKF", parsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusAmbiguous {
+		t.Fatalf("mixed-generation status = %s, want retry result %s", result.Status, StatusAmbiguous)
+	}
+	provider.mu.Lock()
+	aaCalls := provider.calls["YKF/1/AA"]
+	provider.mu.Unlock()
+	if aaCalls < 2 {
+		t.Fatalf("AA candidate calls = %d, want whole-packet retry", aaCalls)
 	}
 }

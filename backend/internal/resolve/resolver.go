@@ -22,6 +22,14 @@ type CandidateGenerationProvider interface {
 	CandidateGeneration() uint64
 }
 
+// CandidateSnapshotProvider serializes a complete multi-prefix resolution with
+// candidate mutations. Store implements this with an RW lock and an odd/even
+// generation, so no high-confidence result can be assembled from two different
+// candidate snapshots.
+type CandidateSnapshotProvider interface {
+	BeginCandidateSnapshot() (generation uint64, release func())
+}
+
 const defaultCandidateCacheLimit = 4096
 
 type candidateCacheKey struct {
@@ -79,6 +87,26 @@ func (r *Resolver) InvalidateCandidates() {
 }
 
 func (r *Resolver) Resolve(ctx context.Context, iata string, parsed meshcore.ParsedPacket) (Result, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return Result{}, err
+		}
+		generation, release := beginProviderSnapshot(r.provider)
+		result, err := r.resolveOnce(ctx, iata, parsed)
+		stable := providerGeneration(r.provider) == generation
+		release()
+		if err != nil {
+			return Result{}, err
+		}
+		if stable {
+			return result, nil
+		}
+		// Candidate truth changed after at least one prefix was evaluated. Drop
+		// the mixed-generation decision and retry the complete packet fail-closed.
+	}
+}
+
+func (r *Resolver) resolveOnce(ctx context.Context, iata string, parsed meshcore.ParsedPacket) (Result, error) {
 	if parsed.InvalidForMap {
 		return Result{Status: StatusInvalidForMap, Reason: parsed.InvalidReason}, nil
 	}
@@ -205,6 +233,17 @@ func providerGeneration(provider CandidateProvider) uint64 {
 		return versioned.CandidateGeneration()
 	}
 	return 0
+}
+
+func beginProviderSnapshot(provider CandidateProvider) (uint64, func()) {
+	if snapshot, ok := provider.(CandidateSnapshotProvider); ok {
+		generation, release := snapshot.BeginCandidateSnapshot()
+		if release == nil {
+			release = func() {}
+		}
+		return generation, release
+	}
+	return providerGeneration(provider), func() {}
 }
 
 func cloneCandidates(candidates []Candidate) []Candidate {

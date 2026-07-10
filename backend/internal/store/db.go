@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -28,6 +29,7 @@ type Store struct {
 	path                string
 	coordinatePolicy    live.CoordinatePolicy
 	migrationHook       func(string) error
+	candidateMu         sync.RWMutex
 	candidateGeneration atomic.Uint64
 }
 
@@ -47,12 +49,29 @@ func (s *Store) bumpCandidateGeneration() {
 	}
 }
 
+// BeginCandidateSnapshot holds a stable view of resolver candidate truth until
+// the returned release function is called. Candidate mutations take the
+// exclusive side of this lock, so a resolver can never observe a partially
+// applied node/short-ID update.
+func (s *Store) BeginCandidateSnapshot() (uint64, func()) {
+	if s == nil {
+		return 0, func() {}
+	}
+	s.candidateMu.RLock()
+	return s.candidateGeneration.Load(), s.candidateMu.RUnlock
+}
+
 // beginCandidateMutation brackets a candidate-affecting store operation. The
-// first bump prevents reuse while the mutation is in flight; the deferred bump
-// makes every success or partial failure visible before the method returns.
+// exclusive lock serializes mutations with resolver snapshots. Odd generations
+// mean a mutation is in progress; the deferred second bump returns the store to
+// an even, stable generation and invalidates every earlier cache snapshot.
 func (s *Store) beginCandidateMutation() func() {
+	s.candidateMu.Lock()
 	s.bumpCandidateGeneration()
-	return s.bumpCandidateGeneration
+	return func() {
+		s.bumpCandidateGeneration()
+		s.candidateMu.Unlock()
+	}
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {

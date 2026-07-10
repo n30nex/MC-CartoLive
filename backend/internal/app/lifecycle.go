@@ -1202,66 +1202,122 @@ func redactedURL(in string) string {
 	return in
 }
 
+const (
+	retentionPruneInitialDelay          = 30 * time.Second
+	retentionPruneInterval              = time.Minute
+	retentionPruneCycleBudget           = 45 * time.Second
+	retentionPruneBatchPause            = 10 * time.Millisecond
+	retentionPruneMaxRowsPerCycle int64 = 250_000
+
+	// MeshCore permits up to 63 path hops. Allowing one route-summary row per
+	// segment plus the observation, edge/path projections, packet, and as many as
+	// three public events yields fewer than 96 retained rows per input.
+	retentionLockedMessagesPerSecond   int64 = 20
+	retentionWorstCaseRowsPerMessage   int64 = 96
+	retentionMaxPublicEventsPerMessage int64 = 3
+)
+
+func retentionPruneCapacityRowsPerSecond() int64 {
+	return retentionPruneMaxRowsPerCycle / int64(retentionPruneInterval/time.Second)
+}
+
+func retentionPruneAllowed(mqttStatus imqtt.Status, runtimeStatus live.RuntimeStatsSnapshot, storageState string, nowMs int64) (bool, string) {
+	primaryPressured := (mqttStatus.QueueCapacity > 0 && mqttStatus.QueueDepth*2 >= mqttStatus.QueueCapacity) || mqttStatus.OldestQueueItemAgeMs > 2_000
+	if primaryPressured {
+		return false, "primary_ingest_pressure"
+	}
+	derivedOldestAge := int64(0)
+	if runtimeStatus.DerivedOldestAtMs > 0 {
+		derivedOldestAge = max(nowMs-runtimeStatus.DerivedOldestAtMs, 0)
+	}
+	derivedPressured := (runtimeStatus.DerivedQueueCapacity > 0 && runtimeStatus.DerivedQueueDepth*2 >= runtimeStatus.DerivedQueueCapacity) || derivedOldestAge > 2_000
+	// Derived projections are intentionally paused under storage pressure. Their
+	// growing queue age must not block the cleanup which creates free space.
+	if storageState == "warn" || storageState == "critical" {
+		return true, ""
+	}
+	if derivedPressured {
+		return false, "derived_ingest_pressure"
+	}
+	return true, ""
+}
+
 func (a *Application) pruneLoop(ctx context.Context) {
 	retentionDays := a.effectiveDataRetentionDays()
 	if retentionDays < 0 {
 		return
 	}
 	runPrune := func() {
-		now := time.Now()
-		mqttStatus := a.MQTT.Status(now)
-		runtimeStatus := a.Runtime.Snapshot()
-		derivedOldestAge := int64(0)
-		if runtimeStatus.DerivedOldestAtMs > 0 {
-			derivedOldestAge = max(now.UnixMilli()-runtimeStatus.DerivedOldestAtMs, 0)
-		}
-		primaryPressured := (mqttStatus.QueueCapacity > 0 && mqttStatus.QueueDepth*2 >= mqttStatus.QueueCapacity) || mqttStatus.OldestQueueItemAgeMs > 2_000
-		derivedPressured := (runtimeStatus.DerivedQueueCapacity > 0 && runtimeStatus.DerivedQueueDepth*2 >= runtimeStatus.DerivedQueueCapacity) || derivedOldestAge > 2_000
-		if primaryPressured || derivedPressured {
-			a.Log.Warn("data prune deferred; ingest lag is not healthy",
-				"queueDepth", mqttStatus.QueueDepth, "queueCapacity", mqttStatus.QueueCapacity,
-				"queueOldestAgeMs", mqttStatus.OldestQueueItemAgeMs,
-				"derivedQueueDepth", runtimeStatus.DerivedQueueDepth, "derivedQueueCapacity", runtimeStatus.DerivedQueueCapacity,
-				"derivedOldestAgeMs", derivedOldestAge,
-			)
-			return
-		}
-		if a.Store.StorageInfo().PressureState == "critical" {
-			a.Log.Warn("data prune deferred; storage is critical")
-			return
-		}
-		pruneCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		defer cancel()
+		started := time.Now()
 		publicEventHours := a.Config.PublicEventRetentionHours
 		if publicEventHours <= 0 {
 			publicEventHours = 24
 		}
-		publicEventBeforeMs := time.Now().Add(-time.Duration(publicEventHours) * time.Hour).UnixMilli()
-		if err := a.Store.PrunePublicEvents(pruneCtx, publicEventBeforeMs); err != nil {
-			a.Log.Warn("public event prune failed", "error", err)
-		}
-		beforeMs := time.Now().AddDate(0, 0, -retentionDays).UnixMilli()
-		if err := a.Store.PruneOldData(pruneCtx, beforeMs); err != nil {
-			a.Log.Warn("data prune failed", "error", err)
-		} else {
-			a.Log.Debug("data pruned", "beforeMs", beforeMs)
-		}
 		propagationRetentionDays := a.Config.PropagationEventRetentionDays
-		if propagationRetentionDays > 0 && propagationRetentionDays != retentionDays {
-			propagationBeforeMs := time.Now().AddDate(0, 0, -propagationRetentionDays).UnixMilli()
-			if err := a.Store.PrunePropagationData(pruneCtx, propagationBeforeMs); err != nil {
-				a.Log.Warn("propagation prune failed", "error", err)
+		if propagationRetentionDays <= 0 {
+			propagationRetentionDays = retentionDays
+		}
+		pruner := a.Store.NewRetentionPruner(store.RetentionCutoffs{
+			DataBeforeMs:        started.AddDate(0, 0, -retentionDays).UnixMilli(),
+			PublicEventBeforeMs: started.Add(-time.Duration(publicEventHours) * time.Hour).UnixMilli(),
+			PropagationBeforeMs: started.AddDate(0, 0, -propagationRetentionDays).UnixMilli(),
+		})
+		cycleCtx, cancel := context.WithTimeout(ctx, retentionPruneCycleBudget)
+		defer cancel()
+		var rowsDeleted int64
+		steps := 0
+		for rowsDeleted < retentionPruneMaxRowsPerCycle {
+			now := time.Now()
+			mqttStatus := a.MQTT.Status(now)
+			runtimeStatus := a.Runtime.Snapshot()
+			storageState := a.Store.StorageInfo().PressureState
+			allowed, reason := retentionPruneAllowed(mqttStatus, runtimeStatus, storageState, now.UnixMilli())
+			if !allowed {
+				a.Log.Warn("retention cleanup paused between batches; ingest lag is not healthy",
+					"reason", reason,
+					"rowsDeleted", rowsDeleted,
+					"queueDepth", mqttStatus.QueueDepth, "queueCapacity", mqttStatus.QueueCapacity,
+					"queueOldestAgeMs", mqttStatus.OldestQueueItemAgeMs,
+					"derivedQueueDepth", runtimeStatus.DerivedQueueDepth, "derivedQueueCapacity", runtimeStatus.DerivedQueueCapacity,
+					"storagePressureState", storageState,
+				)
+				return
+			}
+			step, err := pruner.Step(cycleCtx)
+			if err != nil {
+				if cycleCtx.Err() != nil {
+					a.Log.Warn("retention cleanup reached its bounded time budget", "rowsDeleted", rowsDeleted, "steps", steps)
+					return
+				}
+				a.Log.Warn("retention cleanup batch failed", "error", err, "rowsDeleted", rowsDeleted, "steps", steps)
+				return
+			}
+			steps++
+			rowsDeleted += step.RowsDeleted
+			if step.Done {
+				a.Log.Debug("retention cleanup complete", "rowsDeleted", rowsDeleted, "steps", steps, "durationMs", time.Since(started).Milliseconds())
+				return
+			}
+			if step.RowsDeleted > 0 {
+				timer := time.NewTimer(retentionPruneBatchPause)
+				select {
+				case <-cycleCtx.Done():
+					timer.Stop()
+					a.Log.Warn("retention cleanup reached its bounded time budget", "rowsDeleted", rowsDeleted, "steps", steps)
+					return
+				case <-timer.C:
+				}
 			}
 		}
+		a.Log.Info("retention cleanup reached its bounded row budget", "rowsDeleted", rowsDeleted, "steps", steps, "durationMs", time.Since(started).Milliseconds())
 	}
-	initialDelay := 30 * time.Minute
 	select {
 	case <-ctx.Done():
 		return
-	case <-time.After(initialDelay):
+	case <-time.After(retentionPruneInitialDelay):
 	}
 	runPrune()
-	ticker := time.NewTicker(6 * time.Hour)
+	ticker := time.NewTicker(retentionPruneInterval)
 	defer ticker.Stop()
 	for {
 		select {
