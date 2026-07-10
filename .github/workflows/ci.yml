@@ -103,12 +103,16 @@ jobs:
           cp .env.example .env
           docker compose config --quiet
           MC_CARTOLIVE_IMAGE=ghcr.io/n30nex/mc-cartolive@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
-            docker compose -f docker-compose.production.yml config > /tmp/production-compose.yml
-          if grep -Eq '^[[:space:]]+build:' /tmp/production-compose.yml; then
-            echo 'Production Compose must not contain a build section' >&2
-            exit 1
-          fi
-          grep -F '127.0.0.1:39476' /tmp/production-compose.yml
+            docker compose -f docker-compose.production.yml config --format json > /tmp/production-compose.json
+          jq -e '.services["meshcore-live-map"] | has("build") | not' /tmp/production-compose.json
+          jq -e '
+            .services["meshcore-live-map"].ports
+            | any(
+                .host_ip == "127.0.0.1"
+                and (.published | tostring) == "39476"
+                and (.target | tonumber) == 8080
+              )
+          ' /tmp/production-compose.json
       - name: Package manifest dry run
         env:
           RELEASE_IMAGE: ghcr.io/n30nex/mc-cartolive@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
