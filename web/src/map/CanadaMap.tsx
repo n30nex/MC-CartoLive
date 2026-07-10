@@ -2046,27 +2046,33 @@ function CanadaMap({
     layerEventsCleanupRef.current = null;
     layerEventsBoundRef.current = false;
 
-    const applyStyle = () => {
-      const profile = mapStyleProfileByID(styleProfileID);
-      if (profile.baseMode === 'pmtiles') {
-        const status = installPMTilesProtocol(maplibregl, true);
-        if (!status.installed && PMTILES_BASEMAP_URL) {
-          setMapInitError(`PMTiles unavailable: ${status.reason ?? 'not installed'}`);
-        }
+    const profile = mapStyleProfileByID(styleProfileID);
+    if (profile.baseMode === 'pmtiles') {
+      const status = installPMTilesProtocol(maplibregl, true);
+      if (!status.installed && PMTILES_BASEMAP_URL) {
+        setMapInitError(`PMTiles unavailable: ${status.reason ?? 'not installed'}`);
       }
-      const nextStyle = mapStyleForProfile(styleProfileID, nextThemeMode);
-      (window as any).__meshcoreMapStyle = nextStyle;
-      map.setStyle(nextStyle);
-      if (nextBaseMode === 'openfreemap') ensureMercatorProjection(map);
-      map.once('style.load', () => {
-        map.easeTo({
-          pitch: defaultPitchForProfile(styleProfileID),
-          bearing: defaultBearingForProfile(styleProfileID),
-          duration: 500
-        });
+    }
+    const nextStyle = mapStyleForProfile(styleProfileID, nextThemeMode);
+    (window as any).__meshcoreMapStyle = nextStyle;
+    let listeningForStyleLoad = true;
+    const stopListeningForStyleLoad = () => {
+      if (!listeningForStyleLoad) return;
+      listeningForStyleLoad = false;
+      map.off('style.load', handleStyleLoad);
+    };
+    const handleStyleLoad = () => {
+      stopListeningForStyleLoad();
+      map.easeTo({
+        pitch: defaultPitchForProfile(styleProfileID),
+        bearing: defaultBearingForProfile(styleProfileID),
+        duration: 500
       });
     };
-    applyStyle();
+    map.on('style.load', handleStyleLoad);
+    map.setStyle(nextStyle);
+    if (nextBaseMode === 'openfreemap') ensureMercatorProjection(map);
+    return stopListeningForStyleLoad;
   }, [styleProfileID, styleSettings, themeMode]);
 
   useEffect(() => {

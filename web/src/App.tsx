@@ -92,6 +92,7 @@ import { SERVICE_WORKER_UPDATE_EVENT, activateWaitingServiceWorker, waitingServi
 import { useAccessibleDialog } from './lib/useAccessibleDialog';
 import { bootstrapToLiveState, publicStateSnapshotIsCurrent, startBootstrapFirstHydration } from './bootstrapHydration';
 import type { ReplayExportSurfaceProvider } from './replayExportSurface';
+import { installResumeRecovery } from './resumeRecovery';
 import { recordLivePendingQueueSize, recordSnapshotReplacement, recordVcrReplayQueueSize, recordVisibilityPause } from './perfDiagnostics';
 import { appendBufferedRoutePulses, routePulseMessages } from './playbackController';
 import { applyMapMode, MAP_MODES, mapModeForSettings, normalizeMapSettings, readStoredMapSettings, writeStoredMapSettings, type MapModeID, type MapSettings } from './mapSettings';
@@ -468,7 +469,7 @@ function PublicDashboardApp() {
   }, []);
 
   const refreshLiveSnapshot = useCallback(() => {
-    fetchPublicState()
+    return fetchPublicState()
       .then((liveState) => {
         if (vcrModeRef.current !== 'live') return;
         setFullStateHydrated(true);
@@ -483,7 +484,7 @@ function PublicDashboardApp() {
         setSocketStatus('state-error');
         if (!initialNodesReceived) setNodeLoadFailed(true);
       });
-  }, [initialNodesReceived]);
+  }, [applyPublicSnapshot, initialNodesReceived]);
 
   const returnToLive = useCallback(() => {
     stopReplay();
@@ -878,15 +879,13 @@ function PublicDashboardApp() {
   }, [applyPublicSnapshot, bufferVcrMessage, initialNodesReceived]);
 
   useEffect(() => {
-    const handleVisibility = () => {
-      if (document.hidden) {
-        recordVisibilityPause();
-      } else if (vcrModeRef.current === 'live') {
-        refreshLiveSnapshot();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
+    return installResumeRecovery({
+      document,
+      window,
+      shouldRehydrate: () => vcrModeRef.current === 'live',
+      rehydrate: refreshLiveSnapshot,
+      onSuspend: recordVisibilityPause
+    });
   }, [refreshLiveSnapshot]);
 
   useEffect(() => {
