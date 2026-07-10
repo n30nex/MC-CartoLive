@@ -289,8 +289,8 @@ export function systemSummaryFromHealth(health: RuntimeHealth | null, ready: Run
   const backendReady = ready?.ready === true;
   const apiReady = apiOnline >= apiTotal;
   const mqttReady = health?.mqttConnected === true && (freshnessTone(health.mqttLastMessageAgeMs, 60_000) ?? 'good') !== 'bad';
-  const routesReady = health?.routeMotionState === 'moving' || health?.routeMotionState === 'fresh' || health?.mapMotionState === 'moving';
-  if (backendReady && apiReady && mqttReady && routesReady) return { value: 'live', tone: 'good' };
+  const publicFresh = health?.publicLiveFresh !== false && health?.packetIngestFresh !== false && health?.liveConfidenceState !== 'degraded';
+  if (backendReady && apiReady && mqttReady && publicFresh) return { value: 'live', tone: 'good' };
   if (backendReady || apiOnline > 0) return { value: 'degraded', tone: 'warn' };
   return { value: 'offline', tone: 'bad' };
 }

@@ -1,0 +1,9 @@
+[Unit]
+Description=MC-CartoLive public freshness watchdog
+Wants=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/mc-cartolive-watchdog
+ExecStart=/opt/MC-CartoLive/scripts/mc-cartolive-watchdog.sh

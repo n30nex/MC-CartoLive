@@ -182,7 +182,7 @@ func sqliteDSN(path string) string {
 	if strings.Contains(path, "?") {
 		sep = "&"
 	}
-	busyTimeoutMs := sqliteEnvInt("SQLITE_BUSY_TIMEOUT_MS", 15000)
+	busyTimeoutMs := sqliteEnvInt("SQLITE_BUSY_TIMEOUT_MS", 30000)
 	cacheKB := sqliteEnvInt("SQLITE_CACHE_SIZE_KB", 16000)
 	mmapSizeBytes := sqliteEnvInt("SQLITE_MMAP_SIZE_BYTES", 67108864)
 	return path + sep + strings.Join([]string{

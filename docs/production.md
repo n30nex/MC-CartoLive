@@ -127,11 +127,19 @@ rollback guard.
   observations, live edge events, public event/search projections, observer
   status history, propagation weather snapshots, and orphan packet rows.
 - `PROPAGATION_EVENT_RETENTION_DAYS` defaults to `7` unless explicitly set.
+- On very small public hosts, live ingest should win over optional background
+  jobs. For the 1GB Canada droplet, use `DATA_RETENTION_DAYS=-1`,
+  `PROPAGATION_ENABLED=false`, and `PUBLIC_PACKET_PATH_BACKFILL_ENABLED=false`
+  when traffic bursts show SQLite lock pressure; run prune/propagation work in
+  an explicit maintenance window instead.
 - SQLite defaults are tuned for the small live droplet: `SQLITE_MAX_OPEN_CONNS=4`
-  keeps read headroom, `SQLITE_BUSY_TIMEOUT_MS=15000` lets bursty writes queue
+  keeps read headroom, `SQLITE_BUSY_TIMEOUT_MS=30000` lets bursty writes queue
   instead of failing immediately, `SQLITE_CACHE_SIZE_KB=16000` caps page cache
   growth, and `SQLITE_MMAP_SIZE_BYTES=67108864` avoids cgroup memory pressure
   while keeping public cache refreshes responsive.
+- Public deployments should enable `mc-cartolive-watchdog.timer` from
+  `deploy/systemd/`. The timer checks `/readyz` every minute and restarts the
+  Compose service after repeated public freshness failures.
 - Public history, packets, chat, event, viewport backfill, and propagation
   searches are clamped to a maximum seven-day window.
 - Compact `public_route_summaries` rows preserve the latest public-safe route

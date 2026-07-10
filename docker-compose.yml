@@ -31,7 +31,7 @@ services:
       GIT_SHA: ${GIT_SHA:-${VITE_GIT_SHA:-}}
       BUILD_TIME: ${BUILD_TIME:-${VITE_BUILD_TIME:-}}
       SQLITE_MAX_OPEN_CONNS: ${SQLITE_MAX_OPEN_CONNS:-4}
-      SQLITE_BUSY_TIMEOUT_MS: ${SQLITE_BUSY_TIMEOUT_MS:-15000}
+      SQLITE_BUSY_TIMEOUT_MS: ${SQLITE_BUSY_TIMEOUT_MS:-30000}
       SQLITE_CACHE_SIZE_KB: ${SQLITE_CACHE_SIZE_KB:-16000}
       SQLITE_MMAP_SIZE_BYTES: ${SQLITE_MMAP_SIZE_BYTES:-67108864}
       VITE_ENABLE_SERVICE_WORKER: ${VITE_ENABLE_SERVICE_WORKER:-false}
@@ -54,7 +54,7 @@ services:
           memory: 768M
     stop_grace_period: 30s
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
       interval: 30s
       timeout: 5s
       retries: 3

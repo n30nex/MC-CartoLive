@@ -113,15 +113,50 @@ emergency manual compaction, first stop or quiesce the container, make a backup,
 then run SQLite vacuum against `data/meshcore-live.db`.
 
 The live container intentionally keeps SQLite conservative on the 1GB droplet:
-`SQLITE_MAX_OPEN_CONNS=4`, `SQLITE_BUSY_TIMEOUT_MS=15000`,
+`SQLITE_MAX_OPEN_CONNS=4`, `SQLITE_BUSY_TIMEOUT_MS=30000`,
 `SQLITE_CACHE_SIZE_KB=16000`, and `SQLITE_MMAP_SIZE_BYTES=67108864`. If
 `/readyz` shows fresh MQTT ingest but the public UI says stale, check Docker
 memory pressure and `SQLITE_BUSY` warnings before changing public freshness
 thresholds.
 
-Retention pruning starts 30 minutes after process start, and propagation
-classification starts 5 minutes after process start. This keeps deploys from
-competing with live packet ingest while the public cache warms.
+On the small public Canada droplet, prefer public freshness over optional
+background jobs. If the live feed is under bursty load, set
+`DATA_RETENTION_DAYS=-1`, `PROPAGATION_ENABLED=false`, and
+`PUBLIC_PACKET_PATH_BACKFILL_ENABLED=false`, then run pruning or propagation
+work manually during an operator window. This keeps automatic retention pruning
+and weather-backed propagation classification from competing with live packet
+ingest.
+
+When automatic pruning is enabled, retention pruning starts 30 minutes after
+process start, and propagation classification starts 5 minutes after process
+start. This keeps deploys from competing with live packet ingest while the
+public cache warms.
+
+## Public Freshness Watchdog
+
+The production droplet should run the systemd timer in `deploy/systemd/`. It
+checks `/readyz` once per minute and restarts the Compose service after three
+consecutive bad samples, with a 10-minute restart cooldown.
+
+Install or refresh it after deploying the repo:
+
+```bash
+cd /opt/MC-CartoLive
+install -m 0755 scripts/mc-cartolive-watchdog.sh /opt/MC-CartoLive/scripts/mc-cartolive-watchdog.sh
+install -m 0644 deploy/systemd/mc-cartolive-watchdog.default /etc/default/mc-cartolive-watchdog
+install -m 0644 deploy/systemd/mc-cartolive-watchdog.service /etc/systemd/system/mc-cartolive-watchdog.service
+install -m 0644 deploy/systemd/mc-cartolive-watchdog.timer /etc/systemd/system/mc-cartolive-watchdog.timer
+systemctl daemon-reload
+systemctl enable --now mc-cartolive-watchdog.timer
+```
+
+Useful checks:
+
+```bash
+systemctl status mc-cartolive-watchdog.timer
+systemctl list-timers mc-cartolive-watchdog.timer
+tail -n 50 /var/log/mc-cartolive-watchdog.log
+```
 
 ## Soak Check
 

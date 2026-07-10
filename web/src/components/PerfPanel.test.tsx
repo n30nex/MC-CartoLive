@@ -23,6 +23,7 @@ describe('PerfPanel helpers', () => {
 
   it('summarizes the live system from public-safe health signals', () => {
     expect(systemSummaryFromHealth({ mqttConnected: true, mqttLastMessageAgeMs: 10_000, routeMotionState: 'moving' }, { ready: true }, 3, 3)).toEqual({ value: 'live', tone: 'good' });
+    expect(systemSummaryFromHealth({ mqttConnected: true, mqttLastMessageAgeMs: 10_000, routeMotionState: 'quiet', mapMotionState: 'quiet', liveConfidenceState: 'quiet', publicLiveFresh: true, packetIngestFresh: true }, { ready: true }, 3, 3)).toEqual({ value: 'live', tone: 'good' });
     expect(systemSummaryFromHealth({ mqttConnected: false, routeMotionState: 'stale' }, { ready: true }, 2, 3)).toEqual({ value: 'degraded', tone: 'warn' });
     expect(systemSummaryFromHealth(null, null, 0, 3)).toEqual({ value: 'not live', tone: 'bad' });
   });

@@ -123,7 +123,7 @@ func TestHealthzSeparatesPacketIngestFromQuietMapMotion(t *testing.T) {
 		MQTTConnected:     func() bool { return true },
 		MQTTTotal:         func() int64 { return 100 },
 		MQTTStatus: func(time.Time) imqtt.Status {
-			return imqtt.Status{Connected: true, TotalMessages: 100, LastMessageAgeMs: 4000}
+			return imqtt.Status{Connected: true, TotalMessages: 100, LastMessageAgeMs: 45_000}
 		},
 	}
 
@@ -137,10 +137,10 @@ func TestHealthzSeparatesPacketIngestFromQuietMapMotion(t *testing.T) {
 		t.Fatal(err)
 	}
 	if payload["packetIngestState"] != "fresh" || payload["packetIngestFresh"] != true {
-		t.Fatalf("packet ingest should be fresh under 5s: %#v", payload)
+		t.Fatalf("packet ingest should tolerate normal quiet RF gaps: %#v", payload)
 	}
-	if payload["mapMotionState"] != "missing" || payload["mapMotionFresh"] != false {
-		t.Fatalf("map motion should be separate from packet ingest: %#v", payload)
+	if payload["mapMotionState"] != "quiet" || payload["routeMotionState"] != "quiet" || payload["mapMotionFresh"] != false {
+		t.Fatalf("quiet map motion should be separate from packet ingest: %#v", payload)
 	}
 	if payload["publicLiveFresh"] != true || payload["liveConfidenceState"] != "quiet" {
 		t.Fatalf("quiet routed motion should not mark ingest stale: %#v", payload)

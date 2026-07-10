@@ -382,7 +382,14 @@ func (a *Application) publishPublicEvent(ctx context.Context, eventType string, 
 }
 
 func (a *Application) retryStoreWrite(ctx context.Context, label string, fn func(context.Context) error) error {
-	delays := []time.Duration{0, 100 * time.Millisecond, 250 * time.Millisecond}
+	delays := []time.Duration{
+		0,
+		100 * time.Millisecond,
+		250 * time.Millisecond,
+		500 * time.Millisecond,
+		time.Second,
+		2 * time.Second,
+	}
 	var err error
 	for attempt, delay := range delays {
 		if delay > 0 {

@@ -414,6 +414,8 @@ const (
 	liveStateWarming      = "warming"
 	liveStateMoving       = "moving"
 	liveStateDegraded     = "degraded"
+
+	packetIngestStaleAfterMs = 60_000
 )
 
 type publicLiveHealthSnapshot struct {
@@ -434,7 +436,7 @@ func publicLiveHealth(cacheAgeMs int64, routePulseAgeMs int64, observerBurstAgeM
 		packetState = liveStateDisconnected
 	} else if mqttStatus.LastMessageAgeMs < 0 {
 		packetState = liveStateMissing
-	} else if mqttStatus.LastMessageAgeMs > 5_000 {
+	} else if mqttStatus.LastMessageAgeMs > packetIngestStaleAfterMs {
 		packetState = liveStateStale
 	}
 
@@ -451,8 +453,6 @@ func publicLiveHealth(cacheAgeMs int64, routePulseAgeMs int64, observerBurstAgeM
 	mapMotionState := liveStateQuiet
 	if mapMotionFresh {
 		mapMotionState = liveStateMoving
-	} else if routeState == liveStateMissing && observerState == liveStateMissing {
-		mapMotionState = liveStateMissing
 	}
 
 	packetFresh := packetState == liveStateFresh
@@ -480,7 +480,7 @@ func publicLiveHealth(cacheAgeMs int64, routePulseAgeMs int64, observerBurstAgeM
 
 func motionState(ageMs int64) string {
 	if ageMs < 0 {
-		return liveStateMissing
+		return liveStateQuiet
 	}
 	if ageMs <= 120_000 {
 		return liveStateFresh
