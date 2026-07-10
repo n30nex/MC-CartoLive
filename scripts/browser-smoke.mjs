@@ -1016,12 +1016,16 @@ async function smokeMapSettings(page, viewport) {
   const drawer = page.getByRole('dialog', { name: /^Map settings$/i });
   await drawer.waitFor({ state: 'visible', timeout: 5_000 });
   await assertVisibleInViewport(page, '.map-settings-drawer', 'map settings drawer', viewport);
-  await drawer.getByRole('heading', { name: /^Modes$/i }).waitFor({ state: 'visible', timeout: 5_000 });
-  await drawer.getByRole('button', { name: /Watch/i }).waitFor({ state: 'visible', timeout: 5_000 });
-  await drawer.getByRole('button', { name: /Explore/i }).waitFor({ state: 'visible', timeout: 5_000 });
-  await drawer.getByRole('button', { name: /Terrain/i }).waitFor({ state: 'visible', timeout: 5_000 });
-  await drawer.getByRole('button', { name: /Studio/i }).waitFor({ state: 'visible', timeout: 5_000 });
-  await drawer.getByText(/3D And RF/i).waitFor({ state: 'visible', timeout: 5_000 });
+  await drawer.evaluate((element) => { element.scrollTop = 0; });
+  const modeButtons = drawer.locator('.map-mode-grid button');
+  const modeLabels = (await modeButtons.allTextContents()).map((label) => label.replace(/\s+/g, ' ').trim());
+  if (modeLabels.length !== 4 || !['Watch', 'Explore', 'Terrain', 'Studio'].every((label) => modeLabels.some((value) => value.startsWith(label)))) {
+    throw new Error(`map settings modes are incomplete: ${JSON.stringify(modeLabels)}`);
+  }
+  const drawerText = (await drawer.textContent()) ?? '';
+  if (!/Modes/i.test(drawerText) || !/3D And RF/i.test(drawerText)) {
+    throw new Error('map settings section labels are incomplete');
+  }
   await drawer.getByRole('button', { name: /Close map settings/i }).click();
   await drawer.waitFor({ state: 'hidden', timeout: 5_000 });
 }
