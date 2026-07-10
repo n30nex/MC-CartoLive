@@ -9,6 +9,7 @@ import (
 const (
 	pruneBatchSize  = 500
 	pruneBatchPause = 25 * time.Millisecond
+	pruneMaxBatches = 200
 )
 
 func (s *Store) PruneOldData(ctx context.Context, beforeMs int64) error {
@@ -28,7 +29,7 @@ func (s *Store) PruneOldData(ctx context.Context, beforeMs int64) error {
 			return err
 		}
 	}
-	for {
+	for batch := 0; batch < pruneMaxBatches; batch++ {
 		result, err := s.db.ExecContext(ctx,
 			fmt.Sprintf(`DELETE FROM packets
 WHERE rowid IN (
@@ -70,7 +71,7 @@ func (s *Store) PrunePropagationData(ctx context.Context, beforeMs int64) error 
 }
 
 func (s *Store) pruneTableBefore(ctx context.Context, table string, column string, beforeMs int64) error {
-	for {
+	for batch := 0; batch < pruneMaxBatches; batch++ {
 		result, err := s.db.ExecContext(ctx,
 			fmt.Sprintf("DELETE FROM %s WHERE rowid IN (SELECT rowid FROM %s WHERE %s < ? LIMIT %d)", table, table, column, pruneBatchSize),
 			beforeMs)

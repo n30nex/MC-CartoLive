@@ -1225,24 +1225,31 @@ func (a *Application) pruneLoop(ctx context.Context) {
 		return
 	}
 	runPrune := func() {
-		beforeMs := time.Now().AddDate(0, 0, -retentionDays).UnixMilli()
-		if err := a.Store.PruneOldData(ctx, beforeMs); err != nil {
-			a.Log.Warn("data prune failed", "error", err)
-		} else {
-			a.Log.Debug("data pruned", "beforeMs", beforeMs)
+		mqttStatus := a.MQTT.Status(time.Now())
+		if mqttStatus.QueueCapacity > 0 && mqttStatus.QueueDepth*2 >= mqttStatus.QueueCapacity {
+			a.Log.Warn("data prune deferred; ingest queue is pressured", "queueDepth", mqttStatus.QueueDepth, "queueCapacity", mqttStatus.QueueCapacity)
+			return
 		}
+		pruneCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
 		publicEventHours := a.Config.PublicEventRetentionHours
 		if publicEventHours <= 0 {
 			publicEventHours = 24
 		}
 		publicEventBeforeMs := time.Now().Add(-time.Duration(publicEventHours) * time.Hour).UnixMilli()
-		if err := a.Store.PrunePublicEvents(ctx, publicEventBeforeMs); err != nil {
+		if err := a.Store.PrunePublicEvents(pruneCtx, publicEventBeforeMs); err != nil {
 			a.Log.Warn("public event prune failed", "error", err)
+		}
+		beforeMs := time.Now().AddDate(0, 0, -retentionDays).UnixMilli()
+		if err := a.Store.PruneOldData(pruneCtx, beforeMs); err != nil {
+			a.Log.Warn("data prune failed", "error", err)
+		} else {
+			a.Log.Debug("data pruned", "beforeMs", beforeMs)
 		}
 		propagationRetentionDays := a.Config.PropagationEventRetentionDays
 		if propagationRetentionDays > 0 && propagationRetentionDays != retentionDays {
 			propagationBeforeMs := time.Now().AddDate(0, 0, -propagationRetentionDays).UnixMilli()
-			if err := a.Store.PrunePropagationData(ctx, propagationBeforeMs); err != nil {
+			if err := a.Store.PrunePropagationData(pruneCtx, propagationBeforeMs); err != nil {
 				a.Log.Warn("propagation prune failed", "error", err)
 			}
 		}
