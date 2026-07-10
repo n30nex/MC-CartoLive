@@ -531,11 +531,11 @@ async function smokeCommandReplayAndExport(page, viewport) {
 
   const replay = page.getByRole('dialog', { name: /RF Replay Studio/i });
   await replay.waitFor({ state: 'visible', timeout: 15_000 });
-  await assertAccessibleModal(page, replay, 'RF Replay Studio');
   const reduced = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   if (!reduced) throw new Error('release context did not emulate reduced motion');
   await replay.getByText(/Reduced motion is active: Replay Studio uses a static route story/i).waitFor({ state: 'visible', timeout: 8_000 });
   await replay.getByRole('slider', { name: /Route replay position/i }).waitFor({ state: 'visible', timeout: 8_000 });
+  await assertAccessibleModal(page, replay, 'RF Replay Studio');
   await replay.getByRole('button', { name: /^2D$/i }).click();
   await page.locator('.toast-viewport[role="status"][aria-live="polite"]').waitFor({ state: 'visible', timeout: 5_000 });
   const showStory = replay.getByRole('button', { name: /Show story/i });
@@ -1068,6 +1068,10 @@ async function smokeVcrScrubReplay(page) {
   await setRangeInputValue(page.locator('input.vcr-timeline').first(), replayTarget.timestamp);
   await page.waitForSelector('.vcr-bar.paused', { state: 'visible', timeout: 8_000 });
 
+  // The target lookup and replay loader share the public history quota. Let
+  // the continuous token bucket refill before asking the UI for the same
+  // bounded window, then prove a transient quota race is retryable once.
+  await page.waitForTimeout(1_100);
   await page.getByRole('button', { name: /Replay from selected time/i }).click();
   const replayStarted = await page.waitForFunction(() => {
     const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
@@ -1087,7 +1091,16 @@ async function smokeVcrScrubReplay(page) {
     const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
     return !readout.includes('REPLAY LOADING');
   }, null, { timeout: 20_000 }).catch(() => {});
-  const readoutText = await page.locator('.vcr-readout').first().textContent();
+  let readoutText = await page.locator('.vcr-readout').first().textContent();
+  if (/REPLAY ERROR|REPLAY RETRY/i.test(readoutText ?? '')) {
+    await page.waitForTimeout(1_100);
+    await page.getByRole('button', { name: /Replay from selected time/i }).click();
+    await page.waitForFunction(() => {
+      const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
+      return !readout.includes('REPLAY LOADING');
+    }, null, { timeout: 20_000 });
+    readoutText = await page.locator('.vcr-readout').first().textContent();
+  }
   if (/NO REPLAY EVENTS|REPLAY EMPTY|REPLAY ERROR|REPLAY RETRY/i.test(readoutText ?? '')) {
     throw new Error(`VCR replay did not produce replayable route events: ${compactText(readoutText)}`);
   }
