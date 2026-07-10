@@ -357,13 +357,7 @@ func (s *Server) readinessStatus(ctx context.Context) map[string]any {
 		"ok": ready, "ready": ready, "reasons": reasons,
 		"dbReady": dbReady, "staticReady": staticReady, "publicStateReady": cacheStatus.Ready,
 		"mqttSessionReady": mqttReady, "datasetState": runtimeHealth.DatasetState,
-		"storagePressureState": storage.PressureState, "fullReconcileAgeMs": cacheStatus.FullReconcileAgeMs,
-		"ingestQueueDepth": mqttStatus.QueueDepth, "ingestQueueCapacity": mqttStatus.QueueCapacity,
-		"ingestQueueOldestItemAgeMs": mqttStatus.OldestQueueItemAgeMs,
-		"ingestAccepted":             mqttStatus.AcceptedMessages, "ingestProcessed": mqttStatus.ProcessedMessages,
-		"ingestDropped": mqttStatus.DroppedMessages, "counterReset": "process_restart",
-		"derivedQueueDepth": runtimeStats.DerivedQueueDepth, "derivedQueueCapacity": runtimeStats.DerivedQueueCapacity,
-		"derivedQueueOldestItemAgeMs": derivedOldestAgeMs, "derivedDropped": runtimeStats.DerivedDropped,
+		"storagePressureState": storage.PressureState,
 		"version": fallbackString(s.Config.AppVersion, "dev"), "gitSha": fallbackString(s.Config.GitSHA, "unknown"),
 	}
 }

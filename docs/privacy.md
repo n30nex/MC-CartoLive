@@ -28,12 +28,13 @@ They must not expose:
 - resolver debug reasons
 - raw packet payloads
 
-Operational endpoints such as `/healthz` and `/readyz` may expose public-safe
-runtime counters only: cache age, DB readiness, MQTT connection status, message
-counts, WebSocket client/drop counts, version, Git SHA, build time, and public
-API latency/error counts. They must not expose broker credentials, topics beyond
-public-safe labels, raw packet identifiers, full keys, raw hex, resolver details,
-or operator config.
+`/healthz` may expose public-safe runtime counters such as cache age, MQTT
+connection status, message counts, WebSocket client/drop counts, and public API
+latency/error counts. `/readyz` is narrower: sanitized booleans/states, stable
+reason codes, version, and Git SHA only. Detailed queue, ingest, and reconcile
+telemetry stays on the loopback-only metrics listener. Neither endpoint may
+expose broker credentials, non-public topics, raw packet identifiers, full
+keys, raw hex, resolver details, or operator config.
 
 The public route API may expose a six-character `pathHash3` for positioned
 route endpoints. This is the 3-byte MeshCore route prefix shown in the mobile

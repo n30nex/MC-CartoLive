@@ -3,7 +3,9 @@ import crypto from 'node:crypto';
 import net from 'node:net';
 import tls from 'node:tls';
 
-const baseUrl = normalizeBaseUrl(process.argv[2] || process.env.BASE_URL || 'http://127.0.0.1:39476');
+const options = parseOptions(process.argv.slice(2));
+const baseUrl = normalizeBaseUrl(options.baseUrl || process.env.BASE_URL || 'http://127.0.0.1:39476');
+const publicOrigin = normalizeOrigin(options.origin || process.env.PUBLIC_ORIGIN || baseUrl);
 const now = Date.now();
 const from = now - 10 * 60 * 1000;
 
@@ -86,7 +88,7 @@ for (const endpoint of endpoints) {
   scanValue(json, endpoint.path, '$', null);
 }
 
-await scanPublicWebSocket(baseUrl);
+await scanPublicWebSocket(baseUrl, publicOrigin);
 
 if (findings.length > 0) {
   console.error(`Public privacy scan failed for ${baseUrl}:`);
@@ -98,14 +100,24 @@ if (findings.length > 0) {
 
 console.log(`public privacy scan ok: ${baseUrl}`);
 
-async function scanPublicWebSocket(base) {
+async function scanPublicWebSocket(base, origin) {
   const url = `${webSocketBaseUrl(base)}/ws/public`;
-  const frame = await readFirstWebSocketTextFrame(url, base);
+  const frame = await readFirstWebSocketTextFrame(url, origin);
   let json;
   try {
     json = JSON.parse(frame);
   } catch (error) {
     throw new Error(`/ws/public returned non-JSON: ${error.message}`);
+  }
+  if (
+    json?.type !== 'hello' ||
+    json?.v !== 1 ||
+    !Number.isInteger(json?.seq) ||
+    json.seq <= 0 ||
+    typeof json?.connectionId !== 'string' ||
+    json.connectionId.trim().length === 0
+  ) {
+    throw new Error('/ws/public first frame was not a valid version-1 hello');
   }
   scanValue(json, '/ws/public', '$', null);
 }
@@ -303,7 +315,40 @@ function scanPublicText(value, endpoint, path) {
 }
 
 function normalizeBaseUrl(value) {
-  return String(value).replace(/\/+$/, '');
+  const normalized = String(value).replace(/\/+$/, '');
+  const parsed = new URL(normalized);
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error(`invalid public HTTP base URL: ${normalized}`);
+  }
+  return normalized;
+}
+
+function normalizeOrigin(value) {
+  const parsed = new URL(String(value));
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error('invalid public WebSocket origin');
+  }
+  return parsed.origin;
+}
+
+function parseOptions(args) {
+  let baseUrl = '';
+  let origin = '';
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--origin') {
+      if (!args[index + 1] || String(args[index + 1]).startsWith('--') || origin) {
+        throw new Error('--origin requires exactly one HTTP(S) origin');
+      }
+      origin = String(args[index + 1]);
+      index += 1;
+    } else if (!arg.startsWith('--') && !baseUrl) {
+      baseUrl = arg;
+    } else {
+      throw new Error(`unknown privacy-scan argument: ${arg}`);
+    }
+  }
+  return { baseUrl, origin };
 }
 
 function webSocketBaseUrl(value) {

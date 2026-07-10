@@ -61,13 +61,16 @@ rollback.
 
 Normal third-party upgrades may omit the destructive flags; schema migrations
 are forward-only and transactional. Back up third-party data according to the
-operator's own recovery policy before upgrading.
+operator's own recovery policy before upgrading. Node.js is required only for
+the hosted destructive fresh-database privacy/WebSocket transaction, not for a
+standard non-destructive digest deployment.
 
 ## Readiness and dataset warming
 
 - `/healthz` is cheap liveness.
 - `/readyz` covers database/static/cache/session/writer state and reports
-  compiled release identity.
+  only sanitized readiness booleans/states/reasons plus compiled release
+  identity; queue and ingest details remain loopback metrics only.
 - `/api/v1/public/bootstrap` is the compact first-view contract.
 - A new DB can be ready with `datasetState=fresh_start` or `warming`; it becomes
   `live` after real observations populate public state.
@@ -99,10 +102,13 @@ curl -fsS http://127.0.0.1:39090/metrics
 curl -fsS http://127.0.0.1:39476/readyz
 curl -fsS http://127.0.0.1:39476/api/v1/public/bootstrap
 curl -fsS 'http://127.0.0.1:39476/api/v1/public/events?afterSeq=0&limit=25'
-node scripts/check-public-privacy.mjs http://127.0.0.1:39476
+node scripts/check-public-privacy.mjs http://127.0.0.1:39476 \
+  --origin https://carto.canadaverse.org
 ```
 
 The event request must return HTTP 200 with `resetRequired=true`. Run
+the Node scanner on the host before finalizing deployment; it has no npm
+dependencies and requires the first WebSocket frame to be `hello`. Run
 `scripts/live-smoke.ps1` from the operator workstation for public URL,
 WebSocket, Docker, metadata, and diagnostic evidence.
 

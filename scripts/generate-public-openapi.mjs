@@ -305,16 +305,11 @@ const schemas = {
   RuntimeReadinessStatus: object(
     [
       'ok', 'ready', 'reasons', 'dbReady', 'staticReady', 'publicStateReady', 'mqttSessionReady', 'datasetState', 'storagePressureState',
-      'fullReconcileAgeMs', 'ingestQueueDepth', 'ingestQueueCapacity', 'ingestQueueOldestItemAgeMs', 'ingestAccepted', 'ingestProcessed',
-      'ingestDropped', 'counterReset', 'derivedQueueDepth', 'derivedQueueCapacity', 'derivedQueueOldestItemAgeMs', 'derivedDropped', 'version', 'gitSha'
+      'version', 'gitSha'
     ],
     {
       ok: boolean(), ready: boolean(), reasons: stringArray(), dbReady: boolean(), staticReady: boolean(), publicStateReady: boolean(),
-      mqttSessionReady: boolean(), datasetState: ref('DatasetState'), storagePressureState: ref('StoragePressureState'), fullReconcileAgeMs: int64(),
-      ingestQueueDepth: integer({ minimum: 0 }), ingestQueueCapacity: integer({ minimum: 0 }), ingestQueueOldestItemAgeMs: int64({ minimum: 0 }),
-      ingestAccepted: int64({ minimum: 0 }), ingestProcessed: int64({ minimum: 0 }), ingestDropped: int64({ minimum: 0 }),
-      counterReset: string({ const: 'process_restart' }), derivedQueueDepth: integer({ minimum: 0 }), derivedQueueCapacity: integer({ minimum: 0 }),
-      derivedQueueOldestItemAgeMs: int64({ minimum: 0 }), derivedDropped: int64({ minimum: 0 }), version: string(), gitSha: string()
+      mqttSessionReady: boolean(), datasetState: ref('DatasetState'), storagePressureState: ref('StoragePressureState'), version: string(), gitSha: string()
     }
   ),
   PublicLiveState: object(['serverTime', 'map', 'stats', 'nodes', 'routes', 'recentActivity', 'updatedAt'], {

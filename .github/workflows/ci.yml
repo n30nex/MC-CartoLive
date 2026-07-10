@@ -117,7 +117,9 @@ jobs:
         run: |
           node scripts/build-release-bundle.mjs
           test -f artifacts/release/release-manifest.json
+          jq -e '.hostPrerequisites.destructiveFreshDatabase.nodeMinMajor == 18' artifacts/release/release-manifest.json
           test -f artifacts/release/stage/mc-cartolive-$(tr -d '\r\n' < VERSION)/docker-compose.production.yml
+          test -f artifacts/release/stage/mc-cartolive-$(tr -d '\r\n' < VERSION)/scripts/check-public-privacy.mjs
 
   docker:
     name: Container build, smoke, scan

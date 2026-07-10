@@ -26,6 +26,8 @@ Use the full digests:
 
 ```bash
 cd /opt/MC-CartoLive
+apt-get install -y nodejs
+node --version # must be v18 or newer
 bash scripts/deploy.sh \
   --image ghcr.io/n30nex/mc-cartolive@sha256:<candidate-digest> \
   --previous-image ghcr.io/n30nex/mc-cartolive@sha256:<previous-digest> \
@@ -48,7 +50,20 @@ additionally requires:
 - zero packet/node/observer/route/event rows before MQTT is enabled
 - `afterSeq=0` to return `resetRequired=true`
 - public state to serialize successfully
+- every public HTTP response to pass the bundled credential-free privacy scan
+- `/ws/public` to upgrade with the configured production Origin and send a
+  valid version-1 `hello` as its first text frame
 - SQLite `quick_check=ok` and no foreign-key violations
+
+The deploy script connects the scan to loopback so it proves the candidate
+that is actually being cut over, while using `PUBLIC_BASE_URL` from the
+preserved production `.env` as the WebSocket Origin. Node.js 18 or newer is
+staged as an OS prerequisite; no npm install, browser, credential, or uploaded
+data is needed.
+`current.env`, `deployment_succeeded`, and watchdog restoration happen only
+after this transaction passes. A failure enters the existing immutable-digest
+rollback path; if rollback readiness also fails, the watchdog remains disabled
+for explicit operator recovery.
 
 An empty database may be ready with `datasetState=warming`. The watchdog must
 not restart it merely because no RF traffic has arrived yet.

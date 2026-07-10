@@ -203,8 +203,14 @@ func TestReadyzFailsUntilPublicCacheReady(t *testing.T) {
 	if ready.Code != http.StatusOK {
 		t.Fatalf("readyz after cache = %d body=%s", ready.Code, ready.Body.String())
 	}
-	if strings.Contains(ready.Body.String(), "memAllocBytes") || strings.Contains(ready.Body.String(), "publicHistoryRequests") {
-		t.Fatalf("readyz leaked detailed diagnostics: %s", ready.Body.String())
+	for _, forbidden := range []string{
+		"memAllocBytes", "publicHistoryRequests", "fullReconcileAgeMs", "ingestQueueDepth", "ingestQueueCapacity",
+		"ingestQueueOldestItemAgeMs", "ingestAccepted", "ingestProcessed", "ingestDropped", "counterReset",
+		"derivedQueueDepth", "derivedQueueCapacity", "derivedQueueOldestItemAgeMs", "derivedDropped",
+	} {
+		if strings.Contains(ready.Body.String(), forbidden) {
+			t.Fatalf("readyz leaked detailed field %q: %s", forbidden, ready.Body.String())
+		}
 	}
 }
 

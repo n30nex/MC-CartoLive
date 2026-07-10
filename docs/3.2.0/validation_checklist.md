@@ -73,6 +73,9 @@ collected for the exact candidate digest and commit.
 - [ ] Root has at least 25 GiB free after deletion.
 - [ ] MQTT session is ready within 60 seconds. Traffic advances sequence/packet
   state when present; absent traffic remains `warming` without restart.
+- [ ] Before `current.env` is written or the watchdog is restored, the bundled
+  production-Origin privacy scan passes every public HTTP route and proves a
+  version-1 WebSocket `hello` from the loopback candidate.
 - [ ] Thirty-minute immediate soak has no restart, OOM, full/busy storm, queue
   drop, cache failure, MQTT loss, public 5xx, or privacy finding.
 

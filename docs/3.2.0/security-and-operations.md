@@ -45,6 +45,12 @@ Configure DigitalOcean alerts to the account operations email:
 The application also reports sanitized storage pressure and bounded writer
 queue signals. A disk-full state is an operator incident, not a restart trigger.
 
+Public `/readyz` contains only readiness booleans, state enums, stable reason
+codes, and version/SHA. Queue depths, capacities, ages, and ingest counters are
+served only by the loopback metrics listener. The watchdog consumes the reason
+codes and independently checks filesystem pressure and bounded recent
+`SQLITE_FULL` evidence before considering a restart.
+
 The packaged post-release timer consumes only the loopback readiness/metrics
 surfaces and bounded read-only SQLite aggregates. Its mode-0600 JSON evidence
 contains no database rows, broker configuration, packet/key material, or

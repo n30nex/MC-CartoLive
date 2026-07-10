@@ -10,6 +10,7 @@ LOCAL_BASE_URL="${MC_CARTOLIVE_LOCAL_BASE_URL:-http://127.0.0.1:39476}"
 STATE_DIR="${MC_CARTOLIVE_DEPLOY_STATE_DIR:-/var/lib/mc-cartolive-deploy}"
 MIN_FREE_GB="${MC_CARTOLIVE_MIN_FREE_GB:-25}"
 READY_TIMEOUT_SECONDS="${MC_CARTOLIVE_READY_TIMEOUT_SECONDS:-120}"
+PUBLIC_BASE_URL="${MC_CARTOLIVE_PUBLIC_BASE_URL:-}"
 IMAGE=""
 PREVIOUS_IMAGE=""
 EXPECTED_GIT_SHA=""
@@ -33,6 +34,8 @@ Options:
 The script never builds an image and never resets a Git branch. Without
 --fresh-database it preserves the existing database. The 3.2.0 production
 cutover requires both destructive flags and an immutable rollback digest.
+Success also requires the bundled Node.js privacy/WebSocket-hello gate using
+the configured PUBLIC_BASE_URL origin.
 EOF
 }
 
@@ -98,6 +101,42 @@ DATA_DIR="$(CDPATH='' cd "$DATA_DIR" && pwd -P)"
 BACKUP_DIR="$(CDPATH='' cd "$BACKUP_DIR" && pwd -P)"
 case "$DATA_DIR" in "$REPO"/*) ;; *) die "data directory escaped repo" ;; esac
 case "$BACKUP_DIR" in "$REPO"/*) ;; *) die "backup directory escaped repo" ;; esac
+PRIVACY_SCRIPT="$REPO/scripts/check-public-privacy.mjs"
+
+runtime_env_value() {
+	awk -v wanted="$1" '
+		/^[[:space:]]*(#|$)/ { next }
+		{
+			line=$0
+			sub(/^[[:space:]]*export[[:space:]]+/, "", line)
+			key=line
+			sub(/=.*/, "", key)
+			gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+			if (key != wanted) next
+			sub(/^[^=]*=/, "", line)
+			gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+			if ((substr(line,1,1) == "\"" && substr(line,length(line),1) == "\"") || (substr(line,1,1) == "\047" && substr(line,length(line),1) == "\047")) {
+				line=substr(line,2,length(line)-2)
+			}
+			print line
+			exit
+		}
+	' "$REPO/.env"
+}
+
+if [ "$FRESH_DATABASE" -eq 1 ]; then
+	command -v node >/dev/null 2>&1 || die "Node.js 18 or newer is required for the destructive privacy/WebSocket gate"
+	node_version="$(node --version 2>/dev/null || true)"
+	if [[ "$node_version" =~ ^v([0-9]+)\. ]]; then node_major="${BASH_REMATCH[1]}"; else node_major=0; fi
+	if [ "$node_major" -lt 18 ]; then
+		die "Node.js 18 or newer is required for the destructive privacy/WebSocket gate"
+	fi
+	[ -f "$PRIVACY_SCRIPT" ] || die "bundled public privacy scanner is missing"
+	if [ -z "$PUBLIC_BASE_URL" ]; then PUBLIC_BASE_URL="$(runtime_env_value PUBLIC_BASE_URL)"; fi
+	if [[ ! "$PUBLIC_BASE_URL" =~ ^https?://(\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.-]+)(:[0-9]{1,5})?/?$ ]]; then
+		die "PUBLIC_BASE_URL must be an explicit credential-free HTTP(S) origin for the privacy/WebSocket gate"
+	fi
+fi
 
 compose() {
 	MC_CARTOLIVE_IMAGE="$1" docker compose --project-directory "$REPO" -f "$COMPOSE_PATH" "${@:2}"
@@ -198,20 +237,27 @@ SELECT
 }
 
 verify_release() {
-	ready_json="$(curl -fsS --max-time 10 "$HEALTH_URL")"
-	state_json="$(curl -fsS --max-time 10 "$LOCAL_BASE_URL/api/v1/public/state")"
-	events_json="$(curl -fsS --max-time 10 "$LOCAL_BASE_URL/api/v1/public/events?afterSeq=0&limit=25")"
+	ready_json="$(curl -fsS --max-time 10 "$HEALTH_URL")" || return 1
+	state_json="$(curl -fsS --max-time 10 "$LOCAL_BASE_URL/api/v1/public/state")" || return 1
+	events_json="$(curl -fsS --max-time 10 "$LOCAL_BASE_URL/api/v1/public/events?afterSeq=0&limit=25")" || return 1
 	version="$(tr -d '\r\n' < "$REPO/VERSION")"
-	printf '%s' "$ready_json" | grep -q '"ready"[[:space:]]*:[[:space:]]*true'
-	printf '%s' "$ready_json" | grep -q "\"version\"[[:space:]]*:[[:space:]]*\"$version\""
-	printf '%s' "$ready_json" | grep -q "\"gitSha\"[[:space:]]*:[[:space:]]*\"$EXPECTED_GIT_SHA\""
-	printf '%s' "$events_json" | grep -q '"resetRequired"[[:space:]]*:[[:space:]]*true'
-	printf '%s' "$state_json" >/dev/null
-	[ "$(docker inspect --format '{{.Config.Image}}' "$CONTAINER")" = "$IMAGE" ]
+	printf '%s' "$ready_json" | grep -q '"ready"[[:space:]]*:[[:space:]]*true' || return 1
+	printf '%s' "$ready_json" | grep -q "\"version\"[[:space:]]*:[[:space:]]*\"$version\"" || return 1
+	printf '%s' "$ready_json" | grep -q "\"gitSha\"[[:space:]]*:[[:space:]]*\"$EXPECTED_GIT_SHA\"" || return 1
+	printf '%s' "$events_json" | grep -q '"resetRequired"[[:space:]]*:[[:space:]]*true' || return 1
+	[ -n "$state_json" ] || return 1
+	[ "$(docker inspect --format '{{.Config.Image}}' "$CONTAINER")" = "$IMAGE" ] || return 1
 	if command -v sqlite3 >/dev/null 2>&1; then
-		[ "$(sqlite3 "$DATA_DIR/meshcore-live.db" 'PRAGMA quick_check;' 2>/dev/null)" = "ok" ]
-		[ -z "$(sqlite3 "$DATA_DIR/meshcore-live.db" 'PRAGMA foreign_key_check;' 2>/dev/null)" ]
+		[ "$(sqlite3 "$DATA_DIR/meshcore-live.db" 'PRAGMA quick_check;' 2>/dev/null)" = "ok" ] || return 1
+		[ -z "$(sqlite3 "$DATA_DIR/meshcore-live.db" 'PRAGMA foreign_key_check;' 2>/dev/null)" ] || return 1
 	fi
+	# This single credential-free gate scans every production public route and
+	# requires the first WebSocket frame to be a valid hello using the configured
+	# production Origin, while connecting to the loopback candidate.
+	if [ "$FRESH_DATABASE" -eq 1 ]; then
+		node "$PRIVACY_SCRIPT" "$LOCAL_BASE_URL" --origin "$PUBLIC_BASE_URL" || return 1
+	fi
+	return 0
 }
 
 rollback() {

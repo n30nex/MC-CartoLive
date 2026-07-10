@@ -51,6 +51,15 @@ const websocket = schema.paths?.['/ws/public']?.get?.['x-websocket-messages'];
 if (websocket?.client?.$ref !== '#/components/schemas/WebSocketClientMessage') errors.push('WebSocket client message contract is missing');
 if (websocket?.server?.$ref !== '#/components/schemas/WebSocketServerMessage') errors.push('WebSocket server message contract is missing');
 
+const readinessProperties = schema.components?.schemas?.RuntimeReadinessStatus?.properties ?? {};
+for (const detailedField of [
+  'fullReconcileAgeMs', 'ingestQueueDepth', 'ingestQueueCapacity', 'ingestQueueOldestItemAgeMs',
+  'ingestAccepted', 'ingestProcessed', 'ingestDropped', 'counterReset', 'derivedQueueDepth',
+  'derivedQueueCapacity', 'derivedQueueOldestItemAgeMs', 'derivedDropped'
+]) {
+  if (detailedField in readinessProperties) errors.push(`/readyz schema exposes loopback-only field ${detailedField}`);
+}
+
 if (schema.components?.schemas?.SanitizedPublicObject) errors.push('catch-all SanitizedPublicObject is forbidden');
 if (JSON.stringify(schema).includes('Legacy endpoint-specific public DTO')) errors.push('legacy catch-all schema remains');
 for (const path of requiredPaths.filter((path) => path !== '/ws/public')) {

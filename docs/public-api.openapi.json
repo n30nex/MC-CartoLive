@@ -4203,18 +4203,6 @@
           "mqttSessionReady",
           "datasetState",
           "storagePressureState",
-          "fullReconcileAgeMs",
-          "ingestQueueDepth",
-          "ingestQueueCapacity",
-          "ingestQueueOldestItemAgeMs",
-          "ingestAccepted",
-          "ingestProcessed",
-          "ingestDropped",
-          "counterReset",
-          "derivedQueueDepth",
-          "derivedQueueCapacity",
-          "derivedQueueOldestItemAgeMs",
-          "derivedDropped",
           "version",
           "gitSha"
         ],
@@ -4248,60 +4236,6 @@
           },
           "storagePressureState": {
             "$ref": "#/components/schemas/StoragePressureState"
-          },
-          "fullReconcileAgeMs": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "ingestQueueDepth": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "ingestQueueCapacity": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "ingestQueueOldestItemAgeMs": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "ingestAccepted": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "ingestProcessed": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "ingestDropped": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "counterReset": {
-            "type": "string",
-            "const": "process_restart"
-          },
-          "derivedQueueDepth": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "derivedQueueCapacity": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "derivedQueueOldestItemAgeMs": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "derivedDropped": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
           },
           "version": {
             "type": "string"

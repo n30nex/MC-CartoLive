@@ -1,8 +1,9 @@
 # 3.2.0 Public API Changes
 
-3.2.0 preserves existing public endpoints and fields. New behavior is additive
-except that event cursor zero now intentionally requests a reset instead of an
-unbounded historical scan.
+3.2.0 preserves existing public data endpoints and fields. New behavior is
+additive except that event cursor zero now intentionally requests a reset
+instead of an unbounded historical scan, and detailed operational telemetry is
+removed from public `/readyz` in favor of the loopback metrics listener.
 
 ## Compact bootstrap
 
@@ -49,6 +50,12 @@ request the public nodes/routes inside the supplied bbox.
 
 `storagePressureState` is `ok`, `warn`, or `critical`. These values are
 sanitized decisions, not raw filesystem paths or database internals.
+
+`GET /readyz` is intentionally minimal. It exposes only sanitized readiness
+booleans, state enums, stable reason codes, and compiled version/SHA identity.
+Queue depths, capacities, ages, ingest counters, and reconciliation timings are
+available only from the loopback metrics listener; they are not public
+readiness fields.
 
 ## Privacy and compatibility
 

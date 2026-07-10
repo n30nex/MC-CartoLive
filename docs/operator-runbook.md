@@ -86,10 +86,20 @@ session. Quiet RF, `fresh_start`, or `warming` alone never cause a restart, and
 storage pressure always suppresses one; those dataset states do not mask a
 separately confirmed process, cache, database, or MQTT-session failure.
 
+Recovery decisions use the stable `/readyz` reason codes rather than detailed
+public telemetry. Before any restart, the watchdog independently checks the
+configured data filesystem and refuses recovery at 20% free or less. It also
+reads at most 200 container log lines from the previous 15 minutes, with a
+10-second command ceiling, and suppresses restart for `SQLITE_FULL`, “database
+or disk is full,” or “no space left on device.” A failed filesystem or bounded
+log probe is fail-closed. Raw container logs are never copied into the watchdog
+log.
+
 ```bash
 systemctl list-timers mc-cartolive-watchdog.timer
 tail -n 100 /var/log/mc-cartolive-watchdog.log
 cat /var/lib/mc-cartolive-watchdog/state.env
+df -h /opt/MC-CartoLive/data
 ```
 
 ## Automated 3.2 release audits

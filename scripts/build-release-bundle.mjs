@@ -87,6 +87,13 @@ const manifest = {
       privacySafeAggregateEvidence: true
     }
   },
+  hostPrerequisites: {
+    standardDigestDeploy: [],
+    destructiveFreshDatabase: {
+      nodeMinMajor: 18,
+      purpose: 'credential_free_public_privacy_and_websocket_hello_gate'
+    }
+  },
   publicApi: 'docs/public-api.openapi.json',
   attestations: {
     image: `oci://${image}`,
@@ -112,6 +119,11 @@ Schema: ${schemaVersion}
 Before cutover, install and enable deploy/systemd/mc-cartolive-release-audit.timer.
 It records privacy-safe 24-hour, day-8, and day-14 evidence without exporting
 database rows or runtime secrets. See docs/storage-and-fresh-start.md.
+
+The destructive hosted cutover requires Node.js 18 or newer for the bundled
+credential-free public privacy and WebSocket-hello transaction. Standard
+non-destructive third-party digest deploys do not require Node.js. The deploy
+does not install packages.
 `);
 
 console.log(JSON.stringify({ version, image, gitSha, schemaVersion, stage, manifest: join(outputRoot, 'release-manifest.json') }, null, 2));
