@@ -499,7 +499,7 @@ async function smokeCommandReplayAndExport(page, viewport) {
   await origin.focus();
   await page.keyboard.press('Control+K');
 
-  const command = page.getByRole('dialog', { name: /Search commands, nodes, and routes/i });
+  const command = page.getByRole('dialog', { name: /Search commands, regions, nodes, and routes/i });
   await command.waitFor({ state: 'visible', timeout: 10_000 });
   await assertAccessibleModal(page, command, 'command palette');
   const input = command.locator('#command-palette-input');
@@ -575,7 +575,7 @@ async function smokeCommandReplayAndExport(page, viewport) {
 
 async function openStyleChangeSurface(page) {
   await page.keyboard.press('Control+K');
-  const command = page.getByRole('dialog', { name: /Search commands, nodes, and routes/i });
+  const command = page.getByRole('dialog', { name: /Search commands, regions, nodes, and routes/i });
   await command.waitFor({ state: 'visible', timeout: 10_000 });
   const input = command.locator('#command-palette-input');
   await input.fill('Map settings');

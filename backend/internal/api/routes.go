@@ -37,7 +37,7 @@ type rateLimiter struct {
 }
 
 type rateBucket struct {
-	tokens   int
+	tokens   float64
 	lastSeen time.Time
 }
 
@@ -78,24 +78,29 @@ func (rl *rateLimiter) cleanupLoop() {
 }
 
 func (rl *rateLimiter) allow(ip string) bool {
+	return rl.allowAt(ip, time.Now())
+}
+
+func (rl *rateLimiter) allowAt(ip string, now time.Time) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	now := time.Now()
 	bucket, ok := rl.clients[ip]
 	if !ok {
-		bucket = &rateBucket{tokens: rl.burst, lastSeen: now}
+		bucket = &rateBucket{tokens: float64(rl.burst), lastSeen: now}
 		rl.clients[ip] = bucket
 	}
 	elapsed := now.Sub(bucket.lastSeen)
 	bucket.lastSeen = now
-	bucket.tokens += int(elapsed.Minutes() * float64(rl.rate))
-	if bucket.tokens > rl.burst {
-		bucket.tokens = rl.burst
+	if elapsed > 0 {
+		bucket.tokens += elapsed.Seconds() * float64(rl.rate) / 60
 	}
-	if bucket.tokens <= 0 {
+	if bucket.tokens > float64(rl.burst) {
+		bucket.tokens = float64(rl.burst)
+	}
+	if bucket.tokens < 1 {
 		return false
 	}
-	bucket.tokens--
+	bucket.tokens -= 1
 	return true
 }
 
