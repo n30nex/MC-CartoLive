@@ -1,5 +1,9 @@
 # MC-CartoLive 3.1.0 Validation Checklist
 
+> **Historical only:** 3.1.0 was never released. This checklist records the
+> abandoned candidate and must not be used for deployment; use the 3.2.0
+> validation and fresh-start procedure instead.
+
 ## Local Gates
 
 - [x] `cd backend && go test ./...`

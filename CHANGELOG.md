@@ -25,7 +25,10 @@ in Git history, not in the active documentation set.
 - Folded the unreleased 3.1 candidate work into 3.2.0. No 3.1 release tag is
   required or supported as an upgrade waypoint.
 
-## 3.1.0 - 2026-06-28
+## Unreleased 3.1 candidate (folded into 3.2.0)
+
+This candidate was never tagged or published. Its changes ship as part of
+3.2.0 and must not be treated as a supported upgrade waypoint.
 
 - Refreshed frontend dependency lockfile state with `npm audit fix` and kept the
   public API/schema boundary stable.
