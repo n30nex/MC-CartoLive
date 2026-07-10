@@ -98,16 +98,17 @@ const githubContext = {
   runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? '',
 };
 const canonicalFullContext = {
-  ref: 'refs/heads/main',
   repository: 'n30nex/MC-CartoLive',
   event: 'workflow_dispatch',
   workflow: 'Release performance gate',
 };
+const canonicalFullRefs = new Set(['refs/heads/main', 'refs/heads/codex/release-3.2.0']);
 const fullContextDeviations = profileName === 'full'
   ? [
       ...Object.entries(canonicalFullContext)
         .filter(([key, value]) => githubContext[key] !== value)
         .map(([key, value]) => `github.${key}=${githubContext[key]} (required ${value})`),
+      ...(canonicalFullRefs.has(githubContext.ref) ? [] : [`github.ref=${githubContext.ref} (required protected main or release branch)`]),
       ...(/^[0-9a-f]{40}$/.test(githubContext.sha) ? [] : [`github.sha=${githubContext.sha} (required full commit SHA)`]),
       ...(/^[0-9]+$/.test(githubContext.runId) ? [] : [`github.runId=${githubContext.runId} (required numeric run ID)`]),
     ]

@@ -11,10 +11,11 @@ run the scaled `smoke` profile automatically. It can also be selected from the
 harness, its smoke profile, or its full load profile on an operator workstation
 or on the production droplet.
 
-After the protected merge, run the locked release profile by manually
-dispatching the GitHub Actions **Release performance gate** workflow on `main`.
-The successful report must be bound to the exact merge SHA that will receive
-the release tag. The full defaults are:
+Before merge, manually dispatch the locked release profile on
+`codex/release-3.2.0`; that exact branch-head result is a required PR gate.
+After the protected merge, dispatch it again on `main`. The second successful
+report must be bound to the exact merge SHA that will receive the release tag
+and is required by promotion. The full defaults are:
 
 - 20 normalized messages/second for 30 minutes;
 - 100 normalized messages/second for 60 seconds;
@@ -27,10 +28,11 @@ the release tag. The full defaults are:
 The workflow exposes the main duration and count overrides for scaled smoke
 diagnosis. Every setting is also configurable through `PERF_*` variables; see
 the configuration block at the top of `scripts/performance-gate.mjs`. The full
-profile rejects every override or non-main/non-dispatch context, records the
-GitHub repository, event, ref, SHA, and run identity in its report, and is
-accepted only with the unchanged locked defaults. Tag promotion downloads that
-exact run's artifact and fails closed if its context or results differ.
+profile rejects every override or a dispatch outside the repository's locked
+release/main branches, records the GitHub repository, event, ref, SHA, and run
+identity in its report, and is accepted only with the unchanged locked
+defaults. Tag promotion downloads the exact `main` run's artifact and fails
+closed if its context or results differ.
 Promotion separately requires successful push-triggered CI and CodeQL runs for
 the same tagged SHA.
 
