@@ -284,7 +284,37 @@ func (s *Server) rateLimited(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.operationalStatus(r.Context(), false))
+	writeJSON(w, http.StatusOK, s.healthStatus(time.Now()))
+}
+
+func (s *Server) healthStatus(now time.Time) map[string]any {
+	cacheStatus := live.PublicCacheStatus{}
+	if s.PublicCacheStatus != nil {
+		cacheStatus = s.PublicCacheStatus(now)
+	}
+	mqttStatus := imqtt.Status{Connected: s.mqttConnected()}
+	if s.MQTTStatus != nil {
+		mqttStatus = s.MQTTStatus(now)
+	}
+	state := live.PublicLiveState{}
+	if s.PublicState != nil {
+		state, _ = s.PublicState()
+	}
+	runtimeHealth := s.publicRuntimeHealth(now, state)
+	dbReady := s.Store != nil
+	staticReady := s.staticAssetsReady()
+	publicStateReady := cacheStatus.Ready
+	mqttSessionReady := !mqttStatus.Enabled || mqttStatus.SessionReady
+	ready := dbReady && staticReady && publicStateReady && mqttSessionReady && runtimeHealth.StoragePressureState != "critical" && !s.Config.UnboundedRetention
+	return map[string]any{
+		"ok": true, "ready": ready,
+		"dbReady": dbReady, "staticReady": staticReady, "publicStateReady": publicStateReady,
+		"mqttSessionReady": mqttSessionReady,
+		"datasetState":     runtimeHealth.DatasetState, "datasetStartedAt": runtimeHealth.DatasetStartedAt,
+		"storagePressureState": runtimeHealth.StoragePressureState,
+		"version":              fallbackString(s.Config.AppVersion, "dev"), "gitSha": fallbackString(s.Config.GitSHA, "unknown"),
+		"buildTime": fallbackString(s.Config.BuildTime, "unknown"),
+	}
 }
 
 func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
@@ -358,7 +388,7 @@ func (s *Server) readinessStatus(ctx context.Context) map[string]any {
 		"dbReady": dbReady, "staticReady": staticReady, "publicStateReady": cacheStatus.Ready,
 		"mqttSessionReady": mqttReady, "datasetState": runtimeHealth.DatasetState,
 		"storagePressureState": storage.PressureState,
-		"version": fallbackString(s.Config.AppVersion, "dev"), "gitSha": fallbackString(s.Config.GitSHA, "unknown"),
+		"version":              fallbackString(s.Config.AppVersion, "dev"), "gitSha": fallbackString(s.Config.GitSHA, "unknown"),
 	}
 }
 

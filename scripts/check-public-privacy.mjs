@@ -112,8 +112,8 @@ async function scanPublicWebSocket(base, origin) {
   if (
     json?.type !== 'hello' ||
     json?.v !== 1 ||
-    !Number.isInteger(json?.seq) ||
-    json.seq <= 0 ||
+    !Number.isInteger(json?.seq ?? 0) ||
+    (json?.seq ?? 0) < 0 ||
     typeof json?.connectionId !== 'string' ||
     json.connectionId.trim().length === 0
   ) {

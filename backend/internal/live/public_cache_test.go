@@ -67,6 +67,23 @@ func TestPublicCacheStatusReportsTruncation(t *testing.T) {
 	}
 }
 
+func TestPublicCacheLiveUpdatesAdvanceSnapshotSequenceMonotonically(t *testing.T) {
+	cache := NewPublicStateCache(NewPublicIATAFilter(nil))
+	cache.Replace(PublicLiveState{Stats: PublicStats{LatestSeq: 10}}, nil)
+
+	cache.ApplyNode(PublicNode{ID: "node-1", Seq: 11})
+	cache.ApplyActivity(PublicActivity{ID: "activity-1", Seq: 13, HeardAt: 13})
+	cache.ApplyRoutePulse(PublicRoutePulse{ID: "pulse-1", Seq: 12, HeardAt: 12})
+
+	snapshot, ok := cache.Snapshot()
+	if !ok {
+		t.Fatal("cache should remain ready after live updates")
+	}
+	if snapshot.Stats.LatestSeq != 13 {
+		t.Fatalf("latestSeq=%d want 13", snapshot.Stats.LatestSeq)
+	}
+}
+
 func TestRuntimeStatsRecordsPacketPressure(t *testing.T) {
 	stats := NewRuntimeStats()
 	stats.RecordPublicPacketsScan(2500, true)

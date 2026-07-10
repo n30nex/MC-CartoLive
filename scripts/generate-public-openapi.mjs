@@ -31,6 +31,17 @@ const errorResponse = (description) => ({
   description,
   content: { 'application/json': { schema: ref('Error') } }
 });
+const plainTextResponse = (description) => ({
+  description,
+  content: { 'text/plain; charset=utf-8': { schema: string() } }
+});
+const webSocketUnavailableResponse = {
+  description: 'The public hub is unavailable (JSON) or the hub client limit is full (plain text)',
+  content: {
+    'application/json': { schema: ref('Error') },
+    'text/plain; charset=utf-8': { schema: string() }
+  }
+};
 const operation = (summary, schema, parameters = [], errors = {}) => ({
   summary,
   ...(parameters.length ? { parameters } : {}),
@@ -43,6 +54,7 @@ const parameter = (name, schema, extra = {}) => ({ name, in: 'query', schema, ..
 const p = {
   from: parameter('from', timestamp()),
   to: parameter('to', timestamp()),
+  limit2000: parameter('limit', integer({ minimum: 1, maximum: 2000 })),
   limit1000: parameter('limit', integer({ minimum: 1, maximum: 1000 })),
   limit5000: parameter('limit', integer({ minimum: 1, maximum: 5000 })),
   limit400: parameter('limit', integer({ minimum: 1, maximum: 400 })),
@@ -283,24 +295,15 @@ const schemas = {
   }),
   RuntimeOperationalStatus: object(
     [
-      'ok', 'ready', 'dbReady', 'staticReady', 'uptimeMs', 'goroutineCount', 'memAllocBytes', 'publicStateReady', 'cacheAgeMs', 'cacheUpdatedAt',
-      'fullReconciledAt', 'fullReconcileAgeMs', 'cacheTruncatedNodes', 'cacheTruncatedRoutes', 'cacheTruncatedRecentPulses', 'cacheTruncatedRecentActivity',
-      'mqttConnected', 'mqttSubscribed', 'mqttSessionReady', 'mqttQueueDepth', 'mqttQueueCapacity', 'mqttQueueOldestItemAgeMs', 'mqttLastMessageAgeMs',
-      'mqttMessages', 'mqttAcceptedMessages', 'mqttProcessedMessages', 'mqttDroppedMessages', 'mqttReconnects', 'mqttMalformedTopics',
-      'wsClients', 'wsDroppedMessages', 'wsQueueHighWater', 'wsPingFailures', 'version', 'gitSha', 'buildTime', 'mapRegionPreset', 'mapBounds',
-      'defaultRegion', 'defaultCenter', 'defaultZoom', 'publicRegionRestricted', 'publicStateRequests', 'publicStateErrors', 'publicHistoryRequests',
-      'publicHistoryErrors', 'publicHistoryLatencyMs', 'publicSummaryRequests', 'publicSummaryErrors', 'publicPacketsRequests', 'publicPacketsErrors',
-      'publicPacketsLatencyMs', 'publicPacketsLastScan', 'publicPacketsScanCapped', 'publicPacketsProjectionServed', 'publicPacketsProjectionFallback',
-      'publicPacketsProjectionErrors', 'publicPacketsProjectionLastAt', 'publicPacketsProjectionComplete', 'publicPacketsSearchFTS', 'publicPacketsSearchSubstring',
-      'publicPacketsSearchNoQuery', 'packetPathBackfillFailures', 'packetPathBackfillLatencyMs', 'packetPathBackfillLastAt', 'packetPathBackfillLastScan',
-      'packetPathBackfillProjected', 'packetPathBackfillMappable', 'packetPathBackfillInvalid', 'packetPathSearchIndexSynced', 'packetPathSearchIndexRemaining',
-      'packetPathBackfillRemaining', 'storeWriteAttempts', 'storeWriteRetries', 'storeWriteFailures', 'storeWriteBusyErrors', 'storeWriteFullErrors',
-      'storeWriteLatencyMs', 'cacheRefreshFailures', 'cacheRefreshLastFailed', 'ingestDuplicateSuppressions', 'derivedAccepted', 'derivedProcessed',
-      'derivedDropped', 'derivedFailures', 'derivedQueueDepth', 'derivedQueueCapacity', 'derivedOldestAt', 'derivedOldestItemAgeMs', 'derivedLatencyMs',
-      'counterReset', 'packetCountRefreshFailures', 'packetCountRefreshLatencyMs', 'packetCountRefreshLastAt', 'cached',
-      'datasetState', 'datasetStartedAt', 'storagePressureState'
+      'ok', 'ready', 'dbReady', 'staticReady', 'publicStateReady', 'mqttSessionReady',
+      'datasetState', 'datasetStartedAt', 'storagePressureState', 'version', 'gitSha', 'buildTime'
     ],
-    runtimeOperationalProperties()
+    {
+      ok: boolean(), ready: boolean(), dbReady: boolean(), staticReady: boolean(), publicStateReady: boolean(),
+      mqttSessionReady: boolean(), datasetState: ref('DatasetState'), datasetStartedAt: timestamp(),
+      storagePressureState: ref('StoragePressureState'), version: string(), gitSha: string(), buildTime: string()
+    },
+    { description: 'Minimal public liveness and coarse dependency summary. Use /readyz for fail-closed serving readiness.' }
   ),
   RuntimeReadinessStatus: object(
     [
@@ -386,7 +389,7 @@ const doc = {
     },
     '/api/v1/public/bootstrap': { get: operation('Compact initial map bootstrap', 'PublicBootstrapResponse', [], { 429: 'Rate limited', 503: 'Public cache warming' }) },
     '/api/v1/public/history': {
-      get: operation('Bounded routed-event history', 'PublicHistoryResponse', [p.from, p.to, p.limit1000, p.cursor], { 400: 'Invalid cursor or window', 429: 'Rate limited', 500: 'Query failure', 503: 'Store unavailable' })
+      get: operation('Bounded routed-event history', 'PublicHistoryResponse', [p.from, p.to, p.limit2000, p.cursor], { 400: 'Invalid cursor or window', 429: 'Rate limited', 500: 'Query failure', 503: 'Store unavailable' })
     },
     '/api/v1/public/history/summary': {
       get: operation('Bounded history buckets', 'PublicHistorySummaryResponse', [p.from, p.to, parameter('bucketMs', int64({ minimum: 1000 }))], { 429: 'Rate limited', 503: 'Store unavailable' })
@@ -455,12 +458,16 @@ const doc = {
     '/ws/public': {
       get: {
         summary: 'Sanitized public WebSocket upgrade',
-        description: 'The server also uses WebSocket protocol ping frames. JSON client and server envelopes are fully described by the extension below.',
+        description: 'The server also uses WebSocket protocol ping frames. JSON client and server envelopes are fully described by the extension below. API admission errors are JSON; hub saturation and upgrade protocol/origin rejections are plain text.',
         'x-websocket-messages': { client: ref('WebSocketClientMessage'), server: ref('WebSocketServerMessage') },
         responses: {
           101: { description: 'Switching Protocols' },
+          400: plainTextResponse('Malformed or unsupported WebSocket handshake'),
+          403: plainTextResponse('WebSocket Origin rejected'),
+          405: plainTextResponse('Upgrade request method is not GET'),
           429: errorResponse('Per-IP public WebSocket quota exceeded'),
-          503: errorResponse('Public WebSocket unavailable')
+          500: plainTextResponse('WebSocket upgrade could not take control of the connection'),
+          503: webSocketUnavailableResponse
         }
       }
     }
@@ -506,45 +513,6 @@ function webSocketEventSchema(event, dataSchema) {
     v: integer({ const: 1 }), type: string({ const: 'event' }), event: string({ const: event }), seq: int64({ minimum: 1 }),
     latestSeq: int64({ minimum: 1 }), serverTime: timestamp(), receivedAt: timestamp(), displayAt: timestamp(), data: ref(dataSchema)
   });
-}
-
-function runtimeOperationalProperties() {
-  const props = {
-    ok: boolean(), ready: boolean(), dbReady: boolean(), staticReady: boolean(), uptimeMs: int64({ minimum: 0 }), goroutineCount: integer({ minimum: 0 }),
-    memAllocBytes: int64({ minimum: 0 }), publicStateReady: boolean(), cacheAgeMs: int64(), cacheUpdatedAt: timestamp(), fullReconciledAt: timestamp(),
-    fullReconcileAgeMs: int64(), cacheTruncatedNodes: integer({ minimum: 0 }), cacheTruncatedRoutes: integer({ minimum: 0 }),
-    cacheTruncatedRecentPulses: integer({ minimum: 0 }), cacheTruncatedRecentActivity: integer({ minimum: 0 }), mqttConnected: boolean(),
-    mqttSubscribed: boolean(), mqttSessionReady: boolean(), mqttQueueDepth: integer({ minimum: 0 }), mqttQueueCapacity: integer({ minimum: 0 }),
-    mqttQueueOldestItemAgeMs: int64({ minimum: 0 }), mqttLastMessageAgeMs: int64(), mqttMessages: int64({ minimum: 0 }),
-    mqttAcceptedMessages: int64({ minimum: 0 }), mqttProcessedMessages: int64({ minimum: 0 }), mqttDroppedMessages: int64({ minimum: 0 }),
-    mqttReconnects: int64({ minimum: 0 }), mqttMalformedTopics: int64({ minimum: 0 }), wsClients: integer({ minimum: 0 }), wsDroppedMessages: int64({ minimum: 0 }),
-    wsQueueHighWater: int64({ minimum: 0 }), wsPingFailures: int64({ minimum: 0 }), version: string(), gitSha: string(), buildTime: string(),
-    mapRegionPreset: string(), mapBounds: ref('CoordinateBounds'), defaultRegion: string(), defaultCenter: array(number(), { minItems: 2, maxItems: 2 }),
-    defaultZoom: number(), publicRegionRestricted: boolean(), cached: boolean(), counterReset: string({ const: 'process_restart' }),
-    cacheRefreshLastFailed: boolean(), datasetState: ref('DatasetState'), datasetStartedAt: timestamp(), storagePressureState: ref('StoragePressureState')
-  };
-  for (const key of [
-    'publicStateRequests', 'publicStateErrors', 'publicHistoryRequests', 'publicHistoryErrors', 'publicHistoryLatencyMs', 'publicSummaryRequests',
-    'publicSummaryErrors', 'publicPacketsRequests', 'publicPacketsErrors', 'publicPacketsLatencyMs', 'publicPacketsLastScan', 'publicPacketsScanCapped',
-    'publicPacketsProjectionServed', 'publicPacketsProjectionFallback', 'publicPacketsProjectionErrors', 'publicPacketsProjectionLastAt',
-    'publicPacketsSearchFTS', 'publicPacketsSearchSubstring', 'publicPacketsSearchNoQuery', 'packetPathBackfillFailures',
-    'packetPathBackfillLatencyMs', 'packetPathBackfillLastAt', 'packetPathBackfillLastScan', 'packetPathBackfillProjected', 'packetPathBackfillMappable',
-    'packetPathBackfillInvalid', 'packetPathSearchIndexSynced', 'storeWriteAttempts',
-    'storeWriteRetries', 'storeWriteFailures', 'storeWriteBusyErrors', 'storeWriteFullErrors', 'storeWriteLatencyMs', 'cacheRefreshFailures',
-    'ingestDuplicateSuppressions', 'derivedAccepted', 'derivedProcessed', 'derivedDropped', 'derivedFailures', 'derivedQueueDepth', 'derivedQueueCapacity',
-    'derivedOldestAt', 'derivedOldestItemAgeMs', 'derivedLatencyMs', 'packetCountRefreshFailures', 'packetCountRefreshLatencyMs', 'packetCountRefreshLastAt'
-  ]) props[key] = int64({ minimum: 0 });
-  Object.assign(props, {
-    packets: int64({ minimum: 0 }), nodesWithPosition: int64({ minimum: 0 }), edgeEvents: int64({ minimum: 0 }), unresolved: int64({ minimum: 0 }),
-    recentRoutePulseAgeMs: int64(), recentObserverBurstAgeMs: int64(),
-    packetIngestState: string({ enum: ['fresh', 'stale', 'missing', 'disconnected'] }),
-    publicCacheState: string({ enum: ['fresh', 'warming', 'stale'] }),
-    routeMotionState: string({ enum: ['fresh', 'quiet'] }), observerMotionState: string({ enum: ['fresh', 'quiet'] }),
-    mapMotionState: string({ enum: ['moving', 'quiet'] }), liveConfidenceState: string({ enum: ['fresh', 'quiet', 'degraded'] }),
-    packetIngestFresh: boolean(), mapMotionFresh: boolean(), publicLiveFresh: boolean(), publicPacketsProjectionComplete: boolean(),
-    packetPathSearchIndexRemaining: boolean(), packetPathBackfillRemaining: boolean()
-  });
-  return props;
 }
 
 function read(path) {

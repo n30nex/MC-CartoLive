@@ -19,6 +19,9 @@ removed from public `/readyz` in favor of the loopback metrics listener.
 Use bootstrap for initial map hydration. `/api/v1/public/state` remains the
 compatibility endpoint for clients that need the full retained snapshot.
 
+`GET /api/v1/public/history` accepts `limit=1..2000`. Other bounded list
+routes keep their route-specific maxima documented in OpenAPI.
+
 ## Event cursor contract
 
 `GET /api/v1/public/events?afterSeq=<n>&limit=<1..1000>` returns
@@ -51,11 +54,23 @@ request the public nodes/routes inside the supplied bbox.
 `storagePressureState` is `ok`, `warn`, or `critical`. These values are
 sanitized decisions, not raw filesystem paths or database internals.
 
-`GET /readyz` is intentionally minimal. It exposes only sanitized readiness
-booleans, state enums, stable reason codes, and compiled version/SHA identity.
-Queue depths, capacities, ages, ingest counters, and reconciliation timings are
-available only from the loopback metrics listener; they are not public
-readiness fields.
+`GET /healthz` is intentionally minimal. Its exact fields are `ok`, `ready`,
+`dbReady`, `staticReady`, `publicStateReady`, `mqttSessionReady`,
+`datasetState`, `datasetStartedAt`, `storagePressureState`, `version`, `gitSha`,
+and `buildTime`. `ready` is a cheap coarse dependency summary; use `GET
+/readyz` for authoritative fail-closed serving readiness. `/readyz` exposes
+only sanitized readiness booleans, state enums, stable reason codes, and
+compiled version/SHA identity. Queue depths, capacities, ages, ingest counters,
+and reconciliation timings are available only from the loopback metrics
+listener; they are not public health or readiness fields.
+
+`GET /ws/public` returns `101` after a successful upgrade. API-level hub
+unavailability and per-IP admission failures use the JSON error envelope
+(`503` and `429`). Hub-wide client saturation returns plain-text `503`.
+Malformed/version/key handshakes return plain-text `400`, rejected Origins use
+plain-text `403`, and a non-GET upgrade uses plain-text `405`; rare transport
+upgrade failures use plain-text `500`. The protocol messages after `101` remain
+the typed JSON envelopes below the OpenAPI `x-websocket-messages` extension.
 
 ## Privacy and compatibility
 
@@ -76,5 +91,6 @@ It emits byte-identical copies for the runtime embed and
 [`docs/public-api.openapi.json`](../public-api.openapi.json). CI fails if either
 copy drifts from `VERSION` or from the generator. The contract defines every
 public query, response DTO, cursor/reset rule, health/readiness payload, and
-JSON WebSocket client/server envelope; WebSocket protocol ping frames remain a
+JSON WebSocket client/server envelope, along with the actual pre-upgrade HTTP
+statuses and response media types. WebSocket protocol ping frames remain a
 transport detail.

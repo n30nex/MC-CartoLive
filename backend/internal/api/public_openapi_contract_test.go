@@ -122,6 +122,55 @@ func TestPublicOpenAPIQueryInventory(t *testing.T) {
 	}
 }
 
+func TestPublicOpenAPIRuntimeLimitsAndWebSocketHTTPOutcomes(t *testing.T) {
+	paths := publicOpenAPISchema("3.2.0")["paths"].(map[string]any)
+	history := paths["/api/v1/public/history"].(map[string]any)["get"].(map[string]any)
+	parameters := history["parameters"].([]any)
+	var historyLimit map[string]any
+	for _, parameter := range parameters {
+		candidate := parameter.(map[string]any)
+		if candidate["name"] == "limit" {
+			historyLimit = candidate
+			break
+		}
+	}
+	if historyLimit == nil {
+		t.Fatal("public history limit parameter is missing")
+	}
+	maximum := historyLimit["schema"].(map[string]any)["maximum"]
+	if maximum != float64(publicHistoryMaxLimit) {
+		t.Fatalf("public history OpenAPI maximum = %v, runtime maximum = %d", maximum, publicHistoryMaxLimit)
+	}
+
+	webSocket := paths["/ws/public"].(map[string]any)["get"].(map[string]any)
+	responses := webSocket["responses"].(map[string]any)
+	gotStatuses := make([]string, 0, len(responses))
+	for status := range responses {
+		gotStatuses = append(gotStatuses, status)
+	}
+	sort.Strings(gotStatuses)
+	wantStatuses := []string{"101", "400", "403", "405", "429", "500", "503"}
+	if !reflect.DeepEqual(gotStatuses, wantStatuses) {
+		t.Fatalf("public WebSocket HTTP statuses = %v, want %v", gotStatuses, wantStatuses)
+	}
+	for _, status := range []string{"400", "403", "405", "500"} {
+		content := responses[status].(map[string]any)["content"].(map[string]any)
+		if _, found := content["text/plain; charset=utf-8"]; !found || len(content) != 1 {
+			t.Fatalf("public WebSocket %s content = %#v, want only plain text", status, content)
+		}
+	}
+	for _, status := range []string{"429"} {
+		content := responses[status].(map[string]any)["content"].(map[string]any)
+		if _, found := content["application/json"]; !found || len(content) != 1 {
+			t.Fatalf("public WebSocket %s content = %#v, want only JSON", status, content)
+		}
+	}
+	serviceUnavailableContent := responses["503"].(map[string]any)["content"].(map[string]any)
+	if len(serviceUnavailableContent) != 2 || serviceUnavailableContent["application/json"] == nil || serviceUnavailableContent["text/plain; charset=utf-8"] == nil {
+		t.Fatalf("public WebSocket 503 content = %#v, want JSON hub-unavailable and plain-text saturation shapes", serviceUnavailableContent)
+	}
+}
+
 func TestPublicStructJSONFieldsMatchNamedSchemas(t *testing.T) {
 	types := map[string]reflect.Type{
 		"CoordinateBounds":                reflect.TypeOf(live.CoordinateBounds{}),
@@ -236,7 +285,7 @@ func TestRepresentativePublicPayloadsMatchOpenAPI(t *testing.T) {
 		name  string
 		value any
 	}{
-		{"RuntimeOperationalStatus", server.operationalStatus(context.Background(), false)},
+		{"RuntimeOperationalStatus", server.healthStatus(time.UnixMilli(now))},
 		{"RuntimeReadinessStatus", server.readinessStatus(context.Background())},
 		{"PublicLiveState", live.PublicLiveState{ServerTime: now, Map: mapConfig, Stats: stats, Nodes: []live.PublicNode{node}, Routes: []live.PublicRoute{route}, RecentPulses: []live.PublicRoutePulse{pulse}, RecentActivity: []live.PublicActivity{activity}, UpdatedAt: now}},
 		{"PublicBootstrapResponse", live.PublicBootstrapResponse{ServerTime: now, Map: mapConfig, Stats: stats, LatestSeq: 11, Health: live.PublicRuntimeHealth{MQTTSessionReady: true, DatasetState: "live", DatasetStartedAt: now, StoragePressureState: "ok"}, Clusters: []live.PublicMapCluster{{ID: "region-yyz", Latitude: 43.65, Longitude: -79.38, Count: 1}}, RecentActivity: []live.PublicActivity{activity}}},

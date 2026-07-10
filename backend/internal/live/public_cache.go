@@ -307,6 +307,7 @@ func (c *PublicStateCache) ApplyNode(node PublicNode) {
 	}
 	c.state.Nodes = limitPublicNodes(next)
 	c.state.Stats.ActiveNodes = int64(len(c.state.Nodes))
+	c.advanceLatestSeqLocked(node.Seq)
 	c.recordLiveUpdateLocked(time.Now())
 }
 
@@ -328,6 +329,7 @@ func (c *PublicStateCache) ApplyActivity(activity PublicActivity) {
 		c.state.ServerTime = activity.HeardAt
 		c.state.Stats.ServerTime = activity.HeardAt
 	}
+	c.advanceLatestSeqLocked(activity.Seq)
 	c.recordLiveUpdateLocked(time.Now())
 }
 
@@ -345,7 +347,14 @@ func (c *PublicStateCache) ApplyRoutePulse(pulse PublicRoutePulse) {
 		c.state.ServerTime = pulse.HeardAt
 		c.state.Stats.ServerTime = pulse.HeardAt
 	}
+	c.advanceLatestSeqLocked(pulse.Seq)
 	c.recordLiveUpdateLocked(time.Now())
+}
+
+func (c *PublicStateCache) advanceLatestSeqLocked(seq int64) {
+	if seq > c.state.Stats.LatestSeq {
+		c.state.Stats.LatestSeq = seq
+	}
 }
 
 func (c *PublicStateCache) recordLiveUpdateLocked(now time.Time) {

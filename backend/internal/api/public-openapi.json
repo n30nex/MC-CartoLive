@@ -179,7 +179,7 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 1000
+              "maximum": 2000
             }
           },
           {
@@ -1313,7 +1313,7 @@
     "/ws/public": {
       "get": {
         "summary": "Sanitized public WebSocket upgrade",
-        "description": "The server also uses WebSocket protocol ping frames. JSON client and server envelopes are fully described by the extension below.",
+        "description": "The server also uses WebSocket protocol ping frames. JSON client and server envelopes are fully described by the extension below. API admission errors are JSON; hub saturation and upgrade protocol/origin rejections are plain text.",
         "x-websocket-messages": {
           "client": {
             "$ref": "#/components/schemas/WebSocketClientMessage"
@@ -1326,6 +1326,36 @@
           "101": {
             "description": "Switching Protocols"
           },
+          "400": {
+            "description": "Malformed or unsupported WebSocket handshake",
+            "content": {
+              "text/plain; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "WebSocket Origin rejected",
+            "content": {
+              "text/plain; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Upgrade request method is not GET",
+            "content": {
+              "text/plain; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Per-IP public WebSocket quota exceeded",
             "content": {
@@ -1336,12 +1366,27 @@
               }
             }
           },
+          "500": {
+            "description": "WebSocket upgrade could not take control of the connection",
+            "content": {
+              "text/plain; charset=utf-8": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "503": {
-            "description": "Public WebSocket unavailable",
+            "description": "The public hub is unavailable (JSON) or the hub client limit is full (plain text)",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              },
+              "text/plain; charset=utf-8": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -3574,100 +3619,14 @@
           "ready",
           "dbReady",
           "staticReady",
-          "uptimeMs",
-          "goroutineCount",
-          "memAllocBytes",
           "publicStateReady",
-          "cacheAgeMs",
-          "cacheUpdatedAt",
-          "fullReconciledAt",
-          "fullReconcileAgeMs",
-          "cacheTruncatedNodes",
-          "cacheTruncatedRoutes",
-          "cacheTruncatedRecentPulses",
-          "cacheTruncatedRecentActivity",
-          "mqttConnected",
-          "mqttSubscribed",
           "mqttSessionReady",
-          "mqttQueueDepth",
-          "mqttQueueCapacity",
-          "mqttQueueOldestItemAgeMs",
-          "mqttLastMessageAgeMs",
-          "mqttMessages",
-          "mqttAcceptedMessages",
-          "mqttProcessedMessages",
-          "mqttDroppedMessages",
-          "mqttReconnects",
-          "mqttMalformedTopics",
-          "wsClients",
-          "wsDroppedMessages",
-          "wsQueueHighWater",
-          "wsPingFailures",
-          "version",
-          "gitSha",
-          "buildTime",
-          "mapRegionPreset",
-          "mapBounds",
-          "defaultRegion",
-          "defaultCenter",
-          "defaultZoom",
-          "publicRegionRestricted",
-          "publicStateRequests",
-          "publicStateErrors",
-          "publicHistoryRequests",
-          "publicHistoryErrors",
-          "publicHistoryLatencyMs",
-          "publicSummaryRequests",
-          "publicSummaryErrors",
-          "publicPacketsRequests",
-          "publicPacketsErrors",
-          "publicPacketsLatencyMs",
-          "publicPacketsLastScan",
-          "publicPacketsScanCapped",
-          "publicPacketsProjectionServed",
-          "publicPacketsProjectionFallback",
-          "publicPacketsProjectionErrors",
-          "publicPacketsProjectionLastAt",
-          "publicPacketsProjectionComplete",
-          "publicPacketsSearchFTS",
-          "publicPacketsSearchSubstring",
-          "publicPacketsSearchNoQuery",
-          "packetPathBackfillFailures",
-          "packetPathBackfillLatencyMs",
-          "packetPathBackfillLastAt",
-          "packetPathBackfillLastScan",
-          "packetPathBackfillProjected",
-          "packetPathBackfillMappable",
-          "packetPathBackfillInvalid",
-          "packetPathSearchIndexSynced",
-          "packetPathSearchIndexRemaining",
-          "packetPathBackfillRemaining",
-          "storeWriteAttempts",
-          "storeWriteRetries",
-          "storeWriteFailures",
-          "storeWriteBusyErrors",
-          "storeWriteFullErrors",
-          "storeWriteLatencyMs",
-          "cacheRefreshFailures",
-          "cacheRefreshLastFailed",
-          "ingestDuplicateSuppressions",
-          "derivedAccepted",
-          "derivedProcessed",
-          "derivedDropped",
-          "derivedFailures",
-          "derivedQueueDepth",
-          "derivedQueueCapacity",
-          "derivedOldestAt",
-          "derivedOldestItemAgeMs",
-          "derivedLatencyMs",
-          "counterReset",
-          "packetCountRefreshFailures",
-          "packetCountRefreshLatencyMs",
-          "packetCountRefreshLastAt",
-          "cached",
           "datasetState",
           "datasetStartedAt",
-          "storagePressureState"
+          "storagePressureState",
+          "version",
+          "gitSha",
+          "buildTime"
         ],
         "properties": {
           "ok": {
@@ -3682,172 +3641,10 @@
           "staticReady": {
             "type": "boolean"
           },
-          "uptimeMs": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "goroutineCount": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "memAllocBytes": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
           "publicStateReady": {
             "type": "boolean"
           },
-          "cacheAgeMs": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "cacheUpdatedAt": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Unix milliseconds"
-          },
-          "fullReconciledAt": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Unix milliseconds"
-          },
-          "fullReconcileAgeMs": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "cacheTruncatedNodes": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "cacheTruncatedRoutes": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "cacheTruncatedRecentPulses": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "cacheTruncatedRecentActivity": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "mqttConnected": {
-            "type": "boolean"
-          },
-          "mqttSubscribed": {
-            "type": "boolean"
-          },
           "mqttSessionReady": {
-            "type": "boolean"
-          },
-          "mqttQueueDepth": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "mqttQueueCapacity": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "mqttQueueOldestItemAgeMs": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "mqttLastMessageAgeMs": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "mqttMessages": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "mqttAcceptedMessages": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "mqttProcessedMessages": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "mqttDroppedMessages": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "mqttReconnects": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "mqttMalformedTopics": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "wsClients": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "wsDroppedMessages": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "wsQueueHighWater": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "wsPingFailures": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "version": {
-            "type": "string"
-          },
-          "gitSha": {
-            "type": "string"
-          },
-          "buildTime": {
-            "type": "string"
-          },
-          "mapRegionPreset": {
-            "type": "string"
-          },
-          "mapBounds": {
-            "$ref": "#/components/schemas/CoordinateBounds"
-          },
-          "defaultRegion": {
-            "type": "string"
-          },
-          "defaultCenter": {
-            "type": "array",
-            "items": {
-              "type": "number"
-            },
-            "minItems": 2,
-            "maxItems": 2
-          },
-          "defaultZoom": {
-            "type": "number"
-          },
-          "publicRegionRestricted": {
-            "type": "boolean"
-          },
-          "cached": {
-            "type": "boolean"
-          },
-          "counterReset": {
-            "type": "string",
-            "const": "process_restart"
-          },
-          "cacheRefreshLastFailed": {
             "type": "boolean"
           },
           "datasetState": {
@@ -3861,334 +3658,17 @@
           "storagePressureState": {
             "$ref": "#/components/schemas/StoragePressureState"
           },
-          "publicStateRequests": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
+          "version": {
+            "type": "string"
           },
-          "publicStateErrors": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
+          "gitSha": {
+            "type": "string"
           },
-          "publicHistoryRequests": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicHistoryErrors": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicHistoryLatencyMs": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicSummaryRequests": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicSummaryErrors": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicPacketsRequests": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicPacketsErrors": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicPacketsLatencyMs": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicPacketsLastScan": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicPacketsScanCapped": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicPacketsProjectionServed": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicPacketsProjectionFallback": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicPacketsProjectionErrors": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicPacketsProjectionLastAt": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicPacketsSearchFTS": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicPacketsSearchSubstring": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "publicPacketsSearchNoQuery": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "packetPathBackfillFailures": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "packetPathBackfillLatencyMs": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "packetPathBackfillLastAt": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "packetPathBackfillLastScan": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "packetPathBackfillProjected": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "packetPathBackfillMappable": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "packetPathBackfillInvalid": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "packetPathSearchIndexSynced": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "storeWriteAttempts": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "storeWriteRetries": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "storeWriteFailures": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "storeWriteBusyErrors": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "storeWriteFullErrors": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "storeWriteLatencyMs": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "cacheRefreshFailures": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "ingestDuplicateSuppressions": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "derivedAccepted": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "derivedProcessed": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "derivedDropped": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "derivedFailures": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "derivedQueueDepth": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "derivedQueueCapacity": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "derivedOldestAt": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "derivedOldestItemAgeMs": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "derivedLatencyMs": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "packetCountRefreshFailures": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "packetCountRefreshLatencyMs": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "packetCountRefreshLastAt": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "packets": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "nodesWithPosition": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "edgeEvents": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "unresolved": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "recentRoutePulseAgeMs": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "recentObserverBurstAgeMs": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "packetIngestState": {
-            "type": "string",
-            "enum": [
-              "fresh",
-              "stale",
-              "missing",
-              "disconnected"
-            ]
-          },
-          "publicCacheState": {
-            "type": "string",
-            "enum": [
-              "fresh",
-              "warming",
-              "stale"
-            ]
-          },
-          "routeMotionState": {
-            "type": "string",
-            "enum": [
-              "fresh",
-              "quiet"
-            ]
-          },
-          "observerMotionState": {
-            "type": "string",
-            "enum": [
-              "fresh",
-              "quiet"
-            ]
-          },
-          "mapMotionState": {
-            "type": "string",
-            "enum": [
-              "moving",
-              "quiet"
-            ]
-          },
-          "liveConfidenceState": {
-            "type": "string",
-            "enum": [
-              "fresh",
-              "quiet",
-              "degraded"
-            ]
-          },
-          "packetIngestFresh": {
-            "type": "boolean"
-          },
-          "mapMotionFresh": {
-            "type": "boolean"
-          },
-          "publicLiveFresh": {
-            "type": "boolean"
-          },
-          "publicPacketsProjectionComplete": {
-            "type": "boolean"
-          },
-          "packetPathSearchIndexRemaining": {
-            "type": "boolean"
-          },
-          "packetPathBackfillRemaining": {
-            "type": "boolean"
+          "buildTime": {
+            "type": "string"
           }
-        }
+        },
+        "description": "Minimal public liveness and coarse dependency summary. Use /readyz for fail-closed serving readiness."
       },
       "RuntimeReadinessStatus": {
         "type": "object",
