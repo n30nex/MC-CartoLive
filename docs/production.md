@@ -10,7 +10,8 @@ embedded frontend. SQLite lives under `/app/data`. The hosted service uses:
 - loopback diagnostics on `127.0.0.1:39476`
 - port 80 restricted to Cloudflare sources by a DigitalOcean Cloud Firewall
 - HTTPS and browser origin at `https://carto.canadaverse.org`
-- the bounded systemd watchdog under `deploy/systemd/`
+- the bounded systemd watchdog and privacy-safe post-release audit timer under
+  `deploy/systemd/`
 
 Do not build on the 1 GB production droplet. Local `docker-compose.yml` remains
 the developer build/fixture path.

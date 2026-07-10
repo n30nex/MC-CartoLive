@@ -96,6 +96,7 @@ jobs:
       - name: Script contract tests
         run: |
           bash scripts/test-release-ops.sh
+          bash scripts/test-post-release-audit.sh
           node scripts/check-cloudflare-cidrs.mjs --online
       - name: Compose contracts
         run: |

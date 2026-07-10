@@ -45,6 +45,12 @@ Configure DigitalOcean alerts to the account operations email:
 The application also reports sanitized storage pressure and bounded writer
 queue signals. A disk-full state is an operator incident, not a restart trigger.
 
+The packaged post-release timer consumes only the loopback readiness/metrics
+surfaces and bounded read-only SQLite aggregates. Its mode-0600 JSON evidence
+contains no database rows, broker configuration, packet/key material, or
+operator configuration. Systemd gives it a read-only filesystem except for its
+dedicated state and result directories.
+
 ## Secret and public-data controls
 
 No build argument accepts weather, broker, channel, or other credentials.

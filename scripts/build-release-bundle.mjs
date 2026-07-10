@@ -32,6 +32,7 @@ const files = [
   ['VERSION', 'VERSION'],
   ['scripts/deploy.sh', 'scripts/deploy.sh'],
   ['scripts/mc-cartolive-watchdog.sh', 'scripts/mc-cartolive-watchdog.sh'],
+  ['scripts/post-release-audit.sh', 'scripts/post-release-audit.sh'],
   ['scripts/check-public-privacy.mjs', 'scripts/check-public-privacy.mjs'],
   ['scripts/live-smoke.ps1', 'scripts/live-smoke.ps1'],
   ['scripts/package-smoke.mjs', 'scripts/package-smoke.mjs'],
@@ -40,6 +41,9 @@ const files = [
   ['deploy/systemd/mc-cartolive-watchdog.default', 'deploy/systemd/mc-cartolive-watchdog.default'],
   ['deploy/systemd/mc-cartolive-watchdog.service', 'deploy/systemd/mc-cartolive-watchdog.service'],
   ['deploy/systemd/mc-cartolive-watchdog.timer', 'deploy/systemd/mc-cartolive-watchdog.timer'],
+  ['deploy/systemd/mc-cartolive-release-audit.default', 'deploy/systemd/mc-cartolive-release-audit.default'],
+  ['deploy/systemd/mc-cartolive-release-audit.service', 'deploy/systemd/mc-cartolive-release-audit.service'],
+  ['deploy/systemd/mc-cartolive-release-audit.timer', 'deploy/systemd/mc-cartolive-release-audit.timer'],
   ['deploy/cloudflare-cidrs.txt', 'deploy/cloudflare-cidrs.txt'],
   ['docs/3.2.0/upgrade-and-rollback.md', 'docs/upgrade-and-rollback.md'],
   ['docs/3.2.0/release_notes.md', 'docs/release-notes.md'],
@@ -76,6 +80,13 @@ const manifest = {
     historicalDataRecovery: false
   },
   releaseIdentity: 'compiled_immutable',
+  operations: {
+    postReleaseAudit: {
+      phases: ['24h', 'day8', 'day14'],
+      systemdTimer: 'mc-cartolive-release-audit.timer',
+      privacySafeAggregateEvidence: true
+    }
+  },
   publicApi: 'docs/public-api.openapi.json',
   attestations: {
     image: `oci://${image}`,
@@ -97,6 +108,10 @@ DELETE-MC-CARTOLIVE-PRODUCTION-DATA
 Image: ${image}
 Git SHA: ${gitSha}
 Schema: ${schemaVersion}
+
+Before cutover, install and enable deploy/systemd/mc-cartolive-release-audit.timer.
+It records privacy-safe 24-hour, day-8, and day-14 evidence without exporting
+database rows or runtime secrets. See docs/storage-and-fresh-start.md.
 `);
 
 console.log(JSON.stringify({ version, image, gitSha, schemaVersion, stage, manifest: join(outputRoot, 'release-manifest.json') }, null, 2));

@@ -274,5 +274,6 @@ grep -q ' up .*image=.*mqtt=false$' "$tmp/fresh_success/docker.log"
 test "$(grep -c ' up .*image=.*mqtt=$' "$tmp/fresh_success/docker.log")" -eq 1
 grep -q '^start mc-cartolive-watchdog.timer$' "$tmp/fresh_success/systemctl.log"
 grep -q "^MC_CARTOLIVE_IMAGE=$DIGEST$" "$tmp/fresh_success/deploy-state/current.env"
+grep -q "^MC_CARTOLIVE_GIT_SHA=$MERGE_SHA$" "$tmp/fresh_success/deploy-state/current.env"
 
 echo "release operations contracts ok"

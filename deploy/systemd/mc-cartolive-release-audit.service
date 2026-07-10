@@ -1,0 +1,27 @@
+[Unit]
+Description=MC-CartoLive privacy-safe post-release audit
+Wants=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+TimeoutStartSec=12min
+EnvironmentFile=-/etc/default/mc-cartolive-release-audit
+ExecStart=/opt/MC-CartoLive/scripts/post-release-audit.sh
+StateDirectory=mc-cartolive-release-audit
+LogsDirectory=mc-cartolive-release-audit
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/mc-cartolive-release-audit /var/log/mc-cartolive-release-audit
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=

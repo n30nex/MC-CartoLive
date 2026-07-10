@@ -75,3 +75,20 @@ After release:
 - Any `SQLITE_FULL`, sustained busy storm, application queue drop, or critical
   storage state is a release incident. The watchdog deliberately does not
   restart for storage pressure.
+
+## Automated evidence
+
+`mc-cartolive-release-audit.timer` runs hourly and records each due phase once.
+It reads the root-owned deploy identity from
+`/var/lib/mc-cartolive-deploy/current.env`, but never sources `.env` and never
+copies live rows. Read-only SQLite commands are limited to 120 seconds and
+return only integrity status, schema version, oldest timestamps, and file
+sizes. Results are mode `0600` JSON under
+`/var/log/mc-cartolive-release-audit/`.
+
+The day-8 database-plus-WAL measurement is stored atomically under
+`/var/lib/mc-cartolive-release-audit/`. A day-14 audit fails closed if that
+baseline is absent or invalid; it does not invent a late baseline. Failed
+phases retain a single privacy-safe `latest-failure` result and retry hourly.
+See the [operator runbook](../operator-runbook.md#automated-32-release-audits)
+for installation and inspection commands.

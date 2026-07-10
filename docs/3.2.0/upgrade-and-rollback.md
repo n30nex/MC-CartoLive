@@ -83,4 +83,9 @@ create the annotated tag at the deployed commit. GitHub Actions promotes the
 candidate manifest without rebuilding and publishes the package assets.
 
 Repeat evidence collection after 24 hours and retention/storage checks on days
-8 and 14.
+8 and 14. Install and enable `mc-cartolive-release-audit.timer` before cutover;
+the packaged timer captures these phases automatically from loopback readiness,
+metrics, bounded read-only SQLite checks, disk/WAL state, and watchdog state.
+Inspect the mode-0600 JSON results in
+`/var/log/mc-cartolive-release-audit/`; a failed phase retries hourly and keeps
+the systemd service failed until a subsequent sample passes.

@@ -9,7 +9,7 @@ is preserved by version.
 | Document | Purpose |
 | --- | --- |
 | [Production deployment](production.md) | First deploy, upgrades, runtime notes, and production readiness. |
-| [Operator runbook](operator-runbook.md) | Capacity, digest deploy, watchdog, smoke, soak, and incidents. |
+| [Operator runbook](operator-runbook.md) | Capacity, digest deploy, watchdog, automated release audits, soak, and incidents. |
 | [Development](development.md) | Local Podman, fixtures, backend/frontend commands, and release checks. |
 | [Privacy model](privacy.md) | Private inputs, public outputs, route truth, and test expectations. |
 | [Roadmap](roadmap.md) | Current baseline and active 3.x direction. |

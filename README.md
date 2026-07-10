@@ -26,6 +26,8 @@ the unreleased 3.1 work into one supported package and adds:
   checksums, vulnerability gates, and a deployment bundle
 - a destructive fresh-database deployment mode that is impossible to invoke
   accidentally and a restart-loop-resistant production watchdog
+- privacy-safe automated 24-hour, day-8, and day-14 retention/storage evidence
+  with a durable day-8 growth baseline
 
 Published releases run from an immutable GHCR digest through the production
 Compose package. The repository Compose file remains the local build path.

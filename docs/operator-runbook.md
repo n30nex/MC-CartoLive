@@ -92,6 +92,44 @@ tail -n 100 /var/log/mc-cartolive-watchdog.log
 cat /var/lib/mc-cartolive-watchdog/state.env
 ```
 
+## Automated 3.2 release audits
+
+Install the post-release audit beside the watchdog before the destructive
+cutover. It is an hourly, persistent timer; each deployment is keyed by its
+immutable digest, Git SHA, and deployment timestamp, so restarting the timer or
+re-running a completed phase cannot duplicate or overwrite evidence.
+
+```bash
+apt-get install -y curl jq sqlite3 util-linux coreutils
+install -m 0755 scripts/post-release-audit.sh /opt/MC-CartoLive/scripts/
+install -m 0644 deploy/systemd/mc-cartolive-release-audit.default /etc/default/mc-cartolive-release-audit
+install -m 0644 deploy/systemd/mc-cartolive-release-audit.service /etc/systemd/system/
+install -m 0644 deploy/systemd/mc-cartolive-release-audit.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now mc-cartolive-release-audit.timer
+```
+
+The 24-hour phase checks readiness, the loopback-only metrics listener, SQLite
+quick/foreign-key integrity, schema identity, queue and error counters, the
+container/watchdog, and the 25 GiB free-space gate. Day 8 additionally enforces
+seven days plus six hours for observations, 25 hours for public events, and a
+WAL below 256 MiB, then atomically records the database-plus-WAL baseline. Day
+14 repeats retention/WAL checks and requires growth from that day-8 baseline to
+be strictly below 10%. Each SQLite command has a 120-second ceiling.
+
+```bash
+systemctl list-timers mc-cartolive-release-audit.timer
+systemctl status mc-cartolive-release-audit.service
+find /var/log/mc-cartolive-release-audit -maxdepth 1 -type f -name '*.json' -ls
+jq '{phase,passed,errors,release,database,filesystem,ingest,process,watchdog}' \
+  /var/log/mc-cartolive-release-audit/*.json
+```
+
+Successful phases are immutable in normal operation. A failed phase writes one
+replaceable `latest-failure` file and is retried on the next hourly activation.
+The evidence contains aggregate ages, sizes, counters, and immutable release
+identity only—never rows, packet/key material, `.env`, or `data/config.yaml`.
+
 ## Storage and retention
 
 ```text

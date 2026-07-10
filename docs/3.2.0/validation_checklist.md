@@ -78,6 +78,14 @@ collected for the exact candidate digest and commit.
 
 ## Follow-up
 
-- [ ] 24-hour soak and alert delivery are verified.
-- [ ] Day-8 retention/WAL/free-space checks pass.
-- [ ] Day-14 database-plus-WAL growth is less than 10% from day 8.
+- [ ] `mc-cartolive-release-audit.timer` is enabled before cutover and its
+  deployment identity includes the immutable digest, full Git SHA, and UTC
+  deployment time.
+- [ ] The automated 24-hour result is `passed=true`; readiness, integrity,
+  queue/error counters, watchdog/container state, alert delivery, and the
+  25-GiB free-space gate are verified.
+- [ ] The automated day-8 result is `passed=true`; observation age is at most
+  seven days plus six hours, public-event age at most 25 hours, WAL below 256
+  MiB, and the database-plus-WAL baseline exists.
+- [ ] The automated day-14 result repeats the retention/WAL checks and reports
+  database-plus-WAL growth strictly below 10% from the recorded day-8 baseline.
