@@ -54,6 +54,13 @@ run_watchdog '{"ready":false,"datasetState":"live","storagePressureState":"criti
 run_watchdog '{"ready":true,"datasetState":"live","storagePressureState":"ok","publicCacheState":"fresh","mqttSessionReady":true,"dbReady":true,"publicLiveFresh":false}'
 test ! -s "$tmp/docker.log"
 
+# Warming is not itself a failure and never causes a restart, but it must not
+# hide an independently confirmed MQTT session failure.
+warming_session_failed='{"ready":false,"datasetState":"warming","storagePressureState":"ok","publicCacheState":"warming","mqttSessionReady":false,"dbReady":true}'
+for _ in 1 2 3; do run_watchdog "$warming_session_failed"; done
+test "$(wc -l < "$tmp/docker.log")" -eq 1
+rm -f "$tmp/state/state.env" "$tmp/docker.log"
+
 failed='{"ready":false,"datasetState":"live","storagePressureState":"ok","publicCacheState":"failed","mqttSessionReady":true,"dbReady":true}'
 for _ in 1 2 3; do run_watchdog "$failed"; done
 test "$(wc -l < "$tmp/docker.log")" -eq 1

@@ -107,13 +107,6 @@ case "$storage_state" in
 		exit 0
 		;;
 esac
-case "$dataset_state" in
-	fresh_start|warming)
-		[ "$VERBOSE" = "1" ] && log "ok condition=datasetState:$dataset_state http=$http_code"
-		write_state 0 "$restart_1" "$restart_2" "$last_restart"
-		exit 0
-		;;
-esac
 
 reason=""
 case "$http_code" in
@@ -133,6 +126,13 @@ if [ -z "$reason" ]; then
 fi
 
 if [ -z "$reason" ]; then
+	case "$dataset_state" in
+		fresh_start|warming)
+			[ "$VERBOSE" = "1" ] && log "ok condition=datasetState:$dataset_state http=$http_code"
+			write_state 0 "$restart_1" "$restart_2" "$last_restart"
+			exit 0
+			;;
+	esac
 	if [ "$failures" -gt 0 ] || [ "$VERBOSE" = "1" ]; then
 		log "ok http=$http_code datasetState=${dataset_state:-unknown} publicCacheState=${cache_state:-unknown}"
 	fi
