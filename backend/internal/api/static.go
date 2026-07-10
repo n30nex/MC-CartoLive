@@ -56,7 +56,7 @@ func StaticHandler(w http.ResponseWriter, r *http.Request) {
 
 func staticCachePolicy(requestPath string) (cacheControl string, revalidate bool) {
 	requestPath = strings.ToLower(strings.TrimSpace(requestPath))
-	switch requestPath {
+	switch path.Base(requestPath) {
 	case "sw.js", "service-worker.js", "manifest.webmanifest", "manifest.json", "site.webmanifest":
 		return "no-cache, no-store, max-age=0, must-revalidate", true
 	case "index.html":

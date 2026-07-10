@@ -61,9 +61,11 @@ func (s *Store) InsertPublicEvent(ctx context.Context, event live.PublicEvent) (
 	nodeIDsJSON, _ := json.Marshal(event.NodeIDs)
 	result, err := s.db.ExecContext(ctx, `
 INSERT INTO public_events (
-  event_type, occurred_at_ms, received_at_ms, region, iata, payload_type_name,
+  dedupe_key, event_type, occurred_at_ms, received_at_ms, region, iata, payload_type_name,
   message_flag, route_ids_json, node_ids_json, public_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(dedupe_key) WHERE dedupe_key != '' DO NOTHING`,
+		event.DedupeKey,
 		event.Type,
 		event.At,
 		event.ReceivedAt,
@@ -77,6 +79,12 @@ INSERT INTO public_events (
 	)
 	if err != nil {
 		return event, err
+	}
+	if affected, err := result.RowsAffected(); err == nil && affected == 0 && event.DedupeKey != "" {
+		if err := s.db.QueryRowContext(ctx, `SELECT seq FROM public_events WHERE dedupe_key = ?`, event.DedupeKey).Scan(&event.Seq); err != nil {
+			return event, err
+		}
+		return event, nil
 	}
 	if seq, err := result.LastInsertId(); err == nil {
 		event.Seq = seq

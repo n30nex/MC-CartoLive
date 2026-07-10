@@ -8,7 +8,7 @@ func TestStaticReadyRequiresRealIndex(t *testing.T) {
 	}
 }
 func TestStaticCachePolicyRevalidatesWorkerAndManifest(t *testing.T) {
-	for _, name := range []string{"sw.js", "service-worker.js", "manifest.webmanifest", "manifest.json"} {
+	for _, name := range []string{"sw.js", "service-worker.js", "manifest.webmanifest", "manifest.json", "brand/world/manifest.json"} {
 		control, revalidate := staticCachePolicy(name)
 		if control != "no-cache, no-store, max-age=0, must-revalidate" || !revalidate {
 			t.Fatalf("staticCachePolicy(%q)=(%q,%v)", name, control, revalidate)

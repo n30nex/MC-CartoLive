@@ -10,9 +10,10 @@ second SSH session before narrowing SSH rules.
 
 Keep `TRUST_PROXY_HEADERS=false` unless `TRUSTED_PROXY_CIDRS` contains the exact
 immediate proxy networks. The backend ignores forwarded client addresses from
-untrusted peers. Detailed `/metrics` is loopback-only in public mode unless an
-operator explicitly opts into public metrics, which the hosted service must not
-do.
+untrusted peers. The public application listener always returns 404 for
+`/metrics`; production Compose exposes the distinct metrics listener only at
+host loopback `127.0.0.1:39090`. The hosted service must keep
+`METRICS_PUBLIC=false`.
 
 Production Compose enables forwarded addresses only for the committed official
 Cloudflare ranges in `deploy/cloudflare-cidrs.txt`. CI compares that list with

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -26,6 +27,21 @@ func (s *Store) InsertEdgeEvent(ctx context.Context, event live.EdgeEvent, resol
 			_ = tx.Rollback()
 		}
 	}()
+	if event.IngestID != "" {
+		var existingID int64
+		err := tx.QueryRowContext(ctx, `SELECT id FROM live_edge_events WHERE ingest_id = ?`, event.IngestID).Scan(&existingID)
+		switch {
+		case err == nil:
+			event.ID = existingID
+			if err := tx.Commit(); err != nil {
+				return event, err
+			}
+			committed = true
+			return event, nil
+		case !errors.Is(err, sql.ErrNoRows):
+			return event, err
+		}
+	}
 	if resolutionStatus != "" {
 		if _, err := tx.ExecContext(ctx, `
 UPDATE packet_observations
@@ -36,9 +52,10 @@ WHERE id=?`, resolutionStatus, resolutionReason, event.ObservationID); err != ni
 	}
 	result, err := tx.ExecContext(ctx, `
 INSERT INTO live_edge_events (
-  packet_hash, observation_id, payload_type, payload_type_name, message_sender, message_text, message_anchor_json,
+  ingest_id, packet_hash, observation_id, payload_type, payload_type_name, message_sender, message_text, message_anchor_json,
   heard_at_ms, segments_json, render_reason, created_at_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		event.IngestID,
 		event.PacketHash,
 		event.ObservationID,
 		event.PayloadType,

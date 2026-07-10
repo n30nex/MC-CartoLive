@@ -112,16 +112,22 @@ func TestUpsertPacketAndObservationRetryIsIdempotent(t *testing.T) {
 		},
 		Parsed: parsed, Summary: "safe summary",
 	}
-	firstID, err := st.UpsertPacketAndObservation(ctx, parsed, insert.Message.HeardAtMs, insert)
+	firstID, duplicate, err := st.UpsertPacketAndObservation(ctx, parsed, insert.Message.HeardAtMs, insert)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondID, err := st.UpsertPacketAndObservation(ctx, parsed, insert.Message.HeardAtMs, insert)
+	if duplicate {
+		t.Fatal("first insert reported duplicate")
+	}
+	secondID, duplicate, err := st.UpsertPacketAndObservation(ctx, parsed, insert.Message.HeardAtMs, insert)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if firstID != secondID {
 		t.Fatalf("retry IDs differ: %d != %d", firstID, secondID)
+	}
+	if !duplicate {
+		t.Fatal("retry did not report duplicate suppression")
 	}
 	var observations, seenCount int
 	if err := st.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM packet_observations WHERE ingest_id=?`, insert.IngestID).Scan(&observations); err != nil {
@@ -144,4 +150,32 @@ func TestStoragePressureThresholds(t *testing.T) {
 			t.Fatalf("storagePressureState(%v)=%q want %q", tc.free, got, tc.want)
 		}
 	}
+}
+
+func TestReadPoolConfigPrefersNewKeyWithLegacyFallback(t *testing.T) {
+	ctx := context.Background()
+	t.Run("new key", func(t *testing.T) {
+		t.Setenv("SQLITE_READ_OPEN_CONNS", "2")
+		t.Setenv("SQLITE_MAX_OPEN_CONNS", "4")
+		st, err := Open(ctx, t.TempDir()+"/new-key.db")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer st.Close()
+		if got := st.RuntimeInfo(ctx).ReadMaxOpenConns; got != 2 {
+			t.Fatalf("read pool=%d want 2", got)
+		}
+	})
+	t.Run("legacy fallback", func(t *testing.T) {
+		t.Setenv("SQLITE_READ_OPEN_CONNS", "")
+		t.Setenv("SQLITE_MAX_OPEN_CONNS", "3")
+		st, err := Open(ctx, t.TempDir()+"/legacy-key.db")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer st.Close()
+		if got := st.RuntimeInfo(ctx).ReadMaxOpenConns; got != 3 {
+			t.Fatalf("legacy read pool=%d want 3", got)
+		}
+	})
 }

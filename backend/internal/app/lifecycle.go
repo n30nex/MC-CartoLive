@@ -40,9 +40,12 @@ type Application struct {
 
 	apiServer *api.Server
 
-	cacheRefreshMu sync.Mutex
-	packetCount    atomic.Int64
-	wg             sync.WaitGroup
+	cacheRefreshMu    sync.Mutex
+	packetCount       atomic.Int64
+	derivedQueue      chan derivedIngestJob
+	derivedQueueMu    sync.Mutex
+	derivedQueueTimes []int64
+	wg                sync.WaitGroup
 }
 
 type runtimeCounterLogSnapshot struct {
@@ -105,7 +108,11 @@ func NewApplication(ctx context.Context, cfg Config, log *slog.Logger) (*Applica
 	publicHub.SetSubscriptionsEnabled(cfg.PublicWSSubscriptionsEnabled)
 	publicCache := live.NewPublicStateCache(live.NewPublicIATAFilter(publicIATAs(cfg.PublicRegions, yc)))
 	resolver := resolve.New(st, yc.ForwarderRoles)
-	app := &Application{Config: cfg, Log: log, Store: st, Hub: hub, PublicHub: publicHub, PublicCache: publicCache, Runtime: live.NewRuntimeStats(), Resolver: resolver, Solar: solar.NewFetcher(log), Propagation: propagation.NewWeatherFetcher(log)}
+	derivedQueueSize := cfg.DerivedIngestQueueSize
+	if derivedQueueSize < 1 {
+		derivedQueueSize = 1024
+	}
+	app := &Application{Config: cfg, Log: log, Store: st, Hub: hub, PublicHub: publicHub, PublicCache: publicCache, Runtime: live.NewRuntimeStats(), Resolver: resolver, Solar: solar.NewFetcher(log), Propagation: propagation.NewWeatherFetcher(log), derivedQueue: make(chan derivedIngestJob, derivedQueueSize)}
 	if latestSeq, err := st.LatestPublicSeq(ctx); err == nil {
 		publicHub.SetLatestSeq(latestSeq)
 	} else {
@@ -169,6 +176,8 @@ func (a *Application) Start(ctx context.Context) error {
 		a.wg.Add(1)
 		go func() { defer a.wg.Done(); a.propagationLoop(ctx) }()
 	}
+	a.wg.Add(1)
+	go func() { defer a.wg.Done(); a.derivedIngestLoop(ctx) }()
 	if err := a.MQTT.Start(ctx); err != nil {
 		a.Log.Error("mqtt start failed", "error", err)
 	}
@@ -204,18 +213,18 @@ func (a *Application) Close() error {
 	return a.Store.Close()
 }
 
-func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessage) {
+func (a *Application) processDerivedMQTT(ctx context.Context, msg imqtt.NormalizedMessage) {
+	job, ok := ctx.Value(derivedIngestJobContextKey{}).(derivedIngestJob)
+	if !ok {
+		a.Log.Error("derived ingest context missing")
+		return
+	}
 	if msg.TopicInfo.Subtopic == "internal" {
 		return
 	}
 	if msg.TopicInfo.Subtopic == "status" {
-		if err := a.retryStoreWrite(ctx, "status upsert", func(ctx context.Context) error {
-			return a.Store.UpsertObserver(ctx, msg)
-		}); err != nil {
-			a.Log.Warn("status upsert failed", "error", err)
-		}
 		if node, err := a.Store.NodeByPublicKey(ctx, msg.TopicInfo.PublisherPK); err == nil && hasCoords(node) {
-			a.broadcastNodeUpdateForIATA(ctx, node, msg.TopicInfo.IATA)
+			a.broadcastNodeUpdateForIATA(ctx, node, msg.TopicInfo.IATA, msg.IngestID+":node")
 		}
 		return
 	}
@@ -227,41 +236,10 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 	}); err != nil {
 		a.Log.Warn("observer packet update failed", "error", err)
 	}
-	if msg.RawHex == "" {
-		a.Log.Debug("packet missing raw hex", "topic", msg.Topic)
-		return
-	}
-
-	parsed, err := meshcore.ParseHexPacket(msg.RawHex)
-	if err != nil {
-		a.Log.Debug("packet decode failed", "topic", msg.Topic, "error", err)
-		return
-	}
-
-	var advert *meshcore.Advert
-	if parsed.PayloadType == meshcore.PayloadAdvert {
-		if parsedAdvert, ok, err := meshcore.ParseAdvertPayload(parsed.Payload); err != nil {
-			a.Log.Debug("advert parse failed", "packetHash", parsed.PacketHash, "error", err)
-		} else if ok {
-			advert = &parsedAdvert
-		}
-	}
-	summary := meshcore.Summary(parsed, advert)
-	decodedMessage := meshcore.DecodePublicMessage(parsed.PayloadType, parsed.Payload, msg.RawJSON, a.Config.MeshcoreChannelSecrets)
-	ingestID := msg.IngestID
-	if ingestID == "" {
-		ingestID = fmt.Sprintf("fixture-%d-%d", time.Now().UnixNano(), msg.HeardAtMs)
-	}
-	var observationID int64
-	err = a.retryStoreWrite(ctx, "packet/observation upsert", func(ctx context.Context) error {
-		id, err := a.Store.UpsertPacketAndObservation(ctx, parsed, msg.HeardAtMs, store.ObservationInsert{IngestID: ingestID, Message: msg, Parsed: parsed, Summary: summary, MessageSender: decodedMessage.Sender, MessageText: decodedMessage.Text})
-		observationID = id
-		return err
-	})
-	if err != nil {
-		a.Log.Warn("packet/observation upsert failed", "error", err)
-		return
-	}
+	parsed := job.parsed
+	advert := job.advert
+	decodedMessage := job.decodedMessage
+	observationID := job.observationID
 
 	var advertNode *live.Node
 	if advert != nil {
@@ -275,7 +253,7 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 			a.Log.Warn("advert node upsert failed", "packetHash", parsed.PacketHash, "error", err)
 		} else {
 			advertNode = &node
-			a.broadcastNodeUpdateForIATA(ctx, node, msg.TopicInfo.IATA)
+			a.broadcastNodeUpdateForIATA(ctx, node, msg.TopicInfo.IATA, msg.IngestID+":advert-node")
 		}
 	}
 
@@ -306,6 +284,7 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 	}
 
 	edge, ok := a.buildEdgeEvent(ctx, msg, parsed, observationID, resolution, advertNode, decodedMessage)
+	edge.IngestID = msg.IngestID + ":edge"
 	publicActivitySent := false
 	publicAllowed := a.PublicCache.AllowsIATA(msg.TopicInfo.IATA)
 	if !publicAllowed {
@@ -324,12 +303,12 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 			a.Hub.Broadcast("edgeAnimation", stored)
 			if publicAllowed {
 				if activity, ok := live.PublicActivityFromEdge(stored); ok {
-					activity = a.publishPublicEvent(ctx, "activity", activity).(live.PublicActivity)
+					activity = a.publishPublicEvent(ctx, "activity", activity, msg.IngestID+":edge-activity").(live.PublicActivity)
 					a.PublicCache.ApplyActivity(activity)
 					publicActivitySent = true
 				}
 				if pulse, ok := live.PublicRoutePulseFromEdge(stored); ok {
-					pulse = a.publishPublicEvent(ctx, "routePulse", pulse).(live.PublicRoutePulse)
+					pulse = a.publishPublicEvent(ctx, "routePulse", pulse, msg.IngestID+":route-pulse").(live.PublicRoutePulse)
 					a.PublicCache.ApplyRoutePulse(pulse)
 				}
 			}
@@ -337,12 +316,12 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 	}
 	if !publicActivitySent && observationOK && publicAllowed {
 		activity := a.publicActivityFromPacket(ctx, observation, nil)
-		activity = a.publishPublicEvent(ctx, "activity", activity).(live.PublicActivity)
+		activity = a.publishPublicEvent(ctx, "activity", activity, msg.IngestID+":packet-activity").(live.PublicActivity)
 		a.PublicCache.ApplyActivity(activity)
 	}
 }
 
-func (a *Application) broadcastNodeUpdateForIATA(ctx context.Context, node live.Node, iata string) {
+func (a *Application) broadcastNodeUpdateForIATA(ctx context.Context, node live.Node, iata string, dedupeKeys ...string) {
 	a.Hub.Broadcast("nodeUpdate", node)
 	if iata != "" && !a.PublicCache.AllowsIATA(iata) {
 		a.PublicCache.RecordExcludedIATA(iata)
@@ -354,12 +333,12 @@ func (a *Application) broadcastNodeUpdateForIATA(ctx context.Context, node live.
 			return
 		}
 		publicNode.IATAsHeardIn = filteredIATAs
-		publicNode = a.publishPublicEvent(ctx, "nodeUpdate", publicNode).(live.PublicNode)
+		publicNode = a.publishPublicEvent(ctx, "nodeUpdate", publicNode, dedupeKeys...).(live.PublicNode)
 		a.PublicCache.ApplyNode(publicNode)
 	}
 }
 
-func (a *Application) publishPublicEvent(ctx context.Context, eventType string, data any) any {
+func (a *Application) publishPublicEvent(ctx context.Context, eventType string, data any, dedupeKeys ...string) any {
 	if a == nil || a.PublicHub == nil {
 		return data
 	}
@@ -368,6 +347,9 @@ func (a *Application) publishPublicEvent(ctx context.Context, eventType string, 
 		return data
 	}
 	event := live.PublicEventFromData(eventType, data)
+	if len(dedupeKeys) > 0 {
+		event.DedupeKey = strings.TrimSpace(dedupeKeys[0])
+	}
 	var stored live.PublicEvent
 	err := a.retryStoreWrite(ctx, "public event insert", func(ctx context.Context) error {
 		var err error
@@ -388,8 +370,6 @@ func (a *Application) publishPublicEvent(ctx context.Context, eventType string, 
 
 func (a *Application) retryStoreWrite(ctx context.Context, label string, fn func(context.Context) error) error {
 	started := time.Now()
-	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
 	delays := []time.Duration{
 		0,
 		50 * time.Millisecond,
@@ -403,18 +383,18 @@ func (a *Application) retryStoreWrite(ctx context.Context, label string, fn func
 	for attempt, delay := range delays {
 		if delay > 0 {
 			select {
-			case <-writeCtx.Done():
+			case <-ctx.Done():
 				if err != nil {
 					a.Runtime.RecordStoreWrite(time.Since(started), retries, true, isSQLiteBusy(err), isSQLiteFull(err))
 					return err
 				}
-				err = writeCtx.Err()
+				err = ctx.Err()
 				a.Runtime.RecordStoreWrite(time.Since(started), retries, true, false, false)
 				return err
 			case <-time.After(delay):
 			}
 		}
-		err = fn(writeCtx)
+		err = fn(ctx)
 		if err == nil {
 			if attempt > 0 && a != nil && a.Log != nil {
 				a.Log.Debug("sqlite write recovered after retry", "operation", label, "attempt", attempt+1)

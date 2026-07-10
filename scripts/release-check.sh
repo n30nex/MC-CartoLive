@@ -2,6 +2,7 @@
 set -eu
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:39476}"
+METRICS_URL="${METRICS_URL:-http://127.0.0.1:39090/metrics}"
 BROWSER_SMOKE_BASE_URL="${BROWSER_SMOKE_BASE_URL:-$BASE_URL}"
 ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-}"
@@ -61,7 +62,9 @@ curl -fsS "$BASE_URL/api/v1/public/events?afterSeq=0&limit=25" >/tmp/mc-cartoliv
 curl -fsS "$BASE_URL/api/v1/public/noc" >/tmp/mc-cartolive-noc.json
 curl -fsS "$BASE_URL/api/v1/public/schema" >/tmp/mc-cartolive-public-schema.json
 curl -fsS "$BASE_URL/api/v1/public/integrations/home-assistant" >/tmp/mc-cartolive-sensors.json
-curl -fsS "$BASE_URL/metrics" >/tmp/mc-cartolive-metrics.txt
+MAIN_METRICS_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE_URL/metrics")"
+test "$MAIN_METRICS_STATUS" = "404"
+curl -fsS "$METRICS_URL" >/tmp/mc-cartolive-metrics.txt
 node "$ROOT/scripts/check-public-privacy.mjs" "$BASE_URL"
 
 if [ "${RUN_BROWSER_SMOKE:-0}" = "1" ]; then
@@ -85,5 +88,6 @@ echo "noc:     /tmp/mc-cartolive-noc.json"
 echo "schema:  /tmp/mc-cartolive-public-schema.json"
 echo "sensors: /tmp/mc-cartolive-sensors.json"
 echo "metrics: /tmp/mc-cartolive-metrics.txt"
+echo "metrics endpoint: $METRICS_URL"
 echo "live confidence:"
 grep -Eo '"(packetIngestState|publicCacheState|mapMotionState|liveConfidenceState)":"[^"]+"' /tmp/mc-cartolive-health.json || true

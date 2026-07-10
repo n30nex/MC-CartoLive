@@ -121,6 +121,38 @@ func TestPublicRouteSummariesTrackLatestRouteAndBackfillIdempotently(t *testing.
 	}
 }
 
+func TestInsertEdgeEventSuppressesAmbiguousRetryByIngestID(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if _, err := s.db.ExecContext(ctx, `PRAGMA foreign_keys=OFF`); err != nil {
+		t.Fatal(err)
+	}
+	event := edgeEventForTest("dedupe", time.Now().UnixMilli())
+	event.IngestID = "ingest-edge-dedupe"
+	first, err := s.InsertEdgeEvent(ctx, event, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.InsertEdgeEvent(ctx, event, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID != second.ID {
+		t.Fatalf("edge IDs differ: %d != %d", first.ID, second.ID)
+	}
+	var count int
+	if err := s.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM live_edge_events WHERE ingest_id=?`, event.IngestID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("deduped edge count=%d want 1", count)
+	}
+}
+
 func edgeEventForTest(packetHash string, heardAt int64) live.EdgeEvent {
 	return live.EdgeEvent{
 		PacketHash:      packetHash,

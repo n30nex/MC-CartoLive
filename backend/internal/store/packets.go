@@ -42,10 +42,10 @@ ON CONFLICT(packet_hash) DO UPDATE SET
 	return err
 }
 
-func (s *Store) UpsertPacketAndObservation(ctx context.Context, parsed meshcore.ParsedPacket, seenAt int64, in ObservationInsert) (int64, error) {
+func (s *Store) UpsertPacketAndObservation(ctx context.Context, parsed meshcore.ParsedPacket, seenAt int64, in ObservationInsert) (int64, bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	committed := false
 	defer func() {
@@ -59,12 +59,12 @@ func (s *Store) UpsertPacketAndObservation(ctx context.Context, parsed meshcore.
 		switch {
 		case err == nil:
 			if err := tx.Commit(); err != nil {
-				return 0, err
+				return 0, false, err
 			}
 			committed = true
-			return existingID, nil
+			return existingID, true, nil
 		case !errors.Is(err, sql.ErrNoRows):
-			return 0, err
+			return 0, false, err
 		}
 	}
 	_, err = tx.ExecContext(ctx, `
@@ -94,7 +94,7 @@ ON CONFLICT(packet_hash) DO UPDATE SET
 		seenAt,
 	)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	now := time.Now().UnixMilli()
 	result, err := tx.ExecContext(ctx, `
@@ -133,13 +133,14 @@ INSERT INTO packet_observations (
 		now,
 	)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	committed = true
-	return result.LastInsertId()
+	id, err := result.LastInsertId()
+	return id, false, err
 }
 
 func (s *Store) RecentPackets(ctx context.Context, limit int) ([]live.PacketObservation, error) {

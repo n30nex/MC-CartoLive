@@ -70,7 +70,13 @@ operator's own recovery policy before upgrading.
 - `/api/v1/public/bootstrap` is the compact first-view contract.
 - A new DB can be ready with `datasetState=fresh_start` or `warming`; it becomes
   `live` after real observations populate public state.
-- Detailed `/metrics` is loopback-only in public mode by default.
+- Queue drops and write/full failures are process-scoped fail-closed counters;
+  they clear only after an operator investigates and restarts the process.
+  Idempotent duplicate suppressions are informational and never make readiness
+  fail by themselves.
+- The main listener always returns 404 for `/metrics`. Detailed metrics use the
+  dedicated listener (`127.0.0.1:9090` bare metal; host loopback port `39090`
+  under Compose).
 
 `PUBLIC_BASE_URL` must exactly match the browser origin for WebSocket origin
 checks. Forwarded headers are ignored unless both `TRUST_PROXY_HEADERS=true` and
@@ -88,6 +94,7 @@ publish port 39476.
 
 ```bash
 curl -fsS http://127.0.0.1:39476/healthz
+curl -fsS http://127.0.0.1:39090/metrics
 curl -fsS http://127.0.0.1:39476/readyz
 curl -fsS http://127.0.0.1:39476/api/v1/public/bootstrap
 curl -fsS 'http://127.0.0.1:39476/api/v1/public/events?afterSeq=0&limit=25'

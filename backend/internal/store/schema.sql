@@ -1,6 +1,3 @@
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version INTEGER PRIMARY KEY,
   applied_at_ms INTEGER NOT NULL
@@ -135,6 +132,7 @@ CREATE INDEX IF NOT EXISTS idx_observer_status_recent ON observer_status(receive
 
 CREATE TABLE IF NOT EXISTS live_edge_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ingest_id TEXT NOT NULL DEFAULT '',
   packet_hash TEXT NOT NULL,
   observation_id INTEGER NOT NULL,
   payload_type INTEGER NOT NULL,
@@ -150,6 +148,7 @@ CREATE TABLE IF NOT EXISTS live_edge_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_live_edge_events_recent ON live_edge_events(heard_at_ms DESC, id DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_live_edge_events_ingest_id ON live_edge_events(ingest_id) WHERE ingest_id != '';
 CREATE INDEX IF NOT EXISTS idx_live_edge_events_observation ON live_edge_events(observation_id);
 CREATE INDEX IF NOT EXISTS idx_live_edge_events_payload_recent ON live_edge_events(payload_type_name, heard_at_ms DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_live_edge_events_message_recent ON live_edge_events(heard_at_ms DESC, id DESC) WHERE message_text != '';
@@ -213,6 +212,7 @@ CREATE INDEX IF NOT EXISTS idx_public_route_summary_edges_heard ON public_route_
 
 CREATE TABLE IF NOT EXISTS public_events (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  dedupe_key TEXT NOT NULL DEFAULT '',
   event_type TEXT NOT NULL,
   occurred_at_ms INTEGER NOT NULL,
   received_at_ms INTEGER NOT NULL,
@@ -226,6 +226,7 @@ CREATE TABLE IF NOT EXISTS public_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_public_events_time ON public_events(occurred_at_ms DESC, seq DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_public_events_dedupe_key ON public_events(dedupe_key) WHERE dedupe_key != '';
 CREATE INDEX IF NOT EXISTS idx_public_events_seq_time ON public_events(seq, occurred_at_ms);
 CREATE INDEX IF NOT EXISTS idx_public_events_seq ON public_events(seq);
 CREATE INDEX IF NOT EXISTS idx_public_events_region_seq ON public_events(region, seq);

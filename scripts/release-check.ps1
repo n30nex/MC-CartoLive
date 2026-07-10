@@ -1,5 +1,6 @@
 param(
   [string]$BaseUrl = "http://127.0.0.1:39476",
+  [string]$MetricsUrl = $env:METRICS_URL,
   [switch]$SkipDocker,
   [switch]$RunBrowserSmoke,
   [string]$BrowserSmokeBaseUrl = "",
@@ -27,6 +28,9 @@ try {
     else {
       $ContainerRuntime = "docker"
     }
+  }
+  if ([string]::IsNullOrWhiteSpace($MetricsUrl)) {
+    $MetricsUrl = "http://127.0.0.1:39090/metrics"
   }
 
   node (Join-Path $root "scripts/check-version-sync.mjs")
@@ -84,7 +88,17 @@ try {
   $noc = Invoke-RestMethod "$BaseUrl/api/v1/public/noc"
   $schema = Invoke-RestMethod "$BaseUrl/api/v1/public/schema"
   $sensors = Invoke-RestMethod "$BaseUrl/api/v1/public/integrations/home-assistant"
-  $metrics = Invoke-WebRequest -UseBasicParsing "$BaseUrl/metrics"
+  try {
+    Invoke-WebRequest -UseBasicParsing "$BaseUrl/metrics" -ErrorAction Stop | Out-Null
+    throw "public application listener unexpectedly exposed /metrics"
+  }
+  catch {
+    $statusCode = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
+    if ($statusCode -ne 404) {
+      throw
+    }
+  }
+  $metrics = Invoke-WebRequest -UseBasicParsing $MetricsUrl
   node (Join-Path $root "scripts/check-public-privacy.mjs") $BaseUrl
 
   if ($RunBrowserSmoke) {
@@ -113,6 +127,7 @@ try {
     PublicSchemaVersion = $schema.info.version
     SensorPackets = $sensors.packetRate.perMinute
     MetricsBytes = $metrics.Content.Length
+    MetricsUrl = $MetricsUrl
     PacketIngestState = $health.packetIngestState
     PublicCacheState = $health.publicCacheState
     MapMotionState = $health.mapMotionState
@@ -124,7 +139,7 @@ try {
   } | Format-List
 
   if ($RunLiveSmoke) {
-    & (Join-Path $PSScriptRoot "live-smoke.ps1") -BaseUrl $LiveSmokeBaseUrl
+    & (Join-Path $PSScriptRoot "live-smoke.ps1") -BaseUrl $LiveSmokeBaseUrl -MetricsUrl $MetricsUrl
   }
 }
 finally {

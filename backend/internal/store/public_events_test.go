@@ -132,3 +132,31 @@ func TestPublicEventsFiltersAndJSONPayload(t *testing.T) {
 		t.Fatalf("stored public json is invalid: %s", string(raw))
 	}
 }
+
+func TestPublicEventDedupeKeySuppressesAmbiguousRetry(t *testing.T) {
+	ctx := context.Background()
+	st, err := OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	event := live.PublicEvent{DedupeKey: "ingest:activity", Type: "activity", At: time.Now().UnixMilli(), Data: map[string]any{"id": "safe"}}
+	first, err := st.InsertPublicEvent(ctx, event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := st.InsertPublicEvent(ctx, event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Seq != second.Seq {
+		t.Fatalf("event seq differs: %d != %d", first.Seq, second.Seq)
+	}
+	var count int
+	if err := st.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM public_events WHERE dedupe_key=?`, event.DedupeKey).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("deduped event count=%d want 1", count)
+	}
+}

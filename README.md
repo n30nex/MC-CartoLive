@@ -126,8 +126,10 @@ Important variables:
 | `MAP_BOUNDS` | Custom bounds as `minLat,minLng,maxLat,maxLng`. |
 | `PUBLIC_REGIONS` | Public-safe broker region allowlist. Empty allows safe labels. |
 | `DB_PATH` | SQLite path inside the container. |
-| `SQLITE_MAX_OPEN_CONNS` | SQLite connection ceiling. Defaults to `4` for read headroom without the old high-memory pool. |
-| `SQLITE_BUSY_TIMEOUT_MS` | SQLite lock wait before a query gives up. Production uses a bounded `5000` ms deadline. |
+| `SQLITE_READ_OPEN_CONNS` | Read-only SQLite pool size. Production uses `2`; the writer remains a single connection. Legacy `SQLITE_MAX_OPEN_CONNS` is accepted only as a fallback. |
+| `SQLITE_BUSY_TIMEOUT_MS` | Per-attempt SQLite lock wait. Production uses `750` ms inside the single five-second primary ingest deadline. |
+| `DERIVED_INGEST_QUEUE_SIZE` | Bounded lower-priority resolver/projection queue. Defaults to `1024`. |
+| `METRICS_LISTEN_ADDR` | Dedicated metrics listener. Defaults to `127.0.0.1:9090`; Docker publishes it only on host loopback port `39090`. |
 | `SQLITE_CACHE_SIZE_KB` | SQLite page cache budget in KiB. Defaults to `16000`. |
 | `SQLITE_MMAP_SIZE_BYTES` | SQLite mmap budget in bytes. Defaults to `67108864`. |
 | `DATA_RETENTION_DAYS` | Raw packets, observations, live edge events, public history/search rows, and propagation/weather history retention. Defaults to `7`; latest public route summaries are preserved separately. |

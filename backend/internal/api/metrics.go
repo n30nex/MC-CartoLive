@@ -2,26 +2,12 @@ package api
 
 import (
 	"fmt"
-	"net"
 	"net/http"
 	"runtime"
 	"time"
 )
 
-func requestFromLoopback(r *http.Request) bool {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
-}
-
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
-	if s.Config.PublicMode && !s.Config.MetricsPublic && !requestFromLoopback(r) {
-		http.NotFound(w, r)
-		return
-	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 
 	var m runtime.MemStats
@@ -70,6 +56,18 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "# HELP meshcore_mqtt_queue_depth Current normalized MQTT ingest queue depth\n")
 		fmt.Fprintf(w, "# TYPE meshcore_mqtt_queue_depth gauge\n")
 		fmt.Fprintf(w, "meshcore_mqtt_queue_depth %d\n\n", status.QueueDepth)
+		fmt.Fprintf(w, "# HELP meshcore_mqtt_queue_oldest_item_age_ms Age of the oldest accepted normalized message\n")
+		fmt.Fprintf(w, "# TYPE meshcore_mqtt_queue_oldest_item_age_ms gauge\n")
+		fmt.Fprintf(w, "meshcore_mqtt_queue_oldest_item_age_ms %d\n\n", status.OldestQueueItemAgeMs)
+		fmt.Fprintf(w, "# HELP meshcore_mqtt_messages_accepted_total Normalized messages accepted since process start\n")
+		fmt.Fprintf(w, "# TYPE meshcore_mqtt_messages_accepted_total counter\n")
+		fmt.Fprintf(w, "meshcore_mqtt_messages_accepted_total %d\n\n", status.AcceptedMessages)
+		fmt.Fprintf(w, "# HELP meshcore_mqtt_messages_processed_total Normalized messages processed since process start\n")
+		fmt.Fprintf(w, "# TYPE meshcore_mqtt_messages_processed_total counter\n")
+		fmt.Fprintf(w, "meshcore_mqtt_messages_processed_total %d\n\n", status.ProcessedMessages)
+		fmt.Fprintf(w, "# HELP meshcore_mqtt_messages_dropped_total Primary queue drops since process start\n")
+		fmt.Fprintf(w, "# TYPE meshcore_mqtt_messages_dropped_total counter\n")
+		fmt.Fprintf(w, "meshcore_mqtt_messages_dropped_total %d\n\n", status.DroppedMessages)
 	}
 
 	fmt.Fprintf(w, "# HELP meshcore_ws_clients Current WebSocket client count\n")
@@ -99,6 +97,25 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "# HELP meshcore_store_write_full_errors_total SQLite full-disk failures\n")
 		fmt.Fprintf(w, "# TYPE meshcore_store_write_full_errors_total counter\n")
 		fmt.Fprintf(w, "meshcore_store_write_full_errors_total %d\n\n", snap.StoreWriteFullErrors)
+		fmt.Fprintf(w, "# HELP meshcore_store_write_busy_errors_total SQLite busy failures since process start\n")
+		fmt.Fprintf(w, "# TYPE meshcore_store_write_busy_errors_total counter\n")
+		fmt.Fprintf(w, "meshcore_store_write_busy_errors_total %d\n\n", snap.StoreWriteBusyErrors)
+		fmt.Fprintf(w, "# HELP meshcore_store_write_last_latency_ms Last SQLite write latency\n")
+		fmt.Fprintf(w, "# TYPE meshcore_store_write_last_latency_ms gauge\n")
+		fmt.Fprintf(w, "meshcore_store_write_last_latency_ms %d\n\n", snap.StoreWriteLastLatencyMs)
+		fmt.Fprintf(w, "# HELP meshcore_ingest_duplicate_suppressions_total Idempotent primary duplicates suppressed since process start\n")
+		fmt.Fprintf(w, "# TYPE meshcore_ingest_duplicate_suppressions_total counter\n")
+		fmt.Fprintf(w, "meshcore_ingest_duplicate_suppressions_total %d\n\n", snap.IngestDuplicateSuppressions)
+		fmt.Fprintf(w, "# HELP meshcore_derived_queue_depth Lower-priority projection queue depth\n")
+		fmt.Fprintf(w, "# TYPE meshcore_derived_queue_depth gauge\n")
+		fmt.Fprintf(w, "meshcore_derived_queue_depth %d\n\n", snap.DerivedQueueDepth)
+		derivedOldestAge := currentQueueAgeMs(time.Now().UnixMilli(), snap.DerivedOldestAtMs)
+		fmt.Fprintf(w, "# HELP meshcore_derived_queue_oldest_item_age_ms Age of the oldest queued lower-priority projection\n")
+		fmt.Fprintf(w, "# TYPE meshcore_derived_queue_oldest_item_age_ms gauge\n")
+		fmt.Fprintf(w, "meshcore_derived_queue_oldest_item_age_ms %d\n\n", derivedOldestAge)
+		fmt.Fprintf(w, "# HELP meshcore_derived_dropped_total Lower-priority projection drops since process start\n")
+		fmt.Fprintf(w, "# TYPE meshcore_derived_dropped_total counter\n")
+		fmt.Fprintf(w, "meshcore_derived_dropped_total %d\n\n", snap.DerivedDropped)
 	}
 	if s.Store != nil {
 		storage := s.Store.StorageInfo()

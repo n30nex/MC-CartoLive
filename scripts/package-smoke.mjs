@@ -24,6 +24,7 @@ const scenarios = [
     name: 'synthetic',
     container: 'mc-cartolive-package-smoke-synthetic',
     port: Number(args['synthetic-port'] ?? process.env.PACKAGE_SMOKE_SYNTHETIC_PORT ?? 18082),
+    metricsPort: Number(args['synthetic-metrics-port'] ?? process.env.PACKAGE_SMOKE_SYNTHETIC_METRICS_PORT ?? 19082),
     preset: 'world',
     minPackets: 1,
     minNodes: 1,
@@ -40,6 +41,7 @@ const scenarios = [
     name: 'world',
     container: 'mc-cartolive-package-smoke-world',
     port: Number(args['world-port'] ?? process.env.PACKAGE_SMOKE_WORLD_PORT ?? 18083),
+    metricsPort: Number(args['world-metrics-port'] ?? process.env.PACKAGE_SMOKE_WORLD_METRICS_PORT ?? 19083),
     preset: 'world',
     minPackets: 1,
     minNodes: 1,
@@ -82,6 +84,7 @@ console.log(`package smoke ok: ${image}`);
 
 async function runScenario(scenario) {
   const baseUrl = `http://${formatHost(smokeHost)}:${scenario.port}`;
+  const metricsUrl = `http://${formatHost(smokeHost)}:${scenario.metricsPort}/metrics`;
   cleanup(scenario.container);
   const envArgs = [];
   for (const [key, value] of Object.entries(scenario.env)) {
@@ -93,7 +96,11 @@ async function runScenario(scenario) {
     '--name',
     scenario.container,
     '-p',
-    publishSpec(smokeHost, scenario.port),
+    publishSpec(smokeHost, scenario.port, 8080),
+    '-p',
+    publishSpec(smokeHost, scenario.metricsPort, 9090),
+    '-e',
+    'METRICS_LISTEN_ADDR=0.0.0.0:9090',
     ...envArgs,
     image
   ];
@@ -107,6 +114,11 @@ async function runScenario(scenario) {
     assert(String(health.version) === version, `${scenario.name}: version ${health.version} did not match ${version}`);
     assert(String(ready.version) === version, `${scenario.name}: ready version ${ready.version} did not match ${version}`);
     assert(String(ready.mapRegionPreset ?? health.mapRegionPreset) === scenario.preset, `${scenario.name}: mapRegionPreset mismatch`);
+    const mainMetrics = await getResponse(`${baseUrl}/metrics`);
+    assert(mainMetrics.statusCode === 404, `${scenario.name}: public application listener exposed /metrics with ${mainMetrics.statusCode}`);
+    const metrics = await getResponse(metricsUrl);
+    assert(metrics.statusCode === 200, `${scenario.name}: dedicated metrics listener returned ${metrics.statusCode}`);
+    assert(metrics.body.includes('meshcore_'), `${scenario.name}: dedicated listener did not return MeshCore metrics`);
 
     const state = await waitForPublicState(baseUrl, scenario, timeoutMs);
     assert(String(state.map?.regionPreset ?? '') === scenario.preset, `${scenario.name}: public state map preset mismatch`);
@@ -132,6 +144,7 @@ async function runScenario(scenario) {
     return {
       name: scenario.name,
       baseUrl,
+      metricsUrl,
       version: health.version,
       gitSha: health.gitSha,
       buildTime: health.buildTime,
@@ -198,25 +211,29 @@ async function waitForReady(baseUrl, timeout) {
 }
 
 async function getJSON(url) {
+  const response = await getResponse(url, { accept: 'application/json' });
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new Error(`${url} returned ${response.statusCode}`);
+  }
+  try {
+    return JSON.parse(response.body);
+  } catch (error) {
+    throw new Error(`${url} returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function getResponse(url, headers = {}) {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
     const client = parsed.protocol === 'https:' ? https : http;
-    const request = client.request(parsed, { headers: { accept: 'application/json' }, timeout: 10_000 }, (response) => {
+    const request = client.request(parsed, { headers, timeout: 10_000 }, (response) => {
       let body = '';
       response.setEncoding('utf8');
       response.on('data', (chunk) => {
         body += chunk;
       });
       response.on('end', () => {
-        if ((response.statusCode ?? 0) < 200 || (response.statusCode ?? 0) >= 300) {
-          reject(new Error(`${url} returned ${response.statusCode}`));
-          return;
-        }
-        try {
-          resolve(JSON.parse(body));
-        } catch (error) {
-          reject(new Error(`${url} returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`));
-        }
+        resolve({ statusCode: response.statusCode ?? 0, headers: response.headers, body });
       });
     });
     request.on('timeout', () => {
@@ -264,11 +281,11 @@ function formatHost(host) {
   return `[${trimmed}]`;
 }
 
-function publishSpec(host, port) {
+function publishSpec(host, port, containerPort) {
   const trimmed = host.trim();
-  if (!trimmed || trimmed === 'localhost') return `${port}:8080`;
-  if (trimmed.startsWith('[') || !trimmed.includes(':')) return `${trimmed}:${port}:8080`;
-  return `[${trimmed}]:${port}:8080`;
+  if (!trimmed || trimmed === 'localhost') return `${port}:${containerPort}`;
+  if (trimmed.startsWith('[') || !trimmed.includes(':')) return `${trimmed}:${port}:${containerPort}`;
+  return `[${trimmed}]:${port}:${containerPort}`;
 }
 
 async function readVersion() {

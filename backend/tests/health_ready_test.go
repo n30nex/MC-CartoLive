@@ -203,9 +203,12 @@ func TestReadyzFailsUntilPublicCacheReady(t *testing.T) {
 	if ready.Code != http.StatusOK {
 		t.Fatalf("readyz after cache = %d body=%s", ready.Code, ready.Body.String())
 	}
+	if strings.Contains(ready.Body.String(), "memAllocBytes") || strings.Contains(ready.Body.String(), "publicHistoryRequests") {
+		t.Fatalf("readyz leaked detailed diagnostics: %s", ready.Body.String())
+	}
 }
 
-func TestReadyzUsesCurrentStoragePressureNotHistoricalFullCounter(t *testing.T) {
+func TestReadyzFailsClosedOnProcessWriteFailureCounter(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.OpenMemory(ctx)
 	if err != nil {
@@ -227,7 +230,108 @@ func TestReadyzUsesCurrentStoragePressureNotHistoricalFullCounter(t *testing.T) 
 	}
 	response := httptest.NewRecorder()
 	server.Routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestReadyzDuplicateCounterIsBenignAndCacheFailureCanRecover(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	cache := live.NewPublicStateCache(live.NewPublicIATAFilter(nil))
+	cache.Replace(live.PublicLiveState{ServerTime: time.Now().UnixMilli()}, nil)
+	runtimeStats := live.NewRuntimeStats()
+	runtimeStats.RecordIngestDuplicate()
+	runtimeStats.RecordCacheRefresh(time.Millisecond, true)
+	runtimeStats.RecordCacheRefresh(time.Millisecond, false)
+	server := api.Server{
+		Config: api.Config{PublicMode: true}, Store: st,
+		PublicHub: live.NewHub(slog.New(slog.NewTextHandler(io.Discard, nil)), 4), Runtime: runtimeStats,
+		PublicState: cache.Snapshot, PublicCacheStatus: cache.Status, StaticAssetsReady: func() bool { return true },
+	}
+	response := httptest.NewRecorder()
+	server.Routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	if response.Code != http.StatusOK {
 		t.Fatalf("readyz status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestReadyzFailsOnCurrentPrimaryQueuePressure(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	cache := live.NewPublicStateCache(live.NewPublicIATAFilter(nil))
+	cache.Replace(live.PublicLiveState{ServerTime: time.Now().UnixMilli()}, nil)
+	for _, tc := range []struct {
+		name   string
+		status imqtt.Status
+	}{
+		{"occupancy", imqtt.Status{Enabled: true, Connected: true, SessionReady: true, QueueDepth: 75, QueueCapacity: 100}},
+		{"oldest", imqtt.Status{Enabled: true, Connected: true, SessionReady: true, QueueDepth: 1, QueueCapacity: 100, OldestQueueItemAgeMs: 2001}},
+		{"drops", imqtt.Status{Enabled: true, Connected: true, SessionReady: true, QueueCapacity: 100, DroppedMessages: 1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := api.Server{
+				Config: api.Config{PublicMode: true}, Store: st,
+				PublicHub: live.NewHub(slog.New(slog.NewTextHandler(io.Discard, nil)), 4), Runtime: live.NewRuntimeStats(),
+				PublicState: cache.Snapshot, PublicCacheStatus: cache.Status, StaticAssetsReady: func() bool { return true },
+				MQTTStatus: func(time.Time) imqtt.Status { return tc.status },
+			}
+			response := httptest.NewRecorder()
+			server.Routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+			if response.Code != http.StatusServiceUnavailable {
+				t.Fatalf("readyz status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestReadyzFailsOnStaleReconcileAndDerivedQueueErrors(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	cache := live.NewPublicStateCache(live.NewPublicIATAFilter(nil))
+	cache.Replace(live.PublicLiveState{ServerTime: time.Now().UnixMilli()}, nil)
+	for _, tc := range []struct {
+		name    string
+		runtime *live.RuntimeStats
+		status  func(time.Time) live.PublicCacheStatus
+	}{
+		{"stale reconcile", live.NewRuntimeStats(), func(time.Time) live.PublicCacheStatus {
+			return live.PublicCacheStatus{Ready: true, FullReconcileAgeMs: 30_001}
+		}},
+		{"derived drop", func() *live.RuntimeStats {
+			r := live.NewRuntimeStats()
+			r.RecordDerivedDrop(1, 10, time.Now().UnixMilli())
+			return r
+		}(), cache.Status},
+		{"derived oldest", func() *live.RuntimeStats {
+			r := live.NewRuntimeStats()
+			r.RecordDerivedEnqueue(1, 10, time.Now().Add(-3*time.Second).UnixMilli())
+			return r
+		}(), cache.Status},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := api.Server{
+				Config: api.Config{PublicMode: true}, Store: st,
+				PublicHub: live.NewHub(slog.New(slog.NewTextHandler(io.Discard, nil)), 4), Runtime: tc.runtime,
+				PublicState: cache.Snapshot, PublicCacheStatus: tc.status, StaticAssetsReady: func() bool { return true },
+			}
+			response := httptest.NewRecorder()
+			server.Routes().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+			if response.Code != http.StatusServiceUnavailable {
+				t.Fatalf("readyz status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
 	}
 }

@@ -193,6 +193,48 @@ func TestPublicOpenAPISchemaInventoriesEveryPublicRoute(t *testing.T) {
 	}
 }
 
+func TestPublicViewportLowZoomReturnsAggregatesWithoutDetail(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	state := live.PublicLiveState{
+		Nodes: []live.PublicNode{
+			{ID: "a", Latitude: 43.6, Longitude: -79.3, RegionsHeardIn: []string{"YYZ"}},
+			{ID: "b", Latitude: 45.4, Longitude: -75.7, RegionsHeardIn: []string{"YOW"}},
+		},
+		Routes: []live.PublicRoute{{ID: "route-a-b", From: live.PublicRouteEndpoint{NodeID: "a", Lat: 43.6, Lng: -79.3}, To: live.PublicRouteEndpoint{NodeID: "b", Lat: 45.4, Lng: -75.7}}},
+	}
+	server := newPublic320TestServer(st, state)
+	low := httptest.NewRecorder()
+	server.Routes().ServeHTTP(low, httptest.NewRequest(http.MethodGet, "/api/v1/public/viewport?bbox=-141,41,-52,84&zoom=5&include=nodes,routes", nil))
+	if low.Code != http.StatusOK {
+		t.Fatalf("low zoom status=%d body=%s", low.Code, low.Body.String())
+	}
+	var lowBody live.PublicViewportResponse
+	if err := json.Unmarshal(low.Body.Bytes(), &lowBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(lowBody.Nodes) != 0 || len(lowBody.Routes) != 0 || len(lowBody.Clusters) != 2 || !publicViewportHasInclude(lowBody.Includes, "clusters") {
+		t.Fatalf("low zoom leaked detail: %#v", lowBody)
+	}
+
+	high := httptest.NewRecorder()
+	server.Routes().ServeHTTP(high, httptest.NewRequest(http.MethodGet, "/api/v1/public/viewport?bbox=-141,41,-52,84&zoom=8", nil))
+	if high.Code != http.StatusOK {
+		t.Fatalf("detail zoom status=%d body=%s", high.Code, high.Body.String())
+	}
+	var highBody live.PublicViewportResponse
+	if err := json.Unmarshal(high.Body.Bytes(), &highBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(highBody.Nodes) != 2 || len(highBody.Routes) != 1 || len(highBody.Clusters) != 0 {
+		t.Fatalf("detail zoom response=%#v", highBody)
+	}
+}
+
 func newPublic320TestServer(st *store.Store, state live.PublicLiveState) *Server {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cache := live.NewPublicStateCache(live.NewPublicIATAFilter(nil))

@@ -11,7 +11,7 @@ func TestPublicMetricsAreLoopbackOnlyByDefault(t *testing.T) {
 	publicRequest := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	publicRequest.RemoteAddr = "203.0.113.20:40000"
 	publicResponse := httptest.NewRecorder()
-	server.metrics(publicResponse, publicRequest)
+	server.Routes().ServeHTTP(publicResponse, publicRequest)
 	if publicResponse.Code != http.StatusNotFound {
 		t.Fatalf("public metrics status=%d want 404", publicResponse.Code)
 	}
@@ -19,18 +19,23 @@ func TestPublicMetricsAreLoopbackOnlyByDefault(t *testing.T) {
 	loopbackRequest := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	loopbackRequest.RemoteAddr = "127.0.0.1:40000"
 	loopbackResponse := httptest.NewRecorder()
-	server.metrics(loopbackResponse, loopbackRequest)
-	if loopbackResponse.Code != http.StatusOK {
-		t.Fatalf("loopback metrics status=%d want 200", loopbackResponse.Code)
+	server.Routes().ServeHTTP(loopbackResponse, loopbackRequest)
+	if loopbackResponse.Code != http.StatusNotFound {
+		t.Fatalf("main-listener loopback metrics status=%d want 404", loopbackResponse.Code)
+	}
+	dedicatedResponse := httptest.NewRecorder()
+	server.MetricsRoutes().ServeHTTP(dedicatedResponse, loopbackRequest)
+	if dedicatedResponse.Code != http.StatusOK {
+		t.Fatalf("dedicated loopback metrics status=%d want 200", dedicatedResponse.Code)
 	}
 }
-func TestMetricsPublicRequiresExplicitOptIn(t *testing.T) {
-	server := &Server{Config: Config{PublicMode: true, MetricsPublic: true}}
+func TestDedicatedMetricsUsesListenerBoundary(t *testing.T) {
+	server := &Server{Config: Config{PublicMode: true}}
 	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	request.RemoteAddr = "203.0.113.20:40000"
 	response := httptest.NewRecorder()
 	server.metrics(response, request)
 	if response.Code != http.StatusOK {
-		t.Fatalf("opted-in public metrics status=%d want 200", response.Code)
+		t.Fatalf("dedicated metrics status=%d want 200", response.Code)
 	}
 }

@@ -15,6 +15,11 @@ import (
 
 type Handler func(context.Context, NormalizedMessage)
 
+type queuedMessage struct {
+	message    NormalizedMessage
+	enqueuedAt int64
+}
+
 type ClientConfig struct {
 	Enabled   bool
 	BrokerURL string
@@ -28,10 +33,14 @@ type Client struct {
 	cfg                   ClientConfig
 	log                   *slog.Logger
 	handler               Handler
-	queue                 chan NormalizedMessage
+	queue                 chan queuedMessage
+	queueAgeMu            sync.Mutex
+	queueTimes            []int64
 	connected             atomic.Bool
 	subscribed            atomic.Bool
 	total                 atomic.Int64
+	accepted              atomic.Int64
+	processed             atomic.Int64
 	dropped               atomic.Int64
 	reconnects            atomic.Int64
 	malformed             atomic.Int64
@@ -56,7 +65,7 @@ func NewClient(cfg ClientConfig, log *slog.Logger, handler Handler) *Client {
 		cfg:           cfg,
 		log:           log,
 		handler:       handler,
-		queue:         make(chan NormalizedMessage, cfg.QueueSize),
+		queue:         make(chan queuedMessage, cfg.QueueSize),
 		newPahoClient: paho.NewClient,
 	}
 }
@@ -253,9 +262,16 @@ func (c *Client) onMessage() paho.MessageHandler {
 		normalized.IngestID = uuid.NewString()
 		c.total.Add(1)
 		c.lastMessageAt.Store(normalized.HeardAtMs)
+		now := time.Now().UnixMilli()
+		queued := queuedMessage{message: normalized, enqueuedAt: now}
+		c.queueAgeMu.Lock()
 		select {
-		case c.queue <- normalized:
+		case c.queue <- queued:
+			c.queueTimes = append(c.queueTimes, now)
+			c.accepted.Add(1)
+			c.queueAgeMu.Unlock()
 		default:
+			c.queueAgeMu.Unlock()
 			dropped := c.dropped.Add(1)
 			if dropped == 1 || dropped%100 == 0 {
 				c.log.Warn("mqtt ingest queue full; dropping normalized message", "dropped", dropped, "queueSize", c.cfg.QueueSize)
@@ -269,15 +285,19 @@ func (c *Client) dispatch(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case msg := <-c.queue:
+		case queued := <-c.queue:
+			c.queueAgeMu.Lock()
+			c.popQueueTimestampLocked()
+			c.queueAgeMu.Unlock()
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
 						c.log.Error("mqtt dispatch panic", "panic", r)
 					}
 				}()
-				c.handler(ctx, msg)
+				c.handler(ctx, queued.message)
 			}()
+			c.processed.Add(1)
 		}
 	}
 }
@@ -304,6 +324,8 @@ type Status struct {
 	Subscribed           bool  `json:"subscribed"`
 	SessionReady         bool  `json:"sessionReady"`
 	TotalMessages        int64 `json:"totalMessages"`
+	AcceptedMessages     int64 `json:"acceptedMessages"`
+	ProcessedMessages    int64 `json:"processedMessages"`
 	DroppedMessages      int64 `json:"droppedMessages"`
 	Reconnects           int64 `json:"reconnects"`
 	MalformedTopics      int64 `json:"malformedTopics"`
@@ -316,6 +338,7 @@ type Status struct {
 	LastConnectionLostAt int64 `json:"lastConnectionLostAt"`
 	QueueDepth           int   `json:"queueDepth"`
 	QueueCapacity        int   `json:"queueCapacity"`
+	OldestQueueItemAgeMs int64 `json:"oldestQueueItemAgeMs"`
 }
 
 func (c *Client) Status(now time.Time) Status {
@@ -333,12 +356,24 @@ func (c *Client) Status(now time.Time) Status {
 			age = 0
 		}
 	}
+	c.queueAgeMu.Lock()
+	oldestQueueAt := c.queueOldestLocked()
+	c.queueAgeMu.Unlock()
+	oldestQueueAge := int64(0)
+	if oldestQueueAt > 0 {
+		oldestQueueAge = now.UnixMilli() - oldestQueueAt
+		if oldestQueueAge < 0 {
+			oldestQueueAge = 0
+		}
+	}
 	return Status{
 		Enabled:              c.cfg.Enabled,
 		Connected:            c.Connected(),
 		Subscribed:           c.subscribed.Load(),
 		SessionReady:         c.SessionReady(),
 		TotalMessages:        c.TotalMessages(),
+		AcceptedMessages:     c.accepted.Load(),
+		ProcessedMessages:    c.processed.Load(),
 		DroppedMessages:      c.DroppedMessages(),
 		Reconnects:           c.reconnects.Load(),
 		MalformedTopics:      c.malformed.Load(),
@@ -351,6 +386,20 @@ func (c *Client) Status(now time.Time) Status {
 		LastConnectionLostAt: c.lastConnectionLostAt.Load(),
 		QueueDepth:           len(c.queue),
 		QueueCapacity:        cap(c.queue),
+		OldestQueueItemAgeMs: oldestQueueAge,
+	}
+}
+
+func (c *Client) queueOldestLocked() int64 {
+	if len(c.queueTimes) == 0 {
+		return 0
+	}
+	return c.queueTimes[0]
+}
+
+func (c *Client) popQueueTimestampLocked() {
+	if len(c.queueTimes) > 0 {
+		c.queueTimes = c.queueTimes[1:]
 	}
 }
 

@@ -280,6 +280,7 @@ type PublicHistoryResponse struct {
 }
 
 type PublicEvent struct {
+	DedupeKey       string   `json:"-"`
 	Seq             int64    `json:"seq"`
 	Type            string   `json:"type"`
 	At              int64    `json:"at"`

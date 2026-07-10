@@ -26,6 +26,7 @@ type Store struct {
 	readDB           *sql.DB
 	path             string
 	coordinatePolicy live.CoordinatePolicy
+	migrationHook    func(string) error
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {
@@ -58,7 +59,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	readConns := sqliteEnvInt("SQLITE_READ_OPEN_CONNS", 2)
+	readConns := sqliteEnvInt("SQLITE_READ_OPEN_CONNS", sqliteEnvInt("SQLITE_MAX_OPEN_CONNS", 2))
 	readDB.SetMaxOpenConns(readConns)
 	readDB.SetMaxIdleConns(readConns)
 	if err := readDB.PingContext(ctx); err != nil {
@@ -98,40 +99,50 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if current > SchemaVersion {
 		return fmt.Errorf("sqlite schema version %d is newer than supported version %d", current, SchemaVersion)
 	}
-	if err := s.ensureBaseTables(ctx); err != nil {
-		return err
-	}
-	if err := s.migrateColumns(ctx); err != nil {
-		return err
-	}
-	if _, err := s.db.ExecContext(ctx, schemaSQL); err != nil {
-		return fmt.Errorf("migrate sqlite: %w", err)
-	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("record sqlite schema version: %w", err)
+		return fmt.Errorf("begin sqlite migration: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	if err := s.ensureBaseTables(ctx, tx); err != nil {
+		return err
+	}
+	if err := s.migrateColumns(ctx, tx); err != nil {
+		return err
+	}
+	if s.migrationHook != nil {
+		if err := s.migrationHook("after_columns"); err != nil {
+			return fmt.Errorf("sqlite migration hook after_columns: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, schemaSQL); err != nil {
+		return fmt.Errorf("migrate sqlite: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)`, SchemaVersion, time.Now().UnixMilli()); err != nil {
-		_ = tx.Rollback()
 		return fmt.Errorf("record sqlite schema migration: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version=%d`, SchemaVersion)); err != nil {
-		_ = tx.Rollback()
 		return fmt.Errorf("set sqlite schema version: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit sqlite schema version: %w", err)
 	}
+	committed = true
 	return nil
 }
 
-func (s *Store) ensureBaseTables(ctx context.Context) error {
+func (s *Store) ensureBaseTables(ctx context.Context, tx *sql.Tx) error {
 	for _, stmt := range sqliteStatements(schemaSQL) {
 		normalized := strings.ToUpper(strings.TrimSpace(stmt))
 		if !strings.HasPrefix(normalized, "CREATE TABLE IF NOT EXISTS ") && !strings.HasPrefix(normalized, "PRAGMA ") {
 			continue
 		}
-		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("migrate sqlite base tables: %w", err)
 		}
 	}
@@ -144,16 +155,18 @@ type columnMigration struct {
 	alterSQL string
 }
 
-func (s *Store) migrateColumns(ctx context.Context) error {
+func (s *Store) migrateColumns(ctx context.Context, tx *sql.Tx) error {
 	migrations := []columnMigration{
 		{table: "nodes", column: "supports_multibyte", alterSQL: `ALTER TABLE nodes ADD COLUMN supports_multibyte TEXT NOT NULL DEFAULT 'unknown'`},
 		{table: "packet_observations", column: "ingest_id", alterSQL: `ALTER TABLE packet_observations ADD COLUMN ingest_id TEXT NOT NULL DEFAULT ''`},
 		{table: "packet_observations", column: "message_sender", alterSQL: `ALTER TABLE packet_observations ADD COLUMN message_sender TEXT NOT NULL DEFAULT ''`},
 		{table: "packet_observations", column: "message_text", alterSQL: `ALTER TABLE packet_observations ADD COLUMN message_text TEXT NOT NULL DEFAULT ''`},
 		{table: "live_edge_events", column: "message_sender", alterSQL: `ALTER TABLE live_edge_events ADD COLUMN message_sender TEXT NOT NULL DEFAULT ''`},
+		{table: "live_edge_events", column: "ingest_id", alterSQL: `ALTER TABLE live_edge_events ADD COLUMN ingest_id TEXT NOT NULL DEFAULT ''`},
 		{table: "live_edge_events", column: "message_text", alterSQL: `ALTER TABLE live_edge_events ADD COLUMN message_text TEXT NOT NULL DEFAULT ''`},
 		{table: "live_edge_events", column: "message_anchor_json", alterSQL: `ALTER TABLE live_edge_events ADD COLUMN message_anchor_json TEXT NOT NULL DEFAULT ''`},
 		{table: "public_packet_paths", column: "mappable", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN mappable INTEGER NOT NULL DEFAULT 1`},
+		{table: "public_events", column: "dedupe_key", alterSQL: `ALTER TABLE public_events ADD COLUMN dedupe_key TEXT NOT NULL DEFAULT ''`},
 		{table: "public_packet_paths", column: "region", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN region TEXT NOT NULL DEFAULT ''`},
 		{table: "public_packet_paths", column: "payload_type_name", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN payload_type_name TEXT NOT NULL DEFAULT ''`},
 		{table: "public_packet_paths", column: "message_sender", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN message_sender TEXT NOT NULL DEFAULT ''`},
@@ -167,19 +180,19 @@ func (s *Store) migrateColumns(ctx context.Context) error {
 		{table: "public_packet_paths", column: "search_text", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN search_text TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, migration := range migrations {
-		if err := s.addColumnIfMissing(ctx, migration); err != nil {
+		if err := s.addColumnIfMissing(ctx, tx, migration); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *Store) addColumnIfMissing(ctx context.Context, migration columnMigration) error {
+func (s *Store) addColumnIfMissing(ctx context.Context, tx *sql.Tx, migration columnMigration) error {
 	tableIdent, err := sqliteIdent(migration.table)
 	if err != nil {
 		return err
 	}
-	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+tableIdent+`)`)
+	rows, err := tx.QueryContext(ctx, `PRAGMA table_info(`+tableIdent+`)`)
 	if err != nil {
 		return fmt.Errorf("inspect sqlite table %s: %w", migration.table, err)
 	}
@@ -201,7 +214,7 @@ func (s *Store) addColumnIfMissing(ctx context.Context, migration columnMigratio
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("inspect sqlite table %s: %w", migration.table, err)
 	}
-	if _, err := s.db.ExecContext(ctx, migration.alterSQL); err != nil {
+	if _, err := tx.ExecContext(ctx, migration.alterSQL); err != nil {
 		return fmt.Errorf("migrate sqlite column %s.%s: %w", migration.table, migration.column, err)
 	}
 	return nil

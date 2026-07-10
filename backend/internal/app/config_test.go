@@ -141,6 +141,19 @@ func TestLoadConfigDefaultsToSevenDayDataRetention(t *testing.T) {
 	}
 }
 
+func TestLoadConfigDefaultsDedicatedMetricsAndDerivedQueue(t *testing.T) {
+	t.Setenv("MQTT_ENABLED", "false")
+	t.Setenv("METRICS_LISTEN_ADDR", "")
+	t.Setenv("DERIVED_INGEST_QUEUE_SIZE", "")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MetricsListenAddr != "127.0.0.1:9090" || cfg.DerivedIngestQueueSize != 1024 {
+		t.Fatalf("metrics/derived defaults = %q/%d", cfg.MetricsListenAddr, cfg.DerivedIngestQueueSize)
+	}
+}
+
 func TestLoadConfigRejectsUnboundedPublicRetentionByDefault(t *testing.T) {
 	t.Setenv("MQTT_ENABLED", "false")
 	t.Setenv("PUBLIC_MODE", "true")

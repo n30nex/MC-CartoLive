@@ -1,5 +1,6 @@
 param(
   [string]$BaseUrl = "https://carto.canadaverse.org",
+  [string]$MetricsUrl = $env:METRICS_URL,
   [string]$SshTarget = $env:LIVE_SMOKE_SSH_TARGET,
   [string]$KeyPath = $env:LIVE_SMOKE_KEY_PATH,
   [string]$RepoPath = "/opt/MC-CartoLive",
@@ -13,6 +14,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $BaseUrl = $BaseUrl.TrimEnd("/")
+if ([string]::IsNullOrWhiteSpace($MetricsUrl)) {
+  $MetricsUrl = "http://127.0.0.1:39090/metrics"
+}
 $root = Split-Path -Parent $PSScriptRoot
 
 function Write-Pass {
@@ -182,6 +186,20 @@ try {
   Assert-Smoke ([bool]$ready.ready) "/readyz did not report ready=true"
   Write-Pass "/readyz ready"
 
+  try {
+    Invoke-WebRequest -UseBasicParsing "$BaseUrl/metrics" -ErrorAction Stop | Out-Null
+    throw "public application listener unexpectedly exposed /metrics"
+  }
+  catch {
+    $statusCode = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
+    if ($statusCode -ne 404) {
+      throw
+    }
+  }
+  $metrics = Invoke-WebRequest -UseBasicParsing $MetricsUrl
+  Assert-Smoke ($metrics.Content -match "meshcore_") "dedicated metrics listener did not return MeshCore metrics"
+  Write-Pass "dedicated metrics listener available at $MetricsUrl; public /metrics is hidden"
+
   $state = Invoke-RestMethod "$BaseUrl/api/v1/public/state"
   Assert-Smoke ($state.stats.packets -gt 0) "public state packet count was not greater than zero"
   Assert-Smoke ($state.stats.activeNodes -gt 0) "public state active node count was not greater than zero"
@@ -240,6 +258,7 @@ try {
     packetPaths = $packets.window.count
     chatMessages = $chat.window.count
     websocketType = $hello.type
+    metricsUrl = $MetricsUrl
     remoteTarget = $SshTarget
     diagnoseRegion = $DiagnoseRegion
   }

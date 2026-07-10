@@ -16,6 +16,7 @@ import (
 )
 
 const publicEventsMaxLimit = 1000
+const publicViewportDetailZoom = 7.08
 
 func (s *Server) publicEvents(w http.ResponseWriter, r *http.Request) {
 	if !s.Config.PublicEventsEnabled {
@@ -127,30 +128,42 @@ func (s *Server) publicViewport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	zoom := queryFloat(r, "zoom", 0)
-	nodes := make([]live.PublicNode, 0, len(state.Nodes))
+	includes := publicViewportIncludesForZoom(r.URL.Query().Get("include"), zoom)
+	wantNodes := publicViewportHasInclude(includes, "nodes")
+	wantRoutes := publicViewportHasInclude(includes, "routes")
+	wantEvents := publicViewportHasInclude(includes, "events")
+	wantClusters := publicViewportHasInclude(includes, "clusters")
+	matchingNodes := make([]live.PublicNode, 0, len(state.Nodes))
 	nodeIDs := map[string]struct{}{}
 	for _, node := range state.Nodes {
 		if pointInBBox(node.Longitude, node.Latitude, bbox) {
-			nodes = append(nodes, node)
+			matchingNodes = append(matchingNodes, node)
 			nodeIDs[node.ID] = struct{}{}
 		}
 	}
-	routes := make([]live.PublicRoute, 0, len(state.Routes))
-	for _, route := range state.Routes {
-		if _, ok := nodeIDs[route.From.NodeID]; ok {
-			routes = append(routes, route)
-			continue
-		}
-		if _, ok := nodeIDs[route.To.NodeID]; ok {
-			routes = append(routes, route)
-			continue
-		}
-		if pointInBBox(route.From.Lng, route.From.Lat, bbox) || pointInBBox(route.To.Lng, route.To.Lat, bbox) {
-			routes = append(routes, route)
+	nodes := []live.PublicNode{}
+	if wantNodes {
+		nodes = matchingNodes
+	}
+	routes := []live.PublicRoute{}
+	if wantRoutes {
+		routes = make([]live.PublicRoute, 0, len(state.Routes))
+		for _, route := range state.Routes {
+			if _, ok := nodeIDs[route.From.NodeID]; ok {
+				routes = append(routes, route)
+				continue
+			}
+			if _, ok := nodeIDs[route.To.NodeID]; ok {
+				routes = append(routes, route)
+				continue
+			}
+			if pointInBBox(route.From.Lng, route.From.Lat, bbox) || pointInBBox(route.To.Lng, route.To.Lat, bbox) {
+				routes = append(routes, route)
+			}
 		}
 	}
 	events := []live.PublicEvent{}
-	if since := queryInt64(r, "sinceSeq", 0); since > 0 && s.Config.PublicEventsEnabled {
+	if since := queryInt64(r, "sinceSeq", 0); wantEvents && since > 0 && s.Config.PublicEventsEnabled {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 		now := time.Now().UnixMilli()
@@ -168,16 +181,20 @@ func (s *Server) publicViewport(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	var clusters []live.PublicMapCluster
+	if wantClusters {
+		clusters = publicMapClusters(matchingNodes)
+	}
 	writeJSON(w, http.StatusOK, live.PublicViewportResponse{
 		ServerTime: time.Now().UnixMilli(),
 		LatestSeq:  s.PublicHub.LatestSeq(),
 		Nodes:      nodes,
 		Routes:     routes,
-		Clusters:   publicMapClusters(nodes),
+		Clusters:   clusters,
 		Events:     events,
 		BBox:       bbox,
 		Zoom:       zoom,
-		Includes:   publicViewportIncludes(r.URL.Query().Get("include")),
+		Includes:   includes,
 	})
 }
 
@@ -486,6 +503,46 @@ func publicViewportIncludes(raw string) []string {
 		}
 	}
 	return out
+}
+
+func publicViewportIncludesForZoom(raw string, zoom float64) []string {
+	requested := publicViewportIncludes(raw)
+	if zoom < publicViewportDetailZoom {
+		out := []string{"clusters"}
+		if publicViewportHasInclude(requested, "events") && strings.TrimSpace(raw) != "" {
+			out = append(out, "events")
+		}
+		return out
+	}
+	if strings.TrimSpace(raw) == "" {
+		return requested
+	}
+	out := []string{}
+	for _, item := range requested {
+		item = strings.ToLower(strings.TrimSpace(item))
+		switch item {
+		case "detail":
+			for _, detail := range []string{"nodes", "routes"} {
+				if !publicViewportHasInclude(out, detail) {
+					out = append(out, detail)
+				}
+			}
+		case "nodes", "routes", "events", "clusters":
+			if !publicViewportHasInclude(out, item) {
+				out = append(out, item)
+			}
+		}
+	}
+	return out
+}
+
+func publicViewportHasInclude(items []string, wanted string) bool {
+	for _, item := range items {
+		if strings.EqualFold(strings.TrimSpace(item), wanted) {
+			return true
+		}
+	}
+	return false
 }
 
 func publicNOCObservers(nodes []live.PublicNode, now int64) ([]live.PublicNOCObserver, map[string]int) {

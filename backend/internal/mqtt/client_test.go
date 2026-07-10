@@ -1,6 +1,7 @@
 package mqtt
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"sync"
@@ -57,13 +58,55 @@ func TestOnMessageAssignsIngestIDBeforeQueue(t *testing.T) {
 	client := NewClient(ClientConfig{QueueSize: 2}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 	client.onMessage()(nil, fakeMessage{topic: "meshcore/YYZ/ABCDEF012345/packets", payload: []byte(`{"raw":"0102"}`)})
 	select {
-	case msg := <-client.queue:
-		if msg.IngestID == "" {
+	case queued := <-client.queue:
+		if queued.message.IngestID == "" {
 			t.Fatal("queued normalized message has empty ingest ID")
 		}
 	default:
 		t.Fatal("normalized message was not queued")
 	}
+}
+
+func TestQueueStatusTracksAcceptedProcessedAndOldest(t *testing.T) {
+	processed := make(chan struct{}, 1)
+	client := NewClient(ClientConfig{QueueSize: 2}, slog.New(slog.NewTextHandler(io.Discard, nil)), func(context.Context, NormalizedMessage) {
+		processed <- struct{}{}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go client.dispatch(ctx)
+	client.onMessage()(nil, fakeMessage{topic: "meshcore/YYZ/ABCDEF012345/packets", payload: []byte(`{"raw":"0102"}`)})
+	select {
+	case <-processed:
+	case <-time.After(time.Second):
+		t.Fatal("message was not processed")
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		status := client.Status(time.Now())
+		if status.ProcessedMessages == 1 {
+			if status.AcceptedMessages != 1 || status.DroppedMessages != 0 || status.QueueDepth != 0 || status.OldestQueueItemAgeMs != 0 {
+				t.Fatalf("queue status=%#v", status)
+			}
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("processed counter did not advance")
+}
+
+func TestQueueOldestTracksCurrentFIFOHead(t *testing.T) {
+	client := NewClient(ClientConfig{QueueSize: 4}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	client.queueAgeMu.Lock()
+	client.queueTimes = append(client.queueTimes, 100, 200)
+	if got := client.queueOldestLocked(); got != 100 {
+		t.Fatalf("oldest=%d want 100", got)
+	}
+	client.popQueueTimestampLocked()
+	if got := client.queueOldestLocked(); got != 200 {
+		t.Fatalf("oldest after pop=%d want 200", got)
+	}
+	client.queueAgeMu.Unlock()
 }
 
 type fakeMessage struct {

@@ -13,6 +13,7 @@ import (
 
 type Config struct {
 	ListenAddr                      string
+	MetricsListenAddr               string
 	AppVersion                      string
 	GitSHA                          string
 	BuildTime                       string
@@ -46,6 +47,7 @@ type Config struct {
 	RecentEdgeEventLimit            int
 	WSClientQueueSize               int
 	MQTTIngestQueueSize             int
+	DerivedIngestQueueSize          int
 	PublicIATAs                     []string
 	PublicRegions                   []string
 	PublicCacheRefreshSec           int
@@ -90,6 +92,7 @@ func LoadConfig() (Config, error) {
 	publicRegions := configuredPublicRegions(mapPreset)
 	cfg := Config{
 		ListenAddr:                      envString("LISTEN_ADDR", ":8080"),
+		MetricsListenAddr:               envString("METRICS_LISTEN_ADDR", "127.0.0.1:9090"),
 		AppVersion:                      BuildVersion,
 		GitSHA:                          BuildGitSHA,
 		BuildTime:                       BuildTime,
@@ -123,6 +126,7 @@ func LoadConfig() (Config, error) {
 		RecentEdgeEventLimit:            envInt("RECENT_EDGE_EVENT_LIMIT", 2000),
 		WSClientQueueSize:               envInt("WS_CLIENT_QUEUE_SIZE", 512),
 		MQTTIngestQueueSize:             envInt("MQTT_INGEST_QUEUE_SIZE", 4096),
+		DerivedIngestQueueSize:          envInt("DERIVED_INGEST_QUEUE_SIZE", 1024),
 		PublicIATAs:                     publicRegions,
 		PublicRegions:                   append([]string{}, publicRegions...),
 		PublicCacheRefreshSec:           envInt("PUBLIC_CACHE_REFRESH_SECONDS", 10),
