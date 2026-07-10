@@ -88,6 +88,7 @@ export type MapAction =
   | { type: 'latest-route'; token: number }
   | { type: 'route'; token: number; routeID: string }
   | { type: 'node'; token: number; nodeID: string }
+  | { type: 'region'; token: number; label: string; latitude: number; longitude: number }
   | { type: 'packet'; token: number; segments: PublicRoutePulse['segments'] }
   | { type: 'packet-replay'; token: number; segments: PublicRoutePulse['segments']; pulse: PublicRoutePulse; settleMs: number; travelDurationMs: number; forceCanvas?: boolean }
   | null;
@@ -2270,6 +2271,15 @@ function CanadaMap({
     if (mapAction.type === 'node') {
       const node = nodesRef.current.find((item) => item.id === mapAction.nodeID);
       if (node) map.easeTo({ center: [node.longitude, node.latitude], zoom: Math.max(map.getZoom(), 8), duration: 700 });
+    }
+    if (mapAction.type === 'region') {
+      map.easeTo({
+        center: [mapAction.longitude, mapAction.latitude],
+        zoom: Math.max(4.5, Math.min(map.getZoom(), 6.25)),
+        pitch: 0,
+        bearing: 0,
+        duration: 700
+      });
     }
   }, [mapAction]);
 

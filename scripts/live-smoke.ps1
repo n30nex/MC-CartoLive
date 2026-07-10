@@ -116,7 +116,7 @@ function Get-HealthForSmoke {
       Start-Sleep -Seconds 5
       continue
     }
-    if ([string]$last.packetIngestState -eq "fresh") {
+    if ([bool]$last.ok) {
       return $last
     }
     Start-Sleep -Seconds 5
@@ -179,12 +179,14 @@ try {
   if (-not [string]::IsNullOrWhiteSpace($ExpectedGitSha)) {
     Assert-Smoke (Test-GitShaMatch ([string]$health.gitSha) $ExpectedGitSha) "deployed gitSha $($health.gitSha) did not match expected $ExpectedGitSha"
   }
-  Assert-Smoke ([string]$health.packetIngestState -eq "fresh") "packetIngestState was $($health.packetIngestState), expected fresh"
-  Write-Pass "/healthz ok, version=$($health.version), gitSha=$($health.gitSha), ingest=$($health.packetIngestState)"
+  Write-Pass "/healthz ok, version=$($health.version), gitSha=$($health.gitSha)"
 
   $ready = Invoke-RestMethod "$BaseUrl/readyz"
   Assert-Smoke ([bool]$ready.ready) "/readyz did not report ready=true"
-  Write-Pass "/readyz ready"
+  Assert-Smoke ([string]$ready.storagePressureState -ne "critical") "/readyz reported critical storage pressure"
+  Assert-Smoke ([bool]$ready.mqttSessionReady) "/readyz did not report MQTT session readiness"
+  Assert-Smoke (@("fresh_start", "warming", "live") -contains ([string]$ready.datasetState)) "unexpected datasetState $($ready.datasetState)"
+  Write-Pass "/readyz ready, dataset=$($ready.datasetState), storage=$($ready.storagePressureState)"
 
   try {
     Invoke-WebRequest -UseBasicParsing "$BaseUrl/metrics" -ErrorAction Stop | Out-Null
@@ -201,9 +203,12 @@ try {
   Write-Pass "dedicated metrics listener available at $MetricsUrl; public /metrics is hidden"
 
   $state = Invoke-RestMethod "$BaseUrl/api/v1/public/state"
-  Assert-Smoke ($state.stats.packets -gt 0) "public state packet count was not greater than zero"
-  Assert-Smoke ($state.stats.activeNodes -gt 0) "public state active node count was not greater than zero"
-  Assert-Smoke ($state.stats.activeRoutes -gt 0) "public state active route count was not greater than zero"
+  Assert-Smoke ($state.stats.packets -ge 0) "public state packet count was invalid"
+  Assert-Smoke ($state.stats.activeNodes -ge 0) "public state active node count was invalid"
+  Assert-Smoke ($state.stats.activeRoutes -ge 0) "public state active route count was invalid"
+  if ([string]$ready.datasetState -eq "live") {
+    Assert-Smoke ($state.stats.packets -gt 0) "live dataset did not contain a packet"
+  }
   Write-Pass "public state packets=$($state.stats.packets), nodes=$($state.stats.activeNodes), routes=$($state.stats.activeRoutes)"
 
   $now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
@@ -225,8 +230,9 @@ try {
 
   $hello = Get-WebSocketHello $BaseUrl
   Assert-Smoke ([string]$hello.type -eq "hello") "WebSocket first frame was $($hello.type), expected hello"
-  Assert-Smoke ($hello.seq -gt 0) "WebSocket hello sequence was not positive"
-  Write-Pass "WebSocket hello seq=$($hello.seq)"
+  $helloSeq = if ($null -eq $hello.seq) { 0 } else { [long]$hello.seq }
+  Assert-Smoke ($helloSeq -ge 0) "WebSocket hello sequence was negative"
+  Write-Pass "WebSocket hello seq=$helloSeq"
 
   $remote = Invoke-RemoteSmoke $SshTarget $KeyPath $RepoPath $Service $DiagnoseRegion
   if (-not [string]::IsNullOrWhiteSpace($ExpectedGitSha)) {
@@ -251,9 +257,9 @@ try {
     packets = $state.stats.packets
     nodes = $state.stats.activeNodes
     routes = $state.stats.activeRoutes
-    packetIngestState = $health.packetIngestState
-    publicCacheState = $health.publicCacheState
-    liveConfidenceState = $health.liveConfidenceState
+    datasetState = $ready.datasetState
+    storagePressureState = $ready.storagePressureState
+    mqttSessionReady = $ready.mqttSessionReady
     historyEvents = $history.window.count
     packetPaths = $packets.window.count
     chatMessages = $chat.window.count

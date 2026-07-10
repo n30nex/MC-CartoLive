@@ -7,8 +7,6 @@ import {
   applyPublicEnvelope,
   applyPublicEvent,
   emptyState,
-  filterNodes,
-  filterRoutes,
   initialAppState,
   isPacketActivity,
   liveCoverageStats,
@@ -39,11 +37,11 @@ const LabPanel = lazyWithReload(() => import('./components/LabPanel'), 'LabPanel
 const SetupPanel = lazyWithReload(() => import('./components/SetupPanel'), 'SetupPanel');
 const CommandPalette = lazyWithReload(() => import('./components/CommandPalette'), 'CommandPalette');
 const RFReplayStudio = lazyWithReload(() => import('./components/RFReplayStudio'), 'RFReplayStudio');
+import type { CommandPaletteRegionFocus } from './components/CommandPalette';
 import MapSettingsDrawer from './components/MapSettingsDrawer';
 import RouteGifExportButton, { type RouteGifExportStatus } from './components/RouteGifExportButton';
 import { ToastProvider, useToasts } from './components/ToastProvider';
-import type { WorkspacePresentation } from './components/workspacePanel';
-import { DEFAULT_LAB_EXPERIMENT_ID, canonicalLabHash, labExperimentIDFromHash, labExperimentPath, type LabExperimentID } from './lab';
+import { DEFAULT_LAB_EXPERIMENT_ID, labExperimentPath } from './lab';
 import {
   DEFAULT_CHROME_PANEL_ANCHORS,
   INITIAL_CHROME_PANEL_VISIBILITY,
@@ -67,25 +65,11 @@ import {
   type VcrMode,
   type VcrSpeed
 } from './vcr';
-import {
-  buildConnectivityGraph,
-  directConnectivity,
-  highlightedPathForTarget,
-  phonebookGroupsForNode,
-  shortestPathBetween
-} from './connectivity';
-import { boundsFromPoints, meshcorePathCopyText, messageHistoryForNode, routeNodeIDs, routesInBounds, type MapPoint } from './routeTools';
+import { shortestPathBetween } from './connectivity';
+import { boundsFromPoints, meshcorePathCopyText, routesInBounds, type MapPoint } from './routeTools';
 import { dedupePackets } from './lib/dedupePackets';
-import { useDebouncedValue } from './lib/useDebouncedValue';
-import { packetNodeIDs, packetRouteIDs, packetToPulse } from './packets';
+import { packetToPulse } from './packets';
 import { downloadRouteGifBlob, routeGifAnimationDurationMs, type RouteMapGifExportRequest } from './routeGifExport';
-import {
-  clearSelection as clearSelectionState,
-  selectNodeSelection,
-  selectPathTargetSelection,
-  selectRouteSelection,
-  type SelectionState
-} from './selection';
 import { buildSharedViewURL, parseSharedView, type MapViewState } from './shareView';
 import { resolveReplayDeepLink, routeToReplayPacket } from './replayStudio';
 import type { DashboardAction } from './uiActions';
@@ -96,6 +80,8 @@ import type { ReplayExportSurfaceProvider } from './replayExportSurface';
 import { installResumeRecovery } from './resumeRecovery';
 import { recordLivePendingQueueSize, recordSnapshotReplacement, recordVcrReplayQueueSize, recordVisibilityPause } from './perfDiagnostics';
 import { appendBufferedRoutePulses, routePulseMessages } from './playbackController';
+import { useMapSelection } from './hooks/useMapSelection';
+import { useWorkspaceNavigation } from './hooks/useWorkspaceNavigation';
 import { applyMapMode, MAP_MODES, mapModeForSettings, normalizeMapSettings, readStoredMapSettings, writeStoredMapSettings, type MapModeID, type MapSettings } from './mapSettings';
 import { mapStyleProfileByID, type MapStyleProfileID } from './map/styles/styleRegistry';
 import {
@@ -144,6 +130,10 @@ const DERIVED_ACTIVITY_BUCKET_MS = 5_000;
 const EMPTY_ROUTE_ACTIVITY = new Map<string, RouteActivitySummary>();
 const EMPTY_HOT_ROUTES: PublicRoute[] = [];
 
+function publicSequence(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : 0;
+}
+
 export default function App() {
   return (
     <ToastProvider>
@@ -164,10 +154,6 @@ function PublicDashboardApp() {
   const [query, setQuery] = useState(() => sharedViewRef.current?.q ?? '');
   const [clearToken, setClearToken] = useState(0);
   const [mapAction, setMapAction] = useState<MapAction>(null);
-  const [selectedNodeID, setSelectedNodeID] = useState<string | null>(() => sharedViewRef.current?.node ?? null);
-  const [selectedRouteID, setSelectedRouteID] = useState<string | null>(() => sharedViewRef.current?.route ?? sharedViewRef.current?.replayRoute ?? null);
-  const [selectedPacket, setSelectedPacket] = useState<PublicPacketPath | null>(null);
-  const [highlightedPathTargetID, setHighlightedPathTargetID] = useState<string | null>(null);
   const [plotMode, setPlotMode] = useState<PlotMode>('off');
   const [plotFirstNodeID, setPlotFirstNodeID] = useState<string | null>(null);
   const [plotAreaFirstPoint, setPlotAreaFirstPoint] = useState<MapPoint | null>(null);
@@ -191,19 +177,11 @@ function PublicDashboardApp() {
   const [serviceWorkerUpdateReady, setServiceWorkerUpdateReady] = useState(false);
   const [serviceWorkerActivating, setServiceWorkerActivating] = useState(false);
   const [mapSettings, setMapSettings] = useState<MapSettings>(() => readStoredMapSettings());
-  const [packetsOpen, setPacketsOpen] = useState(() => window.location.hash === '#/packets');
-  const [netGraphOpen, setNetGraphOpen] = useState(() => window.location.hash === '#/netgraph');
-  const [chatOpen, setChatOpen] = useState(() => window.location.hash === '#/chat');
-  const [labOpen, setLabOpen] = useState(() => isLabRoute(window.location.hash));
-  const [labExperimentID, setLabExperimentID] = useState<LabExperimentID>(() => isLabRoute(window.location.hash) ? labExperimentIDFromHash(window.location.hash) : DEFAULT_LAB_EXPERIMENT_ID);
-  const [setupOpen, setSetupOpen] = useState(() => window.location.hash === '#/setup');
   const [propagationOpen, setPropagationOpen] = useState(false);
   const [propagationEvents, setPropagationEvents] = useState<PublicPropagationEvent[]>([]);
   const [propagationConditions, setPropagationConditions] = useState<PublicPropagationConditions | null>(null);
   const [propagationLoading, setPropagationLoading] = useState(true);
   const [propagationError, setPropagationError] = useState<string | null>(null);
-  const [packetsPanelMode, setPacketsPanelMode] = useState<'expanded' | 'compactTray'>('expanded');
-  const [workspacePresentation, setWorkspacePresentation] = useState<WorkspacePresentation>('side');
   const [initialLoadGateOpen, setInitialLoadGateOpen] = useState(true);
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
   const [routeGifExport, setRouteGifExport] = useState<{ status: RouteGifExportStatus; progress: number; remainingExports: number; cooldownUntil: number }>({ status: 'idle', progress: 0, remainingExports: 5, cooldownUntil: 0 });
@@ -215,7 +193,6 @@ function PublicDashboardApp() {
   const [nodeLoadFailed, setNodeLoadFailed] = useState(false);
   const [vcrOpen, setVcrOpen] = useState(false);
   const [laserShowActive, setLaserShowActive] = useState(false);
-  const [nodeListOpen, setNodeListOpen] = useState(() => window.location.hash === '#/nodes');
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [chromeVisibility, setChromeVisibility] = useState<ChromeVisibilityState>({
     chromeHidden: false,
@@ -233,6 +210,71 @@ function PublicDashboardApp() {
     status: 'idle',
     summary: []
   });
+  const closeWorkspaceMenus = useCallback(() => {
+    setPaletteMenuOpen(false);
+    setPanelsMenuOpen(false);
+    setMapSettingsOpen(false);
+    setMobileControlsOpen(false);
+  }, []);
+  const resumeFromClosedPacketTray = useCallback(() => setPaused(false), []);
+  const {
+    packetsOpen,
+    setPacketsOpen,
+    netGraphOpen,
+    chatOpen,
+    labOpen,
+    labExperimentID,
+    setupOpen,
+    nodeListOpen,
+    packetsPanelMode,
+    setPacketsPanelMode,
+    workspacePresentation,
+    setWorkspacePresentation,
+    closePackets,
+    closeNetGraph,
+    closeChat,
+    closeLab,
+    closeSetup,
+    closeNodeList,
+    closeAllWorkspaceSurfaces,
+    openPackets,
+    openChat,
+    openNodeList,
+    selectLabExperiment
+  } = useWorkspaceNavigation({
+    onCompactPacketTrayClosed: resumeFromClosedPacketTray,
+    onWorkspaceRouteOpened: closeWorkspaceMenus
+  });
+  const {
+    visibleNodes,
+    visibleRoutes,
+    selectedNodeID,
+    selectedRouteID,
+    selectedPacket,
+    highlightedPathTargetID,
+    selectedNode,
+    selectedRoute,
+    connectivityGraph,
+    selectedConnectivity,
+    phonebookGroups,
+    selectedPhonebookPath,
+    highlightedPathRouteIDs,
+    highlightedPathNodeIDs,
+    selectedNodeMessageHistory,
+    clearSelection,
+    clearResolvedSelection,
+    selectNode,
+    selectRoute: selectRouteSelectionOnly,
+    selectPhonebookPath,
+    selectPacket,
+    clearReplayDeepLinkSelection
+  } = useMapSelection({
+    state,
+    query,
+    initialNodeID: sharedViewRef.current?.node ?? null,
+    initialRouteID: sharedViewRef.current?.route ?? sharedViewRef.current?.replayRoute ?? null,
+    plotResult
+  });
   const closeMobileControls = useCallback(() => setMobileControlsOpen(false), []);
   const mobileControlsRef = useAccessibleDialog<HTMLElement>(mobileControlsOpen, closeMobileControls);
   const actionTokenRef = useRef(0);
@@ -244,6 +286,9 @@ function PublicDashboardApp() {
   const GIF_EXPORT_COOLDOWN_MS = 30_000;
   const stateRef = useRef<AppState>(emptyState);
   const latestObservedSeqRef = useRef(0);
+  const lastAppliedEventSeqRef = useRef(0);
+  const lastQueuedEventSeqRef = useRef(0);
+  const eventCursorGenerationRef = useRef(0);
   const eventRecoveryRef = useRef<((latestSeq?: number) => void) | null>(null);
   const lastSnapshotSignatureRef = useRef('');
   const pendingMessagesRef = useRef<PublicLiveEnvelope[]>([]);
@@ -260,134 +305,43 @@ function PublicDashboardApp() {
 
   useEffect(() => {
     stateRef.current = state;
-    latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, state.latestSeq);
+    latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, publicSequence(state.latestSeq));
   }, [state]);
 
-  const applyPublicSnapshot = useCallback((liveState: PublicLiveState): boolean => {
-    if (!publicStateSnapshotIsCurrent(Math.max(stateRef.current.latestSeq, latestObservedSeqRef.current), liveState)) {
+  const applyPublicSnapshot = useCallback((liveState: PublicLiveState, recoveryFloor?: number): boolean => {
+    const requiredSeq = recoveryFloor === undefined
+      ? Math.max(publicSequence(stateRef.current.latestSeq), latestObservedSeqRef.current)
+      : Math.max(0, recoveryFloor);
+    if (!publicStateSnapshotIsCurrent(requiredSeq, liveState)) {
       recordSnapshotReplacement(true);
       return false;
     }
     const signature = publicLiveStateSignature(liveState);
-    if (signature === lastSnapshotSignatureRef.current) {
+    if (recoveryFloor === undefined && signature === lastSnapshotSignatureRef.current) {
       recordSnapshotReplacement(true);
       return false;
     }
     lastSnapshotSignatureRef.current = signature;
-    latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, liveState.stats?.latestSeq ?? 0);
-    setState(initialAppState(liveState));
+    const snapshotSeq = publicSequence(liveState.stats?.latestSeq);
+    latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, snapshotSeq);
+    eventCursorGenerationRef.current += 1;
+    if (flushMessagesTimerRef.current !== null) {
+      window.clearTimeout(flushMessagesTimerRef.current);
+      flushMessagesTimerRef.current = null;
+    }
+    pendingMessagesRef.current = [];
+    recordLivePendingQueueSize(0);
+    const nextState = initialAppState(liveState);
+    stateRef.current = nextState;
+    lastAppliedEventSeqRef.current = snapshotSeq;
+    lastQueuedEventSeqRef.current = snapshotSeq;
+    setState(nextState);
     recordSnapshotReplacement(false);
     return true;
   }, []);
 
-  useEffect(() => {
-    const updateRoute = () => {
-      let hash = window.location.hash;
-      if (hash === '#/perf') {
-        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
-        hash = '';
-      }
-      const canonicalLabRoute = canonicalLabHash(hash);
-      if (canonicalLabRoute && hash !== canonicalLabRoute) {
-        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${canonicalLabRoute}`);
-        hash = canonicalLabRoute;
-      }
-      const nextPacketsOpen = hash === '#/packets';
-      const nextNetGraphOpen = hash === '#/netgraph';
-      const nextChatOpen = hash === '#/chat';
-      const nextLabOpen = isLabRoute(hash);
-      const nextSetupOpen = hash === '#/setup';
-      const nextNodeListOpen = hash === '#/nodes';
-      setPacketsOpen(nextPacketsOpen);
-      setNetGraphOpen(nextNetGraphOpen);
-      setChatOpen(nextChatOpen);
-      setLabOpen(nextLabOpen);
-      setLabExperimentID(nextLabOpen ? labExperimentIDFromHash(hash) : DEFAULT_LAB_EXPERIMENT_ID);
-      setSetupOpen(nextSetupOpen);
-      setNodeListOpen(nextNodeListOpen);
-      if (nextLabOpen || nextNodeListOpen) {
-        setWorkspacePresentation('fullscreen');
-      } else if (nextPacketsOpen || nextChatOpen) {
-        setWorkspacePresentation('side');
-      }
-      if (nextPacketsOpen || nextNetGraphOpen || nextChatOpen || nextLabOpen || nextSetupOpen || nextNodeListOpen) {
-        setPaletteMenuOpen(false);
-        setPanelsMenuOpen(false);
-        setMapSettingsOpen(false);
-        setMobileControlsOpen(false);
-      }
-      if (nextPacketsOpen) {
-        setPacketsPanelMode('expanded');
-      }
-    };
-    updateRoute();
-    window.addEventListener('hashchange', updateRoute);
-    return () => window.removeEventListener('hashchange', updateRoute);
-  }, []);
-
-  const closePackets = useCallback(() => {
-    if (window.location.hash === '#/packets') {
-      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
-    }
-    if (packetsPanelMode === 'compactTray') setPaused(false);
-    setPacketsOpen(false);
-    setPacketsPanelMode('expanded');
-  }, [packetsPanelMode]);
-
-  const closeNetGraph = useCallback(() => {
-    if (window.location.hash === '#/netgraph') {
-      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
-    }
-    setNetGraphOpen(false);
-  }, []);
-
-  const closeChat = useCallback(() => {
-    if (window.location.hash === '#/chat') {
-      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
-    }
-    setChatOpen(false);
-  }, []);
-
-  const closeLab = useCallback(() => {
-    if (isLabRoute(window.location.hash)) {
-      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
-    }
-    setLabOpen(false);
-    setLabExperimentID(DEFAULT_LAB_EXPERIMENT_ID);
-  }, []);
-
-  const selectLabExperiment = useCallback((experimentID: LabExperimentID) => {
-    window.location.hash = labExperimentPath(experimentID);
-  }, []);
-
-  const closeSetup = useCallback(() => {
-    if (window.location.hash === '#/setup') {
-      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
-    }
-    setSetupOpen(false);
-  }, []);
-
-  const openNodeList = useCallback(() => {
-    window.location.hash = '#/nodes';
-  }, []);
-
-  const closeNodeList = useCallback(() => {
-    if (window.location.hash === '#/nodes') {
-      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
-    }
-    setNodeListOpen(false);
-  }, []);
-
   const openMapHome = useCallback(() => {
-    if (window.location.hash) {
-      window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
-    }
-    setPacketsOpen(false);
-    setNetGraphOpen(false);
-    setChatOpen(false);
-    setLabOpen(false);
-    setSetupOpen(false);
-    setNodeListOpen(false);
+    closeAllWorkspaceSurfaces();
     setPropagationOpen(false);
     setVcrOpen(false);
     setShortcutHelpOpen(false);
@@ -395,16 +349,7 @@ function PublicDashboardApp() {
     setMobileControlsOpen(false);
     setCommandPaletteOpen(false);
     setReplayStudioOpen(false);
-    setPacketsPanelMode('expanded');
-  }, []);
-
-  const openPackets = useCallback(() => {
-    window.location.hash = '#/packets';
-  }, []);
-
-  const openChat = useCallback(() => {
-    window.location.hash = '#/chat';
-  }, []);
+  }, [closeAllWorkspaceSurfaces]);
 
   useEffect(() => {
     writeStoredMapSettings(mapSettings);
@@ -774,6 +719,11 @@ function PublicDashboardApp() {
     let recoveryInFlight = false;
     let queuedRecoveryTarget = 0;
     let queuedRecoveryPoll = false;
+    let recoveryRetryTimer: number | null = null;
+    let stateRefreshRetryTimer: number | null = null;
+    let stateRefreshInFlight = false;
+    let stateRefreshFloor = 0;
+    let resetRecoveryActive = false;
     const scheduleMessagesFlush = () => {
       if (flushMessagesTimerRef.current !== null) return;
       const delay = nextLiveEnvelopeDelayMs(pendingMessagesRef.current, Date.now());
@@ -784,9 +734,33 @@ function PublicDashboardApp() {
       flushMessagesTimerRef.current = null;
       if (!active || vcrModeRef.current !== 'live' || pendingMessagesRef.current.length === 0) return;
       const { due, pending } = takeDueLiveEnvelopes(pendingMessagesRef.current, Date.now());
-      pendingMessagesRef.current = pending;
-      if (due.length > 0) {
-        setState((current) => due.reduce((next, message) => applyPublicEnvelope(next, message), current));
+      const orderedDue = due
+        .filter((message) => publicSequence(message.seq) > 0)
+        .sort((left, right) => publicSequence(left.seq) - publicSequence(right.seq));
+      const contiguous: PublicLiveEnvelope[] = [];
+      let expectedSeq = lastAppliedEventSeqRef.current + 1;
+      let gapTarget = 0;
+      for (const message of orderedDue) {
+        const seq = publicSequence(message.seq);
+        if (seq < expectedSeq) continue;
+        if (seq !== expectedSeq) {
+          gapTarget = Math.max(gapTarget, seq);
+          continue;
+        }
+        contiguous.push(message);
+        expectedSeq = seq + 1;
+      }
+      if (contiguous.length > 0) {
+        lastAppliedEventSeqRef.current = expectedSeq - 1;
+        setState((current) => contiguous.reduce((next, message) => applyPublicEnvelope(next, message), current));
+      }
+      if (gapTarget > 0) {
+        for (const message of pending) gapTarget = Math.max(gapTarget, publicSequence(message.seq));
+        pendingMessagesRef.current = [];
+        lastQueuedEventSeqRef.current = lastAppliedEventSeqRef.current;
+        backfillOrRefresh(gapTarget);
+      } else {
+        pendingMessagesRef.current = pending.filter((message) => publicSequence(message.seq) > lastAppliedEventSeqRef.current);
       }
       recordLivePendingQueueSize(pendingMessagesRef.current.length);
       if (pendingMessagesRef.current.length > 0) scheduleMessagesFlush();
@@ -797,58 +771,153 @@ function PublicDashboardApp() {
         bufferVcrMessage(message);
         return;
       }
-      pendingMessagesRef.current = capLiveEnvelopeQueue([...pendingMessagesRef.current, message]);
+      const seq = publicSequence(message.seq);
+      const recoveryTarget = Math.max(seq, publicSequence(message.latestSeq));
+      if (seq === 0 || resetRecoveryActive) {
+        backfillOrRefresh(recoveryTarget > 0 ? recoveryTarget : undefined);
+        return;
+      }
+      if (seq <= lastQueuedEventSeqRef.current) return;
+      if (seq !== lastQueuedEventSeqRef.current + 1) {
+        backfillOrRefresh(recoveryTarget);
+        return;
+      }
+      const nextPending = [...pendingMessagesRef.current, message];
+      const cappedPending = capLiveEnvelopeQueue(nextPending);
+      if (cappedPending.length !== nextPending.length) {
+        pendingMessagesRef.current = [];
+        lastQueuedEventSeqRef.current = lastAppliedEventSeqRef.current;
+        recordLivePendingQueueSize(0);
+        backfillOrRefresh(recoveryTarget);
+        return;
+      }
+      pendingMessagesRef.current = cappedPending;
+      lastQueuedEventSeqRef.current = seq;
       recordLivePendingQueueSize(pendingMessagesRef.current.length);
       scheduleMessagesFlush();
     };
-    const refreshState = () => {
+    const scheduleStateRefresh = (delayMs: number) => {
+      if (stateRefreshRetryTimer !== null || !active) return;
+      stateRefreshRetryTimer = window.setTimeout(() => {
+        stateRefreshRetryTimer = null;
+        refreshState(stateRefreshFloor);
+      }, delayMs);
+    };
+    const refreshState = (minimumSeq = 0) => {
       if (vcrModeRef.current !== 'live') return;
+      stateRefreshFloor = Math.max(stateRefreshFloor, minimumSeq);
+      resetRecoveryActive = stateRefreshFloor > 0;
+      if (stateRefreshInFlight) {
+        // A scheduled stale-snapshot retry may fire before the previous
+        // request's finally handler. Keep a retry armed instead of losing the
+        // required sequence floor until some unrelated visibility event.
+        scheduleStateRefresh(250);
+        return;
+      }
+      stateRefreshInFlight = true;
       fetchPublicState().then((liveState) => {
         if (!active) return;
         if (vcrModeRef.current !== 'live') return;
+        const snapshotSeq = publicSequence(liveState.stats?.latestSeq);
+        if (snapshotSeq < stateRefreshFloor) {
+          scheduleStateRefresh(1_000);
+          return;
+        }
         setFullStateHydrated(true);
-        if (!applyPublicSnapshot(liveState)) return;
+        const applied = applyPublicSnapshot(liveState, stateRefreshFloor);
+        if (!applied) {
+          scheduleStateRefresh(1_000);
+          return;
+        }
         setPublicMapConfig(liveState.map ?? null);
         if ((liveState.nodes?.length ?? 0) > 0) {
           setInitialNodesReceived(true);
           setNodeLoadFailed(false);
         }
+        stateRefreshFloor = 0;
+        resetRecoveryActive = false;
+        eventRecoveryRef.current?.(latestObservedSeqRef.current);
       }).catch(() => {
         if (!active) return;
         setSocketStatus('state-error');
         if (!initialNodesReceived) setNodeLoadFailed(true);
+        scheduleStateRefresh(PUBLIC_STATE_FALLBACK_POLL_MS);
+      }).finally(() => {
+        stateRefreshInFlight = false;
       });
     };
     const backfillOrRefresh = (latestSeq?: number) => {
       if (vcrModeRef.current !== 'live') return;
-      if (latestSeq !== undefined && Number.isFinite(latestSeq)) {
-        queuedRecoveryTarget = Math.max(queuedRecoveryTarget, Math.floor(latestSeq));
+      const recoveryTarget = publicSequence(latestSeq);
+      if (recoveryTarget > 0) {
+        queuedRecoveryTarget = Math.max(queuedRecoveryTarget, recoveryTarget);
       } else {
         queuedRecoveryPoll = true;
       }
-      if (recoveryInFlight) return;
+      if (recoveryInFlight || resetRecoveryActive) return;
+      if (recoveryRetryTimer !== null) {
+        window.clearTimeout(recoveryRetryTimer);
+        recoveryRetryTimer = null;
+      }
       recoveryInFlight = true;
 
       const recover = async () => {
-        while (active && vcrModeRef.current === 'live' && (queuedRecoveryPoll || queuedRecoveryTarget > stateRef.current.latestSeq)) {
+        while (active && vcrModeRef.current === 'live' && (queuedRecoveryPoll || queuedRecoveryTarget > lastAppliedEventSeqRef.current)) {
           const requestedTarget = queuedRecoveryTarget > 0 ? queuedRecoveryTarget : undefined;
           queuedRecoveryTarget = 0;
           queuedRecoveryPoll = false;
-          const result = await recoverPublicEventPages({
-            afterSeq: stateRef.current.latestSeq,
-            targetSeq: requestedTarget,
-            fetchPage: (afterSeq, limit) => fetchPublicEvents({ afterSeq, limit }),
-            applyPage: (events) => {
-              if (!active || vcrModeRef.current !== 'live') return;
-              setState((current) => events.reduce((next, event) => applyPublicEvent(next, event), current));
-            },
-            isActive: () => active && vcrModeRef.current === 'live'
-          });
-          latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, result.latestSeq);
+          const recoveryGeneration = eventCursorGenerationRef.current;
+          let result;
+          try {
+            result = await recoverPublicEventPages({
+              afterSeq: lastAppliedEventSeqRef.current,
+              targetSeq: requestedTarget,
+              fetchPage: (afterSeq, limit) => fetchPublicEvents({ afterSeq, limit }),
+              applyPage: (events) => {
+                if (!active || vcrModeRef.current !== 'live' || recoveryGeneration !== eventCursorGenerationRef.current) return;
+                const unapplied = events
+                  .filter((event) => publicSequence(event.seq) > lastAppliedEventSeqRef.current)
+                  .sort((left, right) => left.seq - right.seq);
+                if (unapplied.length === 0) return;
+                const confirmedCursor = unapplied[unapplied.length - 1]?.seq ?? lastAppliedEventSeqRef.current;
+                lastAppliedEventSeqRef.current = confirmedCursor;
+                pendingMessagesRef.current = pendingMessagesRef.current.filter((message) => publicSequence(message.seq) > confirmedCursor);
+                lastQueuedEventSeqRef.current = Math.max(
+                  confirmedCursor,
+                  ...pendingMessagesRef.current.map((message) => publicSequence(message.seq))
+                );
+                recordLivePendingQueueSize(pendingMessagesRef.current.length);
+                setState((current) => unapplied.reduce((next, event) => applyPublicEvent(next, event), current));
+              },
+              isActive: () => active && vcrModeRef.current === 'live'
+            });
+          } catch (error) {
+            if (requestedTarget !== undefined) queuedRecoveryTarget = Math.max(queuedRecoveryTarget, requestedTarget);
+            else queuedRecoveryPoll = true;
+            throw error;
+          }
+          if (recoveryGeneration !== eventCursorGenerationRef.current) {
+            queuedRecoveryTarget = Math.max(queuedRecoveryTarget, requestedTarget ?? latestObservedSeqRef.current);
+            continue;
+          }
           if (result.status === 'reset-required' || result.status === 'unrecoverable-gap') {
-            refreshState();
+            latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, result.latestSeq);
+            resetRecoveryActive = true;
+            refreshState(result.latestSeq);
             return;
           }
+          if (result.status === 'caught-up') {
+            lastAppliedEventSeqRef.current = Math.max(lastAppliedEventSeqRef.current, result.cursor);
+            pendingMessagesRef.current = pendingMessagesRef.current.filter(
+              (message) => publicSequence(message.seq) > lastAppliedEventSeqRef.current
+            );
+            lastQueuedEventSeqRef.current = Math.max(
+              lastAppliedEventSeqRef.current,
+              ...pendingMessagesRef.current.map((message) => publicSequence(message.seq))
+            );
+            recordLivePendingQueueSize(pendingMessagesRef.current.length);
+          }
+          latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, result.latestSeq);
           if (result.status === 'empty') {
             setState((current) => applyPublicEnvelope(current, {
               v: 1,
@@ -862,25 +931,34 @@ function PublicDashboardApp() {
         }
       };
 
+      let recoveryFailed = false;
       void recover()
         .catch(() => {
           // Transient transport failures stay on cursor polling. A complete
           // snapshot is reserved for a server-declared reset or proven gap.
+          recoveryFailed = true;
           if (active) setSocketStatus((current) => (current === 'live' ? current : 'polling'));
+          if (active && recoveryRetryTimer === null) {
+            recoveryRetryTimer = window.setTimeout(() => {
+              recoveryRetryTimer = null;
+              backfillOrRefresh(queuedRecoveryTarget || undefined);
+            }, PUBLIC_STATE_FALLBACK_POLL_MS);
+          }
         })
         .finally(() => {
           recoveryInFlight = false;
-          if (active && (queuedRecoveryPoll || queuedRecoveryTarget > stateRef.current.latestSeq)) {
+          if (!recoveryFailed && !resetRecoveryActive && active && (queuedRecoveryPoll || queuedRecoveryTarget > lastAppliedEventSeqRef.current)) {
             backfillOrRefresh(queuedRecoveryTarget || undefined);
           }
         });
     };
     eventRecoveryRef.current = backfillOrRefresh;
     const socket = connectPublicSocket((message) => {
-      latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, message.latestSeq ?? message.seq ?? 0);
+      const observedSeq = Math.max(publicSequence(message.latestSeq), publicSequence(message.seq));
+      latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, observedSeq);
       if (message.type === 'hello') {
         setState((current) => applyPublicEnvelope(current, message));
-        backfillOrRefresh(message.latestSeq ?? message.seq);
+        backfillOrRefresh(observedSeq > 0 ? observedSeq : undefined);
         return;
       }
       if (message.type === 'pong') {
@@ -889,6 +967,7 @@ function PublicDashboardApp() {
       }
       if (message.type === 'lagged') {
         pendingMessagesRef.current = [];
+        lastQueuedEventSeqRef.current = lastAppliedEventSeqRef.current;
         recordLivePendingQueueSize(0);
         if (flushMessagesTimerRef.current !== null) {
           window.clearTimeout(flushMessagesTimerRef.current);
@@ -899,7 +978,8 @@ function PublicDashboardApp() {
           return;
         }
         setState((current) => applyPublicEnvelope(current, message));
-        backfillOrRefresh(message.latestSeq ?? message.toSeq ?? message.seq);
+        const laggedTarget = Math.max(observedSeq, publicSequence(message.toSeq));
+        backfillOrRefresh(laggedTarget > 0 ? laggedTarget : undefined);
         return;
       }
       enqueueMessage(message);
@@ -907,9 +987,12 @@ function PublicDashboardApp() {
     return () => {
       active = false;
       if (eventRecoveryRef.current === backfillOrRefresh) eventRecoveryRef.current = null;
+      if (recoveryRetryTimer !== null) window.clearTimeout(recoveryRetryTimer);
+      if (stateRefreshRetryTimer !== null) window.clearTimeout(stateRefreshRetryTimer);
       if (flushMessagesTimerRef.current !== null) window.clearTimeout(flushMessagesTimerRef.current);
       flushMessagesTimerRef.current = null;
       pendingMessagesRef.current = [];
+      lastQueuedEventSeqRef.current = lastAppliedEventSeqRef.current;
       recordLivePendingQueueSize(0);
       socket.close();
     };
@@ -1027,46 +1110,7 @@ function PublicDashboardApp() {
     };
   }, [mapSettings.layers.propagationInsights, propagationOpen]);
 
-  const debouncedQuery = useDebouncedValue(query, 200);
-
-  const visibleNodes = useMemo(() => filterNodes(state.nodes, debouncedQuery), [state.nodes, debouncedQuery]);
-  const visibleNodeIDs = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
-  const visibleRoutes = useMemo(() => filterRoutes(state.routes, visibleNodeIDs, debouncedQuery), [state.routes, visibleNodeIDs, debouncedQuery]);
-  const selectedNode = useMemo(() => state.nodes.find((node) => node.id === selectedNodeID) ?? null, [state.nodes, selectedNodeID]);
-  const selectedRoute = useMemo(() => state.routes.find((route) => route.id === selectedRouteID) ?? null, [state.routes, selectedRouteID]);
-  const connectivityGraph = useMemo(() => buildConnectivityGraph(visibleNodes, visibleRoutes), [visibleNodes, visibleRoutes]);
-  const selectedConnectivity = useMemo(() => directConnectivity(connectivityGraph, selectedNodeID), [connectivityGraph, selectedNodeID]);
-  const phonebookGroups = useMemo(() => phonebookGroupsForNode(connectivityGraph, selectedNodeID), [connectivityGraph, selectedNodeID]);
-  const highlightedPath = useMemo(() => highlightedPathForTarget(phonebookGroups, highlightedPathTargetID), [phonebookGroups, highlightedPathTargetID]);
-  const selectedPhonebookPath = useMemo(
-    () => phonebookGroups.flatMap((group) => group.nodes).find((item) => item.node.id === highlightedPathTargetID) ?? null,
-    [phonebookGroups, highlightedPathTargetID]
-  );
   const plotFirstNode = useMemo(() => state.nodes.find((node) => node.id === plotFirstNodeID) ?? null, [plotFirstNodeID, state.nodes]);
-  const plotHighlightedRouteIDs = useMemo(() => {
-    if (plotResult?.type === 'path') return new Set(plotResult.path?.pathRouteIDs ?? []);
-    if (plotResult?.type === 'area') return new Set(plotResult.routes.map((route) => route.id));
-    return new Set<string>();
-  }, [plotResult]);
-  const plotHighlightedNodeIDs = useMemo(() => {
-    if (plotResult?.type === 'path') return new Set(plotResult.path?.pathNodeIDs ?? []);
-    if (plotResult?.type === 'area') return routeNodeIDs(plotResult.routes);
-    return new Set<string>();
-  }, [plotResult]);
-  const selectedPacketRouteIDs = useMemo(() => packetRouteIDs(selectedPacket), [selectedPacket]);
-  const selectedPacketNodeIDs = useMemo(() => packetNodeIDs(selectedPacket), [selectedPacket]);
-  const highlightedPathRouteIDs = useMemo(
-    () => new Set([...(highlightedPath?.routeIDs ?? []), ...plotHighlightedRouteIDs, ...selectedPacketRouteIDs]),
-    [highlightedPath, plotHighlightedRouteIDs, selectedPacketRouteIDs]
-  );
-  const highlightedPathNodeIDs = useMemo(
-    () => new Set([...(highlightedPath?.nodeIDs ?? []), ...plotHighlightedNodeIDs, ...selectedPacketNodeIDs]),
-    [highlightedPath, plotHighlightedNodeIDs, selectedPacketNodeIDs]
-  );
-  const selectedNodeMessageHistory = useMemo(
-    () => messageHistoryForNode(selectedNode, visibleRoutes, state.activity),
-    [selectedNode, state.activity, visibleRoutes]
-  );
   const activityClock = Math.max(liveClock, state.serverTime, state.activity[0]?.heardAt ?? 0, state.routeTraces.at(-1)?.heardAt ?? 0);
   const activityClockBucket = Math.floor(activityClock / DERIVED_ACTIVITY_BUCKET_MS) * DERIVED_ACTIVITY_BUCKET_MS;
   const chromeHidden = chromeVisibility.chromeHidden;
@@ -1095,7 +1139,7 @@ function PublicDashboardApp() {
     [hotRoutesPanelActive, visibleRoutes, routeActivityByID]
   );
 
-  const dispatchMapAction = useCallback((next: Exclude<MapAction, null>['type'], value?: string) => {
+  const dispatchMapAction = useCallback((next: 'reset' | 'latest-route' | 'route' | 'node', value?: string) => {
     const token = actionTokenRef.current + 1;
     actionTokenRef.current = token;
     if (next === 'route' && value) setMapAction({ type: 'route', routeID: value, token });
@@ -1104,21 +1148,18 @@ function PublicDashboardApp() {
     else setMapAction({ type: 'reset', token });
   }, []);
 
-  const applySelection = useCallback((next: SelectionState) => {
-    setSelectedNodeID(next.selectedNodeID);
-    setSelectedRouteID(next.selectedRouteID);
-    setHighlightedPathTargetID(next.highlightedPathTargetID);
-  }, []);
-
-  const clearSelection = useCallback(() => {
-    setSelectedPacket(null);
-    applySelection(clearSelectionState());
-  }, [applySelection]);
-
-  const selectNode = useCallback((nodeID: string) => {
-    setSelectedPacket(null);
-    applySelection(selectNodeSelection(nodeID));
-  }, [applySelection]);
+  const focusPublicRegion = useCallback((region: CommandPaletteRegionFocus) => {
+    clearSelection();
+    const token = actionTokenRef.current + 1;
+    actionTokenRef.current = token;
+    setMapAction({
+      type: 'region',
+      token,
+      label: region.label,
+      latitude: region.latitude,
+      longitude: region.longitude
+    });
+  }, [clearSelection]);
 
   const selectNodeFromList = useCallback((id: string) => {
     selectNode(id);
@@ -1126,28 +1167,21 @@ function PublicDashboardApp() {
   }, [closeNodeList, selectNode]);
 
   const selectRoute = useCallback((routeID: string) => {
-    setSelectedPacket(null);
-    applySelection(selectRouteSelection(routeID));
+    selectRouteSelectionOnly(routeID);
     dispatchMapAction('route', routeID);
-  }, [applySelection, dispatchMapAction]);
-
-  const selectPhonebookPath = useCallback((nodeID: string) => {
-    setSelectedPacket(null);
-    applySelection(selectPathTargetSelection({ selectedNodeID, selectedRouteID, highlightedPathTargetID }, nodeID));
-  }, [applySelection, highlightedPathTargetID, selectedNodeID, selectedRouteID]);
+  }, [dispatchMapAction, selectRouteSelectionOnly]);
 
   const focusPacketPath = useCallback((packet: PublicPacketPath) => {
-    setSelectedPacket(packet);
+    selectPacket(packet);
     setPacketsOpen(false);
     setPacketsPanelMode('expanded');
     if (window.location.hash === '#/packets') {
       window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
     }
-    applySelection(clearSelectionState());
     const token = actionTokenRef.current + 1;
     actionTokenRef.current = token;
     setMapAction({ type: 'packet', token, segments: packet.segments });
-  }, [applySelection]);
+  }, [selectPacket, setPacketsOpen, setPacketsPanelMode]);
 
   const replayPacketPath = useCallback((packet: PublicPacketPath, speedOverride?: number, forceCanvas = false) => {
     if (vcrModeRef.current !== 'live') {
@@ -1163,13 +1197,12 @@ function PublicDashboardApp() {
     setPlotAreaFirstPoint(null);
     setFollowTraffic(false);
     setPaused(true);
-    setSelectedPacket(packet);
+    selectPacket(packet);
     setPacketsOpen(true);
     setPacketsPanelMode('compactTray');
     if (window.location.hash === '#/packets') {
       window.history.pushState(null, '', `${window.location.pathname}${window.location.search}`);
     }
-    applySelection(clearSelectionState());
     const token = actionTokenRef.current + 1;
     actionTokenRef.current = token;
     const travelDurationMs = cinematicPacketReplayDuration(packet.segmentCount, speedOverride ?? mapSettings.packets.speed);
@@ -1189,17 +1222,17 @@ function PublicDashboardApp() {
       travelDurationMs,
       forceCanvas
     });
-  }, [applySelection, clearPendingLiveFlush, mapSettings.packets, stopReplay]);
+  }, [clearPendingLiveFlush, mapSettings.packets, selectPacket, setPacketsOpen, setPacketsPanelMode, stopReplay]);
 
   const focusPropagationEvent = useCallback((event: PublicPropagationEvent) => {
     setPropagationOpen(true);
     setPacketsOpen(false);
     setPacketsPanelMode('expanded');
-    applySelection(clearSelectionState());
+    clearResolvedSelection();
     const token = actionTokenRef.current + 1;
     actionTokenRef.current = token;
     setMapAction({ type: 'packet', token, segments: event.segments });
-  }, [applySelection]);
+  }, [clearResolvedSelection, setPacketsOpen, setPacketsPanelMode]);
 
   const replayPropagationEvent = useCallback((event: PublicPropagationEvent) => {
     if (vcrModeRef.current !== 'live') {
@@ -1218,7 +1251,7 @@ function PublicDashboardApp() {
     setPropagationOpen(true);
     setPacketsOpen(false);
     setPacketsPanelMode('expanded');
-    applySelection(clearSelectionState());
+    clearResolvedSelection();
     const token = actionTokenRef.current + 1;
     actionTokenRef.current = token;
     const travelDurationMs = cinematicPacketReplayDuration(event.segments.length, mapSettings.packets.speed);
@@ -1246,7 +1279,7 @@ function PublicDashboardApp() {
       settleMs: 650,
       travelDurationMs
     });
-  }, [applySelection, clearPendingLiveFlush, mapSettings.packets, stopReplay]);
+  }, [clearPendingLiveFlush, clearResolvedSelection, mapSettings.packets, setPacketsOpen, setPacketsPanelMode, stopReplay]);
 
   const resumeLiveFromPacketTray = useCallback(() => {
     returnToLive();
@@ -1537,9 +1570,8 @@ function PublicDashboardApp() {
       selectRoute(resolution.route.id);
       return;
     }
-    setSelectedPacket(null);
-    setSelectedRouteID(null);
-  }, [focusPacketPath, fullStateHydrated, replayDeepLinkStatus, selectRoute, state.pulses, state.routes]);
+    clearReplayDeepLinkSelection();
+  }, [clearReplayDeepLinkSelection, focusPacketPath, fullStateHydrated, replayDeepLinkStatus, selectRoute, state.pulses, state.routes]);
   const openReplayStudio = useCallback(() => {
     setReplayDeepLinkStatus(null);
     if (!selectedPacket && !selectedRoute) {
@@ -1736,7 +1768,7 @@ function PublicDashboardApp() {
           <Sparkles size={16} />
           <span>Studio</span>
         </button>
-        <button className="operator-action command-palette-toggle" type="button" aria-keyshortcuts="Control+K Meta+K" title="Search commands, nodes, and routes (Ctrl/Command K)" onClick={() => setCommandPaletteOpen(true)}>
+        <button className="operator-action command-palette-toggle" type="button" aria-keyshortcuts="Control+K Meta+K" title="Search commands, regions, nodes, and routes (Ctrl/Command K)" onClick={() => setCommandPaletteOpen(true)}>
           <Search size={16} />
           <span>Search</span>
         </button>
@@ -2019,8 +2051,10 @@ function PublicDashboardApp() {
               actions={dashboardActions}
               nodes={state.nodes}
               routes={state.routes}
+              clusters={bootstrapClusters}
               onSelectNode={(nodeID) => { selectNode(nodeID); dispatchMapAction('node', nodeID); }}
               onSelectRoute={selectRoute}
+              onSelectRegion={focusPublicRegion}
               onClose={() => setCommandPaletteOpen(false)}
             />
           </Suspense>
@@ -2328,10 +2362,6 @@ function paletteSwatchStyle(palette: ThemePalette): CSSProperties {
 function themeModeForMapStyle(profileID: MapStyleProfileID, fallback: 'dark' | 'light'): 'dark' | 'light' {
   const theme = mapStyleProfileByID(profileID).theme;
   return theme === 'light' ? 'light' : theme === 'dark' || theme === 'noc' || theme === 'topo' ? 'dark' : fallback;
-}
-
-function isLabRoute(hash: string): boolean {
-  return hash === '#/lab' || hash.startsWith('#/lab/');
 }
 
 function NodeLoadingToast({ failed, drawing }: { failed: boolean; drawing: boolean }) {

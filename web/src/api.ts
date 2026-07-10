@@ -102,7 +102,21 @@ export function fetchHealthz(): Promise<RuntimeHealth> {
 }
 
 export function fetchReadyz(): Promise<RuntimeHealth> {
-  return getJSON<RuntimeHealth>('/readyz');
+  return getReadinessJSON('/readyz');
+}
+
+async function getReadinessJSON(url: string): Promise<RuntimeHealth> {
+  const request = withRequestTimeout();
+  try {
+    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: request.signal });
+    // Readiness deliberately uses 503 for a valid fail-closed status payload.
+    // System Status still needs that sanitized body to explain warming or the
+    // failed dependency; other HTTP failures remain transport errors.
+    if (!res.ok && res.status !== 503) throw new Error(`${res.status} ${res.statusText}`);
+    return await res.json() as RuntimeHealth;
+  } finally {
+    request.cleanup();
+  }
 }
 
 export interface PublicHistoryParams {

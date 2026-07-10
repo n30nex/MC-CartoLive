@@ -33,14 +33,15 @@ export default function RFReplayStudio({ packet, deepLinkStatus = null, mode, ex
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [routeContextOpen, setRouteContextOpen] = useState(false);
-  const reducedMotion = useReducedMotion();
+  const playbackPreference = useStaticReplayPreference();
+  const staticStory = playbackPreference !== null;
   const startedAtRef = useRef(0);
   const startedProgressRef = useRef(0);
   const timeline = useMemo(() => packet ? replayTimeline(packet) : [], [packet]);
   const active = packet ? replaySegmentAt(packet, progress) : null;
 
   useEffect(() => {
-    if (!playing || !packet || reducedMotion) return;
+    if (!playing || !packet || staticStory) return;
     let frame = 0;
     const duration = REPLAY_DURATION_MS / speed;
     const tick = (now: number) => {
@@ -54,13 +55,13 @@ export default function RFReplayStudio({ packet, deepLinkStatus = null, mode, ex
     };
     frame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(frame);
-  }, [packet, playing, reducedMotion, speed]);
+  }, [packet, playing, speed, staticStory]);
 
   const start = () => {
     if (!packet) return;
     const nextProgress = progress >= 0.995 ? 0 : progress;
     setProgress(nextProgress);
-    if (reducedMotion) {
+    if (staticStory) {
       const segment = replaySegmentAt(packet, nextProgress)?.segment ?? packet.segments[0];
       if (segment) onSeek(segment);
       onReplay(packet, speed, true);
@@ -136,7 +137,7 @@ export default function RFReplayStudio({ packet, deepLinkStatus = null, mode, ex
             </section>
 
             <section className="rf-studio-controls">
-              <button data-autofocus type="button" className="rf-studio-play" onClick={playing ? pause : start}>{playing ? <Pause size={17} /> : <Play size={17} />}<span>{reducedMotion ? 'Show story' : playing ? 'Pause' : 'Play route'}</span></button>
+              <button data-autofocus type="button" className="rf-studio-play" onClick={playing ? pause : start}>{playing ? <Pause size={17} /> : <Play size={17} />}<span>{staticStory ? 'Show story' : playing ? 'Pause' : 'Play route'}</span></button>
               <div className="rf-studio-speed" role="group" aria-label="Replay speed">
                 <Gauge size={14} />
                 {[0.5, 1, 2].map((option) => <button key={option} type="button" className={speed === option ? 'active' : ''} aria-pressed={speed === option} onClick={() => { setSpeed(option); setPlaying(false); }}>{option}×</button>)}
@@ -148,7 +149,11 @@ export default function RFReplayStudio({ packet, deepLinkStatus = null, mode, ex
               <button type="button" onClick={onOpenWaterfall}><Waves size={15} /><span>Waterfall</span></button>
               {onExportGif && <button type="button" disabled={exportBusy} onClick={onExportGif}><Download size={15} /><span>{exportBusy ? 'Rendering…' : 'Export GIF'}</span></button>}
               <button type="button" disabled={!webmSupported || webmBusy || !onExportWebM} title={webmSupported ? 'Record up to 720p locally' : 'WebM recording is unsupported here; GIF remains available.'} onClick={() => onExportWebM?.(speed)}><Download size={15} /><span>{webmBusy ? 'Recording…' : webmSupported ? 'Export WebM' : 'WebM unsupported'}</span></button>
-              <p>{reducedMotion ? 'Reduced motion is active: Replay Studio uses a static route story.' : 'Animation and exports stay in this browser; nothing is uploaded.'}</p>
+              <p>{playbackPreference === 'reduced-motion'
+                ? 'Reduced motion is active: Replay Studio uses a static route story.'
+                : playbackPreference === 'low-power'
+                  ? 'Low-power or data-saver mode is active: Replay Studio uses a static route story.'
+                  : 'Animation and exports stay in this browser; nothing is uploaded.'}</p>
             </footer>
           </>
         )}
@@ -182,14 +187,34 @@ function routeStoryPoints(segments: PublicRouteSegment[]): { x: number; y: numbe
   }));
 }
 
-function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
+type StaticReplayPreference = 'reduced-motion' | 'low-power' | null;
+
+function useStaticReplayPreference(): StaticReplayPreference {
+  const preference = () => staticReplayPreference({
+    reducedMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+    reducedData: window.matchMedia?.('(prefers-reduced-data: reduce)').matches ?? false,
+    saveData: Boolean((navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData)
+  });
+  const [value, setValue] = useState<StaticReplayPreference>(preference);
   useEffect(() => {
-    const media = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    if (!media) return;
-    const update = () => setReduced(media.matches);
-    media.addEventListener?.('change', update);
-    return () => media.removeEventListener?.('change', update);
+    const motion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    const data = window.matchMedia?.('(prefers-reduced-data: reduce)');
+    const connection = (navigator as Navigator & { connection?: EventTarget }).connection;
+    const update = () => setValue(preference());
+    motion?.addEventListener?.('change', update);
+    data?.addEventListener?.('change', update);
+    connection?.addEventListener?.('change', update);
+    return () => {
+      motion?.removeEventListener?.('change', update);
+      data?.removeEventListener?.('change', update);
+      connection?.removeEventListener?.('change', update);
+    };
   }, []);
-  return reduced;
+  return value;
+}
+
+export function staticReplayPreference(input: { reducedMotion: boolean; reducedData: boolean; saveData: boolean }): StaticReplayPreference {
+  if (input.reducedMotion) return 'reduced-motion';
+  if (input.reducedData || input.saveData) return 'low-power';
+  return null;
 }

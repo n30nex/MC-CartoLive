@@ -89,5 +89,5 @@ echo "schema:  /tmp/mc-cartolive-public-schema.json"
 echo "sensors: /tmp/mc-cartolive-sensors.json"
 echo "metrics: /tmp/mc-cartolive-metrics.txt"
 echo "metrics endpoint: $METRICS_URL"
-echo "live confidence:"
-grep -Eo '"(packetIngestState|publicCacheState|mapMotionState|liveConfidenceState)":"[^"]+"' /tmp/mc-cartolive-health.json || true
+echo "public readiness summary:"
+grep -Eo '"(datasetState|storagePressureState)":"[^"]+"|"mqttSessionReady":(true|false)' /tmp/mc-cartolive-ready.json || true

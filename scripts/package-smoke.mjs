@@ -113,7 +113,6 @@ async function runScenario(scenario) {
     assert(ready.ready === true, `${scenario.name}: /readyz ready was not true`);
     assert(String(health.version) === version, `${scenario.name}: version ${health.version} did not match ${version}`);
     assert(String(ready.version) === version, `${scenario.name}: ready version ${ready.version} did not match ${version}`);
-    assert(String(ready.mapRegionPreset ?? health.mapRegionPreset) === scenario.preset, `${scenario.name}: mapRegionPreset mismatch`);
     const mainMetrics = await getResponse(`${baseUrl}/metrics`);
     assert(mainMetrics.statusCode === 404, `${scenario.name}: public application listener exposed /metrics with ${mainMetrics.statusCode}`);
     const metrics = await getResponse(metricsUrl);

@@ -128,12 +128,9 @@ try {
     SensorPackets = $sensors.packetRate.perMinute
     MetricsBytes = $metrics.Content.Length
     MetricsUrl = $MetricsUrl
-    PacketIngestState = $health.packetIngestState
-    PublicCacheState = $health.publicCacheState
-    MapMotionState = $health.mapMotionState
-    LiveConfidenceState = $health.liveConfidenceState
-    PacketIngestFresh = $health.packetIngestFresh
-    PublicLiveFresh = $health.publicLiveFresh
+    DatasetState = $ready.datasetState
+    StoragePressureState = $ready.storagePressureState
+    MQTTSessionReady = $ready.mqttSessionReady
     GitSha = $health.gitSha
     BuildTime = $health.buildTime
   } | Format-List

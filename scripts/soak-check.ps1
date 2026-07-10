@@ -17,6 +17,7 @@ $deadline = (Get-Date).AddMinutes($DurationMinutes)
 $badSamples = 0
 $sample = 0
 $lastPackets = $null
+$lastLatestSeq = $null
 
 while ((Get-Date) -lt $deadline) {
   $sample += 1
@@ -31,12 +32,16 @@ while ((Get-Date) -lt $deadline) {
     $state = Invoke-RestMethod "$BaseUrl/api/v1/public/state"
     $history = Invoke-RestMethod "$BaseUrl/api/v1/public/history?from=$from&to=$now&limit=25"
 
-    if (-not $ready.ready) { $ok = $false }
-    if ($health.packetIngestState -ne "fresh") { $ok = $false }
-    if ($health.publicCacheState -ne "fresh") { $ok = $false }
-    if ($health.liveConfidenceState -eq "degraded") { $ok = $false }
+    if (-not $health.ok -or -not $ready.ready) { $ok = $false }
+    if (-not $ready.mqttSessionReady) { $ok = $false }
+    if ($ready.storagePressureState -eq "critical") { $ok = $false }
+    if (@("fresh_start", "warming", "live") -notcontains ([string]$ready.datasetState)) { $ok = $false }
     if ($null -ne $lastPackets -and $state.stats.packets -lt $lastPackets) { $ok = $false }
     $lastPackets = $state.stats.packets
+    $latestSeq = 0
+    if ($null -ne $state.stats.latestSeq) { $latestSeq = [long]$state.stats.latestSeq }
+    if ($null -ne $lastLatestSeq -and $latestSeq -lt $lastLatestSeq) { $ok = $false }
+    $lastLatestSeq = $latestSeq
 
     $record = [PSCustomObject]@{
       at = (Get-Date).ToUniversalTime().ToString("o")
@@ -47,12 +52,10 @@ while ((Get-Date) -lt $deadline) {
       packets = $state.stats.packets
       nodes = $state.stats.activeNodes
       routes = $state.stats.activeRoutes
-      packetIngestState = $health.packetIngestState
-      mqttLastMessageAgeMs = $health.mqttLastMessageAgeMs
-      publicCacheState = $health.publicCacheState
-      cacheAgeMs = $health.cacheAgeMs
-      mapMotionState = $health.mapMotionState
-      liveConfidenceState = $health.liveConfidenceState
+      latestSeq = $latestSeq
+      datasetState = $ready.datasetState
+      mqttSessionReady = $ready.mqttSessionReady
+      storagePressureState = $ready.storagePressureState
       historyEvents = $history.window.count
     }
   }
@@ -77,7 +80,7 @@ while ((Get-Date) -lt $deadline) {
     }
   }
 
-  Write-Host ("sample {0}: ok={1} packets={2} ingest={3} cache={4} motion={5} confidence={6}" -f $sample, $ok, $record.packets, $record.packetIngestState, $record.publicCacheState, $record.mapMotionState, $record.liveConfidenceState)
+  Write-Host ("sample {0}: ok={1} packets={2} latestSeq={3} dataset={4} storage={5}" -f $sample, $ok, $record.packets, $record.latestSeq, $record.datasetState, $record.storagePressureState)
   Start-Sleep -Seconds $IntervalSeconds
 }
 

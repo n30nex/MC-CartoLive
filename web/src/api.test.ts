@@ -1,11 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { JSON_REQUEST_TIMEOUT_MS, PUBLIC_STATE_CACHE_MAX_AGE_MS, fetchPublicBootstrap, fetchPublicChat, fetchPublicEvents, fetchPublicPackets, fetchPublicPropagation, fetchPublicState, fetchPublicStateWithFallback, readCachedPublicStateSnapshot } from './api';
+import { JSON_REQUEST_TIMEOUT_MS, PUBLIC_STATE_CACHE_MAX_AGE_MS, fetchPublicBootstrap, fetchPublicChat, fetchPublicEvents, fetchPublicPackets, fetchPublicPropagation, fetchPublicState, fetchPublicStateWithFallback, fetchReadyz, readCachedPublicStateSnapshot } from './api';
 
 describe('public transport contracts', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     window.localStorage.clear();
+  });
+
+  it('returns the sanitized fail-closed readiness body on HTTP 503', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ready: false,
+      reasons: ['public_cache_warming'],
+      datasetState: 'warming'
+    }), { status: 503, headers: { 'content-type': 'application/json' } })));
+    await expect(fetchReadyz()).resolves.toMatchObject({ ready: false, datasetState: 'warming' });
   });
 
   it('normalizes event reset metadata without scanning history', async () => {

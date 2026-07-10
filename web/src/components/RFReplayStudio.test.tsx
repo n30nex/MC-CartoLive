@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import RFReplayStudio from './RFReplayStudio';
+import RFReplayStudio, { staticReplayPreference } from './RFReplayStudio';
 import { routeToReplayPacket } from '../replayStudio';
 import type { PublicRoute } from '../types';
 
@@ -16,6 +16,13 @@ const route: PublicRoute = {
 };
 
 describe('RFReplayStudio', () => {
+  it('uses a static story for reduced-motion and explicit low-power preferences', () => {
+    expect(staticReplayPreference({ reducedMotion: true, reducedData: false, saveData: false })).toBe('reduced-motion');
+    expect(staticReplayPreference({ reducedMotion: false, reducedData: true, saveData: false })).toBe('low-power');
+    expect(staticReplayPreference({ reducedMotion: false, reducedData: false, saveData: true })).toBe('low-power');
+    expect(staticReplayPreference({ reducedMotion: false, reducedData: false, saveData: false })).toBeNull();
+  });
+
   it('renders a privacy-safe lazy route story with camera, timeline, share, and export controls', () => {
     const html = renderToStaticMarkup(
       <RFReplayStudio
