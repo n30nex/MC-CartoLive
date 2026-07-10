@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -11,6 +12,43 @@ import (
 	"meshcore-canada-live-map/backend/internal/meshcore"
 	mq "meshcore-canada-live-map/backend/internal/mqtt"
 )
+
+func TestMigrateRollsBackColumnsAndVersionOnFailure(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "rollback.db")
+	db, err := sql.Open("sqlite", sqliteDSN(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, oldSchemaSQLForMigrationTest); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = sql.Open("sqlite", sqliteDSN(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	st := &Store{db: db, path: path, coordinatePolicy: live.CurrentCoordinatePolicy(), migrationHook: func(stage string) error {
+		return errors.New("injected migration failure at " + stage)
+	}}
+	t.Cleanup(func() { _ = st.Close() })
+	if err := st.Migrate(ctx); err == nil {
+		t.Fatal("expected injected migration failure")
+	}
+	if testColumnExists(t, ctx, st, "packet_observations", "ingest_id") {
+		t.Fatal("ingest_id column survived rolled-back migration")
+	}
+	var version int
+	if err := db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != 0 {
+		t.Fatalf("user_version=%d after rollback, want 0", version)
+	}
+}
 
 func TestMigrateUpgradesOldSchemaColumns(t *testing.T) {
 	ctx := context.Background()
@@ -43,12 +81,12 @@ func TestMigrateUpgradesOldSchemaColumns(t *testing.T) {
 
 	for table, columns := range map[string][]string{
 		"nodes":                         {"supports_multibyte"},
-		"packet_observations":           {"message_sender", "message_text"},
-		"live_edge_events":              {"message_sender", "message_text", "message_anchor_json"},
+		"packet_observations":           {"ingest_id", "message_sender", "message_text"},
+		"live_edge_events":              {"ingest_id", "message_sender", "message_text", "message_anchor_json"},
 		"public_packet_paths":           {"mappable", "region", "route_ids_json", "endpoint_labels_json", "search_text", "message_sender", "message_text"},
 		"public_route_summaries":        {"route_id", "from_node_id", "to_node_id", "last_heard_ms"},
 		"public_route_summary_edges":    {"edge_id", "heard_at_ms"},
-		"public_events":                 {"event_type", "public_json", "route_ids_json", "node_ids_json"},
+		"public_events":                 {"dedupe_key", "event_type", "public_json", "route_ids_json", "node_ids_json"},
 		"public_coverage_cells":         {"precision_bucket", "attribution"},
 		"propagation_weather_snapshots": {"fetched_at_ms", "pressure_hpa", "inversion_proxy"},
 		"propagation_events":            {"public_id", "classification", "weather_json", "solar_json"},

@@ -17,6 +17,8 @@ import (
 )
 
 func (s *Store) UpsertAdvertNode(ctx context.Context, iata string, advert meshcore.Advert, heardAt int64) (live.Node, error) {
+	finishCandidateMutation := s.beginCandidateMutation()
+	defer finishCandidateMutation()
 	nodeID := uuid.NewString()
 	name := advert.Name
 	lat, lng := s.nullableMapLatLng(advert.Latitude, advert.Longitude)
@@ -61,6 +63,10 @@ ON CONFLICT(public_key) DO UPDATE SET
 }
 
 func (s *Store) UpsertObserver(ctx context.Context, msg mq.NormalizedMessage) error {
+	if msg.TopicInfo.Subtopic == "status" {
+		finishCandidateMutation := s.beginCandidateMutation()
+		defer finishCandidateMutation()
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -176,7 +182,7 @@ ON CONFLICT(public_key, iata) DO UPDATE SET
 }
 
 func (s *Store) NodeByPublicKey(ctx context.Context, publicKey string) (live.Node, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 SELECT node_id, public_key, name, node_type, role, latitude, longitude, location_source,
   first_seen_ms, last_seen_ms, observation_count, supports_multibyte
 FROM nodes WHERE public_key=?`, strings.ToUpper(publicKey))
@@ -195,7 +201,7 @@ FROM nodes WHERE public_key=?`, strings.ToUpper(publicKey))
 }
 
 func (s *Store) NodeByID(ctx context.Context, nodeID string) (live.Node, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 SELECT n.node_id, n.public_key, n.name, n.node_type, n.role, n.latitude, n.longitude,
        n.location_source, n.first_seen_ms, n.last_seen_ms, n.observation_count, n.supports_multibyte
 FROM nodes n
@@ -234,7 +240,7 @@ FROM nodes n`
 		query += ` WHERE ` + strings.Join(where, ` AND `)
 	}
 	query += ` ORDER BY n.last_seen_ms DESC LIMIT 2000`
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.reader().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +249,7 @@ FROM nodes n`
 }
 
 func (s *Store) Observers(ctx context.Context) ([]live.Observer, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 SELECT public_key, iata, name, latitude, longitude, last_seen_ms, packet_count, status_json
 FROM observers ORDER BY last_seen_ms DESC LIMIT 1000`)
 	if err != nil {
@@ -265,7 +271,7 @@ FROM observers ORDER BY last_seen_ms DESC LIMIT 1000`)
 }
 
 func (s *Store) ObserverByPublicKeyIATA(ctx context.Context, publicKey string, iata string) (live.Observer, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 SELECT public_key, iata, name, latitude, longitude, last_seen_ms, packet_count, status_json
 FROM observers WHERE public_key=? AND iata=?`,
 		strings.ToUpper(publicKey), strings.ToUpper(iata))
@@ -294,7 +300,7 @@ FROM observers WHERE public_key=? AND iata=?`,
 }
 
 func (s *Store) CandidatesByPrefix(ctx context.Context, iata string, hashSize int, prefix string) ([]resolve.Candidate, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 SELECT n.node_id, n.public_key, n.name, n.role, si.iata, n.latitude, n.longitude
 FROM node_short_ids si
 JOIN nodes n ON n.public_key=si.public_key
@@ -343,7 +349,7 @@ HAVING COUNT(*) > 1
 ORDER BY candidate_count DESC, si.iata, si.prefix_hex
 LIMIT ?`
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.reader().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -487,7 +493,7 @@ func (s *Store) nodeIATAsForPublicKeys(ctx context.Context, publicKeys []string)
 		for _, publicKey := range chunk {
 			args = append(args, publicKey)
 		}
-		rows, err := s.db.QueryContext(ctx, `SELECT public_key, iata FROM node_iatas WHERE public_key IN (`+placeholders+`) ORDER BY public_key, iata`, args...)
+		rows, err := s.reader().QueryContext(ctx, `SELECT public_key, iata FROM node_iatas WHERE public_key IN (`+placeholders+`) ORDER BY public_key, iata`, args...)
 		if err != nil {
 			return nil, err
 		}
@@ -562,6 +568,8 @@ func (s *Store) ApplyManualNode(ctx context.Context, publicKey, name string, lat
 	if !s.validMapCoords(lat, lng) {
 		return fmt.Errorf("manual node coordinates outside valid map bounds")
 	}
+	finishCandidateMutation := s.beginCandidateMutation()
+	defer finishCandidateMutation()
 	now := time.Now().UnixMilli()
 	role := "repeater"
 	if source == "" {

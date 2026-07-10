@@ -20,6 +20,7 @@ import {
 } from '../mapSettings';
 import { MAP_STYLE_PROFILES, mapStyleProfileByID, type MapStyleProfileID } from '../map/styles/styleRegistry';
 import { activeAssetPack } from '../assets/v3/assetPacks';
+import { useAccessibleDialog } from '../lib/useAccessibleDialog';
 
 interface MapSettingsDrawerProps {
   settings: MapSettings;
@@ -114,6 +115,7 @@ const MODE_ICONS: Record<MapModeID, typeof RadioTower> = {
 type AdvancedSection = 'layers' | 'style' | 'packets' | 'rf';
 
 export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenPropagation }: MapSettingsDrawerProps) {
+  const dialogRef = useAccessibleDialog<HTMLElement>(true, onClose);
   const [advancedOpen, setAdvancedOpen] = useState<Record<AdvancedSection, boolean>>({
     layers: false,
     style: false,
@@ -161,7 +163,7 @@ export default function MapSettingsDrawer({ settings, onChange, onClose, onOpenP
     })
   })).filter((group) => group.controls.length > 0);
   return (
-    <aside className="map-settings-drawer" aria-label="Map settings">
+    <aside ref={dialogRef} className="map-settings-drawer" role="dialog" aria-modal="true" aria-label="Map settings" tabIndex={-1}>
       <header className="map-settings-header">
         <div>
           <span className="panel-eyebrow">Map</span>

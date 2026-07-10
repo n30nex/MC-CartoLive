@@ -40,9 +40,12 @@ type Application struct {
 
 	apiServer *api.Server
 
-	cacheRefreshMu sync.Mutex
-	packetCount    atomic.Int64
-	wg             sync.WaitGroup
+	cacheRefreshMu    sync.Mutex
+	packetCount       atomic.Int64
+	derivedQueue      chan derivedIngestJob
+	derivedQueueMu    sync.Mutex
+	derivedQueueTimes []int64
+	wg                sync.WaitGroup
 }
 
 type runtimeCounterLogSnapshot struct {
@@ -92,10 +95,13 @@ func NewApplication(ctx context.Context, cfg Config, log *slog.Logger) (*Applica
 	}
 	st.SetCoordinatePolicy(coordinatePolicy)
 	yc := loadYAMLConfig(cfg.ConfigYAML, log)
+	resolver := resolve.New(st, yc.ForwarderRoles)
 	for _, node := range yc.ManualNodes {
 		if node.PublicKey != "" {
 			if err := st.ApplyManualNode(ctx, node.PublicKey, node.Name, node.Latitude, node.Longitude, node.Source); err != nil {
 				log.Warn("manual node override failed", "publicKey", redact(node.PublicKey), "error", err)
+			} else {
+				resolver.InvalidateCandidates()
 			}
 		}
 	}
@@ -104,8 +110,11 @@ func NewApplication(ctx context.Context, cfg Config, log *slog.Logger) (*Applica
 	publicHub.SetResumeEnabled(cfg.PublicWSResumeEnabled)
 	publicHub.SetSubscriptionsEnabled(cfg.PublicWSSubscriptionsEnabled)
 	publicCache := live.NewPublicStateCache(live.NewPublicIATAFilter(publicIATAs(cfg.PublicRegions, yc)))
-	resolver := resolve.New(st, yc.ForwarderRoles)
-	app := &Application{Config: cfg, Log: log, Store: st, Hub: hub, PublicHub: publicHub, PublicCache: publicCache, Runtime: live.NewRuntimeStats(), Resolver: resolver, Solar: solar.NewFetcher(log), Propagation: propagation.NewWeatherFetcher(log)}
+	derivedQueueSize := cfg.DerivedIngestQueueSize
+	if derivedQueueSize < 1 {
+		derivedQueueSize = 1024
+	}
+	app := &Application{Config: cfg, Log: log, Store: st, Hub: hub, PublicHub: publicHub, PublicCache: publicCache, Runtime: live.NewRuntimeStats(), Resolver: resolver, Solar: solar.NewFetcher(log), Propagation: propagation.NewWeatherFetcher(log), derivedQueue: make(chan derivedIngestJob, derivedQueueSize)}
 	if latestSeq, err := st.LatestPublicSeq(ctx); err == nil {
 		publicHub.SetLatestSeq(latestSeq)
 	} else {
@@ -151,6 +160,7 @@ func (a *Application) Start(ctx context.Context) error {
 		"journalMode", dbInfo.JournalMode,
 		"busyTimeoutMs", dbInfo.BusyTimeout,
 		"maxOpenConns", dbInfo.MaxOpenConns,
+		"readMaxOpenConns", dbInfo.ReadMaxOpenConns,
 	)
 	a.wg.Add(1)
 	go func() { defer a.wg.Done(); a.refreshPacketCountOnce(ctx) }()
@@ -168,6 +178,8 @@ func (a *Application) Start(ctx context.Context) error {
 		a.wg.Add(1)
 		go func() { defer a.wg.Done(); a.propagationLoop(ctx) }()
 	}
+	a.wg.Add(1)
+	go func() { defer a.wg.Done(); a.derivedIngestLoop(ctx) }()
 	if err := a.MQTT.Start(ctx); err != nil {
 		a.Log.Error("mqtt start failed", "error", err)
 	}
@@ -203,18 +215,18 @@ func (a *Application) Close() error {
 	return a.Store.Close()
 }
 
-func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessage) {
+func (a *Application) processDerivedMQTT(ctx context.Context, msg imqtt.NormalizedMessage) {
+	job, ok := ctx.Value(derivedIngestJobContextKey{}).(derivedIngestJob)
+	if !ok {
+		a.Log.Error("derived ingest context missing")
+		return
+	}
 	if msg.TopicInfo.Subtopic == "internal" {
 		return
 	}
 	if msg.TopicInfo.Subtopic == "status" {
-		if err := a.retryStoreWrite(ctx, "status upsert", func(ctx context.Context) error {
-			return a.Store.UpsertObserver(ctx, msg)
-		}); err != nil {
-			a.Log.Warn("status upsert failed", "error", err)
-		}
 		if node, err := a.Store.NodeByPublicKey(ctx, msg.TopicInfo.PublisherPK); err == nil && hasCoords(node) {
-			a.broadcastNodeUpdateForIATA(ctx, node, msg.TopicInfo.IATA)
+			a.broadcastNodeUpdateForIATA(ctx, node, msg.TopicInfo.IATA, msg.IngestID+":node")
 		}
 		return
 	}
@@ -226,37 +238,10 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 	}); err != nil {
 		a.Log.Warn("observer packet update failed", "error", err)
 	}
-	if msg.RawHex == "" {
-		a.Log.Debug("packet missing raw hex", "topic", msg.Topic)
-		return
-	}
-
-	parsed, err := meshcore.ParseHexPacket(msg.RawHex)
-	if err != nil {
-		a.Log.Debug("packet decode failed", "topic", msg.Topic, "error", err)
-		return
-	}
-
-	var advert *meshcore.Advert
-	if parsed.PayloadType == meshcore.PayloadAdvert {
-		if parsedAdvert, ok, err := meshcore.ParseAdvertPayload(parsed.Payload); err != nil {
-			a.Log.Debug("advert parse failed", "packetHash", parsed.PacketHash, "error", err)
-		} else if ok {
-			advert = &parsedAdvert
-		}
-	}
-	summary := meshcore.Summary(parsed, advert)
-	decodedMessage := meshcore.DecodePublicMessage(parsed.PayloadType, parsed.Payload, msg.RawJSON, a.Config.MeshcoreChannelSecrets)
-	var observationID int64
-	err = a.retryStoreWrite(ctx, "packet/observation upsert", func(ctx context.Context) error {
-		id, err := a.Store.UpsertPacketAndObservation(ctx, parsed, msg.HeardAtMs, store.ObservationInsert{Message: msg, Parsed: parsed, Summary: summary, MessageSender: decodedMessage.Sender, MessageText: decodedMessage.Text})
-		observationID = id
-		return err
-	})
-	if err != nil {
-		a.Log.Warn("packet/observation upsert failed", "error", err)
-		return
-	}
+	parsed := job.parsed
+	advert := job.advert
+	decodedMessage := job.decodedMessage
+	observationID := job.observationID
 
 	var advertNode *live.Node
 	if advert != nil {
@@ -269,8 +254,9 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 		if err != nil {
 			a.Log.Warn("advert node upsert failed", "packetHash", parsed.PacketHash, "error", err)
 		} else {
+			a.Resolver.InvalidateCandidates()
 			advertNode = &node
-			a.broadcastNodeUpdateForIATA(ctx, node, msg.TopicInfo.IATA)
+			a.broadcastNodeUpdateForIATA(ctx, node, msg.TopicInfo.IATA, msg.IngestID+":advert-node")
 		}
 	}
 
@@ -301,6 +287,7 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 	}
 
 	edge, ok := a.buildEdgeEvent(ctx, msg, parsed, observationID, resolution, advertNode, decodedMessage)
+	edge.IngestID = msg.IngestID + ":edge"
 	publicActivitySent := false
 	publicAllowed := a.PublicCache.AllowsIATA(msg.TopicInfo.IATA)
 	if !publicAllowed {
@@ -319,12 +306,12 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 			a.Hub.Broadcast("edgeAnimation", stored)
 			if publicAllowed {
 				if activity, ok := live.PublicActivityFromEdge(stored); ok {
-					activity = a.publishPublicEvent(ctx, "activity", activity).(live.PublicActivity)
+					activity = a.publishPublicEvent(ctx, "activity", activity, msg.IngestID+":edge-activity").(live.PublicActivity)
 					a.PublicCache.ApplyActivity(activity)
 					publicActivitySent = true
 				}
 				if pulse, ok := live.PublicRoutePulseFromEdge(stored); ok {
-					pulse = a.publishPublicEvent(ctx, "routePulse", pulse).(live.PublicRoutePulse)
+					pulse = a.publishPublicEvent(ctx, "routePulse", pulse, msg.IngestID+":route-pulse").(live.PublicRoutePulse)
 					a.PublicCache.ApplyRoutePulse(pulse)
 				}
 			}
@@ -332,12 +319,12 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 	}
 	if !publicActivitySent && observationOK && publicAllowed {
 		activity := a.publicActivityFromPacket(ctx, observation, nil)
-		activity = a.publishPublicEvent(ctx, "activity", activity).(live.PublicActivity)
+		activity = a.publishPublicEvent(ctx, "activity", activity, msg.IngestID+":packet-activity").(live.PublicActivity)
 		a.PublicCache.ApplyActivity(activity)
 	}
 }
 
-func (a *Application) broadcastNodeUpdateForIATA(ctx context.Context, node live.Node, iata string) {
+func (a *Application) broadcastNodeUpdateForIATA(ctx context.Context, node live.Node, iata string, dedupeKeys ...string) {
 	a.Hub.Broadcast("nodeUpdate", node)
 	if iata != "" && !a.PublicCache.AllowsIATA(iata) {
 		a.PublicCache.RecordExcludedIATA(iata)
@@ -349,12 +336,12 @@ func (a *Application) broadcastNodeUpdateForIATA(ctx context.Context, node live.
 			return
 		}
 		publicNode.IATAsHeardIn = filteredIATAs
-		publicNode = a.publishPublicEvent(ctx, "nodeUpdate", publicNode).(live.PublicNode)
+		publicNode = a.publishPublicEvent(ctx, "nodeUpdate", publicNode, dedupeKeys...).(live.PublicNode)
 		a.PublicCache.ApplyNode(publicNode)
 	}
 }
 
-func (a *Application) publishPublicEvent(ctx context.Context, eventType string, data any) any {
+func (a *Application) publishPublicEvent(ctx context.Context, eventType string, data any, dedupeKeys ...string) any {
 	if a == nil || a.PublicHub == nil {
 		return data
 	}
@@ -363,6 +350,9 @@ func (a *Application) publishPublicEvent(ctx context.Context, eventType string, 
 		return data
 	}
 	event := live.PublicEventFromData(eventType, data)
+	if len(dedupeKeys) > 0 {
+		event.DedupeKey = strings.TrimSpace(dedupeKeys[0])
+	}
 	var stored live.PublicEvent
 	err := a.retryStoreWrite(ctx, "public event insert", func(ctx context.Context) error {
 		var err error
@@ -382,16 +372,28 @@ func (a *Application) publishPublicEvent(ctx context.Context, eventType string, 
 }
 
 func (a *Application) retryStoreWrite(ctx context.Context, label string, fn func(context.Context) error) error {
-	delays := []time.Duration{0, 100 * time.Millisecond, 250 * time.Millisecond}
+	started := time.Now()
+	delays := []time.Duration{
+		0,
+		50 * time.Millisecond,
+		100 * time.Millisecond,
+		200 * time.Millisecond,
+		400 * time.Millisecond,
+		800 * time.Millisecond,
+	}
 	var err error
+	retries := 0
 	for attempt, delay := range delays {
 		if delay > 0 {
 			select {
 			case <-ctx.Done():
 				if err != nil {
+					a.Runtime.RecordStoreWrite(time.Since(started), retries, true, isSQLiteBusy(err), isSQLiteFull(err))
 					return err
 				}
-				return ctx.Err()
+				err = ctx.Err()
+				a.Runtime.RecordStoreWrite(time.Since(started), retries, true, false, false)
+				return err
 			case <-time.After(delay):
 			}
 		}
@@ -400,12 +402,16 @@ func (a *Application) retryStoreWrite(ctx context.Context, label string, fn func
 			if attempt > 0 && a != nil && a.Log != nil {
 				a.Log.Debug("sqlite write recovered after retry", "operation", label, "attempt", attempt+1)
 			}
+			a.Runtime.RecordStoreWrite(time.Since(started), retries, false, false, false)
 			return nil
 		}
 		if !isSQLiteBusy(err) {
+			a.Runtime.RecordStoreWrite(time.Since(started), retries, true, false, isSQLiteFull(err))
 			return err
 		}
+		retries++
 	}
+	a.Runtime.RecordStoreWrite(time.Since(started), retries, true, isSQLiteBusy(err), isSQLiteFull(err))
 	return err
 }
 
@@ -415,6 +421,14 @@ func isSQLiteBusy(err error) bool {
 	}
 	text := strings.ToLower(err.Error())
 	return strings.Contains(text, "sqlite_busy") || strings.Contains(text, "database is locked") || strings.Contains(text, "database table is locked")
+}
+
+func isSQLiteFull(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "sqlite_full") || strings.Contains(text, "database or disk is full") || strings.Contains(text, "disk full")
 }
 
 func (a *Application) publicActivityFromPacket(ctx context.Context, observation live.PacketObservation, routeIDs []string) live.PublicActivity {
@@ -716,6 +730,13 @@ func (a *Application) RefreshPublicStateCache(ctx context.Context) error {
 		publicStats.Packets = count
 	}
 	publicState := live.BuildPublicLiveState(filtered, publicStats)
+	publicState.Map = live.PublicMapConfig{
+		RegionPreset:  a.Config.MapRegionPreset,
+		DefaultRegion: a.Config.DefaultRegion,
+		DefaultCenter: []float64{a.Config.DefaultCenterLng, a.Config.DefaultCenterLat},
+		DefaultZoom:   a.Config.DefaultZoom,
+		Bounds:        a.Config.MapBounds,
+	}
 	a.PublicCache.Replace(publicState, excluded)
 	failed = false
 	return nil
@@ -1181,34 +1202,122 @@ func redactedURL(in string) string {
 	return in
 }
 
+const (
+	retentionPruneInitialDelay          = 30 * time.Second
+	retentionPruneInterval              = time.Minute
+	retentionPruneCycleBudget           = 45 * time.Second
+	retentionPruneBatchPause            = 10 * time.Millisecond
+	retentionPruneMaxRowsPerCycle int64 = 250_000
+
+	// MeshCore permits up to 63 path hops. Allowing one route-summary row per
+	// segment plus the observation, edge/path projections, packet, and as many as
+	// three public events yields fewer than 96 retained rows per input.
+	retentionLockedMessagesPerSecond   int64 = 20
+	retentionWorstCaseRowsPerMessage   int64 = 96
+	retentionMaxPublicEventsPerMessage int64 = 3
+)
+
+func retentionPruneCapacityRowsPerSecond() int64 {
+	return retentionPruneMaxRowsPerCycle / int64(retentionPruneInterval/time.Second)
+}
+
+func retentionPruneAllowed(mqttStatus imqtt.Status, runtimeStatus live.RuntimeStatsSnapshot, storageState string, nowMs int64) (bool, string) {
+	primaryPressured := (mqttStatus.QueueCapacity > 0 && mqttStatus.QueueDepth*2 >= mqttStatus.QueueCapacity) || mqttStatus.OldestQueueItemAgeMs > 2_000
+	if primaryPressured {
+		return false, "primary_ingest_pressure"
+	}
+	derivedOldestAge := int64(0)
+	if runtimeStatus.DerivedOldestAtMs > 0 {
+		derivedOldestAge = max(nowMs-runtimeStatus.DerivedOldestAtMs, 0)
+	}
+	derivedPressured := (runtimeStatus.DerivedQueueCapacity > 0 && runtimeStatus.DerivedQueueDepth*2 >= runtimeStatus.DerivedQueueCapacity) || derivedOldestAge > 2_000
+	// Derived projections are intentionally paused under storage pressure. Their
+	// growing queue age must not block the cleanup which creates free space.
+	if storageState == "warn" || storageState == "critical" {
+		return true, ""
+	}
+	if derivedPressured {
+		return false, "derived_ingest_pressure"
+	}
+	return true, ""
+}
+
 func (a *Application) pruneLoop(ctx context.Context) {
 	retentionDays := a.effectiveDataRetentionDays()
 	if retentionDays < 0 {
 		return
 	}
 	runPrune := func() {
-		beforeMs := time.Now().AddDate(0, 0, -retentionDays).UnixMilli()
-		if err := a.Store.PruneOldData(ctx, beforeMs); err != nil {
-			a.Log.Warn("data prune failed", "error", err)
-		} else {
-			a.Log.Debug("data pruned", "beforeMs", beforeMs)
+		started := time.Now()
+		publicEventHours := a.Config.PublicEventRetentionHours
+		if publicEventHours <= 0 {
+			publicEventHours = 24
 		}
 		propagationRetentionDays := a.Config.PropagationEventRetentionDays
-		if propagationRetentionDays > 0 && propagationRetentionDays != retentionDays {
-			propagationBeforeMs := time.Now().AddDate(0, 0, -propagationRetentionDays).UnixMilli()
-			if err := a.Store.PrunePropagationData(ctx, propagationBeforeMs); err != nil {
-				a.Log.Warn("propagation prune failed", "error", err)
+		if propagationRetentionDays <= 0 {
+			propagationRetentionDays = retentionDays
+		}
+		pruner := a.Store.NewRetentionPruner(store.RetentionCutoffs{
+			DataBeforeMs:        started.AddDate(0, 0, -retentionDays).UnixMilli(),
+			PublicEventBeforeMs: started.Add(-time.Duration(publicEventHours) * time.Hour).UnixMilli(),
+			PropagationBeforeMs: started.AddDate(0, 0, -propagationRetentionDays).UnixMilli(),
+		})
+		cycleCtx, cancel := context.WithTimeout(ctx, retentionPruneCycleBudget)
+		defer cancel()
+		var rowsDeleted int64
+		steps := 0
+		for rowsDeleted < retentionPruneMaxRowsPerCycle {
+			now := time.Now()
+			mqttStatus := a.MQTT.Status(now)
+			runtimeStatus := a.Runtime.Snapshot()
+			storageState := a.Store.StorageInfo().PressureState
+			allowed, reason := retentionPruneAllowed(mqttStatus, runtimeStatus, storageState, now.UnixMilli())
+			if !allowed {
+				a.Log.Warn("retention cleanup paused between batches; ingest lag is not healthy",
+					"reason", reason,
+					"rowsDeleted", rowsDeleted,
+					"queueDepth", mqttStatus.QueueDepth, "queueCapacity", mqttStatus.QueueCapacity,
+					"queueOldestAgeMs", mqttStatus.OldestQueueItemAgeMs,
+					"derivedQueueDepth", runtimeStatus.DerivedQueueDepth, "derivedQueueCapacity", runtimeStatus.DerivedQueueCapacity,
+					"storagePressureState", storageState,
+				)
+				return
+			}
+			step, err := pruner.Step(cycleCtx)
+			if err != nil {
+				if cycleCtx.Err() != nil {
+					a.Log.Warn("retention cleanup reached its bounded time budget", "rowsDeleted", rowsDeleted, "steps", steps)
+					return
+				}
+				a.Log.Warn("retention cleanup batch failed", "error", err, "rowsDeleted", rowsDeleted, "steps", steps)
+				return
+			}
+			steps++
+			rowsDeleted += step.RowsDeleted
+			if step.Done {
+				a.Log.Debug("retention cleanup complete", "rowsDeleted", rowsDeleted, "steps", steps, "durationMs", time.Since(started).Milliseconds())
+				return
+			}
+			if step.RowsDeleted > 0 {
+				timer := time.NewTimer(retentionPruneBatchPause)
+				select {
+				case <-cycleCtx.Done():
+					timer.Stop()
+					a.Log.Warn("retention cleanup reached its bounded time budget", "rowsDeleted", rowsDeleted, "steps", steps)
+					return
+				case <-timer.C:
+				}
 			}
 		}
+		a.Log.Info("retention cleanup reached its bounded row budget", "rowsDeleted", rowsDeleted, "steps", steps, "durationMs", time.Since(started).Milliseconds())
 	}
-	initialDelay := 30 * time.Minute
 	select {
 	case <-ctx.Done():
 		return
-	case <-time.After(initialDelay):
+	case <-time.After(retentionPruneInitialDelay):
 	}
 	runPrune()
-	ticker := time.NewTicker(6 * time.Hour)
+	ticker := time.NewTicker(retentionPruneInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -1229,18 +1338,42 @@ func (a *Application) effectiveDataRetentionDays() int {
 }
 
 func (a *Application) maintenanceLoop(ctx context.Context) {
-	ticker := time.NewTicker(6 * time.Hour)
+	// Check for a quiet window hourly, reclaim only a small number of pages,
+	// and run SQLite's normal optimize pass no more than once per day. The
+	// initial 0x10002 optimize pass already runs when the Store opens.
+	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()
+	lastOptimize := time.Now()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := a.Store.Analyze(ctx); err != nil {
-				a.Log.Warn("database maintenance failed", "error", err)
+			mqttStatus := a.MQTT.Status(time.Now())
+			runtimeStatus := a.Runtime.Snapshot()
+			if mqttStatus.QueueDepth > 0 || mqttStatus.OldestQueueItemAgeMs > 0 || runtimeStatus.DerivedQueueDepth > 0 {
+				a.Log.Debug("database maintenance deferred; ingest is not idle")
+				continue
+			}
+			if a.Store.StorageInfo().PressureState == "critical" {
+				a.Log.Warn("database maintenance deferred; storage is critical")
+				continue
+			}
+			maintenanceCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			if time.Since(lastOptimize) >= 24*time.Hour {
+				if err := a.Store.Optimize(maintenanceCtx, false); err != nil {
+					a.Log.Warn("database optimize failed", "error", err)
+					cancel()
+					continue
+				}
+				lastOptimize = time.Now()
+			}
+			if err := a.Store.IncrementalVacuum(maintenanceCtx, 64); err != nil {
+				a.Log.Warn("database incremental vacuum failed", "error", err)
 			} else {
 				a.Log.Info("database maintenance complete")
 			}
+			cancel()
 		}
 	}
 }

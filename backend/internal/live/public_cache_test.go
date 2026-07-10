@@ -1,9 +1,42 @@
 package live
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
+	"io"
 	"testing"
 	"time"
 )
+
+func TestPublicCachePublishesReusableJSONGzipAndETag(t *testing.T) {
+	cache := NewPublicStateCache(NewPublicIATAFilter(nil))
+	cache.Replace(PublicLiveState{
+		Stats: PublicStats{Packets: 12},
+		Nodes: []PublicNode{{ID: "safe-node", Label: "Safe", Latitude: 43.6, Longitude: -79.3}},
+	}, nil)
+	serialized, ok := cache.Serialized()
+	if !ok || len(serialized.JSON) == 0 || len(serialized.Gzip) == 0 || serialized.ETag == "" {
+		t.Fatalf("serialized cache unavailable: %#v", serialized)
+	}
+	if !json.Valid(serialized.JSON) {
+		t.Fatalf("cached JSON is invalid: %s", serialized.JSON)
+	}
+	reader, err := gzip.NewReader(bytes.NewReader(serialized.Gzip))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(decoded, serialized.JSON) {
+		t.Fatal("cached gzip does not decode to cached JSON")
+	}
+}
 
 func TestPublicCacheStatusReportsTruncation(t *testing.T) {
 	cache := NewPublicStateCache(NewPublicIATAFilter(nil))
@@ -31,6 +64,23 @@ func TestPublicCacheStatusReportsTruncation(t *testing.T) {
 		status.TruncatedRecentPulses != 5 ||
 		status.TruncatedRecentActivity != 7 {
 		t.Fatalf("truncation status = %#v", status)
+	}
+}
+
+func TestPublicCacheLiveUpdatesAdvanceSnapshotSequenceMonotonically(t *testing.T) {
+	cache := NewPublicStateCache(NewPublicIATAFilter(nil))
+	cache.Replace(PublicLiveState{Stats: PublicStats{LatestSeq: 10}}, nil)
+
+	cache.ApplyNode(PublicNode{ID: "node-1", Seq: 11})
+	cache.ApplyActivity(PublicActivity{ID: "activity-1", Seq: 13, HeardAt: 13})
+	cache.ApplyRoutePulse(PublicRoutePulse{ID: "pulse-1", Seq: 12, HeardAt: 12})
+
+	snapshot, ok := cache.Snapshot()
+	if !ok {
+		t.Fatal("cache should remain ready after live updates")
+	}
+	if snapshot.Stats.LatestSeq != 13 {
+		t.Fatalf("latestSeq=%d want 13", snapshot.Stats.LatestSeq)
 	}
 }
 

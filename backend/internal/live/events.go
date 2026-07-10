@@ -74,6 +74,7 @@ type MessageAnchor struct {
 }
 
 type EdgeEvent struct {
+	IngestID        string         `json:"-"`
 	ID              int64          `json:"id,omitempty"`
 	PacketHash      string         `json:"packetHash"`
 	ObservationID   int64          `json:"observationId"`

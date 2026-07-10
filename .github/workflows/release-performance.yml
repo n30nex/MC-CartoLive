@@ -1,0 +1,98 @@
+name: Release performance gate
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "scripts/performance-gate.mjs"
+      - "scripts/mc-cartolive-watchdog.sh"
+      - "scripts/test-release-ops.sh"
+      - ".github/workflows/release-performance.yml"
+      - "docs/3.2.0/performance-gate.md"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Full release proof or scaled CI smoke
+        type: choice
+        options: [full, smoke]
+        default: full
+      sustained_seconds:
+        description: Smoke-profile diagnostic override only
+        type: string
+        default: ""
+      burst_seconds:
+        description: Smoke-profile diagnostic override only
+        type: string
+        default: ""
+      api_rows:
+        description: Smoke-profile diagnostic override only
+        type: string
+        default: ""
+      ws_clients:
+        description: Smoke-profile diagnostic override only
+        type: string
+        default: ""
+      ws_seconds:
+        description: Smoke-profile diagnostic override only
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-performance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  performance:
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'smoke' }} load proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PERF_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'smoke' }}
+      PERF_SUSTAIN_SECONDS: ${{ inputs.sustained_seconds || '' }}
+      PERF_BURST_SECONDS: ${{ inputs.burst_seconds || '' }}
+      PERF_API_ROWS: ${{ inputs.api_rows || '' }}
+      PERF_WS_CLIENTS: ${{ inputs.ws_clients || '' }}
+      PERF_WS_SECONDS: ${{ inputs.ws_seconds || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+      - name: Require exact release workflow dispatch for full proof
+        if: env.PERF_PROFILE == 'full'
+        run: |
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          case "$GITHUB_REF" in
+            refs/heads/main|refs/heads/codex/release-3.2.0) ;;
+            *) echo "full proof refused for $GITHUB_REF" >&2; exit 1 ;;
+          esac
+          test "$GITHUB_REPOSITORY" = "n30nex/MC-CartoLive"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+      - name: Module verification
+        working-directory: backend
+        run: go mod verify
+      - name: Performance harness unit contracts
+        working-directory: backend
+        run: go test ./internal/mqtt ./internal/app ./cmd/perfseed ./cmd/perfws
+      - name: Quiet-traffic watchdog contract
+        run: bash scripts/test-release-ops.sh
+      - name: Run performance gate
+        run: node scripts/performance-gate.mjs --profile "$PERF_PROFILE"
+      - name: Upload proof
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-performance-${{ env.PERF_PROFILE }}-${{ github.sha }}
+          path: artifacts/performance-gate/
+          if-no-files-found: error
+          retention-days: 14

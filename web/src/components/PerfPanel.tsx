@@ -99,8 +99,8 @@ export default function PerfPanel({ onClose }: PerfPanelProps) {
   const systemStatus = systemSummary(snapshot);
   const backendStatus = backendSummary(endpoints, ready, health);
   const frontendStatus = frontendSummary(endpoints, health);
-  const mqttStatus = mqttSummary(health);
-  const routeStatus = liveRouteSummary(health);
+  const mqttStatus = mqttSummary(ready, health);
+  const routeStatus = liveRouteSummary(ready, health, state);
 
   return (
     <section className="perf-panel perf-live-panel" aria-label="Live deployment status">
@@ -140,7 +140,7 @@ export default function PerfPanel({ onClose }: PerfPanelProps) {
         <PerfLiveCard icon={<Server size={18} />} label="Backend" status={backendStatus.value} tone={backendStatus.tone}>
           <PerfMetric label="Ready" value={formatReady(ready?.ready)} tone={readyTone(ready?.ready)} />
           <PerfMetric label="DB" value={formatReady(health?.dbReady)} tone={readyTone(health?.dbReady)} />
-          <PerfMetric label="Cache" value={formatAge(health?.cacheAgeMs)} tone={freshnessTone(health?.cacheAgeMs, 60_000)} />
+          <PerfMetric label="Public state" value={formatReady(ready?.publicStateReady ?? health?.publicStateReady)} tone={readyTone(ready?.publicStateReady ?? health?.publicStateReady)} />
         </PerfLiveCard>
 
         <PerfLiveCard icon={<MonitorSmartphone size={18} />} label="Frontend" status={frontendStatus.value} tone={frontendStatus.tone}>
@@ -150,15 +150,15 @@ export default function PerfPanel({ onClose }: PerfPanelProps) {
         </PerfLiveCard>
 
         <PerfLiveCard icon={<Radio size={18} />} label="MQTT" status={mqttStatus.value} tone={mqttStatus.tone}>
-          <PerfMetric label="Connection" value={health?.mqttConnected ? 'connected' : health?.mqttConnected === false ? 'offline' : 'unknown'} tone={health?.mqttConnected ? 'good' : health?.mqttConnected === false ? 'bad' : 'quiet'} />
-          <PerfMetric label="Last packet" value={formatAge(health?.mqttLastMessageAgeMs)} tone={freshnessTone(health?.mqttLastMessageAgeMs, 60_000)} />
-          <PerfMetric label="Drops" value={formatCount(health?.mqttDroppedMessages)} tone={(health?.mqttDroppedMessages ?? 0) > 0 ? 'warn' : undefined} />
+          <PerfMetric label="Session" value={formatReady(ready?.mqttSessionReady ?? health?.mqttSessionReady)} tone={readyTone(ready?.mqttSessionReady ?? health?.mqttSessionReady)} />
+          <PerfMetric label="Dataset" value={ready?.datasetState ?? health?.datasetState ?? 'unknown'} tone={toneForDataset(ready?.datasetState ?? health?.datasetState)} />
+          <PerfMetric label="Storage" value={ready?.storagePressureState ?? health?.storagePressureState ?? 'unknown'} tone={toneForStorage(ready?.storagePressureState ?? health?.storagePressureState)} />
         </PerfLiveCard>
 
         <PerfLiveCard icon={<Route size={18} />} label="Live routes" status={routeStatus.value} tone={routeStatus.tone}>
-          <PerfMetric label="Route motion" value={health?.routeMotionState ?? 'unknown'} tone={toneForState(health?.routeMotionState)} />
-          <PerfMetric label="Route pulse" value={formatAge(health?.recentRoutePulseAgeMs)} tone={freshnessTone(health?.recentRoutePulseAgeMs, 60_000)} />
-          <PerfMetric label="Routes" value={formatCount(state?.stats.activeRoutes ?? health?.edgeEvents)} />
+          <PerfMetric label="Dataset" value={ready?.datasetState ?? health?.datasetState ?? 'unknown'} tone={toneForDataset(ready?.datasetState ?? health?.datasetState)} />
+          <PerfMetric label="Packets" value={formatCount(state?.stats.packets)} />
+          <PerfMetric label="Routes" value={formatCount(state?.stats.activeRoutes)} />
         </PerfLiveCard>
       </div>
 
@@ -222,6 +222,19 @@ export function toneForState(state: string | undefined): PerfTone {
     default:
       return 'quiet';
   }
+}
+
+function toneForDataset(state: string | undefined): PerfTone {
+  if (state === 'live') return 'good';
+  if (state === 'fresh_start' || state === 'warming') return 'quiet';
+  return toneForState(state);
+}
+
+function toneForStorage(state: string | undefined): PerfTone {
+  if (state === 'ok') return 'good';
+  if (state === 'warn') return 'warn';
+  if (state === 'critical') return 'bad';
+  return 'quiet';
 }
 
 export function freshnessTone(ms: number | undefined, staleAfterMs: number): PerfTone | undefined {
@@ -288,29 +301,30 @@ export function systemSummaryFromHealth(health: RuntimeHealth | null, ready: Run
   if (apiTotal <= 0 || apiOnline <= 0) return { value: 'not live', tone: 'bad' };
   const backendReady = ready?.ready === true;
   const apiReady = apiOnline >= apiTotal;
-  const mqttReady = health?.mqttConnected === true && (freshnessTone(health.mqttLastMessageAgeMs, 60_000) ?? 'good') !== 'bad';
-  const routesReady = health?.routeMotionState === 'moving' || health?.routeMotionState === 'fresh' || health?.mapMotionState === 'moving';
-  if (backendReady && apiReady && mqttReady && routesReady) return { value: 'live', tone: 'good' };
+  const mqttReady = (ready?.mqttSessionReady ?? health?.mqttSessionReady) === true;
+  const datasetState = ready?.datasetState ?? health?.datasetState;
+  const storageSafe = (ready?.storagePressureState ?? health?.storagePressureState) !== 'critical';
+  if (backendReady && apiReady && mqttReady && storageSafe) {
+    if (datasetState === 'fresh_start' || datasetState === 'warming') return { value: 'warming', tone: 'quiet' };
+    return { value: 'live', tone: 'good' };
+  }
   if (backendReady || apiOnline > 0) return { value: 'degraded', tone: 'warn' };
   return { value: 'offline', tone: 'bad' };
 }
 
-function mqttSummary(health: RuntimeHealth | null): { value: string; tone: PerfTone } {
-  if (health?.mqttConnected) {
-    const tone = freshnessTone(health.mqttLastMessageAgeMs, 60_000) ?? 'good';
-    return { value: tone === 'good' ? 'live' : 'degraded', tone };
-  }
-  if (health?.mqttConnected === false) return { value: 'not live', tone: 'bad' };
+function mqttSummary(ready: RuntimeHealth | null, health: RuntimeHealth | null): { value: string; tone: PerfTone } {
+  const sessionReady = ready?.mqttSessionReady ?? health?.mqttSessionReady;
+  if (sessionReady === true) return { value: 'ready', tone: 'good' };
+  if (sessionReady === false) return { value: 'not ready', tone: 'bad' };
   return { value: 'unknown', tone: 'quiet' };
 }
 
-function liveRouteSummary(health: RuntimeHealth | null): { value: string; tone: PerfTone } {
-  const state = health?.routeMotionState ?? health?.mapMotionState ?? health?.liveConfidenceState;
-  const tone = toneForState(state);
-  if (tone === 'good') return { value: 'live', tone };
-  if (tone === 'warn') return { value: 'degraded', tone };
-  if (tone === 'bad') return { value: 'not live', tone };
-  return { value: state === 'quiet' ? 'quiet' : 'unknown', tone };
+function liveRouteSummary(ready: RuntimeHealth | null, health: RuntimeHealth | null, state: PublicLiveState | null): { value: string; tone: PerfTone } {
+  const datasetState = ready?.datasetState ?? health?.datasetState;
+  if (datasetState === 'fresh_start' || datasetState === 'warming') return { value: 'warming', tone: 'quiet' };
+  if (datasetState === 'live' && (state?.stats.activeRoutes ?? 0) > 0) return { value: 'live', tone: 'good' };
+  if (datasetState === 'live') return { value: 'quiet', tone: 'quiet' };
+  return { value: 'unknown', tone: 'quiet' };
 }
 
 function formatReady(value: boolean | undefined): string {

@@ -3,7 +3,8 @@ import { STALE_PACKET_MS, formatPacketsTotal, serverStatus } from './statusDispl
 import type { LiveCoverageStats } from '../state';
 import type { PublicStats } from '../types';
 
-const stats = { packets: 86_779, activeNodes: 1, activeRoutes: 1, mqttConnected: true, mqttMessages: 1, wsClients: 1, serverTime: 1 } satisfies PublicStats;
+const now = 1_000_000;
+const stats = { packets: 86_779, activeNodes: 1, activeRoutes: 1, mqttConnected: true, mqttMessages: 1, wsClients: 1, serverTime: now } satisfies PublicStats;
 const coverage = (lastPacketAgeMs: number | null): LiveCoverageStats => ({
   receivedPerMinute: 1,
   routeAnimatedPerMinute: 1,
@@ -20,12 +21,13 @@ describe('status display helpers', () => {
   });
 
   it('reports Live only when packets are fresh and transports are healthy', () => {
-    expect(serverStatus(stats, 'live', coverage(STALE_PACKET_MS - 1))).toEqual({ label: 'Live', live: true });
-    expect(serverStatus(stats, 'polling', coverage(STALE_PACKET_MS - 1))).toEqual({ label: 'Live', live: true });
-    expect(serverStatus(stats, 'live', coverage(STALE_PACKET_MS))).toEqual({ label: 'Stale', live: false });
-    expect(serverStatus({ ...stats, mqttConnected: false }, 'live', coverage(1))).toEqual({ label: 'Stale', live: false });
-    expect(serverStatus(stats, 'recovering', coverage(1))).toEqual({ label: 'Live', live: true });
-    expect(serverStatus(stats, 'state-error', coverage(1))).toEqual({ label: 'Stale', live: false });
-    expect(serverStatus(stats, 'live', coverage(null))).toEqual({ label: 'Stale', live: false });
+    expect(serverStatus(stats, 'live', coverage(STALE_PACKET_MS - 1), now)).toEqual({ label: 'Live', live: true });
+    expect(serverStatus(stats, 'polling', coverage(STALE_PACKET_MS - 1), now)).toEqual({ label: 'Live', live: true });
+    expect(serverStatus(stats, 'live', coverage(STALE_PACKET_MS), now)).toEqual({ label: 'Live', live: true });
+    expect(serverStatus({ ...stats, serverTime: now - STALE_PACKET_MS }, 'live', coverage(STALE_PACKET_MS), now)).toEqual({ label: 'Stale', live: false });
+    expect(serverStatus({ ...stats, mqttConnected: false }, 'live', coverage(1), now)).toEqual({ label: 'Stale', live: false });
+    expect(serverStatus(stats, 'recovering', coverage(1), now)).toEqual({ label: 'Live', live: true });
+    expect(serverStatus(stats, 'state-error', coverage(1), now)).toEqual({ label: 'Stale', live: false });
+    expect(serverStatus(stats, 'live', coverage(null), now)).toEqual({ label: 'Live', live: true });
   });
 });

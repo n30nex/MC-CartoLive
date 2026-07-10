@@ -124,7 +124,7 @@ func (s *Store) PublicRouteSummaries(ctx context.Context, limit int) ([]live.Pub
 	if limit > 5000 {
 		limit = 5000
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 SELECT route_id,
   from_node_id, from_label, from_lat, from_lng, from_path_hash3,
   to_node_id, to_label, to_lat, to_lng, to_path_hash3,
@@ -223,7 +223,7 @@ func (s *Store) BackfillPublicRouteSummaries(ctx context.Context, from int64, to
 }
 
 func (s *Store) publicRouteSummaryMissingEdges(ctx context.Context, from int64, to int64, limit int) ([]live.EdgeEvent, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 SELECT e.id, e.packet_hash, e.observation_id, COALESCE(po.iata, '') AS edge_iata,
   e.payload_type, e.payload_type_name, e.message_sender, e.message_text,
   e.message_anchor_json, e.heard_at_ms, e.segments_json, e.render_reason

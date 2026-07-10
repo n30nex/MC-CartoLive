@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const packageJSON = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version?: string };
 const GITHUB_REPO_URL = 'https://github.com/n30nex/MC-CartoLive';
@@ -35,6 +36,11 @@ function buildTime(): string {
 }
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@mc-active-asset-pack': fileURLToPath(new URL(`./src/assets/v3/${APP_ASSET_PACK}Pack.ts`, import.meta.url))
+    }
+  },
   plugins: [
     react(),
     {
@@ -45,6 +51,9 @@ export default defineConfig({
     }
   ],
   build: {
+    // Keep role and packet artwork as immutable cacheable files instead of
+    // inflating the eagerly loaded asset-pack JavaScript with base64 payloads.
+    assetsInlineLimit: 0,
     chunkSizeWarningLimit: 1200,
     rolldownOptions: {
       output: {
@@ -74,7 +83,11 @@ export default defineConfig({
     __APP_ASSET_PACK__: JSON.stringify(APP_ASSET_PACK)
   },
   test: {
-    environment: 'jsdom'
+    environment: 'jsdom',
+    // Fork pools can stall on Windows when this suite creates many jsdom
+    // processes. Worker threads keep local and CI behavior deterministic.
+    pool: 'threads',
+    maxWorkers: 4
   }
 });
 

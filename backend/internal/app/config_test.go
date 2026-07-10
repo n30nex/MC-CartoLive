@@ -136,4 +136,71 @@ func TestLoadConfigDefaultsToSevenDayDataRetention(t *testing.T) {
 	if cfg.PropagationEventRetentionDays != 7 {
 		t.Fatalf("PropagationEventRetentionDays = %d, want 7", cfg.PropagationEventRetentionDays)
 	}
+	if cfg.PublicEventRetentionHours != 24 {
+		t.Fatalf("PublicEventRetentionHours = %d, want 24", cfg.PublicEventRetentionHours)
+	}
+}
+
+func TestLoadConfigDefaultsDedicatedMetricsAndDerivedQueue(t *testing.T) {
+	t.Setenv("MQTT_ENABLED", "false")
+	t.Setenv("METRICS_LISTEN_ADDR", "")
+	t.Setenv("DERIVED_INGEST_QUEUE_SIZE", "")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MetricsListenAddr != "127.0.0.1:9090" || cfg.DerivedIngestQueueSize != 1024 {
+		t.Fatalf("metrics/derived defaults = %q/%d", cfg.MetricsListenAddr, cfg.DerivedIngestQueueSize)
+	}
+}
+
+func TestLoadConfigRejectsUnboundedPublicRetentionByDefault(t *testing.T) {
+	t.Setenv("MQTT_ENABLED", "false")
+	t.Setenv("PUBLIC_MODE", "true")
+	t.Setenv("DATA_RETENTION_DAYS", "-1")
+	t.Setenv("ALLOW_UNBOUNDED_RETENTION", "false")
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("expected unbounded public retention to be rejected")
+	}
+}
+
+func TestLoadConfigExplicitUnboundedOverrideRemainsVisible(t *testing.T) {
+	t.Setenv("MQTT_ENABLED", "false")
+	t.Setenv("PUBLIC_MODE", "true")
+	t.Setenv("DATA_RETENTION_DAYS", "-1")
+	t.Setenv("ALLOW_UNBOUNDED_RETENTION", "true")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DataRetentionDays != -1 || !cfg.AllowUnboundedRetention {
+		t.Fatalf("retention config = %#v", cfg)
+	}
+}
+
+func TestLoadConfigBuildIdentityIgnoresEnvironmentOverrides(t *testing.T) {
+	t.Setenv("MQTT_ENABLED", "false")
+	t.Setenv("APP_VERSION", "stale-env-version")
+	t.Setenv("GIT_SHA", "stale-env-sha")
+	t.Setenv("BUILD_TIME", "stale-env-time")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AppVersion != BuildVersion || cfg.GitSHA != BuildGitSHA || cfg.BuildTime != BuildTime {
+		t.Fatalf("build identity was overridden by environment: %#v", cfg)
+	}
+}
+
+func TestLoadConfigFixturePerformanceControls(t *testing.T) {
+	t.Setenv("MQTT_ENABLED", "false")
+	t.Setenv("FIXTURE_REPLAY_RATE_PER_SECOND", "100")
+	t.Setenv("FIXTURE_REPLAY_START_DELAY_MS", "250")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.FixtureReplayRatePerSecond != 100 || cfg.FixtureReplayStartDelayMs != 250 {
+		t.Fatalf("fixture controls = %d/%d", cfg.FixtureReplayRatePerSecond, cfg.FixtureReplayStartDelayMs)
+	}
 }

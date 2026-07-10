@@ -10,9 +10,15 @@ import (
 	"time"
 
 	paho "github.com/eclipse/paho.mqtt.golang"
+	"github.com/google/uuid"
 )
 
 type Handler func(context.Context, NormalizedMessage)
+
+type queuedMessage struct {
+	message    NormalizedMessage
+	enqueuedAt int64
+}
 
 type ClientConfig struct {
 	Enabled   bool
@@ -24,25 +30,31 @@ type ClientConfig struct {
 }
 
 type Client struct {
-	cfg                  ClientConfig
-	log                  *slog.Logger
-	handler              Handler
-	queue                chan NormalizedMessage
-	connected            atomic.Bool
-	total                atomic.Int64
-	dropped              atomic.Int64
-	reconnects           atomic.Int64
-	malformed            atomic.Int64
-	internalDropped      atomic.Int64
-	normalizeErrors      atomic.Int64
-	lastMessageAt        atomic.Int64
-	lastConnectedAt      atomic.Int64
-	lastConnectionLostAt atomic.Int64
-	lastForceDisconnect  atomic.Int64
-	shutdown             atomic.Bool
-	clientMu             sync.Mutex
-	client               paho.Client
-	newPahoClient        func(*paho.ClientOptions) paho.Client
+	cfg                   ClientConfig
+	log                   *slog.Logger
+	handler               Handler
+	queue                 chan queuedMessage
+	queueAgeMu            sync.Mutex
+	queueTimes            []int64
+	connected             atomic.Bool
+	subscribed            atomic.Bool
+	total                 atomic.Int64
+	accepted              atomic.Int64
+	processed             atomic.Int64
+	dropped               atomic.Int64
+	reconnects            atomic.Int64
+	malformed             atomic.Int64
+	internalDropped       atomic.Int64
+	normalizeErrors       atomic.Int64
+	lastMessageAt         atomic.Int64
+	lastConnectedAt       atomic.Int64
+	lastSubscribedAt      atomic.Int64
+	lastConnectionLostAt  atomic.Int64
+	lastSessionRecoveryAt atomic.Int64
+	shutdown              atomic.Bool
+	clientMu              sync.Mutex
+	client                paho.Client
+	newPahoClient         func(*paho.ClientOptions) paho.Client
 }
 
 func NewClient(cfg ClientConfig, log *slog.Logger, handler Handler) *Client {
@@ -53,12 +65,16 @@ func NewClient(cfg ClientConfig, log *slog.Logger, handler Handler) *Client {
 		cfg:           cfg,
 		log:           log,
 		handler:       handler,
-		queue:         make(chan NormalizedMessage, cfg.QueueSize),
+		queue:         make(chan queuedMessage, cfg.QueueSize),
 		newPahoClient: paho.NewClient,
 	}
 }
 
 func (c *Client) Start(ctx context.Context) error {
+	// Keep the normalized queue worker available when the network subscriber is
+	// disabled. Synthetic fixture replay and release load gates deliberately use
+	// the same bounded queue and writer path as production MQTT traffic.
+	go c.dispatch(ctx)
 	if !c.cfg.Enabled {
 		c.log.Info("mqtt disabled")
 		return nil
@@ -66,8 +82,6 @@ func (c *Client) Start(ctx context.Context) error {
 	if err := c.cfg.Auth.Validate(); err != nil {
 		return err
 	}
-	go c.dispatch(ctx)
-
 	c.clientMu.Lock()
 	c.client = c.buildPahoClient()
 	client := c.client
@@ -85,6 +99,7 @@ func (c *Client) Start(ctx context.Context) error {
 			client.Disconnect(250)
 		}
 		c.connected.Store(false)
+		c.subscribed.Store(false)
 	}()
 
 	go c.watchdog(ctx)
@@ -114,21 +129,29 @@ func (c *Client) buildPahoClient() paho.Client {
 
 	opts.SetConnectionLostHandler(func(_ paho.Client, err error) {
 		c.connected.Store(false)
+		c.subscribed.Store(false)
 		c.lastConnectionLostAt.Store(time.Now().UnixMilli())
 		c.log.Warn("mqtt connection lost", "error", err)
 	})
 	opts.SetOnConnectHandler(func(client paho.Client) {
 		c.connected.Store(true)
+		c.subscribed.Store(false)
 		c.reconnects.Add(1)
 		c.lastConnectedAt.Store(time.Now().UnixMilli())
 		c.log.Info("mqtt connected", "broker", redactBroker(c.cfg.BrokerURL), "topic", c.cfg.Topic)
 		token := client.Subscribe(c.cfg.Topic, 0, c.onMessage())
-		token.Wait()
-		if err := token.Error(); err != nil {
-			c.connected.Store(false)
-			c.log.Error("mqtt subscribe failed", "error", err)
+		if !token.WaitTimeout(10 * time.Second) {
+			c.log.Error("mqtt subscribe timed out", "topic", c.cfg.Topic)
+			c.scheduleSessionRecovery()
 			return
 		}
+		if err := token.Error(); err != nil {
+			c.log.Error("mqtt subscribe failed", "error", err)
+			c.scheduleSessionRecovery()
+			return
+		}
+		c.subscribed.Store(true)
+		c.lastSubscribedAt.Store(time.Now().UnixMilli())
 		c.log.Info("mqtt subscribed", "topic", c.cfg.Topic)
 	})
 
@@ -154,6 +177,7 @@ func (c *Client) connect(client paho.Client) {
 		}
 		if err := token.Error(); err != nil {
 			c.connected.Store(false)
+			c.subscribed.Store(false)
 			c.log.Error("mqtt connect failed", "error", err)
 		}
 	}()
@@ -167,20 +191,29 @@ func (c *Client) watchdog(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if c.Connected() {
-				lastMsg := c.lastMessageAt.Load()
-				if lastMsg > 0 && time.Now().UnixMilli()-lastMsg > 120_000 {
-					lastDisconnect := c.lastForceDisconnect.Load()
-					now := time.Now().UnixMilli()
-					if lastDisconnect > 0 && now-lastDisconnect < 60_000 {
-						c.log.Warn("mqtt watchdog: skipping force disconnect; last disconnect <60s ago")
-						continue
-					}
-					c.log.Warn("mqtt watchdog: connected but no messages for >120s; forcing reconnect")
-					c.lastForceDisconnect.Store(now)
-					c.forceReconnect()
-				}
+			// RF traffic can legitimately be quiet. Connection and subscription
+			// callbacks, not message recency, drive session recovery.
+			if c.Connected() && !c.SessionReady() {
+				c.log.Warn("mqtt connected but subscription is not ready")
+				c.scheduleSessionRecovery()
 			}
+		}
+	}
+}
+
+func (c *Client) scheduleSessionRecovery() {
+	if c == nil || c.shutdown.Load() {
+		return
+	}
+	now := time.Now().UnixMilli()
+	for {
+		last := c.lastSessionRecoveryAt.Load()
+		if last > 0 && now-last < int64(30*time.Second/time.Millisecond) {
+			return
+		}
+		if c.lastSessionRecoveryAt.CompareAndSwap(last, now) {
+			go c.forceReconnect()
+			return
 		}
 	}
 }
@@ -190,6 +223,7 @@ func (c *Client) forceReconnect() {
 		return
 	}
 	c.connected.Store(false)
+	c.subscribed.Store(false)
 	c.lastConnectionLostAt.Store(time.Now().UnixMilli())
 
 	c.clientMu.Lock()
@@ -227,16 +261,39 @@ func (c *Client) onMessage() paho.MessageHandler {
 			c.log.Debug("mqtt normalize failed", "topic", topic, "error", err)
 			return
 		}
-		c.total.Add(1)
-		c.lastMessageAt.Store(normalized.HeardAtMs)
-		select {
-		case c.queue <- normalized:
-		default:
-			dropped := c.dropped.Add(1)
-			if dropped == 1 || dropped%100 == 0 {
-				c.log.Warn("mqtt ingest queue full; dropping normalized message", "dropped", dropped, "queueSize", c.cfg.QueueSize)
-			}
+		c.SubmitNormalized(normalized)
+	}
+}
+
+// SubmitNormalized puts an already parsed MQTT message through the same
+// bounded queue used by the network callback. It is intentionally useful for
+// credential-free fixture replay and reproducible release load gates. A fresh
+// ingest ID is assigned once, before enqueueing, and is preserved by retries.
+func (c *Client) SubmitNormalized(normalized NormalizedMessage) bool {
+	if c == nil || c.shutdown.Load() {
+		return false
+	}
+	if normalized.IngestID == "" {
+		normalized.IngestID = uuid.NewString()
+	}
+	c.total.Add(1)
+	c.lastMessageAt.Store(normalized.HeardAtMs)
+	now := time.Now().UnixMilli()
+	queued := queuedMessage{message: normalized, enqueuedAt: now}
+	c.queueAgeMu.Lock()
+	select {
+	case c.queue <- queued:
+		c.queueTimes = append(c.queueTimes, now)
+		c.accepted.Add(1)
+		c.queueAgeMu.Unlock()
+		return true
+	default:
+		c.queueAgeMu.Unlock()
+		dropped := c.dropped.Add(1)
+		if dropped == 1 || dropped%100 == 0 {
+			c.log.Warn("mqtt ingest queue full; dropping normalized message", "dropped", dropped, "queueSize", c.cfg.QueueSize)
 		}
+		return false
 	}
 }
 
@@ -245,21 +302,29 @@ func (c *Client) dispatch(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case msg := <-c.queue:
+		case queued := <-c.queue:
+			c.queueAgeMu.Lock()
+			c.popQueueTimestampLocked()
+			c.queueAgeMu.Unlock()
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
 						c.log.Error("mqtt dispatch panic", "panic", r)
 					}
 				}()
-				c.handler(ctx, msg)
+				c.handler(ctx, queued.message)
 			}()
+			c.processed.Add(1)
 		}
 	}
 }
 
 func (c *Client) Connected() bool {
 	return c.connected.Load()
+}
+
+func (c *Client) SessionReady() bool {
+	return c != nil && c.connected.Load() && c.subscribed.Load()
 }
 
 func (c *Client) TotalMessages() int64 {
@@ -273,7 +338,11 @@ func (c *Client) DroppedMessages() int64 {
 type Status struct {
 	Enabled              bool  `json:"enabled"`
 	Connected            bool  `json:"connected"`
+	Subscribed           bool  `json:"subscribed"`
+	SessionReady         bool  `json:"sessionReady"`
 	TotalMessages        int64 `json:"totalMessages"`
+	AcceptedMessages     int64 `json:"acceptedMessages"`
+	ProcessedMessages    int64 `json:"processedMessages"`
 	DroppedMessages      int64 `json:"droppedMessages"`
 	Reconnects           int64 `json:"reconnects"`
 	MalformedTopics      int64 `json:"malformedTopics"`
@@ -282,7 +351,11 @@ type Status struct {
 	LastMessageAt        int64 `json:"lastMessageAt"`
 	LastMessageAgeMs     int64 `json:"lastMessageAgeMs"`
 	LastConnectedAt      int64 `json:"lastConnectedAt"`
+	LastSubscribedAt     int64 `json:"lastSubscribedAt"`
 	LastConnectionLostAt int64 `json:"lastConnectionLostAt"`
+	QueueDepth           int   `json:"queueDepth"`
+	QueueCapacity        int   `json:"queueCapacity"`
+	OldestQueueItemAgeMs int64 `json:"oldestQueueItemAgeMs"`
 }
 
 func (c *Client) Status(now time.Time) Status {
@@ -300,10 +373,24 @@ func (c *Client) Status(now time.Time) Status {
 			age = 0
 		}
 	}
+	c.queueAgeMu.Lock()
+	oldestQueueAt := c.queueOldestLocked()
+	c.queueAgeMu.Unlock()
+	oldestQueueAge := int64(0)
+	if oldestQueueAt > 0 {
+		oldestQueueAge = now.UnixMilli() - oldestQueueAt
+		if oldestQueueAge < 0 {
+			oldestQueueAge = 0
+		}
+	}
 	return Status{
 		Enabled:              c.cfg.Enabled,
 		Connected:            c.Connected(),
+		Subscribed:           c.subscribed.Load(),
+		SessionReady:         c.SessionReady(),
 		TotalMessages:        c.TotalMessages(),
+		AcceptedMessages:     c.accepted.Load(),
+		ProcessedMessages:    c.processed.Load(),
 		DroppedMessages:      c.DroppedMessages(),
 		Reconnects:           c.reconnects.Load(),
 		MalformedTopics:      c.malformed.Load(),
@@ -312,7 +399,24 @@ func (c *Client) Status(now time.Time) Status {
 		LastMessageAt:        lastMessageAt,
 		LastMessageAgeMs:     age,
 		LastConnectedAt:      c.lastConnectedAt.Load(),
+		LastSubscribedAt:     c.lastSubscribedAt.Load(),
 		LastConnectionLostAt: c.lastConnectionLostAt.Load(),
+		QueueDepth:           len(c.queue),
+		QueueCapacity:        cap(c.queue),
+		OldestQueueItemAgeMs: oldestQueueAge,
+	}
+}
+
+func (c *Client) queueOldestLocked() int64 {
+	if len(c.queueTimes) == 0 {
+		return 0
+	}
+	return c.queueTimes[0]
+}
+
+func (c *Client) popQueueTimestampLocked() {
+	if len(c.queueTimes) > 0 {
+		c.queueTimes = c.queueTimes[1:]
 	}
 }
 

@@ -31,6 +31,7 @@ type RuntimeStats struct {
 	cacheRefreshFailures            atomic.Int64
 	cacheRefreshLastLatencyMs       atomic.Int64
 	cacheRefreshLastAtMs            atomic.Int64
+	cacheRefreshLastFailed          atomic.Int64
 	packetCountRefreshFailures      atomic.Int64
 	packetCountRefreshLastLatencyMs atomic.Int64
 	packetCountRefreshLastAtMs      atomic.Int64
@@ -44,6 +45,21 @@ type RuntimeStats struct {
 	packetPathSearchIndexLastSync   atomic.Int64
 	packetPathSearchIndexRemaining  atomic.Int64
 	packetPathBackfillRemaining     atomic.Int64
+	storeWriteAttempts              atomic.Int64
+	storeWriteRetries               atomic.Int64
+	storeWriteFailures              atomic.Int64
+	storeWriteBusyErrors            atomic.Int64
+	storeWriteFullErrors            atomic.Int64
+	storeWriteLastLatencyMs         atomic.Int64
+	ingestDuplicateSuppressions     atomic.Int64
+	derivedAccepted                 atomic.Int64
+	derivedProcessed                atomic.Int64
+	derivedDropped                  atomic.Int64
+	derivedFailures                 atomic.Int64
+	derivedQueueDepth               atomic.Int64
+	derivedQueueCapacity            atomic.Int64
+	derivedOldestAtMs               atomic.Int64
+	derivedLastLatencyMs            atomic.Int64
 }
 
 type RuntimeStatsSnapshot struct {
@@ -72,6 +88,7 @@ type RuntimeStatsSnapshot struct {
 	CacheRefreshFailures            int64 `json:"cacheRefreshFailures"`
 	CacheRefreshLastLatencyMs       int64 `json:"cacheRefreshLastLatencyMs"`
 	CacheRefreshLastAtMs            int64 `json:"cacheRefreshLastAtMs"`
+	CacheRefreshLastFailed          bool  `json:"cacheRefreshLastFailed"`
 	PacketCountRefreshFailures      int64 `json:"packetCountRefreshFailures"`
 	PacketCountRefreshLastLatencyMs int64 `json:"packetCountRefreshLastLatencyMs"`
 	PacketCountRefreshLastAtMs      int64 `json:"packetCountRefreshLastAtMs"`
@@ -85,6 +102,21 @@ type RuntimeStatsSnapshot struct {
 	PacketPathSearchIndexLastSync   int64 `json:"packetPathSearchIndexLastSync"`
 	PacketPathSearchIndexRemaining  bool  `json:"packetPathSearchIndexRemaining"`
 	PacketPathBackfillRemaining     bool  `json:"packetPathBackfillRemaining"`
+	StoreWriteAttempts              int64 `json:"storeWriteAttempts"`
+	StoreWriteRetries               int64 `json:"storeWriteRetries"`
+	StoreWriteFailures              int64 `json:"storeWriteFailures"`
+	StoreWriteBusyErrors            int64 `json:"storeWriteBusyErrors"`
+	StoreWriteFullErrors            int64 `json:"storeWriteFullErrors"`
+	StoreWriteLastLatencyMs         int64 `json:"storeWriteLastLatencyMs"`
+	IngestDuplicateSuppressions     int64 `json:"ingestDuplicateSuppressions"`
+	DerivedAccepted                 int64 `json:"derivedAccepted"`
+	DerivedProcessed                int64 `json:"derivedProcessed"`
+	DerivedDropped                  int64 `json:"derivedDropped"`
+	DerivedFailures                 int64 `json:"derivedFailures"`
+	DerivedQueueDepth               int64 `json:"derivedQueueDepth"`
+	DerivedQueueCapacity            int64 `json:"derivedQueueCapacity"`
+	DerivedOldestAtMs               int64 `json:"derivedOldestAtMs"`
+	DerivedLastLatencyMs            int64 `json:"derivedLastLatencyMs"`
 }
 
 func NewRuntimeStats() *RuntimeStats {
@@ -188,9 +220,58 @@ func (s *RuntimeStats) RecordCacheRefresh(duration time.Duration, failed bool) {
 	}
 	if failed {
 		s.cacheRefreshFailures.Add(1)
+		s.cacheRefreshLastFailed.Store(1)
+	} else {
+		s.cacheRefreshLastFailed.Store(0)
 	}
 	s.cacheRefreshLastLatencyMs.Store(duration.Milliseconds())
 	s.cacheRefreshLastAtMs.Store(time.Now().UnixMilli())
+}
+
+func (s *RuntimeStats) RecordIngestDuplicate() {
+	if s != nil {
+		s.ingestDuplicateSuppressions.Add(1)
+	}
+}
+
+func (s *RuntimeStats) RecordDerivedEnqueue(depth int, capacity int, oldestAtMs int64) {
+	if s == nil {
+		return
+	}
+	s.derivedAccepted.Add(1)
+	s.setDerivedQueue(depth, capacity, oldestAtMs)
+}
+
+func (s *RuntimeStats) RecordDerivedDrop(depth int, capacity int, oldestAtMs int64) {
+	if s == nil {
+		return
+	}
+	s.derivedDropped.Add(1)
+	s.setDerivedQueue(depth, capacity, oldestAtMs)
+}
+
+func (s *RuntimeStats) UpdateDerivedQueue(depth int, capacity int, oldestAtMs int64) {
+	if s != nil {
+		s.setDerivedQueue(depth, capacity, oldestAtMs)
+	}
+}
+
+func (s *RuntimeStats) RecordDerivedProcessed(duration time.Duration, failed bool, depth int, capacity int, oldestAtMs int64) {
+	if s == nil {
+		return
+	}
+	s.derivedProcessed.Add(1)
+	if failed {
+		s.derivedFailures.Add(1)
+	}
+	s.derivedLastLatencyMs.Store(duration.Milliseconds())
+	s.setDerivedQueue(depth, capacity, oldestAtMs)
+}
+
+func (s *RuntimeStats) setDerivedQueue(depth int, capacity int, oldestAtMs int64) {
+	s.derivedQueueDepth.Store(int64(max(depth, 0)))
+	s.derivedQueueCapacity.Store(int64(max(capacity, 0)))
+	s.derivedOldestAtMs.Store(max(oldestAtMs, 0))
 }
 
 func (s *RuntimeStats) RecordPacketCountRefresh(duration time.Duration, failed bool) {
@@ -230,6 +311,26 @@ func (s *RuntimeStats) RecordPacketPathBackfill(duration time.Duration, failed b
 	}
 }
 
+func (s *RuntimeStats) RecordStoreWrite(duration time.Duration, retries int, failed bool, busy bool, full bool) {
+	if s == nil {
+		return
+	}
+	s.storeWriteAttempts.Add(1)
+	if retries > 0 {
+		s.storeWriteRetries.Add(int64(retries))
+	}
+	if failed {
+		s.storeWriteFailures.Add(1)
+	}
+	if busy {
+		s.storeWriteBusyErrors.Add(1)
+	}
+	if full {
+		s.storeWriteFullErrors.Add(1)
+	}
+	s.storeWriteLastLatencyMs.Store(duration.Milliseconds())
+}
+
 func (s *RuntimeStats) Snapshot() RuntimeStatsSnapshot {
 	if s == nil {
 		return RuntimeStatsSnapshot{}
@@ -260,6 +361,7 @@ func (s *RuntimeStats) Snapshot() RuntimeStatsSnapshot {
 		CacheRefreshFailures:            s.cacheRefreshFailures.Load(),
 		CacheRefreshLastLatencyMs:       s.cacheRefreshLastLatencyMs.Load(),
 		CacheRefreshLastAtMs:            s.cacheRefreshLastAtMs.Load(),
+		CacheRefreshLastFailed:          s.cacheRefreshLastFailed.Load() == 1,
 		PacketCountRefreshFailures:      s.packetCountRefreshFailures.Load(),
 		PacketCountRefreshLastLatencyMs: s.packetCountRefreshLastLatencyMs.Load(),
 		PacketCountRefreshLastAtMs:      s.packetCountRefreshLastAtMs.Load(),
@@ -273,5 +375,20 @@ func (s *RuntimeStats) Snapshot() RuntimeStatsSnapshot {
 		PacketPathSearchIndexLastSync:   s.packetPathSearchIndexLastSync.Load(),
 		PacketPathSearchIndexRemaining:  s.packetPathSearchIndexRemaining.Load() == 1,
 		PacketPathBackfillRemaining:     s.packetPathBackfillRemaining.Load() == 1,
+		StoreWriteAttempts:              s.storeWriteAttempts.Load(),
+		StoreWriteRetries:               s.storeWriteRetries.Load(),
+		StoreWriteFailures:              s.storeWriteFailures.Load(),
+		StoreWriteBusyErrors:            s.storeWriteBusyErrors.Load(),
+		StoreWriteFullErrors:            s.storeWriteFullErrors.Load(),
+		StoreWriteLastLatencyMs:         s.storeWriteLastLatencyMs.Load(),
+		IngestDuplicateSuppressions:     s.ingestDuplicateSuppressions.Load(),
+		DerivedAccepted:                 s.derivedAccepted.Load(),
+		DerivedProcessed:                s.derivedProcessed.Load(),
+		DerivedDropped:                  s.derivedDropped.Load(),
+		DerivedFailures:                 s.derivedFailures.Load(),
+		DerivedQueueDepth:               s.derivedQueueDepth.Load(),
+		DerivedQueueCapacity:            s.derivedQueueCapacity.Load(),
+		DerivedOldestAtMs:               s.derivedOldestAtMs.Load(),
+		DerivedLastLatencyMs:            s.derivedLastLatencyMs.Load(),
 	}
 }

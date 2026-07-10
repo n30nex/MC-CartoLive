@@ -1,5 +1,6 @@
 param(
   [string]$BaseUrl = "http://127.0.0.1:39476",
+  [string]$MetricsUrl = $env:METRICS_URL,
   [switch]$SkipDocker,
   [switch]$RunBrowserSmoke,
   [string]$BrowserSmokeBaseUrl = "",
@@ -28,6 +29,9 @@ try {
       $ContainerRuntime = "docker"
     }
   }
+  if ([string]::IsNullOrWhiteSpace($MetricsUrl)) {
+    $MetricsUrl = "http://127.0.0.1:39090/metrics"
+  }
 
   node (Join-Path $root "scripts/check-version-sync.mjs")
   node (Join-Path $root "scripts/public-schema-check.mjs")
@@ -46,7 +50,7 @@ try {
   try {
     npm ci
     npm audit --audit-level=high
-    npm test -- --run
+    npm test -- --run --pool=threads --maxWorkers=2
     npm run build
     node (Join-Path $root "scripts/check-frontend-budget.mjs")
   }
@@ -71,6 +75,7 @@ try {
   $health = Invoke-RestMethod "$BaseUrl/healthz"
   $ready = Invoke-RestMethod "$BaseUrl/readyz"
   $state = Invoke-RestMethod "$BaseUrl/api/v1/public/state"
+  $bootstrap = Invoke-RestMethod "$BaseUrl/api/v1/public/bootstrap"
   $now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
   $from = $now - 600000
   $history = Invoke-RestMethod "$BaseUrl/api/v1/public/history?from=$from&to=$now&limit=25"
@@ -83,7 +88,17 @@ try {
   $noc = Invoke-RestMethod "$BaseUrl/api/v1/public/noc"
   $schema = Invoke-RestMethod "$BaseUrl/api/v1/public/schema"
   $sensors = Invoke-RestMethod "$BaseUrl/api/v1/public/integrations/home-assistant"
-  $metrics = Invoke-WebRequest -UseBasicParsing "$BaseUrl/metrics"
+  try {
+    Invoke-WebRequest -UseBasicParsing "$BaseUrl/metrics" -ErrorAction Stop | Out-Null
+    throw "public application listener unexpectedly exposed /metrics"
+  }
+  catch {
+    $statusCode = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
+    if ($statusCode -ne 404) {
+      throw
+    }
+  }
+  $metrics = Invoke-WebRequest -UseBasicParsing $MetricsUrl
   node (Join-Path $root "scripts/check-public-privacy.mjs") $BaseUrl
 
   if ($RunBrowserSmoke) {
@@ -99,6 +114,7 @@ try {
     Packets = $state.stats.packets
     Nodes = $state.stats.activeNodes
     Routes = $state.stats.activeRoutes
+    BootstrapLatestSeq = $bootstrap.latestSeq
     HistoryEvents = $history.window.count
     HistorySummaryBuckets = @($historySummary.buckets).Count
     PacketPaths = $packets.window.count
@@ -111,18 +127,16 @@ try {
     PublicSchemaVersion = $schema.info.version
     SensorPackets = $sensors.packetRate.perMinute
     MetricsBytes = $metrics.Content.Length
-    PacketIngestState = $health.packetIngestState
-    PublicCacheState = $health.publicCacheState
-    MapMotionState = $health.mapMotionState
-    LiveConfidenceState = $health.liveConfidenceState
-    PacketIngestFresh = $health.packetIngestFresh
-    PublicLiveFresh = $health.publicLiveFresh
+    MetricsUrl = $MetricsUrl
+    DatasetState = $ready.datasetState
+    StoragePressureState = $ready.storagePressureState
+    MQTTSessionReady = $ready.mqttSessionReady
     GitSha = $health.gitSha
     BuildTime = $health.buildTime
   } | Format-List
 
   if ($RunLiveSmoke) {
-    & (Join-Path $PSScriptRoot "live-smoke.ps1") -BaseUrl $LiveSmokeBaseUrl
+    & (Join-Path $PSScriptRoot "live-smoke.ps1") -BaseUrl $LiveSmokeBaseUrl -MetricsUrl $MetricsUrl
   }
 }
 finally {

@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"time"
 
@@ -40,10 +42,10 @@ ON CONFLICT(packet_hash) DO UPDATE SET
 	return err
 }
 
-func (s *Store) UpsertPacketAndObservation(ctx context.Context, parsed meshcore.ParsedPacket, seenAt int64, in ObservationInsert) (int64, error) {
+func (s *Store) UpsertPacketAndObservation(ctx context.Context, parsed meshcore.ParsedPacket, seenAt int64, in ObservationInsert) (int64, bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	committed := false
 	defer func() {
@@ -51,6 +53,20 @@ func (s *Store) UpsertPacketAndObservation(ctx context.Context, parsed meshcore.
 			_ = tx.Rollback()
 		}
 	}()
+	if in.IngestID != "" {
+		var existingID int64
+		err := tx.QueryRowContext(ctx, `SELECT id FROM packet_observations WHERE ingest_id = ?`, in.IngestID).Scan(&existingID)
+		switch {
+		case err == nil:
+			if err := tx.Commit(); err != nil {
+				return 0, false, err
+			}
+			committed = true
+			return existingID, true, nil
+		case !errors.Is(err, sql.ErrNoRows):
+			return 0, false, err
+		}
+	}
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO packets (
   packet_hash, raw_hex, route_type, route_type_name, payload_type, payload_type_name,
@@ -78,16 +94,17 @@ ON CONFLICT(packet_hash) DO UPDATE SET
 		seenAt,
 	)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	now := time.Now().UnixMilli()
 	result, err := tx.ExecContext(ctx, `
 INSERT INTO packet_observations (
-  packet_hash, topic, iata, observer_public_key, observer_name, raw_json, heard_at_ms,
+  ingest_id, packet_hash, topic, iata, observer_public_key, observer_name, raw_json, heard_at_ms,
   rssi, snr, score, route_type, route_type_name, payload_type, payload_type_name,
   payload_version, hash_size, hop_count, path_hex, payload_hex, resolution_status,
   resolution_reason, invalid_for_map, summary, message_sender, message_text, created_at_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		in.IngestID,
 		in.Parsed.PacketHash,
 		in.Message.Topic,
 		in.Message.TopicInfo.IATA,
@@ -116,13 +133,14 @@ INSERT INTO packet_observations (
 		now,
 	)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	committed = true
-	return result.LastInsertId()
+	id, err := result.LastInsertId()
+	return id, false, err
 }
 
 func (s *Store) RecentPackets(ctx context.Context, limit int) ([]live.PacketObservation, error) {
@@ -130,7 +148,7 @@ func (s *Store) RecentPackets(ctx context.Context, limit int) ([]live.PacketObse
 		limit = 100
 	}
 	maxHeardAt := time.Now().Add(maxFutureEdgeSkew).UnixMilli()
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 SELECT id, packet_hash, payload_type, payload_type_name, route_type, route_type_name,
   observer_name, observer_public_key, iata, heard_at_ms, rssi, snr, score, hash_size,
   hop_count, path_hex, resolution_status, resolution_reason, summary, message_sender, message_text, invalid_for_map
@@ -146,7 +164,7 @@ LIMIT ?`, maxHeardAt, limit)
 }
 
 func (s *Store) PacketByHash(ctx context.Context, packetHash string) (map[string]any, error) {
-	row := s.db.QueryRowContext(ctx, `
+	row := s.reader().QueryRowContext(ctx, `
 SELECT packet_hash, raw_hex, route_type_name, payload_type_name, payload_version,
   hash_size, hop_count, path_hex, payload_hex, invalid_for_map, invalid_reason,
   first_seen_ms, last_seen_ms, seen_count

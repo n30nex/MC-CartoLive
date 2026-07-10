@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 )
 
 const publicEventsMaxLimit = 1000
+const publicViewportDetailZoom = 7.08
 
 func (s *Server) publicEvents(w http.ResponseWriter, r *http.Request) {
 	if !s.Config.PublicEventsEnabled {
@@ -28,9 +30,30 @@ func (s *Server) publicEvents(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	now := time.Now().UnixMilli()
-	from, to := publicSevenDayWindow(r, now)
+	afterSeq := queryInt64(r, "afterSeq", 0)
+	oldestSeq, latestSeq, err := s.Store.PublicSeqBounds(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	belowRetainedFloor := oldestSeq > 0 && afterSeq < oldestSeq-1
+	if afterSeq <= 0 || belowRetainedFloor || afterSeq > latestSeq {
+		writeJSON(w, http.StatusOK, live.PublicEventsResponse{
+			ServerTime:    now,
+			OldestSeq:     oldestSeq,
+			LatestSeq:     latestSeq,
+			Events:        []live.PublicEvent{},
+			NextCursor:    publicSeqCursor(latestSeq),
+			ResetRequired: true,
+		})
+		return
+	}
+	var from, to int64
+	if r.URL.Query().Has("from") || r.URL.Query().Has("to") {
+		from, to = publicSevenDayWindow(r, now)
+	}
 	events, next, err := s.Store.ListPublicEventsAfter(ctx, store.PublicEventFilter{
-		AfterSeq:        queryInt64(r, "afterSeq", 0),
+		AfterSeq:        afterSeq,
 		From:            from,
 		To:              to,
 		Limit:           limit,
@@ -44,12 +67,48 @@ func (s *Server) publicEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	events = s.filterPublicEvents(events)
-	latestSeq := s.latestPublicSeq(ctx)
+	responseCursor := next
+	if responseCursor == 0 {
+		responseCursor = afterSeq
+		if len(events) > 0 {
+			responseCursor = events[len(events)-1].Seq
+		}
+	}
 	writeJSON(w, http.StatusOK, live.PublicEventsResponse{
-		ServerTime: now,
-		LatestSeq:  latestSeq,
-		Events:     events,
-		NextCursor: publicSeqCursor(next),
+		ServerTime:    now,
+		OldestSeq:     oldestSeq,
+		LatestSeq:     latestSeq,
+		Events:        events,
+		NextCursor:    publicSeqCursor(responseCursor),
+		ResetRequired: false,
+	})
+}
+
+func (s *Server) publicBootstrap(w http.ResponseWriter, r *http.Request) {
+	if s.PublicState == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("public state cache is warming"))
+		return
+	}
+	state, ok := s.PublicState()
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, errors.New("public state cache is warming"))
+		return
+	}
+	now := time.Now()
+	latestSeq := s.latestPublicSeq(r.Context())
+	state.Stats.LatestSeq = latestSeq
+	activity := state.RecentActivity
+	if len(activity) > 40 {
+		activity = activity[:40]
+	}
+	writeJSON(w, http.StatusOK, live.PublicBootstrapResponse{
+		ServerTime:     now.UnixMilli(),
+		Map:            state.Map,
+		Stats:          state.Stats,
+		LatestSeq:      latestSeq,
+		Health:         s.publicRuntimeHealth(now, state),
+		Clusters:       publicMapClusters(state.Nodes),
+		RecentActivity: append([]live.PublicActivity{}, activity...),
 	})
 }
 
@@ -69,30 +128,42 @@ func (s *Server) publicViewport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	zoom := queryFloat(r, "zoom", 0)
-	nodes := make([]live.PublicNode, 0, len(state.Nodes))
+	includes := publicViewportIncludesForZoom(r.URL.Query().Get("include"), zoom)
+	wantNodes := publicViewportHasInclude(includes, "nodes")
+	wantRoutes := publicViewportHasInclude(includes, "routes")
+	wantEvents := publicViewportHasInclude(includes, "events")
+	wantClusters := publicViewportHasInclude(includes, "clusters")
+	matchingNodes := make([]live.PublicNode, 0, len(state.Nodes))
 	nodeIDs := map[string]struct{}{}
 	for _, node := range state.Nodes {
 		if pointInBBox(node.Longitude, node.Latitude, bbox) {
-			nodes = append(nodes, node)
+			matchingNodes = append(matchingNodes, node)
 			nodeIDs[node.ID] = struct{}{}
 		}
 	}
-	routes := make([]live.PublicRoute, 0, len(state.Routes))
-	for _, route := range state.Routes {
-		if _, ok := nodeIDs[route.From.NodeID]; ok {
-			routes = append(routes, route)
-			continue
-		}
-		if _, ok := nodeIDs[route.To.NodeID]; ok {
-			routes = append(routes, route)
-			continue
-		}
-		if pointInBBox(route.From.Lng, route.From.Lat, bbox) || pointInBBox(route.To.Lng, route.To.Lat, bbox) {
-			routes = append(routes, route)
+	nodes := []live.PublicNode{}
+	if wantNodes {
+		nodes = matchingNodes
+	}
+	routes := []live.PublicRoute{}
+	if wantRoutes {
+		routes = make([]live.PublicRoute, 0, len(state.Routes))
+		for _, route := range state.Routes {
+			if _, ok := nodeIDs[route.From.NodeID]; ok {
+				routes = append(routes, route)
+				continue
+			}
+			if _, ok := nodeIDs[route.To.NodeID]; ok {
+				routes = append(routes, route)
+				continue
+			}
+			if pointInBBox(route.From.Lng, route.From.Lat, bbox) || pointInBBox(route.To.Lng, route.To.Lat, bbox) {
+				routes = append(routes, route)
+			}
 		}
 	}
 	events := []live.PublicEvent{}
-	if since := queryInt64(r, "sinceSeq", 0); since > 0 && s.Config.PublicEventsEnabled {
+	if since := queryInt64(r, "sinceSeq", 0); wantEvents && since > 0 && s.Config.PublicEventsEnabled {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 		now := time.Now().UnixMilli()
@@ -110,16 +181,67 @@ func (s *Server) publicViewport(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	var clusters []live.PublicMapCluster
+	if wantClusters {
+		clusters = publicMapClusters(matchingNodes)
+	}
 	writeJSON(w, http.StatusOK, live.PublicViewportResponse{
 		ServerTime: time.Now().UnixMilli(),
 		LatestSeq:  s.PublicHub.LatestSeq(),
 		Nodes:      nodes,
 		Routes:     routes,
+		Clusters:   clusters,
 		Events:     events,
 		BBox:       bbox,
 		Zoom:       zoom,
-		Includes:   publicViewportIncludes(r.URL.Query().Get("include")),
+		Includes:   includes,
 	})
+}
+
+func publicMapClusters(nodes []live.PublicNode) []live.PublicMapCluster {
+	type aggregate struct {
+		cluster live.PublicMapCluster
+		latSum  float64
+		lngSum  float64
+	}
+	byRegion := map[string]*aggregate{}
+	for _, node := range nodes {
+		region := ""
+		if len(node.RegionsHeardIn) > 0 {
+			region = strings.ToUpper(strings.TrimSpace(node.RegionsHeardIn[0]))
+		} else if len(node.IATAsHeardIn) > 0 {
+			region = strings.ToUpper(strings.TrimSpace(node.IATAsHeardIn[0]))
+		}
+		key := region
+		if key == "" {
+			key = "UNASSIGNED"
+		}
+		item := byRegion[key]
+		if item == nil {
+			item = &aggregate{cluster: live.PublicMapCluster{ID: "region-" + strings.ToLower(key), Region: region}}
+			byRegion[key] = item
+		}
+		item.cluster.Count++
+		item.cluster.ActivityCount += node.ActivityCount
+		if node.LastSeen > item.cluster.LastSeen {
+			item.cluster.LastSeen = node.LastSeen
+		}
+		item.latSum += node.Latitude
+		item.lngSum += node.Longitude
+	}
+	out := make([]live.PublicMapCluster, 0, len(byRegion))
+	for _, item := range byRegion {
+		item.cluster.Latitude = item.latSum / float64(item.cluster.Count)
+		item.cluster.Longitude = item.lngSum / float64(item.cluster.Count)
+		out = append(out, item.cluster)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count == out[j].Count {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].Count > out[j].Count
+	})
+	return out
 }
 
 func (s *Server) publicNOC(w http.ResponseWriter, r *http.Request) {
@@ -383,6 +505,46 @@ func publicViewportIncludes(raw string) []string {
 	return out
 }
 
+func publicViewportIncludesForZoom(raw string, zoom float64) []string {
+	requested := publicViewportIncludes(raw)
+	if zoom < publicViewportDetailZoom {
+		out := []string{"clusters"}
+		if publicViewportHasInclude(requested, "events") && strings.TrimSpace(raw) != "" {
+			out = append(out, "events")
+		}
+		return out
+	}
+	if strings.TrimSpace(raw) == "" {
+		return requested
+	}
+	out := []string{}
+	for _, item := range requested {
+		item = strings.ToLower(strings.TrimSpace(item))
+		switch item {
+		case "detail":
+			for _, detail := range []string{"nodes", "routes"} {
+				if !publicViewportHasInclude(out, detail) {
+					out = append(out, detail)
+				}
+			}
+		case "nodes", "routes", "events", "clusters":
+			if !publicViewportHasInclude(out, item) {
+				out = append(out, item)
+			}
+		}
+	}
+	return out
+}
+
+func publicViewportHasInclude(items []string, wanted string) bool {
+	for _, item := range items {
+		if strings.EqualFold(strings.TrimSpace(item), wanted) {
+			return true
+		}
+	}
+	return false
+}
+
 func publicNOCObservers(nodes []live.PublicNode, now int64) ([]live.PublicNOCObserver, map[string]int) {
 	out := []live.PublicNOCObserver{}
 	counts := map[string]int{"online": 0, "stale": 0, "offline": 0}
@@ -527,44 +689,6 @@ func topPublicRegion(nodes []live.PublicNode) string {
 		}
 	}
 	return top
-}
-
-func publicOpenAPISchema(version string) map[string]any {
-	return map[string]any{
-		"openapi": "3.1.0",
-		"info": map[string]any{
-			"title":   "MC-CartoLive Public API",
-			"version": version,
-		},
-		"paths": map[string]any{
-			"/api/v1/public/state":                       map[string]any{"get": publicSchemaOperation("Public live state")},
-			"/api/v1/public/events":                      map[string]any{"get": publicSchemaOperation("Public event backfill")},
-			"/api/v1/public/viewport":                    map[string]any{"get": publicSchemaOperation("Viewport-scoped public map data")},
-			"/api/v1/public/noc":                         map[string]any{"get": publicSchemaOperation("Public-safe NOC dashboard")},
-			"/api/v1/public/packets":                     map[string]any{"get": publicSchemaOperation("Public packet paths")},
-			"/api/v1/public/chat":                        map[string]any{"get": publicSchemaOperation("Public chat messages")},
-			"/api/v1/public/coverage":                    map[string]any{"get": publicSchemaOperation("Coarse public coverage cells")},
-			"/api/v1/public/los/profile":                 map[string]any{"get": publicSchemaOperation("Public LOS profile")},
-			"/api/v1/public/schema":                      map[string]any{"get": publicSchemaOperation("Static checked public API schema")},
-			"/api/v1/public/propagation":                 map[string]any{"get": publicSchemaOperation("Public propagation events")},
-			"/api/v1/public/integrations/home-assistant": map[string]any{"get": publicSchemaOperation("Public-safe sensor summary")},
-		},
-		"x-public-forbidden-fields": []string{"publicKey", "observerPublicKey", "packetHash", "rawHex", "rawJson", "payloadHex", "pathHex", "resolver", "debug", "secret", "token", "password"},
-	}
-}
-
-func publicSchemaOperation(summary string) map[string]any {
-	return map[string]any{
-		"summary": summary,
-		"responses": map[string]any{
-			"200": map[string]any{
-				"description": "Public-safe JSON response",
-				"content": map[string]any{
-					"application/json": map[string]any{"schema": map[string]any{"type": "object"}},
-				},
-			},
-		},
-	}
 }
 
 func firstNonEmpty(items ...string) string {

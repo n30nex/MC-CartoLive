@@ -40,7 +40,7 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 		{&stats.EdgeEvents, `SELECT COUNT(*) FROM live_edge_events`},
 	}
 	for _, q := range queries {
-		if err := s.db.QueryRowContext(ctx, q.sql).Scan(q.dest); err != nil {
+		if err := s.reader().QueryRowContext(ctx, q.sql).Scan(q.dest); err != nil {
 			return stats, err
 		}
 	}
@@ -49,7 +49,7 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 
 func (s *Store) PacketCount(ctx context.Context) (int64, error) {
 	var count int64
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM packets`).Scan(&count); err != nil {
+	if err := s.reader().QueryRowContext(ctx, `SELECT COUNT(*) FROM packets`).Scan(&count); err != nil {
 		return 0, err
 	}
 	return count, nil

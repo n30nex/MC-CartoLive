@@ -15,6 +15,7 @@ type PublicEventStore interface {
 	InsertPublicEvent(ctx context.Context, event live.PublicEvent) (live.PublicEvent, error)
 	ListPublicEventsAfter(ctx context.Context, filter PublicEventFilter) ([]live.PublicEvent, int64, error)
 	LatestPublicSeq(ctx context.Context) (int64, error)
+	PublicSeqBounds(ctx context.Context) (int64, int64, error)
 }
 
 type PublicEventFilter struct {
@@ -60,9 +61,11 @@ func (s *Store) InsertPublicEvent(ctx context.Context, event live.PublicEvent) (
 	nodeIDsJSON, _ := json.Marshal(event.NodeIDs)
 	result, err := s.db.ExecContext(ctx, `
 INSERT INTO public_events (
-  event_type, occurred_at_ms, received_at_ms, region, iata, payload_type_name,
+  dedupe_key, event_type, occurred_at_ms, received_at_ms, region, iata, payload_type_name,
   message_flag, route_ids_json, node_ids_json, public_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(dedupe_key) WHERE dedupe_key != '' DO NOTHING`,
+		event.DedupeKey,
 		event.Type,
 		event.At,
 		event.ReceivedAt,
@@ -77,6 +80,12 @@ INSERT INTO public_events (
 	if err != nil {
 		return event, err
 	}
+	if affected, err := result.RowsAffected(); err == nil && affected == 0 && event.DedupeKey != "" {
+		if err := s.db.QueryRowContext(ctx, `SELECT seq FROM public_events WHERE dedupe_key = ?`, event.DedupeKey).Scan(&event.Seq); err != nil {
+			return event, err
+		}
+		return event, nil
+	}
 	if seq, err := result.LastInsertId(); err == nil {
 		event.Seq = seq
 	}
@@ -84,17 +93,29 @@ INSERT INTO public_events (
 }
 
 func (s *Store) LatestPublicSeq(ctx context.Context) (int64, error) {
+	_, latest, err := s.PublicSeqBounds(ctx)
+	return latest, err
+}
+
+// PublicSeqBounds uses primary-key index seeks instead of aggregating the
+// retained event table. This must remain fast even with millions of events.
+func (s *Store) PublicSeqBounds(ctx context.Context) (int64, int64, error) {
 	if s == nil || s.db == nil {
-		return 0, nil
+		return 0, 0, nil
 	}
-	var seq sql.NullInt64
-	if err := s.db.QueryRowContext(ctx, `SELECT MAX(seq) FROM public_events`).Scan(&seq); err != nil {
-		return 0, err
+	var oldest sql.NullInt64
+	var latest sql.NullInt64
+	err := s.reader().QueryRowContext(ctx, `
+SELECT
+  (SELECT seq FROM public_events ORDER BY seq ASC LIMIT 1),
+  (SELECT seq FROM public_events ORDER BY seq DESC LIMIT 1)`).Scan(&oldest, &latest)
+	if err != nil {
+		return 0, 0, err
 	}
-	if !seq.Valid {
-		return 0, nil
+	if !oldest.Valid || !latest.Valid {
+		return 0, 0, nil
 	}
-	return seq.Int64, nil
+	return oldest.Int64, latest.Int64, nil
 }
 
 func (s *Store) ListPublicEventsAfter(ctx context.Context, filter PublicEventFilter) ([]live.PublicEvent, int64, error) {
@@ -139,7 +160,7 @@ ORDER BY seq ASC
 LIMIT ?`
 	args = append(args, limit+1)
 
-	rows, err := s.db.QueryContext(ctx, sqlText, args...)
+	rows, err := s.reader().QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return nil, 0, err
 	}

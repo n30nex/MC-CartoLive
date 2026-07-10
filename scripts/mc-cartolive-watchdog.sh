@@ -1,0 +1,266 @@
+#!/usr/bin/env sh
+set -u
+
+CONTAINER="${MC_CARTOLIVE_CONTAINER:-meshcore-canada-live-map}"
+READY_URL="${MC_CARTOLIVE_READY_URL:-http://127.0.0.1:39476/readyz}"
+STATE_DIR="${MC_CARTOLIVE_STATE_DIR:-/var/lib/mc-cartolive-watchdog}"
+LOG_FILE="${MC_CARTOLIVE_LOG_FILE:-/var/log/mc-cartolive-watchdog.log}"
+MAX_FAILURES="${MC_CARTOLIVE_MAX_FAILURES:-3}"
+MAX_RESTARTS="${MC_CARTOLIVE_MAX_RESTARTS:-2}"
+RESTART_WINDOW_SECONDS="${MC_CARTOLIVE_RESTART_WINDOW_SECONDS:-21600}"
+BASE_COOLDOWN_SECONDS="${MC_CARTOLIVE_BASE_COOLDOWN_SECONDS:-600}"
+VERBOSE="${MC_CARTOLIVE_VERBOSE:-0}"
+DATA_DIR="${MC_CARTOLIVE_DATA_DIR:-/opt/MC-CartoLive/data}"
+MIN_FREE_PERCENT="${MC_CARTOLIVE_MIN_FREE_PERCENT:-20}"
+LOG_LOOKBACK_SECONDS="${MC_CARTOLIVE_LOG_LOOKBACK_SECONDS:-900}"
+LOG_TAIL_LINES="${MC_CARTOLIVE_LOG_TAIL_LINES:-200}"
+
+STATE_FILE="$STATE_DIR/state.env"
+LOCK_FILE="$STATE_DIR/watchdog.lock"
+mkdir -p "$STATE_DIR" "$(dirname "$LOG_FILE")"
+chmod 0700 "$STATE_DIR" 2>/dev/null || true
+
+if command -v flock >/dev/null 2>&1; then
+	exec 9>"$LOCK_FILE"
+	flock -n 9 || exit 0
+else
+	LOCK_DIR="$LOCK_FILE.d"
+	if ! mkdir "$LOCK_DIR" 2>/dev/null; then exit 0; fi
+	trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
+fi
+rm -f "$STATE_DIR"/container-log-probe.* 2>/dev/null || true
+
+log() { printf '%s %s\n' "$(date -Is)" "$*" >>"$LOG_FILE"; }
+as_int() {
+	case "${1:-}" in ''|*[!0-9]*) printf '0' ;; *) printf '%s' "$1" ;; esac
+}
+
+failures=0
+restart_1=0
+restart_2=0
+last_restart=0
+if [ -f "$STATE_FILE" ]; then
+	# The file is root-owned/mode 0600 and every loaded value is normalized below.
+	# shellcheck disable=SC1090
+	. "$STATE_FILE"
+fi
+failures="$(as_int "$failures")"
+restart_1="$(as_int "$restart_1")"
+restart_2="$(as_int "$restart_2")"
+last_restart="$(as_int "$last_restart")"
+MAX_FAILURES="$(as_int "$MAX_FAILURES")"
+MAX_RESTARTS="$(as_int "$MAX_RESTARTS")"
+RESTART_WINDOW_SECONDS="$(as_int "$RESTART_WINDOW_SECONDS")"
+BASE_COOLDOWN_SECONDS="$(as_int "$BASE_COOLDOWN_SECONDS")"
+MIN_FREE_PERCENT="$(as_int "$MIN_FREE_PERCENT")"
+LOG_LOOKBACK_SECONDS="$(as_int "$LOG_LOOKBACK_SECONDS")"
+LOG_TAIL_LINES="$(as_int "$LOG_TAIL_LINES")"
+[ "$MAX_FAILURES" -gt 0 ] || MAX_FAILURES=3
+[ "$MAX_RESTARTS" -gt 0 ] || MAX_RESTARTS=2
+# The state format has two slots by design; never allow configuration to widen
+# the release invariant beyond two restarts per rolling six-hour window.
+[ "$MAX_RESTARTS" -le 2 ] || MAX_RESTARTS=2
+[ "$RESTART_WINDOW_SECONDS" -gt 0 ] || RESTART_WINDOW_SECONDS=21600
+[ "$BASE_COOLDOWN_SECONDS" -gt 0 ] || BASE_COOLDOWN_SECONDS=600
+[ "$MIN_FREE_PERCENT" -gt 0 ] || MIN_FREE_PERCENT=20
+[ "$MIN_FREE_PERCENT" -le 100 ] || MIN_FREE_PERCENT=20
+[ "$LOG_LOOKBACK_SECONDS" -gt 0 ] || LOG_LOOKBACK_SECONDS=900
+[ "$LOG_TAIL_LINES" -gt 0 ] || LOG_TAIL_LINES=200
+[ "$LOG_TAIL_LINES" -le 1000 ] || LOG_TAIL_LINES=200
+
+write_state() {
+	state_tmp="$STATE_FILE.tmp.$$"
+	cat >"$state_tmp" <<EOF
+failures=$1
+restart_1=$2
+restart_2=$3
+last_restart=$4
+EOF
+	chmod 0600 "$state_tmp"
+	mv -f "$state_tmp" "$STATE_FILE"
+}
+
+tmp_body="$(mktemp)"
+http_code="$(curl -sS --max-time 10 -o "$tmp_body" -w '%{http_code}' "$READY_URL" 2>/dev/null || true)"
+json="$(cat "$tmp_body")"
+rm -f "$tmp_body"
+
+json_value() {
+	key="$1"
+	if command -v jq >/dev/null 2>&1; then
+		printf '%s' "$json" | jq -r --arg key "$key" '.[$key] // empty' 2>/dev/null
+	else
+		printf '%s' "$json" | tr -d '\n' | sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\\([^,}]*\\).*/\\1/p" | tr -d '"'
+	fi
+}
+
+json_has_reason() {
+	reason_key="$1"
+	if command -v jq >/dev/null 2>&1; then
+		printf '%s' "$json" | jq -e --arg reason "$reason_key" '.reasons? | arrays | index($reason) != null' >/dev/null 2>&1
+	else
+		printf '%s' "$json" | tr -d '\r\n' | grep -Fq "\"$reason_key\""
+	fi
+}
+
+storage_restart_safe() {
+	if [ ! -d "$DATA_DIR" ]; then
+		log "restart_suppressed condition=data_filesystem_unavailable"
+		return 1
+	fi
+	space="$(df -Pk "$DATA_DIR" 2>/dev/null | awk 'NR > 1 {total=$2; free=$4} END {if (total ~ /^[0-9]+$/ && free ~ /^[0-9]+$/) print total, free}')"
+	total_kb="$(printf '%s' "$space" | awk '{print $1}')"
+	free_kb="$(printf '%s' "$space" | awk '{print $2}')"
+	case "$total_kb" in
+		''|*[!0-9]*|0)
+			log "restart_suppressed condition=data_filesystem_probe_failed"
+			return 1
+			;;
+	esac
+	case "$free_kb" in
+		''|*[!0-9]*)
+			log "restart_suppressed condition=data_filesystem_probe_failed"
+			return 1
+			;;
+	esac
+	free_percent=$((free_kb * 100 / total_kb))
+	if [ $((free_kb * 100)) -le $((total_kb * MIN_FREE_PERCENT)) ]; then
+		log "restart_suppressed condition=data_filesystem_pressure freePercent=$free_percent thresholdPercent=$MIN_FREE_PERCENT"
+		return 1
+	fi
+	return 0
+}
+
+recent_logs_show_full_disk() {
+	logs_tmp="$(mktemp "$STATE_DIR/container-log-probe.XXXXXX")" || return 2
+	chmod 0600 "$logs_tmp"
+	if ! command -v timeout >/dev/null 2>&1; then
+		rm -f "$logs_tmp"
+		return 2
+	fi
+	if ! timeout 10 docker logs --since "${LOG_LOOKBACK_SECONDS}s" --tail "$LOG_TAIL_LINES" "$CONTAINER" >"$logs_tmp" 2>&1; then
+		rm -f "$logs_tmp"
+		return 2
+	fi
+	if grep -Eqi 'SQLITE_FULL|database or disk is full|no space left on device' "$logs_tmp"; then
+		rm -f "$logs_tmp"
+		return 0
+	fi
+	rm -f "$logs_tmp"
+	return 1
+}
+
+now="$(date +%s)"
+window_start=$((now - RESTART_WINDOW_SECONDS))
+[ "$restart_1" -ge "$window_start" ] || restart_1=0
+[ "$restart_2" -ge "$window_start" ] || restart_2=0
+restart_count=0
+[ "$restart_1" -gt 0 ] && restart_count=$((restart_count + 1))
+[ "$restart_2" -gt 0 ] && restart_count=$((restart_count + 1))
+
+dataset_state="$(json_value datasetState)"
+storage_state="$(json_value storagePressureState)"
+cache_state="$(json_value publicCacheState)"
+mqtt_session="$(json_value mqttSessionReady)"
+mqtt_connected="$(json_value mqttConnected)"
+db_ready="$(json_value dbReady)"
+
+# Storage pressure, an intentionally empty/warming dataset, and quiet RF traffic
+# are operator conditions. Restarting cannot repair them and can make them worse.
+case "$storage_state" in
+	warn|critical)
+		log "restart_suppressed condition=storagePressureState:$storage_state http=$http_code"
+		write_state 0 "$restart_1" "$restart_2" "$last_restart"
+		exit 0
+		;;
+esac
+if json_has_reason storage_critical; then
+	log "restart_suppressed condition=readiness_reason:storage_critical http=$http_code"
+	write_state 0 "$restart_1" "$restart_2" "$last_restart"
+	exit 0
+fi
+
+reason=""
+if json_has_reason public_cache_stale_or_failed; then
+	reason="public_cache_stale_or_failed"
+elif json_has_reason database_unavailable; then
+	reason="database_unavailable"
+elif json_has_reason mqtt_session_not_ready; then
+	reason="mqtt_session_unready"
+else
+	case "$http_code" in 000|'') reason="process_unreachable" ;; esac
+fi
+# Keep compatibility while the old image may still be active during cutover.
+if [ -z "$reason" ]; then case "$cache_state" in failed|unavailable|stale) reason="public_cache_$cache_state" ;; esac; fi
+if [ -z "$reason" ] && [ "$db_ready" = "false" ]; then reason="database_unavailable"; fi
+if [ -z "$reason" ]; then
+	if [ -n "$mqtt_session" ] && [ "$mqtt_session" = "false" ]; then
+		reason="mqtt_session_unready"
+	elif [ -z "$mqtt_session" ] && [ "$mqtt_connected" = "false" ]; then
+		reason="mqtt_disconnected"
+	fi
+fi
+
+if [ -n "$reason" ]; then
+	if ! storage_restart_safe; then
+		write_state 0 "$restart_1" "$restart_2" "$last_restart"
+		exit 0
+	fi
+	recent_logs_show_full_disk
+	log_probe_status=$?
+	case "$log_probe_status" in
+		0) log "restart_suppressed condition=recent_sqlite_full lookbackSeconds=$LOG_LOOKBACK_SECONDS" ;;
+		2) log "restart_suppressed condition=bounded_container_log_probe_unavailable" ;;
+		*) log_probe_status=1 ;;
+	esac
+	if [ "$log_probe_status" -ne 1 ]; then
+		write_state 0 "$restart_1" "$restart_2" "$last_restart"
+		exit 0
+	fi
+fi
+
+if [ -z "$reason" ]; then
+	case "$dataset_state" in
+		fresh_start|warming)
+			[ "$VERBOSE" = "1" ] && log "ok condition=datasetState:$dataset_state http=$http_code"
+			write_state 0 "$restart_1" "$restart_2" "$last_restart"
+			exit 0
+			;;
+	esac
+	if [ "$failures" -gt 0 ] || [ "$VERBOSE" = "1" ]; then
+		log "ok http=$http_code datasetState=${dataset_state:-unknown} publicCacheState=${cache_state:-unknown}"
+	fi
+	write_state 0 "$restart_1" "$restart_2" "$last_restart"
+	exit 0
+fi
+
+failures=$((failures + 1))
+write_state "$failures" "$restart_1" "$restart_2" "$last_restart"
+log "bad_sample failures=$failures reason=$reason"
+[ "$failures" -ge "$MAX_FAILURES" ] || exit 0
+
+if [ "$restart_count" -ge "$MAX_RESTARTS" ]; then
+	log "restart_suppressed reason=window_limit restarts=$restart_count windowSeconds=$RESTART_WINDOW_SECONDS"
+	exit 0
+fi
+
+# Exponential cooldown: 10 minutes before the first restart, 20 before the
+# second. The rolling-window cap remains the primary loop guard.
+cooldown=$BASE_COOLDOWN_SECONDS
+[ "$restart_count" -eq 0 ] || cooldown=$((BASE_COOLDOWN_SECONDS * 2))
+since_restart=$((now - last_restart))
+if [ "$last_restart" -gt 0 ] && [ "$since_restart" -lt "$cooldown" ]; then
+	log "restart_suppressed reason=cooldown sinceLastRestartSeconds=$since_restart cooldownSeconds=$cooldown"
+	exit 0
+fi
+
+log "restarting container=$CONTAINER reason=$reason restartNumber=$((restart_count + 1))"
+if docker restart "$CONTAINER" >/dev/null; then
+	if [ "$restart_1" -eq 0 ]; then restart_1="$now"; else restart_2="$now"; fi
+	write_state 0 "$restart_1" "$restart_2" "$now"
+	log "restart_complete container=$CONTAINER"
+	exit 0
+fi
+
+log "restart_failed container=$CONTAINER"
+exit 1

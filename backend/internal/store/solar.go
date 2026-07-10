@@ -12,13 +12,15 @@ type SolarSnapshot struct {
 func (s *Store) InsertSolarSnapshot(ctx context.Context, snap SolarSnapshot) (int64, error) {
 	r, err := s.db.ExecContext(ctx, `INSERT INTO solar_snapshots (fetched_at_ms, kp_index, solar_flux_sfu, geomag_activity) VALUES (?,?,?,?)`,
 		snap.FetchedAtMs, snap.KpIndex, snap.SolarFluxSfu, snap.GeomagActivity)
-	if err != nil { return 0, err }
+	if err != nil {
+		return 0, err
+	}
 	return r.LastInsertId()
 }
 
 func (s *Store) LatestSolarSnapshot(ctx context.Context) (SolarSnapshot, error) {
 	var snap SolarSnapshot
-	err := s.db.QueryRowContext(ctx, `SELECT fetched_at_ms, kp_index, solar_flux_sfu, geomag_activity FROM solar_snapshots ORDER BY fetched_at_ms DESC LIMIT 1`).
+	err := s.reader().QueryRowContext(ctx, `SELECT fetched_at_ms, kp_index, solar_flux_sfu, geomag_activity FROM solar_snapshots ORDER BY fetched_at_ms DESC LIMIT 1`).
 		Scan(&snap.FetchedAtMs, &snap.KpIndex, &snap.SolarFluxSfu, &snap.GeomagActivity)
 	return snap, err
 }

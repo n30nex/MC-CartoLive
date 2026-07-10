@@ -1,76 +1,42 @@
 # MC-CartoLive Roadmap
 
-This file tracks the current product direction. Completed release details live
-in [CHANGELOG.md](../CHANGELOG.md); operator procedures live in
-[operator-runbook.md](operator-runbook.md).
+## Current baseline
 
-## Current Baseline
+Version `3.2.0` is the supported reliability, fresh-storage, compact-bootstrap,
+accessible UI, and RF Replay Studio baseline. Unreleased 3.1 work was folded
+into 3.2; it is not an upgrade waypoint.
 
-Version `3.1.0` is the current end-to-end overhaul on the public-safe event,
-operations, Labs, map-runtime, and world-ready packaging foundation.
+The supported shape remains one public-safe Go/React container with SQLite,
+high-confidence RF routes only, immutable release identity, and no raw/private
+broker material in public HTTP or WebSocket data.
 
-- Public API shapes remain stable across the 2.8.x, 2.9.x, 3.0.x, and 3.1.0
-  line.
-- The default public map is traffic-first: terrain relief, propagation overlays,
-  and route lines are opt-in for new visitors.
-- The supported deployment shape is one container with the Go backend serving
-  the embedded React frontend and SQLite under `/app/data`.
-- Local release validation uses Podman; the production droplet can continue to
-  use Docker Compose.
-- The 3.1.0 frontend keeps committed `world` and `canada` asset presets while
-  adding worker-backed map GeoJSON transforms, Vite 8/Rolldown chunk groups,
-  source-data signature guards, and extracted CSS surfaces without changing
-  public API shapes.
+## Active operations
 
-## Active Focus
+- Keep the hosted Canada database inside its seven-day observation and 24-hour
+  event windows.
+- Prove queue, WAL, cache, MQTT session, disk, and watchdog behavior through the
+  24-hour and day-8/day-14 gates.
+- Keep production on the tested GHCR digest and prevent on-host builds or
+  branch-reset rollback.
+- Keep RF Replay Studio/export lazy so the normal live map remains inside its
+  initial-load and memory budgets.
+- Expand browser/accessibility coverage using synthetic public fixtures only.
 
-- Keep the hosted Canada map stable, readable, and privacy-safe during live
-  traffic.
-- Keep Packets, Chat, NetGraph, Replay, NodeList, propagation history, Map Studio,
-  and 3D optional but easy to discover.
-- Keep Waterfall Labs fun, browser-safe, and strictly derived from public DTOs.
-- Improve map, offline tile, 3D, asset, and panel UX through small
-  API-compatible 3.x patches.
-- Keep release evidence concise and current instead of adding more planning
-  documents.
-- Keep production deployment repeatable with backup, smoke, rollback, privacy
-  scan, live diagnostics, and the Windows workstation deploy wrapper.
+## Later 3.x candidates
 
-## Candidate 3.x Work
+- TypeScript 7, plugin-react 6, jsdom 29, lucide 1, and Three 0.185 remain
+  deferred until isolated compatibility work proves them.
+- Evaluate a dedicated authenticated operator telemetry listener if loopback
+  metrics no longer meet operating needs.
+- Add coarse public coverage/import tools and offline terrain fixtures without
+  weakening route confidence or privacy.
+- Continue decomposing map runtime modules when a behavior change provides a
+  measurable performance or testability benefit.
 
-- Expand the new public event log into more history/replay workflows.
-- Iterate on Waterfall Labs with exportable clips and deeper replay sampling
-  once the public event log grows.
-- Continue extracting CanadaMap into runtime overlays using the new registry
-  contracts.
-- Add a human review lane for future OpenAI-generated asset candidates before
-  they become committed deterministic runtime files.
-- Add importer tooling for coarse coverage cells and Canada CDEM LOS samples.
-- Add more focused browser smoke coverage for PMTiles, terrain, and 3D style
-  workflows once fixture assets are available.
-- Continue improving operator diagnostics without exposing raw packet data.
+## Permanent non-goals
 
-## Release Gates
-
-Every production release should pass:
-
-- `cd backend && go test ./...`
-- `cd web && npm test -- --run`
-- `cd web && npm run build`
-- `node scripts/check-version-sync.mjs`
-- `node scripts/public-schema-check.mjs`
-- `node scripts/check-asset-pack.mjs`
-- `node scripts/check-frontend-budget.mjs`
-- Podman image build and package smoke
-- public privacy scan
-- browser smoke for changed UI surfaces
-- live smoke after deploy
-
-## Non-Goals
-
-- No raw packet hashes, raw payloads, full public keys, path hex, resolver debug
-  fields, broker credentials, channel secrets, or operator config in public
-  responses.
-- No guessed RF routes. Missing data should be explained by diagnostics, not
-  invented on the map.
-- No public admin/debug surface without a separate access-control design.
+- no guessed or ambiguous RF routes
+- no public raw packet hashes, payload/path hex, full keys, resolver reasons,
+  broker credentials, channel secrets, or operator configuration
+- no public admin/debug surface without a separate authenticated design
+- no unbounded retention on a public deployment that reports ready

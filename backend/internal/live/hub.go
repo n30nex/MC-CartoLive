@@ -2,6 +2,7 @@ package live
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"math"
 	"net/http"
@@ -35,13 +36,16 @@ type Hub struct {
 }
 
 type client struct {
-	id      string
-	conn    *websocket.Conn
-	send    chan Envelope
-	created time.Time
-	dropped atomic.Int64
-	scopeMu sync.RWMutex
-	scope   *SubscriptionScope
+	id        string
+	conn      *websocket.Conn
+	send      chan Envelope
+	created   time.Time
+	dropped   atomic.Int64
+	scopeMu   sync.RWMutex
+	scope     *SubscriptionScope
+	onClose   func()
+	closeOnce sync.Once
+	resetting atomic.Bool
 }
 
 type SubscriptionScope struct {
@@ -90,23 +94,30 @@ func (h *Hub) SetSubscriptionsEnabled(enabled bool) {
 }
 
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.ServeHTTPWithClose(w, r, nil)
+}
+
+// ServeHTTPWithClose reports whether the WebSocket upgrade succeeded and
+// invokes onClose exactly once when that admitted connection is removed.
+func (h *Hub) ServeHTTPWithClose(w http.ResponseWriter, r *http.Request, onClose func()) bool {
 	h.mu.RLock()
 	clientCount := len(h.clients)
 	h.mu.RUnlock()
 	if clientCount >= maxClients {
 		http.Error(w, "too many connections", http.StatusServiceUnavailable)
-		return
+		return false
 	}
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.log.Warn("websocket upgrade failed", "error", err)
-		return
+		return false
 	}
 	c := &client{
 		id:      uuid.NewString(),
 		conn:    conn,
 		send:    make(chan Envelope, h.queueSize),
 		created: time.Now(),
+		onClose: onClose,
 	}
 	h.mu.Lock()
 	h.clients[c] = struct{}{}
@@ -121,6 +132,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c.send <- Envelope{Version: 1, Type: "hello", Seq: helloSeq, LatestSeq: latestSeq, ServerTime: now, ReceivedAt: now, DisplayAt: now, ConnectionID: c.id}
 	go h.writePump(c)
 	go h.readPump(c)
+	return true
 }
 
 func (h *Hub) Broadcast(event string, data any) {
@@ -163,11 +175,11 @@ func safeSend(h *Hub, c *client, env Envelope) {
 	default:
 		dropped := c.dropped.Add(1)
 		h.totalDropped.Add(1)
-		now := time.Now().UnixMilli()
-		lag := Envelope{Version: 1, Type: "lagged", Seq: h.LatestSeq(), LatestSeq: h.LatestSeq(), FromSeq: env.Seq, ToSeq: h.LatestSeq(), ServerTime: now, ReceivedAt: now, DisplayAt: now, DroppedCount: int(dropped), Since: c.created.UnixMilli()}
-		select {
-		case c.send <- lag:
-		default:
+		if c.resetting.CompareAndSwap(false, true) {
+			// A full queue cannot reliably carry a lag marker. Close this client
+			// asynchronously so broadcast/ingest never blocks; the reconnecting
+			// client resumes from its retained event cursor.
+			go h.removeWithReason(c, websocket.CloseTryAgainLater, fmt.Sprintf("client lagged; dropped=%d", dropped))
 		}
 	}
 }
@@ -287,6 +299,10 @@ func (h *Hub) observeQueueDepth(depth int) {
 }
 
 func (h *Hub) remove(c *client) {
+	h.removeWithReason(c, websocket.CloseGoingAway, "server shutting down")
+}
+
+func (h *Hub) removeWithReason(c *client, closeCode int, reason string) {
 	removed := false
 	h.mu.Lock()
 	if _, ok := h.clients[c]; ok {
@@ -298,10 +314,25 @@ func (h *Hub) remove(c *client) {
 	if !removed {
 		return
 	}
-	c.conn.WriteControl(websocket.CloseMessage,
-		websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"),
-		time.Now().Add(2*time.Second))
-	_ = c.conn.Close()
+	c.closeOnce.Do(func() {
+		if c.onClose != nil {
+			c.onClose()
+		}
+	})
+	if c.conn != nil {
+		_ = c.conn.WriteControl(websocket.CloseMessage,
+			websocket.FormatCloseMessage(closeCode, reason),
+			time.Now().Add(250*time.Millisecond))
+		if closeCode == websocket.CloseTryAgainLater {
+			// A lagging peer can have enough buffered frames to delay observing a
+			// graceful FIN. The client must reconnect and resume from its cursor, so
+			// abort only this overflow path after the best-effort close frame.
+			if aborter, ok := c.conn.UnderlyingConn().(interface{ SetLinger(int) error }); ok {
+				_ = aborter.SetLinger(0)
+			}
+		}
+		_ = c.conn.Close()
+	}
 }
 
 func (h *Hub) writePump(c *client) {

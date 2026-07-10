@@ -1,5 +1,9 @@
 # MC-CartoLive 3.1.0 Release Notes
 
+> **Unreleased candidate:** 3.1.0 was never tagged or published. This material
+> is retained only as historical planning evidence; all of these changes ship
+> in 3.2.0. Do not deploy or use 3.1.0 as an upgrade waypoint.
+
 3.1.0 is an end-to-end production overhaul. It keeps the single-container Go
 backend, embedded React frontend, SQLite data volume, and public API/privacy
 boundary stable while refreshing frontend tooling, map rendering performance,

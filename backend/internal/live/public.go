@@ -280,6 +280,7 @@ type PublicHistoryResponse struct {
 }
 
 type PublicEvent struct {
+	DedupeKey       string   `json:"-"`
 	Seq             int64    `json:"seq"`
 	Type            string   `json:"type"`
 	At              int64    `json:"at"`
@@ -294,21 +295,51 @@ type PublicEvent struct {
 }
 
 type PublicEventsResponse struct {
-	ServerTime int64         `json:"serverTime"`
-	LatestSeq  int64         `json:"latestSeq"`
-	Events     []PublicEvent `json:"events"`
-	NextCursor string        `json:"nextCursor,omitempty"`
+	ServerTime    int64         `json:"serverTime"`
+	OldestSeq     int64         `json:"oldestSeq"`
+	LatestSeq     int64         `json:"latestSeq"`
+	Events        []PublicEvent `json:"events"`
+	NextCursor    string        `json:"nextCursor,omitempty"`
+	ResetRequired bool          `json:"resetRequired"`
+}
+
+type PublicMapCluster struct {
+	ID            string  `json:"id"`
+	Latitude      float64 `json:"latitude"`
+	Longitude     float64 `json:"longitude"`
+	Count         int     `json:"count"`
+	ActivityCount int64   `json:"activityCount,omitempty"`
+	LastSeen      int64   `json:"lastSeen,omitempty"`
+	Region        string  `json:"region,omitempty"`
+}
+
+type PublicRuntimeHealth struct {
+	MQTTSessionReady     bool   `json:"mqttSessionReady"`
+	DatasetState         string `json:"datasetState"`
+	DatasetStartedAt     int64  `json:"datasetStartedAt"`
+	StoragePressureState string `json:"storagePressureState"`
+}
+
+type PublicBootstrapResponse struct {
+	ServerTime     int64               `json:"serverTime"`
+	Map            PublicMapConfig     `json:"map"`
+	Stats          PublicStats         `json:"stats"`
+	LatestSeq      int64               `json:"latestSeq"`
+	Health         PublicRuntimeHealth `json:"health"`
+	Clusters       []PublicMapCluster  `json:"clusters"`
+	RecentActivity []PublicActivity    `json:"recentActivity"`
 }
 
 type PublicViewportResponse struct {
-	ServerTime int64         `json:"serverTime"`
-	LatestSeq  int64         `json:"latestSeq,omitempty"`
-	Nodes      []PublicNode  `json:"nodes"`
-	Routes     []PublicRoute `json:"routes"`
-	Events     []PublicEvent `json:"events,omitempty"`
-	BBox       []float64     `json:"bbox,omitempty"`
-	Zoom       float64       `json:"zoom,omitempty"`
-	Includes   []string      `json:"includes,omitempty"`
+	ServerTime int64              `json:"serverTime"`
+	LatestSeq  int64              `json:"latestSeq,omitempty"`
+	Nodes      []PublicNode       `json:"nodes"`
+	Routes     []PublicRoute      `json:"routes"`
+	Clusters   []PublicMapCluster `json:"clusters,omitempty"`
+	Events     []PublicEvent      `json:"events,omitempty"`
+	BBox       []float64          `json:"bbox,omitempty"`
+	Zoom       float64            `json:"zoom,omitempty"`
+	Includes   []string           `json:"includes,omitempty"`
 }
 
 type PublicNOCObserver struct {

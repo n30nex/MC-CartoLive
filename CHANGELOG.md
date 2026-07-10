@@ -4,7 +4,32 @@ This changelog records the public release history at a useful level of detail.
 Detailed patch-by-patch investigation notes and temporary planning material live
 in Git history, not in the active documentation set.
 
-## 3.1.0 - 2026-06-28
+## 3.2.0 - 2026-07-10
+
+- Added RF Replay Studio, compact/accessibility-focused controls, reduced-motion
+  route stories, privacy-safe deep links, and on-demand client export.
+- Added compact bootstrap, viewport clusters, reset-safe public event cursors,
+  and public-safe MQTT session/dataset/storage health fields while preserving
+  existing endpoint compatibility.
+- Added schema version 32000, seven-day observations, 24-hour public events,
+  incremental SQLite maintenance, optimized event queries, and fail-closed
+  public handling for unbounded retention.
+- Updated Go to 1.25.12 and the audited React/Vite/Vitest/Playwright dependency
+  set; expanded race, vulnerability, privacy, browser, supply-chain, and
+  deployment contract gates.
+- Compiled release identity into the artifact and replaced production host
+  builds/branch resets with immutable digest deployment and rollback.
+- Added data-preserving hosted cutover evidence, optional fresh-database
+  controls, bounded watchdog,
+  multi-platform candidate promotion, release manifest, deployment archive,
+  OpenAPI, SPDX SBOM, checksums, provenance, and operator documentation.
+- Folded the unreleased 3.1 candidate work into 3.2.0. No 3.1 release tag is
+  required or supported as an upgrade waypoint.
+
+## Unreleased 3.1 candidate (folded into 3.2.0)
+
+This candidate was never tagged or published. Its changes ship as part of
+3.2.0 and must not be treated as a supported upgrade waypoint.
 
 - Refreshed frontend dependency lockfile state with `npm audit fix` and kept the
   public API/schema boundary stable.

@@ -54,22 +54,30 @@ func TestClientIPRequiresTrustedProxyHeaders(t *testing.T) {
 	request.Header.Set("X-Forwarded-For", "198.51.100.77, 10.0.0.10")
 	request.Header.Set("X-Real-IP", "198.51.100.88")
 
-	if got := clientIP(request, false); got != "203.0.113.10" {
+	if got := clientIP(request, false, nil); got != "203.0.113.10" {
 		t.Fatalf("untrusted proxy client IP = %q, want remote addr", got)
 	}
-	if got := clientIP(request, true); got != "198.51.100.77" {
+	if got := clientIP(request, true, []string{"203.0.113.0/24"}); got != "198.51.100.77" {
 		t.Fatalf("trusted proxy client IP = %q, want first XFF address", got)
+	}
+	if got := clientIP(request, true, []string{"192.0.2.0/24"}); got != "203.0.113.10" {
+		t.Fatalf("unlisted proxy client IP = %q, want remote addr", got)
 	}
 }
 
 func TestShouldGzipSkipsWebsocketRangeAndCompressedAssets(t *testing.T) {
-	request, err := http.NewRequest(http.MethodGet, "/api/v1/public/state", nil)
+	request, err := http.NewRequest(http.MethodGet, "/api/v1/public/history", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request.Header.Set("Accept-Encoding", "br, gzip")
 	if !shouldGzip(request) {
 		t.Fatalf("json request with gzip support should be compressed")
+	}
+	stateRequest := request.Clone(request.Context())
+	stateRequest.URL.Path = "/api/v1/public/state"
+	if shouldGzip(stateRequest) {
+		t.Fatalf("public state owns its precompressed response and should bypass middleware gzip")
 	}
 
 	websocketRequest := request.Clone(request.Context())

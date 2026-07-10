@@ -3,89 +3,148 @@ name: CI
 on:
   pull_request:
   push:
-    branches:
-      - main
-      - dev/deepseek-v4
+    branches: [main]
   workflow_dispatch:
     inputs:
       browser_smoke:
-        description: Run local Docker browser smoke with Playwright
+        description: Run the Docker browser smoke suite
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
-    name: Backend tests
+    name: Backend test, vet, race, vulnerability
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
-
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-
+      - name: Verify modules
+        working-directory: backend
+        run: go mod verify
       - name: Test
         working-directory: backend
         run: go test ./...
-
-      - name: Govulncheck
+      - name: Vet
+        working-directory: backend
+        run: go vet ./...
+      - name: Race detector
+        working-directory: backend
+        run: go test -race ./...
+      - name: Reachable vulnerability scan
         working-directory: backend
         run: go tool govulncheck ./...
 
   frontend:
-    name: Frontend tests and build
+    name: Frontend test, audit, build, budgets
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
-
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
-
       - name: Install
         working-directory: web
         run: npm ci
-
       - name: Audit
         working-directory: web
         run: npm audit --audit-level=high
-
-      - name: Version sync
-        run: node scripts/check-version-sync.mjs
-
-      - name: Test
+      - name: Version, schema, and asset contracts
+        run: |
+          node scripts/check-version-sync.mjs
+          node scripts/public-schema-check.mjs
+          node scripts/check-asset-pack.mjs
+      - name: Bounded-thread test suite
         working-directory: web
-        run: npm test -- --run
-
-      - name: Build
+        run: npm test -- --run --pool=threads --maxWorkers=2
+      - name: Production build
         working-directory: web
         run: npm run build
+      - name: Frontend budgets
+        run: node scripts/check-frontend-budget.mjs
 
-  docker:
-    name: Docker build
+  release-ops:
+    name: Release and deployment contracts
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+      - name: Shellcheck
+        run: shellcheck scripts/*.sh
+      - name: Script contract tests
+        run: |
+          bash scripts/test-release-ops.sh
+          bash scripts/test-post-release-audit.sh
+          node scripts/check-cloudflare-cidrs.mjs --online
+      - name: Compose contracts
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+          MC_CARTOLIVE_IMAGE=ghcr.io/n30nex/mc-cartolive@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            docker compose -f docker-compose.production.yml config --format json > /tmp/production-compose.json
+          jq -e '.services["meshcore-live-map"] | has("build") | not' /tmp/production-compose.json
+          jq -e '
+            .services["meshcore-live-map"].ports
+            | any(
+                .host_ip == "127.0.0.1"
+                and (.published | tostring) == "39476"
+                and (.target | tonumber) == 8080
+              )
+          ' /tmp/production-compose.json
+      - name: Package manifest dry run
+        env:
+          RELEASE_IMAGE: ghcr.io/n30nex/mc-cartolive@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          RELEASE_GIT_SHA: ${{ github.sha }}
+          RELEASE_BUILD_TIME: "2026-07-10T00:00:00Z"
+        run: |
+          node scripts/build-release-bundle.mjs
+          test -f artifacts/release/release-manifest.json
+          jq -e '.hostPrerequisites.destructiveFreshDatabase.nodeMinMajor == 18' artifacts/release/release-manifest.json
+          test -f artifacts/release/stage/mc-cartolive-$(tr -d '\r\n' < VERSION)/docker-compose.production.yml
+          test -f artifacts/release/stage/mc-cartolive-$(tr -d '\r\n' < VERSION)/scripts/check-public-privacy.mjs
 
+  docker:
+    name: Container build, smoke, scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Read release version
-        run: echo "APP_VERSION=$(tr -d '\r\n' < VERSION)" >> "$GITHUB_ENV"
-
-      - name: Build image
-        uses: docker/build-push-action@v7
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Read release metadata
+        id: release
+        shell: bash
+        run: |
+          echo "version=$(tr -d '\r\n' < VERSION)" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+      - name: Build local image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           push: false
@@ -93,73 +152,104 @@ jobs:
           provenance: false
           tags: meshcore-canada-live-map:ci
           build-args: |
-            APP_VERSION=${{ env.APP_VERSION }}
-
-      - name: Smoke built image
-        run: |
-          node scripts/package-smoke.mjs --image meshcore-canada-live-map:ci --version "$APP_VERSION"
+            APP_VERSION=${{ steps.release.outputs.version }}
+            GIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ steps.release.outputs.build_time }}
+            VITE_BUILD_NUMBER=${{ github.run_number }}
+            VITE_APP_ASSET_PACK=canada
+            VITE_ENABLE_SERVICE_WORKER=true
+      - name: Smoke image
+        run: node scripts/package-smoke.mjs --image meshcore-canada-live-map:ci --version "${{ steps.release.outputs.version }}"
+      - name: Trivy container scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: meshcore-canada-live-map:ci
+          format: sarif
+          output: trivy-image.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Upload Trivy SARIF
+        if: always() && hashFiles('trivy-image.sarif') != ''
+        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          sarif_file: trivy-image.sarif
 
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Checkout full history
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
-
       - name: Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  browser-smoke:
-    name: Browser smoke
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.browser_smoke }}
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
 
+  browser-smoke:
+    name: Desktop and mobile browser smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.browser_smoke)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
-
-      - name: Install frontend dependencies
+      - name: Install browser dependencies
         working-directory: web
-        run: npm ci
-
-      - name: Install Chromium
-        working-directory: web
-        run: npm exec playwright install --with-deps chromium
-
-      - name: Prepare fixture environment
-        run: cp .env.example .env
-
-      - name: Start local app
-        run: docker compose up --build -d --remove-orphans
-
+        run: |
+          npm ci
+          npm exec playwright install --with-deps chromium
+      - name: Start fixture app
+        run: |
+          cp .env.example .env
+          docker compose build
+          app_uid="$(docker run --rm --entrypoint id mc-cartolive:dev -u)"
+          app_gid="$(docker run --rm --entrypoint id mc-cartolive:dev -g)"
+          [[ "$app_uid" =~ ^[0-9]+$ && "$app_gid" =~ ^[0-9]+$ ]]
+          sudo install -d -m 0750 -o "$app_uid" -g "$app_gid" data
+          docker compose up --no-build -d --remove-orphans
       - name: Wait for readiness
         run: |
           for i in $(seq 1 90); do
-            if curl -fsS http://127.0.0.1:39476/readyz | grep -q '"ready":true'; then
-              exit 0
-            fi
+            curl -fsS http://127.0.0.1:39476/readyz | grep -q '"ready":true' && exit 0
             sleep 2
           done
           docker compose logs --tail=180
-          curl -fsS http://127.0.0.1:39476/readyz || true
           exit 1
-
-      - name: Run browser smoke
-        run: node scripts/browser-smoke.mjs --base-url http://127.0.0.1:39476
-
-      - name: Upload screenshots
+      - name: Run browser and privacy smoke
+        run: |
+          node scripts/browser-smoke.mjs --base-url http://127.0.0.1:39476
+          node scripts/check-public-privacy.mjs http://127.0.0.1:39476
+      - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: browser-smoke-artifacts
           path: artifacts/browser-smoke/
+          if-no-files-found: ignore
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --tail=240

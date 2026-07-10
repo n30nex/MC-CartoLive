@@ -22,8 +22,9 @@ describe('PerfPanel helpers', () => {
   });
 
   it('summarizes the live system from public-safe health signals', () => {
-    expect(systemSummaryFromHealth({ mqttConnected: true, mqttLastMessageAgeMs: 10_000, routeMotionState: 'moving' }, { ready: true }, 3, 3)).toEqual({ value: 'live', tone: 'good' });
-    expect(systemSummaryFromHealth({ mqttConnected: false, routeMotionState: 'stale' }, { ready: true }, 2, 3)).toEqual({ value: 'degraded', tone: 'warn' });
+    expect(systemSummaryFromHealth({ ok: true }, { ready: true, mqttSessionReady: true, datasetState: 'live', storagePressureState: 'ok' }, 3, 3)).toEqual({ value: 'live', tone: 'good' });
+    expect(systemSummaryFromHealth({ ok: true }, { ready: true, mqttSessionReady: true, datasetState: 'warming', storagePressureState: 'ok' }, 3, 3)).toEqual({ value: 'warming', tone: 'quiet' });
+    expect(systemSummaryFromHealth({ ok: true }, { ready: false, mqttSessionReady: false, datasetState: 'warming', storagePressureState: 'ok' }, 2, 3)).toEqual({ value: 'degraded', tone: 'warn' });
     expect(systemSummaryFromHealth(null, null, 0, 3)).toEqual({ value: 'not live', tone: 'bad' });
   });
 

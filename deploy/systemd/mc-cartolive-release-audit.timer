@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule MC-CartoLive 24-hour, day-8, and day-14 release audits
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=mc-cartolive-release-audit.service
+
+[Install]
+WantedBy=timers.target

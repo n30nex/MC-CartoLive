@@ -7,6 +7,9 @@ export interface SharedViewState {
   route?: string;
   node?: string;
   q?: string;
+  studio?: boolean;
+  replayPacket?: string;
+  replayRoute?: string;
 }
 
 export interface MapViewState {
@@ -29,13 +32,16 @@ export function parseSharedView(search: string): SharedViewState | null {
   if (lat < -90 || lat > 90 || lng < -180 || lng > 180 || z < 0 || z > 24) return null;
   if (pitch !== undefined && (!Number.isFinite(pitch) || pitch < 0 || pitch > 85)) return null;
   if (bearing !== undefined && (!Number.isFinite(bearing) || bearing < -180 || bearing > 180)) return null;
-  const route = params.get('route')?.trim() || undefined;
-  const node = route ? undefined : params.get('node')?.trim() || undefined;
-  const q = params.get('q')?.trim() || undefined;
-  return { lat, lng, z, ...(pitch !== undefined ? { pitch } : {}), ...(bearing !== undefined ? { bearing } : {}), route, node, q };
+  const route = safePublicIdentifier(params.get('route'));
+  const node = route ? undefined : safePublicIdentifier(params.get('node'));
+  const q = undefined;
+  const studio = params.get('studio') === '1';
+  const replayPacket = safePublicIdentifier(params.get('replayPacket'));
+  const replayRoute = safePublicIdentifier(params.get('replayRoute'));
+  return { lat, lng, z, ...(pitch !== undefined ? { pitch } : {}), ...(bearing !== undefined ? { bearing } : {}), route, node, q, ...(studio ? { studio, replayPacket, replayRoute } : {}) };
 }
 
-export function buildSharedViewURL(baseHref: string, view: MapViewState, options: { route?: string | null; node?: string | null; q?: string }): string {
+export function buildSharedViewURL(baseHref: string, view: MapViewState, options: { route?: string | null; node?: string | null; q?: string; studio?: boolean; replayPacket?: string; replayRoute?: string }): string {
   const url = new URL(baseHref);
   url.searchParams.set('lat', fixedCoordinate(view.lat));
   url.searchParams.set('lng', fixedCoordinate(view.lng));
@@ -44,14 +50,28 @@ export function buildSharedViewURL(baseHref: string, view: MapViewState, options
   setOptionalNumberParam(url, 'bearing', view.bearing, fixedCameraAngle);
   url.searchParams.delete('route');
   url.searchParams.delete('node');
-  if (options.route) {
-    url.searchParams.set('route', options.route);
-  } else if (options.node) {
-    url.searchParams.set('node', options.node);
+  const routeID = safePublicIdentifier(options.route);
+  const nodeID = safePublicIdentifier(options.node);
+  if (routeID) {
+    url.searchParams.set('route', routeID);
+  } else if (nodeID) {
+    url.searchParams.set('node', nodeID);
   }
-  if (options.q?.trim()) url.searchParams.set('q', options.q.trim());
-  else url.searchParams.delete('q');
+  url.searchParams.delete('q');
+  for (const key of ['studio', 'replayPacket', 'replayRoute']) url.searchParams.delete(key);
+  if (options.studio) {
+    url.searchParams.set('studio', '1');
+    const packetID = safePublicIdentifier(options.replayPacket);
+    const routeID = safePublicIdentifier(options.replayRoute);
+    if (packetID) url.searchParams.set('replayPacket', packetID);
+    if (routeID) url.searchParams.set('replayRoute', routeID);
+  }
   return url.toString();
+}
+
+function safePublicIdentifier(value: string | null | undefined): string | undefined {
+  const candidate = value?.trim();
+  return candidate && /^[a-zA-Z0-9._:-]{1,96}$/.test(candidate) ? candidate : undefined;
 }
 
 function fixedCoordinate(value: number): string {

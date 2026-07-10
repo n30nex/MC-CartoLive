@@ -1,19 +1,19 @@
 services:
   meshcore-live-map:
+    image: mc-cartolive:dev
     build:
       context: .
       args:
-        APP_VERSION: ${APP_VERSION:-3.1.0}
+        APP_VERSION: ${APP_VERSION:-3.2.0}
         VITE_OPENFREEMAP_STYLE_URL: ${VITE_OPENFREEMAP_STYLE_URL:-}
         VITE_OPENFREEMAP_TILEJSON_URL: ${VITE_OPENFREEMAP_TILEJSON_URL:-https://tiles.openfreemap.org/planet}
         VITE_TERRAIN_TILE_URL: ${VITE_TERRAIN_TILE_URL:-https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png}
         VITE_TERRAIN_EXAGGERATION: ${VITE_TERRAIN_EXAGGERATION:-1.25}
         VITE_PMTILES_BASEMAP_URL: ${VITE_PMTILES_BASEMAP_URL:-}
         VITE_PMTILES_TERRAIN_URL: ${VITE_PMTILES_TERRAIN_URL:-}
-        VITE_OPENWEATHERMAP_API_KEY: ${VITE_OPENWEATHERMAP_API_KEY:-}
         VITE_BUILD_NUMBER: ${VITE_BUILD_NUMBER:-}
-        VITE_GIT_SHA: ${VITE_GIT_SHA:-${GIT_SHA:-}}
-        VITE_BUILD_TIME: ${VITE_BUILD_TIME:-${BUILD_TIME:-}}
+        GIT_SHA: ${GIT_SHA:-dev}
+        BUILD_TIME: ${BUILD_TIME:-1970-01-01T00:00:00Z}
         VITE_APP_BRAND_NAME: ${VITE_APP_BRAND_NAME:-MC-CartoLive}
         VITE_APP_BRAND_URL: ${VITE_APP_BRAND_URL:-https://github.com/n30nex/MC-CartoLive}
         VITE_APP_BRAND_LOGO: ${VITE_APP_BRAND_LOGO:-}
@@ -22,20 +22,23 @@ services:
         VITE_PUBLIC_WS_SUBSCRIPTIONS_ENABLED: ${VITE_PUBLIC_WS_SUBSCRIPTIONS_ENABLED:-false}
     container_name: meshcore-canada-live-map
     ports:
-      - "80:8080"
-      - "39476:8080"
+      - "127.0.0.1:39476:8080"
+      - "127.0.0.1:39090:9090"
     env_file:
       - .env
     environment:
-      APP_VERSION: ${APP_VERSION:-3.1.0}
-      GIT_SHA: ${GIT_SHA:-${VITE_GIT_SHA:-}}
-      BUILD_TIME: ${BUILD_TIME:-${VITE_BUILD_TIME:-}}
-      SQLITE_MAX_OPEN_CONNS: ${SQLITE_MAX_OPEN_CONNS:-4}
-      SQLITE_BUSY_TIMEOUT_MS: ${SQLITE_BUSY_TIMEOUT_MS:-15000}
+      SQLITE_READ_OPEN_CONNS: ${SQLITE_READ_OPEN_CONNS:-2}
+      SQLITE_BUSY_TIMEOUT_MS: ${SQLITE_BUSY_TIMEOUT_MS:-750}
       SQLITE_CACHE_SIZE_KB: ${SQLITE_CACHE_SIZE_KB:-16000}
       SQLITE_MMAP_SIZE_BYTES: ${SQLITE_MMAP_SIZE_BYTES:-67108864}
       VITE_ENABLE_SERVICE_WORKER: ${VITE_ENABLE_SERVICE_WORKER:-false}
       VITE_PUBLIC_WS_SUBSCRIPTIONS_ENABLED: ${VITE_PUBLIC_WS_SUBSCRIPTIONS_ENABLED:-false}
+      DATA_RETENTION_DAYS: ${DATA_RETENTION_DAYS:-7}
+      PUBLIC_EVENT_RETENTION_HOURS: ${PUBLIC_EVENT_RETENTION_HOURS:-24}
+      ALLOW_UNBOUNDED_RETENTION: ${ALLOW_UNBOUNDED_RETENTION:-false}
+      DERIVED_INGEST_QUEUE_SIZE: ${DERIVED_INGEST_QUEUE_SIZE:-1024}
+      METRICS_LISTEN_ADDR: "0.0.0.0:9090"
+      METRICS_PUBLIC: "false"
     volumes:
       - ./data:/app/data
       - ./examples:/app/examples:ro
@@ -54,7 +57,7 @@ services:
           memory: 768M
     stop_grace_period: 30s
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
       interval: 30s
       timeout: 5s
       retries: 3

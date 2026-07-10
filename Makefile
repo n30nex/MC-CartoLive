@@ -1,8 +1,8 @@
-.PHONY: test build up down logs bump-version lint clean
+.PHONY: test build up down logs version-check release-bundle lint clean
 
 test:
 	cd backend && go test ./...
-	cd web && npm test -- --run
+	cd web && npm test -- --run --pool=threads --maxWorkers=2
 
 build:
 	docker compose build --pull
@@ -24,9 +24,8 @@ clean:
 	cd backend && go clean
 	rm -rf web/dist web/node_modules
 
-bump-version:
-	@OLD_VERSION=$$(cat VERSION) && \
-	echo "Bumping version from $$OLD_VERSION to $(VERSION)..." && \
-	find . -type f \( -name "*.md" -o -name "*.yml" -o -name "*.yaml" -o -name "Dockerfile" -o -name "package.json" -o -name "package-lock.json" -o -name "index.html" -o -name ".env.example" -o -name "config.go" \) -exec sed -i "s/$$(echo $$OLD_VERSION | sed 's/\./\\./g')/$(VERSION)/g" {} + && \
-	echo "$(VERSION)" > VERSION && \
-	echo "Version bumped to $(VERSION). Run 'make test' to verify."
+version-check:
+	node scripts/check-version-sync.mjs
+
+release-bundle: version-check
+	node scripts/build-release-bundle.mjs

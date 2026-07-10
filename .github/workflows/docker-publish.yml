@@ -1,98 +1,318 @@
-name: Publish Docker image
+name: Promote and publish release
 
 on:
   push:
-    tags:
-      - "v*.*.*"
-  workflow_dispatch:
+    tags: ["v*.*.*"]
 
 permissions:
-  contents: read
+  actions: read
+  contents: write
   packages: write
   attestations: write
   id-token: write
+  security-events: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: n30nex/mc-cartolive
 
 jobs:
-  publish:
-    name: Build and publish GHCR image
+  promote:
+    name: Promote tested digest and publish package
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Checkout tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify tag, VERSION, and ancestry
+        id: release
+        run: |
+          tag_ref="refs/tags/$GITHUB_REF_NAME"
+          test "$(git cat-file -t "$tag_ref")" = "tag"
+          merge_sha="$(git rev-parse "$tag_ref^{}")"
+          test "$merge_sha" = "$(git rev-parse HEAD)"
+          version="$(tr -d '\r\n' < VERSION)"
+          test "$GITHUB_REF_NAME" = "v$version"
+          git fetch origin main --depth=1
+          test "$merge_sha" = "$(git rev-parse origin/main)"
 
+          tag_message="$(git for-each-ref --format='%(contents)' "$tag_ref")"
+          trailers="$(printf '%s\n' "$tag_message" | git interpret-trailers --parse)"
+          mapfile -t candidate_run_ids < <(printf '%s\n' "$trailers" | sed -n 's/^Candidate-Run-Id:[[:space:]]*//p')
+          mapfile -t candidate_run_attempts < <(printf '%s\n' "$trailers" | sed -n 's/^Candidate-Run-Attempt:[[:space:]]*//p')
+          mapfile -t candidate_digests < <(printf '%s\n' "$trailers" | sed -n 's/^Candidate-Digest:[[:space:]]*//p')
+          mapfile -t candidate_deployed_times < <(printf '%s\n' "$trailers" | sed -n 's/^Candidate-Deployed-At:[[:space:]]*//p')
+          test "${#candidate_run_ids[@]}" -eq 1
+          test "${#candidate_run_attempts[@]}" -eq 1
+          test "${#candidate_digests[@]}" -eq 1
+          test "${#candidate_deployed_times[@]}" -eq 1
+          candidate_run_id="${candidate_run_ids[0]}"
+          candidate_run_attempt="${candidate_run_attempts[0]}"
+          candidate_digest="${candidate_digests[0]}"
+          candidate_deployed_at="${candidate_deployed_times[0]}"
+          [[ "$candidate_run_id" =~ ^[1-9][0-9]*$ ]]
+          [[ "$candidate_run_attempt" =~ ^[1-9][0-9]*$ ]]
+          [[ "$candidate_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          deployed_epoch="$(date -u -d "$candidate_deployed_at" +%s)"
+          tagger_epoch="$(git for-each-ref --format='%(taggerdate:unix)' "$tag_ref")"
+          [[ "$deployed_epoch" =~ ^[0-9]+$ ]]
+          [[ "$tagger_epoch" =~ ^[0-9]+$ ]]
+          test "$tagger_epoch" -ge $((deployed_epoch + 1800))
+
+          node scripts/check-version-sync.mjs
+          echo "merge_sha=$merge_sha" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
+          echo "candidate_run_id=$candidate_run_id" >> "$GITHUB_OUTPUT"
+          echo "candidate_run_attempt=$candidate_run_attempt" >> "$GITHUB_OUTPUT"
+          echo "candidate_digest=$candidate_digest" >> "$GITHUB_OUTPUT"
+          echo "candidate_deployed_at=$candidate_deployed_at" >> "$GITHUB_OUTPUT"
+      - name: Require successful main CI and CodeQL for the tagged SHA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          for workflow in ci.yml codeql.yml; do
+            runs_json="$(gh api --method GET \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs" \
+              -f head_sha="$MERGE_SHA" -f status=completed -f per_page=100)"
+            count="$(printf '%s' "$runs_json" | jq --arg repository "$REPOSITORY" \
+              '[.workflow_runs[] | select(.conclusion == "success" and .event == "push" and .head_branch == "main" and .head_repository.full_name == $repository)] | length')"
+            test "$count" -gt 0
+          done
+      - name: Load canonical full performance evidence
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          artifact_name="release-performance-full-$MERGE_SHA"
+          artifact_json="$(gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/artifacts" \
+            -f name="$artifact_name" -f per_page=100)"
+          artifact_id="$(printf '%s' "$artifact_json" | jq -r '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty')"
+          run_id="$(printf '%s' "$artifact_json" | jq -r --argjson id "${artifact_id:-0}" '.artifacts[] | select(.id == $id) | .workflow_run.id')"
+          test -n "$artifact_id"
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")"
+          printf '%s' "$run_json" | jq -e \
+            --arg sha "$MERGE_SHA" --arg repository "$GITHUB_REPOSITORY" \
+            '.name == "Release performance gate" and .path == ".github/workflows/release-performance.yml" and .conclusion == "success" and .event == "workflow_dispatch" and .head_branch == "main" and .head_sha == $sha and .head_repository.full_name == $repository' >/dev/null
+          rm -rf /tmp/mc-cartolive-performance-evidence
+          mkdir -p /tmp/mc-cartolive-performance-evidence
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > /tmp/mc-cartolive-performance.zip
+          unzip -q /tmp/mc-cartolive-performance.zip -d /tmp/mc-cartolive-performance-evidence
+          report=/tmp/mc-cartolive-performance-evidence/report.json
+          test -f "$report"
+          workflow_ref="$GITHUB_REPOSITORY/.github/workflows/release-performance.yml@refs/heads/main"
+          jq -e \
+            --arg sha "$MERGE_SHA" --arg repository "$GITHUB_REPOSITORY" \
+            --arg runId "$run_id" --arg version "$VERSION" --arg workflowRef "$workflow_ref" \
+            '.version == $version and .profile == "full" and .canonicalReleaseProof == true and .passed == true and (.failures | length) == 0 and
+             .github.sha == $sha and .github.ref == "refs/heads/main" and .github.repository == $repository and .github.event == "workflow_dispatch" and .github.workflow == "Release performance gate" and .github.workflowRef == $workflowRef and .github.runId == $runId and
+             .config == {sustainedRate:20,sustainedSeconds:1800,burstRate:100,burstSeconds:60,apiRows:5000000,apiPathRows:10000,apiEvents:20000,apiSamples:200,wsClients:250,wsSeconds:1800,wsQuietSeconds:70,wsIsolationEvents:1000,wsIsolationRate:100,wsIsolationBytes:4096,mqttQueueCapacity:4096,derivedQueueCapacity:1024,metricSampleMs:250,memoryLimitBytes:629145600} and
+             .phases.sustainedIngest.passed == true and .phases.sustainedIngest.reportedPrimaryQueueCapacities == [4096] and .phases.sustainedIngest.reportedDerivedQueueCapacities == [1024] and .phases.sustainedIngest.processRssSource == "linux-proc-status-vmrss" and .phases.sustainedIngest.processRssP95Bytes > 0 and .phases.sustainedIngest.processRssP95Bytes < 629145600 and
+             .phases.burstIngest.passed == true and .phases.burstIngest.reportedPrimaryQueueCapacities == [4096] and .phases.burstIngest.reportedDerivedQueueCapacities == [1024] and .phases.burstIngest.processRssSource == "linux-proc-status-vmrss" and .phases.burstIngest.processRssP95Bytes > 0 and .phases.burstIngest.processRssP95Bytes < 629145600 and
+             .phases.api.passed == true and .phases.api.seeded.observationRows >= 5000000 and .phases.websocket.passed == true and .phases.websocket.clients == 250' "$report" >/dev/null
+      - name: Load immutable candidate evidence
+        id: evidence
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
+          VERSION: ${{ steps.release.outputs.version }}
+          CANDIDATE_RUN_ID: ${{ steps.release.outputs.candidate_run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ steps.release.outputs.candidate_run_attempt }}
+          CANDIDATE_DIGEST: ${{ steps.release.outputs.candidate_digest }}
+        run: |
+          current_main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          test "$current_main_sha" = "$MERGE_SHA"
+          artifact_name="release-candidate-$MERGE_SHA-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT"
+          artifact_json="$(gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/artifacts" \
+            -f name="$artifact_name" -f per_page=100)"
+          artifact_id="$(printf '%s' "$artifact_json" | jq -r \
+            --argjson runId "$CANDIDATE_RUN_ID" --arg artifactName "$artifact_name" \
+            '[.artifacts[] | select(.expired == false and .name == $artifactName and .workflow_run.id == $runId)] | if length == 1 then .[0].id else empty end')"
+          test -n "$artifact_id"
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID/attempts/$CANDIDATE_RUN_ATTEMPT")"
+          printf '%s' "$run_json" | jq -e \
+            --arg sha "$MERGE_SHA" --arg repository "$GITHUB_REPOSITORY" --argjson attempt "$CANDIDATE_RUN_ATTEMPT" \
+            '.conclusion == "success" and .run_attempt == $attempt and .path == ".github/workflows/image-candidate.yml" and .event == "workflow_run" and .head_branch == "main" and .head_sha == $sha and .head_repository.full_name == $repository' >/dev/null
+          rm -rf /tmp/mc-cartolive-candidate-evidence
+          mkdir -p /tmp/mc-cartolive-candidate-evidence
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > /tmp/mc-cartolive-candidate.zip
+          unzip -q /tmp/mc-cartolive-candidate.zip -d /tmp/mc-cartolive-candidate-evidence
+          manifest=/tmp/mc-cartolive-candidate-evidence/candidate-manifest.json
+          test -f "$manifest"
+          candidate_tag="candidate-$MERGE_SHA-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT"
+          printf '%s' "$(cat "$manifest")" | jq -e \
+            --arg sha "$MERGE_SHA" --arg version "$VERSION" --arg repository "${REGISTRY}/${IMAGE_NAME}" \
+            --arg sourceRepository "$GITHUB_REPOSITORY" --arg candidateRunId "$CANDIDATE_RUN_ID" \
+            --arg candidateRunAttempt "$CANDIDATE_RUN_ATTEMPT" --arg candidateTag "$candidate_tag" \
+            '.gitSha == $sha and .sourceCiHeadSha == $sha and .sourceCiConclusion == "success" and .sourceCiWorkflow == "CI" and .sourceCiEvent == "push" and .sourceCiHeadBranch == "main" and .sourceCiHeadRepository == $sourceRepository and .verifiedMainRef == "refs/heads/main" and .verifiedMainSha == $sha and .candidateWorkflowRunId == $candidateRunId and .candidateWorkflowRunAttempt == $candidateRunAttempt and .candidateTag == $candidateTag and .premergeHeadRef == "refs/heads/codex/release-3.2.0" and (.premergeHeadSha | test("^[0-9a-f]{40}$")) and (.premergeRunId | test("^[0-9]+$")) and (.premergeProofDeferred | type == "boolean") and .version == $version and .repository == $repository' >/dev/null
+          source_ci_run_id="$(jq -r '.sourceCiRunId' "$manifest")"
+          [[ "$source_ci_run_id" =~ ^[0-9]+$ ]]
+          source_ci_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_ci_run_id")"
+          printf '%s' "$source_ci_json" | jq -e --arg sha "$MERGE_SHA" --arg repository "$GITHUB_REPOSITORY" \
+            '.name == "CI" and .path == ".github/workflows/ci.yml" and .conclusion == "success" and .event == "push" and .head_branch == "main" and .head_sha == $sha and .head_repository.full_name == $repository' >/dev/null
+          digest="$(jq -r '.digest' "$manifest")"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$digest" = "$CANDIDATE_DIGEST"
+          test "$(jq -r '.image' "$manifest")" = "${REGISTRY}/${IMAGE_NAME}@$digest"
+          build_time="$(jq -r '.buildTime' "$manifest")"
+          test -n "$build_time"
+          test "$build_time" != "null"
+          date -u -d "$build_time" +%Y-%m-%dT%H:%M:%SZ >/dev/null
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "run_id=$CANDIDATE_RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "run_attempt=$CANDIDATE_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          echo "candidate_tag=$candidate_tag" >> "$GITHUB_OUTPUT"
+          echo "build_time=$build_time" >> "$GITHUB_OUTPUT"
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
-
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Prepare build metadata
-        id: build_meta
+      - name: Resolve previously built candidate
+        id: candidate
         shell: bash
+        env:
+          EVIDENCE_DIGEST: ${{ steps.evidence.outputs.digest }}
+          CANDIDATE_TAG: ${{ steps.evidence.outputs.candidate_tag }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
-            version="$(tr -d '\r\n' < VERSION)"
-          fi
-          short_sha="${GITHUB_SHA::7}"
-          build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          build_number="$(date -u +%Y%m%dT%H%M%SZ)"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "git_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
-          echo "build_time=$build_time" >> "$GITHUB_OUTPUT"
-          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
-
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=sha,format=short
-          labels: |
-            org.opencontainers.image.title=MC-CartoLive
-            org.opencontainers.image.description=Public-safe MeshCore MQTT live map with routed packet replay
-            org.opencontainers.image.source=https://github.com/n30nex/MC-CartoLive
-            org.opencontainers.image.licenses=MIT
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        id: build
-        with:
-          context: .
-          push: true
-          provenance: true
-          sbom: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            APP_VERSION=${{ steps.build_meta.outputs.version }}
-            VITE_GIT_SHA=${{ steps.build_meta.outputs.git_sha }}
-            VITE_BUILD_TIME=${{ steps.build_meta.outputs.build_time }}
-            VITE_BUILD_NUMBER=${{ steps.build_meta.outputs.build_number }}
-
-      - name: Smoke published GHCR image
+          image="${REGISTRY}/${IMAGE_NAME}"
+          candidate="$image:$CANDIDATE_TAG"
+          inspect="$(docker buildx imagetools inspect "$candidate")"
+          digest="$(printf '%s\n' "$inspect" | awk '$1 == "Digest:" {print $2; exit}')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$digest" = "$EVIDENCE_DIGEST"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "image=$image@$digest" >> "$GITHUB_OUTPUT"
+      - name: Verify OCI identity on every release platform
+        env:
+          MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
+          VERSION: ${{ steps.release.outputs.version }}
+          CANDIDATE_IMAGE: ${{ steps.candidate.outputs.image }}
+          EXPECTED_BUILD_TIME: ${{ steps.evidence.outputs.build_time }}
+          CANDIDATE_RUN_ID: ${{ steps.evidence.outputs.run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ steps.evidence.outputs.run_attempt }}
+          CANDIDATE_TAG: ${{ steps.evidence.outputs.candidate_tag }}
         run: |
+          for platform in linux/amd64 linux/arm64; do
+            docker pull --platform "$platform" "$CANDIDATE_IMAGE"
+            container_id="$(docker create --platform "$platform" "$CANDIDATE_IMAGE")"
+            image_id="$(docker inspect --format '{{.Image}}' "$container_id")"
+            revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image_id")"
+            source="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "$image_id")"
+            image_version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image_id")"
+            image_created="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.created" }}' "$image_id")"
+            image_candidate_run_id="$(docker image inspect --format '{{ index .Config.Labels "org.mc-cartolive.candidate.workflow-run-id" }}' "$image_id")"
+            image_candidate_run_attempt="$(docker image inspect --format '{{ index .Config.Labels "org.mc-cartolive.candidate.workflow-run-attempt" }}' "$image_id")"
+            image_candidate_tag="$(docker image inspect --format '{{ index .Config.Labels "org.mc-cartolive.candidate.tag" }}' "$image_id")"
+            architecture="$(docker image inspect --format '{{.Architecture}}' "$image_id")"
+            docker rm "$container_id"
+            test "$revision" = "$MERGE_SHA"
+            test "$source" = "https://github.com/$GITHUB_REPOSITORY"
+            test "$image_version" = "$VERSION"
+            test "$image_created" = "$EXPECTED_BUILD_TIME"
+            test "$image_candidate_run_id" = "$CANDIDATE_RUN_ID"
+            test "$image_candidate_run_attempt" = "$CANDIDATE_RUN_ATTEMPT"
+            test "$image_candidate_tag" = "$CANDIDATE_TAG"
+            test "$architecture" = "${platform#linux/}"
+          done
+      - name: Verify candidate provenance belongs to this repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh attestation verify "oci://${{ steps.candidate.outputs.image }}" --repo "$GITHUB_REPOSITORY"
+      - name: Re-smoke exact candidate and compiled identity
+        env:
+          EXPECTED_BUILD_TIME: ${{ steps.evidence.outputs.build_time }}
+          MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
+        run: |
+          cleanup() { docker rm -f mc-cartolive-package-smoke-synthetic mc-cartolive-package-smoke-world >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
           node scripts/package-smoke.mjs \
-            --image "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}" \
-            --version "${{ steps.build_meta.outputs.version }}" \
-            --pull
-
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@v4
+            --image "${{ steps.candidate.outputs.image }}" \
+            --version "${{ steps.release.outputs.version }}" --pull --keep
+          for port in 18082 18083; do
+            curl -fsS --max-time 10 "http://127.0.0.1:$port/healthz" | jq -e \
+              --arg buildTime "$EXPECTED_BUILD_TIME" --arg gitSha "$MERGE_SHA" \
+              '.buildTime == $buildTime and .gitSha == $gitSha' >/dev/null
+          done
+      - name: Re-scan exact candidate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
+          image-ref: ${{ steps.candidate.outputs.image }}
+          format: sarif
+          output: trivy-release.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Upload release scan
+        if: always() && hashFiles('trivy-release.sarif') != ''
+        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          sarif_file: trivy-release.sarif
+      - name: Promote the same manifest digest
+        run: |
+          image="${REGISTRY}/${IMAGE_NAME}"
+          source="${{ steps.candidate.outputs.image }}"
+          docker buildx imagetools create \
+            --tag "$image:${{ steps.release.outputs.version }}" \
+            --tag "$image:${{ steps.release.outputs.minor }}" \
+            --tag "$image:sha-${{ steps.release.outputs.merge_sha }}" \
+            --tag "$image:latest" \
+            "$source"
+          for tag in "${{ steps.release.outputs.version }}" "${{ steps.release.outputs.minor }}" "sha-${{ steps.release.outputs.merge_sha }}" latest; do
+            promoted="$(docker buildx imagetools inspect "$image:$tag" | awk '$1 == "Digest:" {print $2; exit}')"
+            test "$promoted" = "${{ steps.candidate.outputs.digest }}"
+          done
+      - name: Generate SPDX SBOM asset
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.candidate.outputs.image }}
+          format: spdx-json
+          output-file: /tmp/mc-cartolive-${{ steps.release.outputs.version }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Build deployment bundle and release manifest
+        env:
+          RELEASE_IMAGE: ${{ steps.candidate.outputs.image }}
+          RELEASE_GIT_SHA: ${{ steps.release.outputs.merge_sha }}
+          RELEASE_BUILD_TIME: ${{ steps.evidence.outputs.build_time }}
+        run: |
+          node scripts/build-release-bundle.mjs
+          mkdir -p artifacts/release/assets
+          tar -C artifacts/release/stage -czf "artifacts/release/assets/mc-cartolive-${{ steps.release.outputs.version }}-deploy.tar.gz" \
+            "mc-cartolive-${{ steps.release.outputs.version }}"
+          cp artifacts/release/release-manifest.json artifacts/release/assets/
+          cp docs/public-api.openapi.json artifacts/release/assets/
+          cp docs/3.2.0/upgrade-and-rollback.md artifacts/release/assets/ROLLBACK.md
+          cp trivy-release.sarif artifacts/release/assets/
+          cp "/tmp/mc-cartolive-${{ steps.release.outputs.version }}.spdx.json" artifacts/release/assets/
+      - name: Generate checksums
+        working-directory: artifacts/release/assets
+        run: sha256sum * > SHA256SUMS
+      - name: Attest release assets
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-path: artifacts/release/assets/*
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/release/assets/* \
+            --verify-tag \
+            --title "MC-CartoLive ${{ steps.release.outputs.version }}" \
+            --notes-file docs/3.2.0/release_notes.md

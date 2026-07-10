@@ -1,6 +1,7 @@
 # Archived Roadmap: 2.5.2 To 2.6.0
 
-Baseline audited: `v3.1.0` is the current production baseline. This file is
+Historical baseline: the unreleased `v3.1.0` candidate was later folded into
+the supported `v3.2.0` release. This file is
 kept as a concise archive for the old 2.5.x to 2.6.0 planning track and for the
 version-sync guard.
 
@@ -21,7 +22,7 @@ Detailed patch-by-patch history now belongs in [CHANGELOG.md](../CHANGELOG.md).
 
 ## Current Guidance
 
-- Treat 3.1.0 as the supported baseline.
+- Treat 3.2.0 as the supported baseline; 3.1.0 was never a release waypoint.
 - Keep public API shapes stable unless a future major release explicitly changes
   them.
 - Keep route truth RF-only and evidence-based.

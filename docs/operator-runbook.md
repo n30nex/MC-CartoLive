@@ -1,222 +1,216 @@
-# MC-CartoLive Operator Runbook
+# MC-CartoLive 3.2 Operator Runbook
 
-## Deploy
+## Capacity first
+
+On the production droplet, collect evidence before cleanup:
 
 ```bash
 cd /opt/MC-CartoLive
-git pull --ff-only
-export APP_VERSION=$(cat VERSION)
-export VITE_GIT_SHA=$(git rev-parse --short HEAD)
-export VITE_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-export VITE_BUILD_NUMBER=$(date -u +%Y%m%dT%H%M%S)
-docker compose build
-docker compose up -d
+curl -fsS http://127.0.0.1:39476/readyz
+docker inspect meshcore-canada-live-map --format '{{json .State}} {{.Image}}'
+git status --short --branch
+df -h /
+docker system df
 ```
 
-For a fast patch where a fresh SQLite backup is intentionally skipped, use:
+Confirm no build is active, then reclaim only unused BuildKit cache:
 
 ```bash
-SKIP_DB_BACKUP=1 bash scripts/deploy.sh /opt/MC-CartoLive main
+docker builder prune --all --force
+df -h /
+curl -fsS http://127.0.0.1:39476/readyz
 ```
 
-From a Windows workstation, prefer the live wrapper for the documented droplet:
+Do not run the old build/reset deploy path and do not copy the multi-gigabyte DB
+on a full filesystem. Require approximately 9 GiB free before release
+preparation. The 3.2 audit reclaimed 9.582 GiB while leaving the active DB and
+service untouched; remeasure instead of assuming that evidence is still fresh.
+
+## Digest deployment
+
+The release candidate is identified by the complete tuple
+`<merge-sha>, <candidate-workflow-run-id>, <run-attempt>, <digest>`. Candidate
+workflow reruns publish distinct
+`candidate-<sha>-<run-id>-<attempt>` tags and
+`release-candidate-<sha>-<run-id>-<attempt>` artifacts. Download the chosen
+artifact and deploy its `image` digest; do not choose the newest artifact and do
+not deploy a mutable `sha-*` alias. Candidate authorization itself fails unless
+the exact merged release-branch head already has canonical full performance
+proof.
+
+For a normal non-destructive upgrade:
+
+```bash
+MC_CARTOLIVE_REQUIRE_PRIVACY_SCAN=1 bash scripts/deploy.sh \
+  --image ghcr.io/n30nex/mc-cartolive@sha256:<candidate> \
+  --previous-image ghcr.io/n30nex/mc-cartolive@sha256:<previous> \
+  --expected-git-sha <full-release-sha>
+```
+
+The hosted 3.2.0 release uses this non-destructive path after a verified
+off-root-disk backup and migration rehearsal. Do not pass the fresh-database
+flags; see [upgrade-and-rollback](3.2.0/upgrade-and-rollback.md).
+
+From Windows:
 
 ```powershell
-.\scripts\deploy-live.ps1 -BaseUrl https://carto.canadaverse.org -SshTarget root@134.122.45.228 -KeyPath "$env:USERPROFILE\.ssh\neonx" -ExpectedVersion 3.1.0 -DiagnoseRegion YTR
+.\scripts\deploy-live.ps1 `
+  -Image 'ghcr.io/n30nex/mc-cartolive@sha256:<candidate>' `
+  -PreviousImage 'ghcr.io/n30nex/mc-cartolive@sha256:<previous>' `
+  -ExpectedVersion 3.2.0 -ExpectedGitSha <full-sha>
 ```
 
-Append `-SkipSmoke` only when smoke automation is intentionally disabled on the
-workstation; `deploy.sh` still performs the remote readiness wait and rollback
-guard.
-
-## Smoke Check
-
-```bash
-curl -fsS http://127.0.0.1/healthz
-curl -fsS http://127.0.0.1/readyz
-curl -fsS http://127.0.0.1/api/v1/public/state >/tmp/mc-state.json
-```
-
-For local release checks:
+## Smoke and release evidence
 
 ```bash
 scripts/release-check.sh
+node scripts/package-smoke.mjs \
+  --image ghcr.io/n30nex/mc-cartolive@sha256:<candidate> --version 3.2.0 --pull
 ```
-
-On Windows:
 
 ```powershell
-.\scripts\release-check.ps1 -BaseUrl http://127.0.0.1:39476
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org `
+  -ExpectedVersion 3.2.0 -ExpectedGitSha <full-sha> -DiagnoseRegion YTR
 ```
 
-To include packaged-image fixture smoke in the local release check:
+Always check event reset, bootstrap/state, WebSocket hello, privacy, compiled
+identity, Docker restart/OOM state, and disk space.
 
-```powershell
-.\scripts\release-check.ps1 -BaseUrl http://127.0.0.1:39476 -RunPackageSmoke
-```
+After the 30-minute soak, create the annotated release tag with
+`Candidate-Run-Id`, `Candidate-Run-Attempt`, `Candidate-Digest`, and
+`Candidate-Deployed-At` trailers as
+shown in [upgrade and rollback](3.2.0/upgrade-and-rollback.md). The digest must
+come from `/var/lib/mc-cartolive-deploy/current.env` and match the running
+container; the same record captures the candidate run ID, run attempt, and
+run-specific tag from OCI labels verified before cutover. Promotion uses that
+exact run-specific artifact and digest, then
+publishes `3.2.0`, `3.2`, `sha-<merge-sha>`, and `latest` plus a standalone
+`ROLLBACK.md` asset.
 
-The package smoke can also be run directly against a local image, a GHCR tag, or
-a GHCR digest:
-
-```powershell
-node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:3.1.0 --pull
-```
-
-It starts temporary containers for the synthetic fixture and worldwide `r1`
-fixture, checks public APIs, and runs the public privacy scanner.
-
-For browser layout smoke during release-candidate UI checks:
-
-```powershell
-npm --prefix web exec playwright install chromium
-node scripts/browser-smoke.mjs --base-url http://127.0.0.1:39476
-```
-
-To include it in the Windows release check:
-
-```powershell
-.\scripts\release-check.ps1 -BaseUrl http://127.0.0.1:39476 -RunBrowserSmoke
-```
-
-For the production droplet after deploy, run the single live smoke command from
-your workstation:
-
-```powershell
-.\scripts\live-smoke.ps1
-```
-
-Common overrides:
-
-```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -SshTarget root@134.122.45.228 -KeyPath "$env:USERPROFILE\.ssh\neonx" -ExpectedVersion 3.1.0 -ExpectedGitSha <short-sha> -DiagnoseRegion YTR
-```
-
-The live smoke verifies `/healthz`, `/readyz`, public state, public history,
-WebSocket hello, deployed version/Git metadata, Docker health, and the bundled
-`mc-diagnose` command inside the running container.
-
-## Retention And Database Size
-
-The live container defaults to `DATA_RETENTION_DAYS=7` and
-`PROPAGATION_EVENT_RETENTION_DAYS=7`. Startup and six-hour maintenance pruning
-keep raw packet rows, observations, edge events, public event/search rows,
-observer status history, and propagation/weather history inside that window.
-
-Latest public route information is preserved in compact
-`public_route_summaries` rows so the map can keep drawing known public-safe RF
-routes after older raw rows are removed. These summaries do not store packet
-hashes, full keys, raw path hex, raw payloads, or resolver debug reasons.
-
-SQLite may keep the database file large until a `VACUUM` runs. Automatic
-maintenance runs `ANALYZE` every six hours and does not vacuum the live DB. For
-emergency manual compaction, first stop or quiesce the container, make a backup,
-then run SQLite vacuum against `data/meshcore-live.db`.
-
-The live container intentionally keeps SQLite conservative on the 1GB droplet:
-`SQLITE_MAX_OPEN_CONNS=4`, `SQLITE_BUSY_TIMEOUT_MS=15000`,
-`SQLITE_CACHE_SIZE_KB=16000`, and `SQLITE_MMAP_SIZE_BYTES=67108864`. If
-`/readyz` shows fresh MQTT ingest but the public UI says stale, check Docker
-memory pressure and `SQLITE_BUSY` warnings before changing public freshness
-thresholds.
-
-Retention pruning starts 30 minutes after process start, and propagation
-classification starts 5 minutes after process start. This keeps deploys from
-competing with live packet ingest while the public cache warms.
-
-## Soak Check
-
-Use a short soak after deploys and a 24h soak before production-candidate tags.
-The scripts write local NDJSON artifacts and do not send telemetry anywhere.
-
-Linux/macOS:
+## Watchdog
 
 ```bash
-BASE_URL=https://carto.canadaverse.org DURATION_MINUTES=1440 INTERVAL_SECONDS=60 scripts/soak-check.sh
+install -m 0755 scripts/mc-cartolive-watchdog.sh /opt/MC-CartoLive/scripts/
+install -m 0644 deploy/systemd/mc-cartolive-watchdog.default /etc/default/mc-cartolive-watchdog
+install -m 0644 deploy/systemd/mc-cartolive-watchdog.service /etc/systemd/system/
+install -m 0644 deploy/systemd/mc-cartolive-watchdog.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now mc-cartolive-watchdog.timer
 ```
 
-Windows:
+The watchdog waits for three consecutive recoverable failures and permits at
+most two restarts per rolling six hours, with 10/20-minute cooldowns. It can
+restart a dead process, failed cache, DB-unavailable state, or lost MQTT
+session. Quiet RF, `fresh_start`, or `warming` alone never cause a restart, and
+storage pressure always suppresses one; those dataset states do not mask a
+separately confirmed process, cache, database, or MQTT-session failure.
 
-```powershell
-.\scripts\soak-check.ps1 -BaseUrl https://carto.canadaverse.org -DurationMinutes 1440 -IntervalSeconds 60
-```
-
-The soak fails after repeated bad samples. Normal quiet route periods may show
-`mapMotionState=quiet`; failures are based on degraded live confidence, stale
-packet ingest, stale public cache, HTTP failures, or decreasing packet totals.
-
-## Diagnose Missing Nodes Or Observers
-
-Run the local diagnostic command from the backend folder:
+Recovery decisions use the stable `/readyz` reason codes rather than detailed
+public telemetry. Before any restart, the watchdog independently checks the
+configured data filesystem and refuses recovery at 20% free or less. It also
+reads at most 200 container log lines from the previous 15 minutes, with a
+10-second command ceiling, and suppresses restart for `SQLITE_FULL`, “database
+or disk is full,” or “no space left on device.” A failed filesystem or bounded
+log probe is fail-closed. Raw container logs are never copied into the watchdog
+log.
 
 ```bash
-cd backend
-go run ./cmd/diagnose --db ../data/meshcore-live.db --region YTR --public-regions "$PUBLIC_REGIONS"
-go run ./cmd/diagnose --db ../data/meshcore-live.db --name Krabs --public-regions "$PUBLIC_REGIONS"
-go run ./cmd/diagnose --db ../data/meshcore-live.db --name Corebot --public-regions "$PUBLIC_REGIONS"
-go run ./cmd/diagnose --db ../data/meshcore-live.db --label Corebot --public-regions "$PUBLIC_REGIONS"
+systemctl list-timers mc-cartolive-watchdog.timer
+tail -n 100 /var/log/mc-cartolive-watchdog.log
+cat /var/lib/mc-cartolive-watchdog/state.env
+df -h /opt/MC-CartoLive/data
 ```
 
-On the production Docker host, use the bundled container binary:
+## Automated 3.2 release audits
+
+Install the post-release audit beside the watchdog before cutover. It is an
+hourly, persistent timer; each deployment is keyed by its
+immutable digest, Git SHA, and deployment timestamp, so restarting the timer or
+re-running a completed phase cannot duplicate or overwrite evidence.
 
 ```bash
-docker compose exec meshcore-live-map /app/mc-diagnose --db /app/data/meshcore-live.db --region YTR --public-regions "$PUBLIC_REGIONS"
+apt-get install -y curl jq sqlite3 util-linux coreutils
+install -m 0755 scripts/post-release-audit.sh /opt/MC-CartoLive/scripts/
+install -m 0644 deploy/systemd/mc-cartolive-release-audit.default /etc/default/mc-cartolive-release-audit
+install -m 0644 deploy/systemd/mc-cartolive-release-audit.service /etc/systemd/system/
+install -m 0644 deploy/systemd/mc-cartolive-release-audit.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now mc-cartolive-release-audit.timer
 ```
 
-Map reasons:
-
-- `mappable`: valid public coordinate and not filtered.
-- `missing_coords`: no usable latitude/longitude.
-- `zero_coords`: coordinate is `0,0` or one side is zero.
-- `outside_bounds`: coordinate is outside configured public map bounds.
-- `iata_filtered`: legacy reason name for records outside the public region
-  allowlist.
-
-Names are labels, not identity. If a node name contains `YTR` but its broker
-region is `YGK`, the map treats it as `YGK`.
-
-The diagnostic output shows `actual_iatas`, `public_iata`, `public_regions`,
-`coord_status`, `source`, and `label_iata_hint` so coordinate/region truth is
-visible without exposing raw keys or packet hashes. The `iata` names are kept in
-the report for 2.x database/API compatibility.
-
-## Verify Live Motion
-
-- Top packet total should continue increasing while MQTT is connected.
-- `/healthz` should show low `cacheAgeMs`, low `mqttLastMessageAgeMs`,
-  `packetIngestState=fresh`, and `liveConfidenceState=fresh` or `quiet`.
-- `recentRoutePulseAgeMs` should stay recent when routed traffic exists.
-- `mapMotionState=quiet` can be normal when packets are arriving but no routed
-  or observer-positioned activity is currently mappable.
-- The browser WebSocket status should recover after a forced reconnect and
-  packet comets should resume without duplicated stale bursts.
-
-## Backup And Restore
-
-Before upgrades:
+The 24-hour phase checks readiness, the loopback-only metrics listener, SQLite
+quick/foreign-key integrity, schema identity, queue and error counters, and the
+container/watchdog. A preserved database requires at least 9 GiB and 20% free;
+a destructive fresh start retains its 25 GiB gate. Day 8 additionally enforces
+seven days plus six hours for observations, 25 hours for public events, and a
+WAL below 256 MiB, then atomically records the database-plus-WAL baseline. Day
+14 repeats retention/WAL checks and requires growth from that day-8 baseline to
+be strictly below 10%. Each SQLite command has a 120-second ceiling.
 
 ```bash
-mkdir -p backups
-cp data/meshcore-live.db* backups/
+systemctl list-timers mc-cartolive-release-audit.timer
+systemctl status mc-cartolive-release-audit.service
+find /var/log/mc-cartolive-release-audit -maxdepth 1 -type f -name '*.json' -ls
+jq '{phase,passed,errors,release,database,filesystem,ingest,process,watchdog}' \
+  /var/log/mc-cartolive-release-audit/*.json
 ```
 
-If `sqlite3` is installed:
+Successful phases are immutable in normal operation. A failed phase writes one
+replaceable `latest-failure` file and is retried on the next hourly activation.
+The evidence contains aggregate ages, sizes, counters, and immutable release
+identity only—never rows, packet/key material, `.env`, or `data/config.yaml`.
+
+## Storage and retention
+
+```text
+DATA_RETENTION_DAYS=7
+PUBLIC_EVENT_RETENTION_HOURS=24
+ALLOW_UNBOUNDED_RETENTION=false
+```
+
+Do not disable retention to relieve contention. Investigate writer queue age,
+busy/full counters, WAL size, optional projections, and disk alerts. Automatic
+maintenance is bounded and incremental; never run live full `VACUUM` or full
+`ANALYZE`.
 
 ```bash
-sqlite3 data/meshcore-live.db ".backup 'backups/meshcore-live.backup.db'"
+sqlite3 data/meshcore-live.db 'PRAGMA quick_check;'
+sqlite3 data/meshcore-live.db 'PRAGMA foreign_key_check;'
+sqlite3 data/meshcore-live.db 'PRAGMA user_version;'
+du -h data/meshcore-live.db*
 ```
 
-Restore by stopping the container, copying the database files back into
-`data/`, then starting Docker Compose again.
+## Soak
 
-## Privacy Check
+```bash
+BASE_URL=https://carto.canadaverse.org \
+  DURATION_MINUTES=1440 INTERVAL_SECONDS=60 scripts/soak-check.sh
+```
 
-Before release, inspect public responses and WebSocket payloads for forbidden
-fields or values:
+Normal quiet motion is not failure. Stop promotion for public 5xx, cache/session
+loss, OOM/restart, `SQLITE_FULL`, sustained busy/queue pressure, privacy output,
+or metadata mismatch. Complete day-8/day-14 checks from the 3.2 validation
+checklist.
 
-- raw packet hashes
-- raw payload/path hex
-- full public keys
-- resolver debug fields
-- broker credentials
-- channel secrets
-- local operator config
+## Diagnose public inclusion
+
+```bash
+docker exec meshcore-canada-live-map \
+  /app/mc-diagnose --db /app/data/meshcore-live.db \
+  --region YTR --public-regions "$PUBLIC_REGIONS"
+```
+
+Public-safe diagnostic reasons include `mappable`, `missing_coords`,
+`zero_coords`, `outside_bounds`, and the legacy name `iata_filtered`. Never
+expose the raw packet/key material behind a diagnosis.
+
+## Incident priorities
+
+1. Preserve service safety and secrets.
+2. Check real readiness, bootstrap/state freshness, container state, disk/WAL,
+   and queue counters.
+3. Stop optional projection/propagation work before changing truth or privacy
+   controls.
+4. Roll back by immutable digest; never reset branches or build on the droplet.
+5. Keep the pre-upgrade block-volume backup until the 24-hour audit is green;
+   treat explicitly fresh-deleted data as unrecoverable.

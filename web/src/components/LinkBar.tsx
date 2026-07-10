@@ -5,25 +5,20 @@ import { routeAssetIcons } from '../assets/routes/assets';
 import { activeAssetPack } from '../assets/v3/assetPacks';
 import { DEFAULT_LAB_EXPERIMENT_ID, LAB_EXPERIMENTS, type LabExperimentID } from '../lab';
 import {
-  GITHUB_REPO_API_URL,
   GITHUB_REPO_URL,
   commitURLForSha,
   formatBuildAge,
-  normalizeRepoStats,
   parseBuildTime,
-  readCachedRepoStats,
-  shortBuildID,
-  writeCachedRepoStats,
-  type RepoStats
+  shortBuildID
 } from '../releaseInfo';
 
 type InfoPanel = 'changelog' | null;
 
 export const LATEST_RELEASE_HIGHLIGHTS = [
   {
-    label: '3.0.2',
-    title: 'Loading Motion',
-    body: 'Shared branded spinners, skeleton rows, loading blocks, and stable busy labels polish the app while keeping public APIs unchanged.'
+    label: '3.2.0',
+    title: 'RF Replay Studio',
+    body: 'Privacy-safe route stories, cinematic 2D/terrain/3D playback, command search, and resilient live transport make the map faster and easier to explore.'
   },
   {
     label: '3.0.1',
@@ -61,7 +56,6 @@ interface LinkBarProps {
 
 export default function LinkBar({ packetsOpen = false, netGraphOpen = false, chatOpen = false, labOpen = false, nodeListOpen = false, activeLabExperimentID = DEFAULT_LAB_EXPERIMENT_ID }: LinkBarProps) {
   const [now, setNow] = useState(() => Date.now());
-  const [repoStats, setRepoStats] = useState<RepoStats | null>(() => readCachedRepoStats(browserStorage()));
   const [activeInfoPanel, setActiveInfoPanel] = useState<InfoPanel>(null);
   const [workspacesMenuOpen, setWorkspacesMenuOpen] = useState(false);
   const brandName = appBrandName.trim() || 'MC-CartoLive';
@@ -78,29 +72,6 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    const storage = browserStorage();
-    const cached = readCachedRepoStats(storage);
-    if (cached) {
-      setRepoStats(cached);
-      return undefined;
-    }
-    fetch(GITHUB_REPO_API_URL, { headers: { Accept: 'application/vnd.github+json' } })
-      .then((response) => response.ok ? response.json() : null)
-      .then((payload) => {
-        if (!active) return;
-        const stats = normalizeRepoStats(payload);
-        if (!stats) return;
-        writeCachedRepoStats(storage, stats);
-        setRepoStats(stats);
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
   }, []);
 
   return (
@@ -186,7 +157,7 @@ export default function LinkBar({ packetsOpen = false, netGraphOpen = false, cha
           </div>
           <a href={GITHUB_REPO_URL} target="_blank" rel="noreferrer">
             <Github size={13} />
-            <span>{repoStats ? `${repoStats.stars.toLocaleString()} stars / ${repoStats.forks.toLocaleString()} forks` : 'GitHub'}</span>
+            <span>GitHub</span>
             <ExternalLink size={12} />
           </a>
           <a href={releaseURL} target="_blank" rel="noreferrer">Open full release notes</a>
@@ -220,12 +191,4 @@ function InfoPopover({ title, icon, children, onClose }: { title: string; icon: 
       <div className="link-bar-info-body">{children}</div>
     </section>
   );
-}
-
-function browserStorage(): Storage | undefined {
-  try {
-    return typeof window === 'undefined' ? undefined : window.localStorage;
-  } catch {
-    return undefined;
-  }
 }

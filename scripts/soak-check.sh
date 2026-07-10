@@ -33,19 +33,23 @@ while [ "$(date -u +%s)" -lt "$end_at" ]; do
   packets="$(sed -n 's/.*"packets":\([0-9][0-9]*\).*/\1/p' "$state")"
   nodes="$(sed -n 's/.*"activeNodes":\([0-9][0-9]*\).*/\1/p' "$state")"
   routes="$(sed -n 's/.*"activeRoutes":\([0-9][0-9]*\).*/\1/p' "$state")"
-  packet_state="$(sed -n 's/.*"packetIngestState":"\([^"]*\)".*/\1/p' "$health")"
-  cache_state="$(sed -n 's/.*"publicCacheState":"\([^"]*\)".*/\1/p' "$health")"
-  motion_state="$(sed -n 's/.*"mapMotionState":"\([^"]*\)".*/\1/p' "$health")"
-  confidence_state="$(sed -n 's/.*"liveConfidenceState":"\([^"]*\)".*/\1/p' "$health")"
-  mqtt_age="$(sed -n 's/.*"mqttLastMessageAgeMs":\([0-9][0-9]*\).*/\1/p' "$health")"
-  cache_age="$(sed -n 's/.*"cacheAgeMs":\([0-9][0-9]*\).*/\1/p' "$health")"
+  latest_seq="$(sed -n 's/.*"latestSeq":\([0-9][0-9]*\).*/\1/p' "$state")"
+  health_ok="$(sed -n 's/.*"ok":\(true\|false\).*/\1/p' "$health")"
+  ready_ok="$(sed -n 's/.*"ready":\(true\|false\).*/\1/p' "$ready")"
+  dataset_state="$(sed -n 's/.*"datasetState":"\([^"]*\)".*/\1/p' "$ready")"
+  storage_state="$(sed -n 's/.*"storagePressureState":"\([^"]*\)".*/\1/p' "$ready")"
+  mqtt_session="$(sed -n 's/.*"mqttSessionReady":\(true\|false\).*/\1/p' "$ready")"
   history_events="$(sed -n 's/.*"count":\([0-9][0-9]*\).*/\1/p' "$history")"
 
-  [ "$packet_state" = "fresh" ] || ok=0
-  [ "$cache_state" = "fresh" ] || ok=0
-  [ "$confidence_state" != "degraded" ] || ok=0
+  [ "$health_ok" = "true" ] || ok=0
+  [ "$ready_ok" = "true" ] || ok=0
+  [ "$mqtt_session" = "true" ] || ok=0
+  [ "$storage_state" != "critical" ] || ok=0
+  case "$dataset_state" in fresh_start|warming|live) ;; *) ok=0 ;; esac
   if [ -n "$last_packets" ] && [ -n "$packets" ] && [ "$packets" -lt "$last_packets" ]; then ok=0; fi
   last_packets="$packets"
+  if [ -n "${last_latest_seq:-}" ] && [ -n "$latest_seq" ] && [ "$latest_seq" -lt "$last_latest_seq" ]; then ok=0; fi
+  last_latest_seq="$latest_seq"
 
   if [ "$ok" -eq 1 ]; then
     ok_json=true
@@ -55,12 +59,12 @@ while [ "$(date -u +%s)" -lt "$end_at" ]; do
     bad_samples=$((bad_samples + 1))
   fi
 
-  printf '{"at":"%s","sample":%s,"ok":%s,"version":"%s","gitSha":"%s","packets":%s,"nodes":%s,"routes":%s,"packetIngestState":"%s","mqttLastMessageAgeMs":%s,"publicCacheState":"%s","cacheAgeMs":%s,"mapMotionState":"%s","liveConfidenceState":"%s","historyEvents":%s,"error":"%s"}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$sample" "$ok_json" "$version" "$git_sha" "${packets:-0}" "${nodes:-0}" "${routes:-0}" "$packet_state" "${mqtt_age:-0}" "$cache_state" "${cache_age:-0}" "$motion_state" "$confidence_state" "${history_events:-0}" "$error" >>"$OUT_FILE"
+  printf '{"at":"%s","sample":%s,"ok":%s,"version":"%s","gitSha":"%s","packets":%s,"nodes":%s,"routes":%s,"latestSeq":%s,"datasetState":"%s","mqttSessionReady":%s,"storagePressureState":"%s","historyEvents":%s,"error":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$sample" "$ok_json" "$version" "$git_sha" "${packets:-0}" "${nodes:-0}" "${routes:-0}" "${latest_seq:-0}" "$dataset_state" "${mqtt_session:-false}" "$storage_state" "${history_events:-0}" "$error" >>"$OUT_FILE"
 
   rm -f "$health" "$ready" "$state" "$history"
 
-  echo "sample $sample: ok=$ok_json packets=${packets:-0} ingest=$packet_state cache=$cache_state motion=$motion_state confidence=$confidence_state"
+  echo "sample $sample: ok=$ok_json packets=${packets:-0} latestSeq=${latest_seq:-0} dataset=$dataset_state storage=$storage_state"
   if [ "$bad_samples" -ge "$MAX_BAD_SAMPLES" ]; then
     echo "soak failed after $bad_samples consecutive bad samples; output: $OUT_FILE" >&2
     exit 1

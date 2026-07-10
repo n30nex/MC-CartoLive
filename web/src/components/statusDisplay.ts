@@ -3,9 +3,12 @@ import type { PublicStats } from '../types';
 
 export const STALE_PACKET_MS = 60_000;
 
-export function serverStatus(stats: PublicStats | null, socketStatus: string, coverage: LiveCoverageStats): { label: 'Live' | 'Stale'; live: boolean } {
+export function serverStatus(stats: PublicStats | null, socketStatus: string, coverage: LiveCoverageStats, now = Date.now()): { label: 'Live' | 'Stale'; live: boolean } {
   const transportFailed = socketStatus === 'closed' || socketStatus === 'state-error' || socketStatus === 'bad-message';
-  const live = Boolean(stats?.mqttConnected) && !transportFailed && coverage.lastPacketAgeMs !== null && coverage.lastPacketAgeMs < STALE_PACKET_MS;
+  const snapshotAgeMs = stats?.serverTime ? Math.max(0, now - stats.serverTime) : null;
+  const activityFresh = coverage.lastPacketAgeMs !== null && coverage.lastPacketAgeMs < STALE_PACKET_MS;
+  const snapshotFresh = snapshotAgeMs !== null && snapshotAgeMs < STALE_PACKET_MS;
+  const live = Boolean(stats?.mqttConnected) && !transportFailed && (activityFresh || snapshotFresh);
   return { label: live ? 'Live' : 'Stale', live };
 }
 

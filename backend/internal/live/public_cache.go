@@ -1,16 +1,21 @@
 package live
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	publicCacheMaxNodes    = 2500
-	publicCacheMaxRoutes   = 2500
-	publicCacheMaxPulses   = 240
-	publicCacheMaxActivity = 240
+	publicCacheMaxNodes            = 2500
+	publicCacheMaxRoutes           = 2500
+	publicCacheMaxPulses           = 240
+	publicCacheMaxActivity         = 240
+	publicSerializationMinInterval = 5 * time.Second
 )
 
 type PublicIATAFilter struct {
@@ -90,19 +95,30 @@ func (f PublicIATAFilter) FilterState(state State) (State, map[string]int64) {
 }
 
 type PublicStateCache struct {
-	mu        sync.RWMutex
-	filter    PublicIATAFilter
-	state     PublicLiveState
-	ready     bool
-	updatedAt time.Time
-	anomalies map[string]int64
-	truncated PublicCacheTruncation
+	mu               sync.RWMutex
+	filter           PublicIATAFilter
+	state            PublicLiveState
+	ready            bool
+	updatedAt        time.Time
+	fullReconciledAt time.Time
+	anomalies        map[string]int64
+	truncated        PublicCacheTruncation
+	serialized       PublicStateSerialization
+	serializedAt     time.Time
+}
+
+type PublicStateSerialization struct {
+	JSON []byte
+	Gzip []byte
+	ETag string
 }
 
 type PublicCacheStatus struct {
 	Ready                   bool  `json:"ready"`
 	UpdatedAt               int64 `json:"updatedAt"`
 	CacheAgeMs              int64 `json:"cacheAgeMs"`
+	FullReconciledAt        int64 `json:"fullReconciledAt"`
+	FullReconcileAgeMs      int64 `json:"fullReconcileAgeMs"`
 	TruncatedNodes          int64 `json:"truncatedNodes"`
 	TruncatedRoutes         int64 `json:"truncatedRoutes"`
 	TruncatedRecentPulses   int64 `json:"truncatedRecentPulses"`
@@ -181,10 +197,51 @@ func (c *PublicStateCache) Replace(state PublicLiveState, excluded map[string]in
 	state.Stats.ExcludedIATAs = mergeCounters(excluded, c.anomalies)
 	state.Stats.ExcludedRegions = copyCounter(state.Stats.ExcludedIATAs)
 	c.state = copyPublicState(state)
+	c.serialized = serializePublicState(state)
+	c.serializedAt = now
 	c.ready = true
 	c.updatedAt = now
+	c.fullReconciledAt = now
 	c.truncated = truncated
 	c.mu.Unlock()
+}
+
+func (c *PublicStateCache) Serialized() (PublicStateSerialization, bool) {
+	if c == nil {
+		return PublicStateSerialization{}, false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if !c.ready || len(c.serialized.JSON) == 0 {
+		return PublicStateSerialization{}, false
+	}
+	// Serialized buffers are immutable after publication. Returning their slice
+	// headers avoids copying the multi-megabyte state on every request.
+	return c.serialized, true
+}
+
+func serializePublicState(state PublicLiveState) PublicStateSerialization {
+	raw, err := json.Marshal(state)
+	if err != nil {
+		return PublicStateSerialization{}
+	}
+	var compressed bytes.Buffer
+	writer, err := gzip.NewWriterLevel(&compressed, gzip.BestSpeed)
+	if err != nil {
+		return PublicStateSerialization{JSON: raw, ETag: `W/"` + strconv.FormatInt(state.UpdatedAt, 10) + `"`}
+	}
+	if _, err := writer.Write(raw); err != nil {
+		_ = writer.Close()
+		return PublicStateSerialization{JSON: raw, ETag: `W/"` + strconv.FormatInt(state.UpdatedAt, 10) + `"`}
+	}
+	if err := writer.Close(); err != nil {
+		return PublicStateSerialization{JSON: raw, ETag: `W/"` + strconv.FormatInt(state.UpdatedAt, 10) + `"`}
+	}
+	return PublicStateSerialization{
+		JSON: raw,
+		Gzip: compressed.Bytes(),
+		ETag: `W/"` + strconv.FormatInt(state.UpdatedAt, 10) + `"`,
+	}
 }
 
 func (c *PublicStateCache) Snapshot() (PublicLiveState, bool) {
@@ -215,10 +272,16 @@ func (c *PublicStateCache) Status(now time.Time) PublicCacheStatus {
 	if age < 0 {
 		age = 0
 	}
+	fullReconcileAge := now.Sub(c.fullReconciledAt).Milliseconds()
+	if fullReconcileAge < 0 {
+		fullReconcileAge = 0
+	}
 	return PublicCacheStatus{
 		Ready:                   true,
 		UpdatedAt:               c.updatedAt.UnixMilli(),
 		CacheAgeMs:              age,
+		FullReconciledAt:        c.fullReconciledAt.UnixMilli(),
+		FullReconcileAgeMs:      fullReconcileAge,
 		TruncatedNodes:          c.truncated.Nodes,
 		TruncatedRoutes:         c.truncated.Routes,
 		TruncatedRecentPulses:   c.truncated.RecentPulses,
@@ -244,7 +307,8 @@ func (c *PublicStateCache) ApplyNode(node PublicNode) {
 	}
 	c.state.Nodes = limitPublicNodes(next)
 	c.state.Stats.ActiveNodes = int64(len(c.state.Nodes))
-	c.updatedAt = time.Now()
+	c.advanceLatestSeqLocked(node.Seq)
+	c.recordLiveUpdateLocked(time.Now())
 }
 
 func (c *PublicStateCache) ApplyActivity(activity PublicActivity) {
@@ -265,7 +329,8 @@ func (c *PublicStateCache) ApplyActivity(activity PublicActivity) {
 		c.state.ServerTime = activity.HeardAt
 		c.state.Stats.ServerTime = activity.HeardAt
 	}
-	c.updatedAt = time.Now()
+	c.advanceLatestSeqLocked(activity.Seq)
+	c.recordLiveUpdateLocked(time.Now())
 }
 
 func (c *PublicStateCache) ApplyRoutePulse(pulse PublicRoutePulse) {
@@ -282,7 +347,23 @@ func (c *PublicStateCache) ApplyRoutePulse(pulse PublicRoutePulse) {
 		c.state.ServerTime = pulse.HeardAt
 		c.state.Stats.ServerTime = pulse.HeardAt
 	}
-	c.updatedAt = time.Now()
+	c.advanceLatestSeqLocked(pulse.Seq)
+	c.recordLiveUpdateLocked(time.Now())
+}
+
+func (c *PublicStateCache) advanceLatestSeqLocked(seq int64) {
+	if seq > c.state.Stats.LatestSeq {
+		c.state.Stats.LatestSeq = seq
+	}
+}
+
+func (c *PublicStateCache) recordLiveUpdateLocked(now time.Time) {
+	c.updatedAt = now
+	c.state.UpdatedAt = now.UnixMilli()
+	if c.serializedAt.IsZero() || now.Sub(c.serializedAt) >= publicSerializationMinInterval {
+		c.serialized = serializePublicState(c.state)
+		c.serializedAt = now
+	}
 }
 
 func (c *PublicStateCache) SetPacketCount(count int64) {
@@ -295,7 +376,6 @@ func (c *PublicStateCache) SetPacketCount(count int64) {
 		return
 	}
 	c.state.Stats.Packets = count
-	c.updatedAt = time.Now()
 }
 
 func allowedIATAs(items []string, filter PublicIATAFilter) []string {

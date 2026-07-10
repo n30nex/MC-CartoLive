@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"meshcore-canada-live-map/backend/internal/live"
 
@@ -18,25 +21,100 @@ import (
 //go:embed schema.sql
 var schemaSQL string
 
+const SchemaVersion = 32000
+
 type Store struct {
-	db               *sql.DB
-	path             string
-	coordinatePolicy live.CoordinatePolicy
+	db                  *sql.DB
+	readDB              *sql.DB
+	path                string
+	coordinatePolicy    live.CoordinatePolicy
+	migrationHook       func(string) error
+	candidateMu         sync.RWMutex
+	candidateGeneration atomic.Uint64
+}
+
+// CandidateGeneration is a monotonic version of the node data used by the RF
+// prefix resolver. The resolver checks it on every lookup so an application
+// invalidation accidentally omitted at a call site cannot reuse stale truth.
+func (s *Store) CandidateGeneration() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.candidateGeneration.Load()
+}
+
+func (s *Store) bumpCandidateGeneration() {
+	if s != nil {
+		s.candidateGeneration.Add(1)
+	}
+}
+
+// BeginCandidateSnapshot holds a stable view of resolver candidate truth until
+// the returned release function is called. Candidate mutations take the
+// exclusive side of this lock, so a resolver can never observe a partially
+// applied node/short-ID update.
+func (s *Store) BeginCandidateSnapshot() (uint64, func()) {
+	if s == nil {
+		return 0, func() {}
+	}
+	s.candidateMu.RLock()
+	return s.candidateGeneration.Load(), s.candidateMu.RUnlock
+}
+
+// beginCandidateMutation brackets a candidate-affecting store operation. The
+// exclusive lock serializes mutations with resolver snapshots. Odd generations
+// mean a mutation is in progress; the deferred second bump returns the store to
+// an even, stable generation and invalidates every earlier cache snapshot.
+func (s *Store) beginCandidateMutation() func() {
+	s.candidateMu.Lock()
+	s.bumpCandidateGeneration()
+	return func() {
+		s.bumpCandidateGeneration()
+		s.candidateMu.Unlock()
+	}
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", sqliteDSN(path))
+	fresh := true
+	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+		fresh = false
+	}
+	db, err := sql.Open("sqlite", sqliteDSNForOpen(path, fresh))
 	if err != nil {
 		return nil, err
 	}
-	maxOpenConns := sqliteEnvInt("SQLITE_MAX_OPEN_CONNS", 4)
-	db.SetMaxOpenConns(maxOpenConns)
-	db.SetMaxIdleConns(maxOpenConns)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	s := &Store{db: db, path: path, coordinatePolicy: live.CurrentCoordinatePolicy()}
+	if fresh {
+		if _, err := db.ExecContext(ctx, `PRAGMA auto_vacuum=INCREMENTAL`); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("enable incremental auto vacuum: %w", err)
+		}
+	}
 	if err := s.Migrate(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	readDB, err := sql.Open("sqlite", sqliteDSN(path))
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	readConns := sqliteEnvInt("SQLITE_READ_OPEN_CONNS", sqliteEnvInt("SQLITE_MAX_OPEN_CONNS", 2))
+	readDB.SetMaxOpenConns(readConns)
+	readDB.SetMaxIdleConns(readConns)
+	if err := readDB.PingContext(ctx); err != nil {
+		_ = readDB.Close()
+		_ = db.Close()
+		return nil, fmt.Errorf("open sqlite read pool: %w", err)
+	}
+	s.readDB = readDB
+	if err := s.Optimize(ctx, true); err != nil {
+		_ = readDB.Close()
 		_ = db.Close()
 		return nil, err
 	}
@@ -50,6 +128,11 @@ func OpenMemory(ctx context.Context) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 	s := &Store{db: db, path: "file::memory:?cache=shared", coordinatePolicy: live.CurrentCoordinatePolicy()}
+	s.readDB = db
+	if _, err := db.ExecContext(ctx, `PRAGMA auto_vacuum=INCREMENTAL`); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if err := s.Migrate(ctx); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -58,25 +141,57 @@ func OpenMemory(ctx context.Context) (*Store, error) {
 }
 
 func (s *Store) Migrate(ctx context.Context) error {
-	if err := s.ensureBaseTables(ctx); err != nil {
+	var current int
+	if err := s.db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&current); err != nil {
+		return fmt.Errorf("read sqlite schema version: %w", err)
+	}
+	if current > SchemaVersion {
+		return fmt.Errorf("sqlite schema version %d is newer than supported version %d", current, SchemaVersion)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin sqlite migration: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	if err := s.ensureBaseTables(ctx, tx); err != nil {
 		return err
 	}
-	if err := s.migrateColumns(ctx); err != nil {
+	if err := s.migrateColumns(ctx, tx); err != nil {
 		return err
 	}
-	if _, err := s.db.ExecContext(ctx, schemaSQL); err != nil {
+	if s.migrationHook != nil {
+		if err := s.migrationHook("after_columns"); err != nil {
+			return fmt.Errorf("sqlite migration hook after_columns: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("migrate sqlite: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO schema_migrations(version, applied_at_ms) VALUES (?, ?)`, SchemaVersion, time.Now().UnixMilli()); err != nil {
+		return fmt.Errorf("record sqlite schema migration: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version=%d`, SchemaVersion)); err != nil {
+		return fmt.Errorf("set sqlite schema version: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit sqlite schema version: %w", err)
+	}
+	committed = true
 	return nil
 }
 
-func (s *Store) ensureBaseTables(ctx context.Context) error {
+func (s *Store) ensureBaseTables(ctx context.Context, tx *sql.Tx) error {
 	for _, stmt := range sqliteStatements(schemaSQL) {
 		normalized := strings.ToUpper(strings.TrimSpace(stmt))
 		if !strings.HasPrefix(normalized, "CREATE TABLE IF NOT EXISTS ") && !strings.HasPrefix(normalized, "PRAGMA ") {
 			continue
 		}
-		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("migrate sqlite base tables: %w", err)
 		}
 	}
@@ -89,15 +204,18 @@ type columnMigration struct {
 	alterSQL string
 }
 
-func (s *Store) migrateColumns(ctx context.Context) error {
+func (s *Store) migrateColumns(ctx context.Context, tx *sql.Tx) error {
 	migrations := []columnMigration{
 		{table: "nodes", column: "supports_multibyte", alterSQL: `ALTER TABLE nodes ADD COLUMN supports_multibyte TEXT NOT NULL DEFAULT 'unknown'`},
+		{table: "packet_observations", column: "ingest_id", alterSQL: `ALTER TABLE packet_observations ADD COLUMN ingest_id TEXT NOT NULL DEFAULT ''`},
 		{table: "packet_observations", column: "message_sender", alterSQL: `ALTER TABLE packet_observations ADD COLUMN message_sender TEXT NOT NULL DEFAULT ''`},
 		{table: "packet_observations", column: "message_text", alterSQL: `ALTER TABLE packet_observations ADD COLUMN message_text TEXT NOT NULL DEFAULT ''`},
 		{table: "live_edge_events", column: "message_sender", alterSQL: `ALTER TABLE live_edge_events ADD COLUMN message_sender TEXT NOT NULL DEFAULT ''`},
+		{table: "live_edge_events", column: "ingest_id", alterSQL: `ALTER TABLE live_edge_events ADD COLUMN ingest_id TEXT NOT NULL DEFAULT ''`},
 		{table: "live_edge_events", column: "message_text", alterSQL: `ALTER TABLE live_edge_events ADD COLUMN message_text TEXT NOT NULL DEFAULT ''`},
 		{table: "live_edge_events", column: "message_anchor_json", alterSQL: `ALTER TABLE live_edge_events ADD COLUMN message_anchor_json TEXT NOT NULL DEFAULT ''`},
 		{table: "public_packet_paths", column: "mappable", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN mappable INTEGER NOT NULL DEFAULT 1`},
+		{table: "public_events", column: "dedupe_key", alterSQL: `ALTER TABLE public_events ADD COLUMN dedupe_key TEXT NOT NULL DEFAULT ''`},
 		{table: "public_packet_paths", column: "region", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN region TEXT NOT NULL DEFAULT ''`},
 		{table: "public_packet_paths", column: "payload_type_name", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN payload_type_name TEXT NOT NULL DEFAULT ''`},
 		{table: "public_packet_paths", column: "message_sender", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN message_sender TEXT NOT NULL DEFAULT ''`},
@@ -111,19 +229,19 @@ func (s *Store) migrateColumns(ctx context.Context) error {
 		{table: "public_packet_paths", column: "search_text", alterSQL: `ALTER TABLE public_packet_paths ADD COLUMN search_text TEXT NOT NULL DEFAULT ''`},
 	}
 	for _, migration := range migrations {
-		if err := s.addColumnIfMissing(ctx, migration); err != nil {
+		if err := s.addColumnIfMissing(ctx, tx, migration); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *Store) addColumnIfMissing(ctx context.Context, migration columnMigration) error {
+func (s *Store) addColumnIfMissing(ctx context.Context, tx *sql.Tx, migration columnMigration) error {
 	tableIdent, err := sqliteIdent(migration.table)
 	if err != nil {
 		return err
 	}
-	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+tableIdent+`)`)
+	rows, err := tx.QueryContext(ctx, `PRAGMA table_info(`+tableIdent+`)`)
 	if err != nil {
 		return fmt.Errorf("inspect sqlite table %s: %w", migration.table, err)
 	}
@@ -145,7 +263,7 @@ func (s *Store) addColumnIfMissing(ctx context.Context, migration columnMigratio
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("inspect sqlite table %s: %w", migration.table, err)
 	}
-	if _, err := s.db.ExecContext(ctx, migration.alterSQL); err != nil {
+	if _, err := tx.ExecContext(ctx, migration.alterSQL); err != nil {
 		return fmt.Errorf("migrate sqlite column %s.%s: %w", migration.table, migration.column, err)
 	}
 	return nil
@@ -178,22 +296,31 @@ func sqliteStatements(sqlText string) []string {
 }
 
 func sqliteDSN(path string) string {
+	return sqliteDSNForOpen(path, false)
+}
+
+func sqliteDSNForOpen(path string, fresh bool) string {
 	sep := "?"
 	if strings.Contains(path, "?") {
 		sep = "&"
 	}
-	busyTimeoutMs := sqliteEnvInt("SQLITE_BUSY_TIMEOUT_MS", 15000)
+	busyTimeoutMs := sqliteEnvInt("SQLITE_BUSY_TIMEOUT_MS", 750)
 	cacheKB := sqliteEnvInt("SQLITE_CACHE_SIZE_KB", 16000)
 	mmapSizeBytes := sqliteEnvInt("SQLITE_MMAP_SIZE_BYTES", 67108864)
-	return path + sep + strings.Join([]string{
-		"_pragma=busy_timeout%3d" + strconv.Itoa(busyTimeoutMs),
+	pragmas := []string{}
+	if fresh {
+		pragmas = append(pragmas, "_pragma=auto_vacuum%3dINCREMENTAL")
+	}
+	pragmas = append(pragmas,
+		"_pragma=busy_timeout%3d"+strconv.Itoa(busyTimeoutMs),
 		"_pragma=foreign_keys%3dON",
 		"_pragma=journal_mode%3dWAL",
 		"_pragma=synchronous%3dNORMAL",
-		"_pragma=cache_size%3d-" + strconv.Itoa(cacheKB),
+		"_pragma=cache_size%3d-"+strconv.Itoa(cacheKB),
 		"_pragma=temp_store%3dMEMORY",
-		"_pragma=mmap_size%3d" + strconv.Itoa(mmapSizeBytes),
-	}, "&")
+		"_pragma=mmap_size%3d"+strconv.Itoa(mmapSizeBytes),
+	)
+	return path + sep + strings.Join(pragmas, "&")
 }
 
 func sqliteEnvInt(name string, fallback int) int {
@@ -209,7 +336,18 @@ func sqliteEnvInt(name string, fallback int) int {
 }
 
 func (s *Store) Close() error {
-	return s.db.Close()
+	if s == nil {
+		return nil
+	}
+	var readErr error
+	if s.readDB != nil && s.readDB != s.db {
+		readErr = s.readDB.Close()
+	}
+	writeErr := s.db.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	return readErr
 }
 
 func (s *Store) SetCoordinatePolicy(policy live.CoordinatePolicy) {
@@ -234,10 +372,38 @@ func (s *Store) Ping(ctx context.Context) error {
 }
 
 func (s *Store) Analyze(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, "ANALYZE"); err != nil {
-		return fmt.Errorf("analyze: %w", err)
+	return s.Optimize(ctx, false)
+}
+
+func (s *Store) Optimize(ctx context.Context, initial bool) error {
+	pragma := `PRAGMA optimize`
+	if initial {
+		pragma = `PRAGMA optimize=0x10002`
+	}
+	if _, err := s.db.ExecContext(ctx, pragma); err != nil {
+		return fmt.Errorf("optimize: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) IncrementalVacuum(ctx context.Context, pages int) error {
+	if pages <= 0 {
+		pages = 256
+	}
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA incremental_vacuum(%d)`, pages)); err != nil {
+		return fmt.Errorf("incremental vacuum: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) reader() *sql.DB {
+	if s != nil && s.readDB != nil {
+		return s.readDB
+	}
+	if s == nil {
+		return nil
+	}
+	return s.db
 }
 
 func (s *Store) Vacuum(ctx context.Context) error {
@@ -248,13 +414,47 @@ func (s *Store) Vacuum(ctx context.Context) error {
 }
 
 type RuntimeInfo struct {
-	Path         string `json:"path"`
-	JournalMode  string `json:"journalMode"`
-	BusyTimeout  int    `json:"busyTimeoutMs"`
-	MaxOpenConns int    `json:"maxOpenConns"`
-	OpenConns    int    `json:"openConns"`
-	InUse        int    `json:"inUse"`
-	Idle         int    `json:"idle"`
+	Path             string `json:"path"`
+	JournalMode      string `json:"journalMode"`
+	BusyTimeout      int    `json:"busyTimeoutMs"`
+	MaxOpenConns     int    `json:"maxOpenConns"`
+	OpenConns        int    `json:"openConns"`
+	InUse            int    `json:"inUse"`
+	Idle             int    `json:"idle"`
+	ReadMaxOpenConns int    `json:"readMaxOpenConns"`
+	ReadOpenConns    int    `json:"readOpenConns"`
+	ReadInUse        int    `json:"readInUse"`
+	ReadIdle         int    `json:"readIdle"`
+}
+
+type StorageInfo struct {
+	TotalBytes    uint64  `json:"totalBytes"`
+	FreeBytes     uint64  `json:"freeBytes"`
+	FreePercent   float64 `json:"freePercent"`
+	PressureState string  `json:"pressureState"`
+}
+
+func (s *Store) StorageInfo() StorageInfo {
+	if s == nil || strings.HasPrefix(s.path, "file:") || s.path == "" {
+		return StorageInfo{PressureState: "ok"}
+	}
+	info, err := filesystemSpace(filepath.Dir(s.path))
+	if err != nil || info.TotalBytes == 0 {
+		return StorageInfo{PressureState: "ok"}
+	}
+	info.FreePercent = float64(info.FreeBytes) * 100 / float64(info.TotalBytes)
+	info.PressureState = storagePressureState(info.FreePercent)
+	return info
+}
+
+func storagePressureState(freePercent float64) string {
+	if freePercent <= 10 {
+		return "critical"
+	}
+	if freePercent <= 20 {
+		return "warn"
+	}
+	return "ok"
 }
 
 func (s *Store) RuntimeInfo(ctx context.Context) RuntimeInfo {
@@ -269,6 +469,13 @@ func (s *Store) RuntimeInfo(ctx context.Context) RuntimeInfo {
 	info.OpenConns = stats.OpenConnections
 	info.InUse = stats.InUse
 	info.Idle = stats.Idle
+	if s.readDB != nil {
+		readStats := s.readDB.Stats()
+		info.ReadMaxOpenConns = readStats.MaxOpenConnections
+		info.ReadOpenConns = readStats.OpenConnections
+		info.ReadInUse = readStats.InUse
+		info.ReadIdle = readStats.Idle
+	}
 	return info
 }
 

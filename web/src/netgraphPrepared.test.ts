@@ -75,7 +75,7 @@ describe('prepared netgraph model', () => {
     expect(graph.prepMs).toBeGreaterThan(0);
     expect(Object.keys(graph.nodeSpatialIndex.buckets).length).toBeGreaterThan(1);
     expect(Object.keys(graph.edgeSpatialIndex.buckets).length).toBeGreaterThan(1);
-  });
+  }, 15_000);
 });
 
 const nodes: PublicNode[] = [

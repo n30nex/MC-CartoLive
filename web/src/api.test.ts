@@ -1,5 +1,78 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchPublicChat, fetchPublicPackets, fetchPublicPropagation } from './api';
+import { JSON_REQUEST_TIMEOUT_MS, PUBLIC_STATE_CACHE_MAX_AGE_MS, fetchPublicBootstrap, fetchPublicChat, fetchPublicEvents, fetchPublicPackets, fetchPublicPropagation, fetchPublicState, fetchPublicStateWithFallback, fetchReadyz, readCachedPublicStateSnapshot } from './api';
+
+describe('public transport contracts', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    window.localStorage.clear();
+  });
+
+  it('returns the sanitized fail-closed readiness body on HTTP 503', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ready: false,
+      reasons: ['public_cache_warming'],
+      datasetState: 'warming'
+    }), { status: 503, headers: { 'content-type': 'application/json' } })));
+    await expect(fetchReadyz()).resolves.toMatchObject({ ready: false, datasetState: 'warming' });
+  });
+
+  it('normalizes event reset metadata without scanning history', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ serverTime: '100', oldestSeq: '40', latestSeq: '60', resetRequired: true, nextCursor: 60, events: [] }), { status: 200 })));
+    await expect(fetchPublicEvents({ afterSeq: 0 })).resolves.toEqual({ serverTime: 100, oldestSeq: 40, latestSeq: 60, resetRequired: true, nextCursor: '60', events: [] });
+  });
+
+  it('normalizes bootstrap clusters and public-safe health', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      serverTime: 100,
+      latestSeq: 20,
+      stats: { packets: 1 },
+      health: { mqttSessionReady: true, datasetState: 'warming', datasetStartedAt: 90, storagePressureState: 'ok' },
+      clusters: [{ id: 'yyz', lat: '43.6', lng: '-79.3', count: '12', region: 'YYZ' }],
+      recentActivity: []
+    }), { status: 200 })));
+    const response = await fetchPublicBootstrap();
+    expect(response.clusters[0]).toEqual({ id: 'yyz', latitude: 43.6, longitude: -79.3, count: 12, activityCount: undefined, lastSeen: undefined, region: 'YYZ' });
+    expect(response.health).toMatchObject({ mqttSessionReady: true, datasetState: 'warming', storagePressureState: 'ok' });
+  });
+
+  it('aborts JSON requests after ten seconds', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason ?? new DOMException('Aborted', 'AbortError')), { once: true });
+    })));
+    const request = fetchPublicEvents({ afterSeq: 2 });
+    const rejection = expect(request).rejects.toMatchObject({ name: 'TimeoutError' });
+    await vi.advanceTimersByTimeAsync(JSON_REQUEST_TIMEOUT_MS);
+    await rejection;
+  });
+
+  it('never silently substitutes localStorage for the network state API', async () => {
+    seedPublicStateCache(Date.now());
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('offline'); }));
+    await expect(fetchPublicState()).rejects.toThrow('offline');
+    await expect(fetchPublicStateWithFallback()).resolves.toMatchObject({ source: 'offline-cache', cachedAt: expect.any(Number), state: { stats: { latestSeq: 12 } } });
+  });
+
+  it('rejects offline snapshots outside the bounded freshness window', () => {
+    const now = Date.now();
+    seedPublicStateCache(now - PUBLIC_STATE_CACHE_MAX_AGE_MS - 1);
+    expect(readCachedPublicStateSnapshot(now)).toBeNull();
+    seedPublicStateCache(now - PUBLIC_STATE_CACHE_MAX_AGE_MS);
+    expect(readCachedPublicStateSnapshot(now)).toMatchObject({ source: 'offline-cache' });
+  });
+});
+
+function seedPublicStateCache(cachedAt: number) {
+  window.localStorage.setItem('mc-cartolive:last-public-state', JSON.stringify({
+    cachedAt,
+    state: {
+      serverTime: cachedAt,
+      stats: { packets: 1, activeNodes: 1, activeRoutes: 0, mqttConnected: false, mqttMessages: 0, wsClients: 0, serverTime: cachedAt, latestSeq: 12 },
+      nodes: [], routes: [], recentActivity: []
+    }
+  }));
+}
 
 describe('fetchPublicPackets', () => {
   afterEach(() => {

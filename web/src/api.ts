@@ -3,12 +3,14 @@ import type {
   PublicChatResponse,
   PublicChatMessage,
   PublicCoverageResponse,
+  PublicBootstrapResponse,
   PublicEventsResponse,
   PublicHistoryResponse,
   PublicHistorySummaryResponse,
   PublicLOSProfileResponse,
   PublicMessageAnchor,
   PublicLiveState,
+  PublicMapCluster,
   PublicNOCResponse,
   PublicNode,
   PublicObserverLocation,
@@ -32,27 +34,67 @@ import type {
 } from './types';
 
 const PUBLIC_STATE_CACHE_KEY = 'mc-cartolive:last-public-state';
+export const JSON_REQUEST_TIMEOUT_MS = 10_000;
+export const PUBLIC_STATE_CACHE_MAX_AGE_MS = 5 * 60_000;
+const PUBLIC_STATE_CACHE_WRITE_INTERVAL_MS = 60_000;
+let lastPublicStateCacheWriteAt = 0;
+let pendingPublicStateCacheWrite = false;
 
 async function getJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(url, { headers: { Accept: 'application/json' }, signal });
-  if (!res.ok) {
-    throw new Error(`${res.status} ${res.statusText}`);
+  const request = withRequestTimeout(signal);
+  try {
+    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: request.signal });
+    if (!res.ok) {
+      throw new Error(`${res.status} ${res.statusText}`);
+    }
+    return await res.json() as T;
+  } finally {
+    request.cleanup();
   }
-  return res.json() as Promise<T>;
 }
 
-export function fetchPublicState(): Promise<PublicLiveState> {
-  return getJSON<PublicLiveState>('/api/v1/public/state')
-    .then((response) => {
-      const state = sanitizePublicState(response);
-      cachePublicStateSnapshot(state);
-      return state;
-    })
-    .catch((error) => {
-      const cached = readCachedPublicStateSnapshot();
-      if (cached) return cached;
-      throw error;
-    });
+function withRequestTimeout(signal?: AbortSignal): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), JSON_REQUEST_TIMEOUT_MS);
+  const abort = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abort();
+  else signal?.addEventListener('abort', abort, { once: true });
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      window.clearTimeout(timeout);
+      signal?.removeEventListener('abort', abort);
+    }
+  };
+}
+
+export interface PublicStateFetchResult {
+  state: PublicLiveState;
+  source: 'network' | 'offline-cache';
+  cachedAt?: number;
+}
+
+export function fetchPublicState(signal?: AbortSignal): Promise<PublicLiveState> {
+  return getJSON<PublicLiveState>('/api/v1/public/state', signal).then((response) => {
+    const state = sanitizePublicState(response);
+    cachePublicStateSnapshot(state);
+    return state;
+  });
+}
+
+export async function fetchPublicStateWithFallback(signal?: AbortSignal): Promise<PublicStateFetchResult> {
+  try {
+    return { state: await fetchPublicState(signal), source: 'network' };
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    const cached = readCachedPublicStateSnapshot();
+    if (cached) return cached;
+    throw error;
+  }
+}
+
+export function fetchPublicBootstrap(signal?: AbortSignal): Promise<PublicBootstrapResponse> {
+  return getJSON<PublicBootstrapResponse>('/api/v1/public/bootstrap', signal).then(sanitizePublicBootstrapResponse);
 }
 
 export function fetchHealthz(): Promise<RuntimeHealth> {
@@ -60,7 +102,21 @@ export function fetchHealthz(): Promise<RuntimeHealth> {
 }
 
 export function fetchReadyz(): Promise<RuntimeHealth> {
-  return getJSON<RuntimeHealth>('/readyz');
+  return getReadinessJSON('/readyz');
+}
+
+async function getReadinessJSON(url: string): Promise<RuntimeHealth> {
+  const request = withRequestTimeout();
+  try {
+    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: request.signal });
+    // Readiness deliberately uses 503 for a valid fail-closed status payload.
+    // System Status still needs that sanitized body to explain warming or the
+    // failed dependency; other HTTP failures remain transport errors.
+    if (!res.ok && res.status !== 503) throw new Error(`${res.status} ${res.statusText}`);
+    return await res.json() as RuntimeHealth;
+  } finally {
+    request.cleanup();
+  }
 }
 
 export interface PublicHistoryParams {
@@ -340,13 +396,15 @@ function sanitizePublicState(response: PublicLiveState | unknown): PublicLiveSta
 }
 
 function sanitizePublicEventsResponse(response: PublicEventsResponse | unknown): PublicEventsResponse {
-  const safe = (response ?? {}) as { serverTime?: unknown; latestSeq?: unknown; events?: unknown[]; nextCursor?: unknown };
+  const safe = (response ?? {}) as { serverTime?: unknown; oldestSeq?: unknown; latestSeq?: unknown; resetRequired?: unknown; events?: unknown[]; nextCursor?: unknown };
   const events = Array.isArray(safe.events)
     ? safe.events.map(sanitizePublicEvent).filter((event): event is PublicEventsResponse['events'][number] => Boolean(event))
     : [];
   return {
     serverTime: sanitizeNumber(safe.serverTime, Date.now()),
+    oldestSeq: sanitizeNumber(safe.oldestSeq, events[0]?.seq ?? 0),
     latestSeq: sanitizeNumber(safe.latestSeq, events.reduce((latest, event) => Math.max(latest, event.seq), 0)),
+    resetRequired: safe.resetRequired === true,
     events,
     nextCursor: sanitizeStringOrUndefined(safe.nextCursor)
   };
@@ -386,7 +444,7 @@ function sanitizePublicEvent(event: unknown): PublicEventsResponse['events'][num
 }
 
 function sanitizePublicViewportResponse(response: PublicViewportResponse | unknown): PublicViewportResponse {
-  const safe = (response ?? {}) as { serverTime?: unknown; latestSeq?: unknown; nodes?: unknown[]; routes?: unknown[]; events?: unknown[]; bbox?: unknown; zoom?: unknown; includes?: unknown };
+  const safe = (response ?? {}) as { serverTime?: unknown; latestSeq?: unknown; nodes?: unknown[]; routes?: unknown[]; clusters?: unknown[]; events?: unknown[]; bbox?: unknown; zoom?: unknown; includes?: unknown };
   const nodes = Array.isArray(safe.nodes)
     ? safe.nodes.map(sanitizePublicStateNode).filter((node): node is PublicNode => Boolean(node))
     : [];
@@ -396,15 +454,57 @@ function sanitizePublicViewportResponse(response: PublicViewportResponse | unkno
   const events = Array.isArray(safe.events)
     ? safe.events.map(sanitizePublicEvent).filter((event): event is PublicEventsResponse['events'][number] => Boolean(event))
     : [];
+  const clusters = Array.isArray(safe.clusters)
+    ? safe.clusters.map(sanitizePublicMapCluster).filter((cluster): cluster is PublicMapCluster => Boolean(cluster))
+    : [];
   return {
     serverTime: sanitizeNumber(safe.serverTime, Date.now()),
     latestSeq: sanitizeOptionalNumber(safe.latestSeq),
     nodes,
     routes,
+    clusters,
     events,
     bbox: Array.isArray(safe.bbox) ? safe.bbox.map((item) => sanitizeNumber(item, 0)).slice(0, 4) : undefined,
     zoom: sanitizeOptionalNumber(safe.zoom),
     includes: safeStringList(safe.includes)
+  };
+}
+
+function sanitizePublicBootstrapResponse(response: PublicBootstrapResponse | unknown): PublicBootstrapResponse {
+  const safe = (response ?? {}) as Record<string, unknown>;
+  const clusters = Array.isArray(safe.clusters)
+    ? safe.clusters.map(sanitizePublicMapCluster).filter((cluster): cluster is PublicMapCluster => Boolean(cluster))
+    : [];
+  const recentActivity = Array.isArray(safe.recentActivity)
+    ? safe.recentActivity.map(sanitizePublicStateActivity).filter((activity): activity is PublicActivity => Boolean(activity))
+    : [];
+  return {
+    serverTime: sanitizeNumber(safe.serverTime, Date.now()),
+    map: sanitizePublicMapConfig(safe.map),
+    stats: sanitizePublicStats(safe.stats),
+    latestSeq: sanitizeNumber(safe.latestSeq, 0),
+    health: safe.health && typeof safe.health === 'object' ? safe.health as RuntimeHealth : {},
+    clusters,
+    recentActivity
+  };
+}
+
+function sanitizePublicMapCluster(value: unknown): PublicMapCluster | null {
+  if (!value || typeof value !== 'object') return null;
+  const safe = value as Record<string, unknown>;
+  const id = sanitizeString(safe.id);
+  const latitude = sanitizeOptionalNumber(safe.latitude ?? safe.lat);
+  const longitude = sanitizeOptionalNumber(safe.longitude ?? safe.lng);
+  const count = sanitizeNumber(safe.count, 0);
+  if (!id || latitude === undefined || longitude === undefined || count <= 0) return null;
+  return {
+    id,
+    latitude,
+    longitude,
+    count,
+    activityCount: sanitizeOptionalNumber(safe.activityCount),
+    lastSeen: sanitizeOptionalNumber(safe.lastSeen),
+    region: sanitizeStringOrUndefined(safe.region)
   };
 }
 
@@ -587,6 +687,7 @@ function sanitizePublicStats(raw: unknown): PublicStats {
     mqttMessages: sanitizeNumber(stats.mqttMessages, 0),
     wsClients: sanitizeNumber(stats.wsClients, 0),
     serverTime: sanitizeNumber(stats.serverTime, Date.now()),
+    latestSeq: sanitizeOptionalNumber(stats.latestSeq),
     ...(resolutionBuckets ? { resolutionBuckets } : {}),
     ...(excludedIatas ? { excludedIatas } : {}),
     ...(excludedRegions ? { excludedRegions } : {})
@@ -980,30 +1081,35 @@ function defaultPublicStats(): PublicStats {
 
 function cachePublicStateSnapshot(state: PublicLiveState): void {
   if (typeof window === 'undefined' || !window.localStorage) return;
-  try {
-    window.localStorage.setItem(
-      PUBLIC_STATE_CACHE_KEY,
-      JSON.stringify({
-        cachedAt: Date.now(),
-        state
-      })
-    );
-  } catch {
-    // Offline snapshot caching is opportunistic.
+  const now = Date.now();
+  if (pendingPublicStateCacheWrite || now - lastPublicStateCacheWriteAt < PUBLIC_STATE_CACHE_WRITE_INTERVAL_MS) return;
+  pendingPublicStateCacheWrite = true;
+  const write = () => {
+    pendingPublicStateCacheWrite = false;
+    try {
+      window.localStorage.setItem(PUBLIC_STATE_CACHE_KEY, JSON.stringify({ cachedAt: Date.now(), state }));
+      lastPublicStateCacheWriteAt = Date.now();
+    } catch {
+      // Offline snapshot caching is opportunistic.
+    }
+  };
+  const idleCallback = (window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number }).requestIdleCallback;
+  if (idleCallback) {
+    idleCallback(write, { timeout: 2_000 });
+  } else {
+    window.setTimeout(write, 0);
   }
 }
 
-function readCachedPublicStateSnapshot(): PublicLiveState | null {
+export function readCachedPublicStateSnapshot(now = Date.now()): PublicStateFetchResult | null {
   if (typeof window === 'undefined' || !window.localStorage) return null;
   try {
     const raw = window.localStorage.getItem(PUBLIC_STATE_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { cachedAt?: unknown; state?: unknown };
-    const state = sanitizePublicState(parsed.state);
-    return {
-      ...state,
-      serverTime: sanitizeNumber(parsed.cachedAt, state.serverTime)
-    };
+    const cachedAt = sanitizeNumber(parsed.cachedAt, 0);
+    if (cachedAt <= 0 || now - cachedAt < 0 || now - cachedAt > PUBLIC_STATE_CACHE_MAX_AGE_MS) return null;
+    return { state: sanitizePublicState(parsed.state), source: 'offline-cache', cachedAt };
   } catch {
     return null;
   }

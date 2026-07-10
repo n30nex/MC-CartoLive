@@ -16,11 +16,8 @@ func StaticReady() bool {
 	if err != nil {
 		return false
 	}
-	if _, err := fs.Stat(sub, "index.html"); err == nil {
-		return true
-	}
-	_, err = fs.Stat(sub, "placeholder.txt")
-	return err == nil
+	info, err := fs.Stat(sub, "index.html")
+	return err == nil && !info.IsDir() && info.Size() > 0
 }
 
 func StaticWarn() string {
@@ -47,10 +44,26 @@ func StaticHandler(w http.ResponseWriter, r *http.Request) {
 	if _, err := fs.Stat(sub, requestPath); err != nil {
 		requestPath = "index.html"
 	}
-	if strings.HasPrefix(requestPath, "assets/") {
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	} else if requestPath == "index.html" {
-		w.Header().Set("Cache-Control", "no-store, max-age=0")
+	if cacheControl, revalidate := staticCachePolicy(requestPath); cacheControl != "" {
+		w.Header().Set("Cache-Control", cacheControl)
+		if revalidate {
+			w.Header().Set("Expires", "0")
+			w.Header().Set("Pragma", "no-cache")
+		}
 	}
 	http.ServeFileFS(w, r, sub, requestPath)
+}
+
+func staticCachePolicy(requestPath string) (cacheControl string, revalidate bool) {
+	requestPath = strings.ToLower(strings.TrimSpace(requestPath))
+	switch path.Base(requestPath) {
+	case "sw.js", "service-worker.js", "manifest.webmanifest", "manifest.json", "site.webmanifest":
+		return "no-cache, no-store, max-age=0, must-revalidate", true
+	case "index.html":
+		return "no-store, max-age=0, must-revalidate", true
+	}
+	if strings.HasPrefix(requestPath, "assets/") {
+		return "public, max-age=31536000, immutable", false
+	}
+	return "", false
 }

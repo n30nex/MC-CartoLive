@@ -35,7 +35,7 @@ FROM public_coverage_cells`
 ORDER BY updated_at_ms DESC, id DESC
 LIMIT ?`
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, sqlText, args...)
+	rows, err := s.reader().QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return nil, err
 	}

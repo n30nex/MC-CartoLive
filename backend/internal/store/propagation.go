@@ -77,7 +77,7 @@ func (s *Store) PropagationCandidatePaths(ctx context.Context, from int64, to in
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 SELECT edge_id, heard_at_ms, iata, region, payload_type_name, message_sender, message_text,
   hop_count, segment_count, distance_km, route_ids_json, endpoint_labels_json, segments_json
 FROM public_packet_paths
@@ -127,7 +127,7 @@ WHERE mappable=1
   AND distance_km >= ?
   AND (` + strings.Join(clauses, ` OR `) + `)`
 	var count int
-	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+	if err := s.reader().QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return 0, err
 	}
 	return count, nil
@@ -234,7 +234,7 @@ LIMIT ?`
 	}
 	args = append(args, limit+1)
 
-	rows, err := s.db.QueryContext(ctx, sqlText, args...)
+	rows, err := s.reader().QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -272,7 +272,7 @@ func (s *Store) LatestPropagationConditions(ctx context.Context, from int64, to 
 		return live.PublicPropagationConditions{}, err
 	}
 	var count int
-	if err := s.db.QueryRowContext(ctx, `
+	if err := s.reader().QueryRowContext(ctx, `
 SELECT COUNT(*)
 FROM propagation_events
 WHERE at_ms >= ? AND at_ms <= ?`, from, boundedHistoryTo(to)).Scan(&count); err != nil {

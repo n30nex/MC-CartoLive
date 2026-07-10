@@ -28,12 +28,14 @@ They must not expose:
 - resolver debug reasons
 - raw packet payloads
 
-Operational endpoints such as `/healthz` and `/readyz` may expose public-safe
-runtime counters only: cache age, DB readiness, MQTT connection status, message
-counts, WebSocket client/drop counts, version, Git SHA, build time, and public
-API latency/error counts. They must not expose broker credentials, topics beyond
-public-safe labels, raw packet identifiers, full keys, raw hex, resolver details,
-or operator config.
+`/healthz` is limited to liveness, a coarse readiness summary, dependency
+booleans, MQTT session readiness, dataset/storage state, and compiled release
+identity. `/readyz` adds only stable fail-closed reason codes; it does not add
+counters. Cache age, MQTT message counts, WebSocket client/drop counts, queue
+state, ingest counters, API latency/error counts, and reconciliation timing
+stay on the loopback-only metrics listener. Neither public endpoint may expose
+broker credentials, non-public topics, raw packet identifiers, full keys, raw
+hex, resolver details, or operator config.
 
 The public route API may expose a six-character `pathHash3` for positioned
 route endpoints. This is the 3-byte MeshCore route prefix shown in the mobile
@@ -92,10 +94,12 @@ public map anchors. They must stay inside the same privacy boundary as
 full public keys, path hex, summaries, channel secrets, or resolver debug
 reasons.
 
-Raw packet, observation, live edge, public event/search, observer status, and
-propagation history retention defaults to seven days. Public history, packet,
-chat, event, viewport backfill, and propagation searches are capped to at most
-seven days even when callers request a larger range.
+Raw packet, observation, live edge/search, observer status, and propagation
+history retention defaults to seven days. Public WebSocket-resume events use a
+separate 24-hour retention window. Public history, packet, chat, viewport
+backfill, and propagation searches remain bounded even when callers request a
+larger range. Expired event cursors return a reset instruction rather than raw
+or unbounded history.
 
 ## Tests
 

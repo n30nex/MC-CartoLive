@@ -37,7 +37,7 @@ type rateLimiter struct {
 }
 
 type rateBucket struct {
-	tokens   int
+	tokens   float64
 	lastSeen time.Time
 }
 
@@ -78,29 +78,34 @@ func (rl *rateLimiter) cleanupLoop() {
 }
 
 func (rl *rateLimiter) allow(ip string) bool {
+	return rl.allowAt(ip, time.Now())
+}
+
+func (rl *rateLimiter) allowAt(ip string, now time.Time) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	now := time.Now()
 	bucket, ok := rl.clients[ip]
 	if !ok {
-		bucket = &rateBucket{tokens: rl.burst, lastSeen: now}
+		bucket = &rateBucket{tokens: float64(rl.burst), lastSeen: now}
 		rl.clients[ip] = bucket
 	}
 	elapsed := now.Sub(bucket.lastSeen)
 	bucket.lastSeen = now
-	bucket.tokens += int(elapsed.Minutes() * float64(rl.rate))
-	if bucket.tokens > rl.burst {
-		bucket.tokens = rl.burst
+	if elapsed > 0 {
+		bucket.tokens += elapsed.Seconds() * float64(rl.rate) / 60
 	}
-	if bucket.tokens <= 0 {
+	if bucket.tokens > float64(rl.burst) {
+		bucket.tokens = float64(rl.burst)
+	}
+	if bucket.tokens < 1 {
 		return false
 	}
-	bucket.tokens--
+	bucket.tokens -= 1
 	return true
 }
 
-func clientIP(r *http.Request, trustProxyHeaders bool) string {
-	if trustProxyHeaders {
+func clientIP(r *http.Request, trustProxyHeaders bool, trustedProxyCIDRs []string) string {
+	if trustProxyHeaders && remoteInCIDRs(r.RemoteAddr, trustedProxyCIDRs) {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			parts := strings.SplitN(xff, ",", 2)
 			if ip := strings.TrimSpace(parts[0]); ip != "" {
@@ -118,52 +123,77 @@ func clientIP(r *http.Request, trustProxyHeaders bool) string {
 	return r.RemoteAddr
 }
 
+func remoteInCIDRs(remoteAddr string, cidrs []string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(strings.TrimSpace(host))
+	if ip == nil {
+		return false
+	}
+	for _, raw := range cidrs {
+		_, network, err := net.ParseCIDR(strings.TrimSpace(raw))
+		if err == nil && network.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 type Config struct {
-	RecentPacketLimit         int
-	RecentEdgeEventLimit      int
-	DefaultCenterLat          float64
-	DefaultCenterLng          float64
-	DefaultZoom               float64
-	DefaultRegion             string
-	MapRegionPreset           string
-	MapBounds                 live.CoordinateBounds
-	PublicMode                bool
-	StrictRFOnly              bool
-	MaxUnverifiedEdgeKM       float64
-	AppVersion                string
-	GitSHA                    string
-	BuildTime                 string
-	PublicIATARestricted      bool
-	PublicRegionRestricted    bool
-	PublicIATAs               []string
-	TrustProxyHeaders         bool
-	PublicEventsEnabled       bool
-	PublicViewportEnabled     bool
-	PublicNOCEnabled          bool
-	PublicCoverageEnabled     bool
-	PublicLOSEnabled          bool
-	PublicSchemaEnabled       bool
-	PublicIntegrationsEnabled bool
+	RecentPacketLimit            int
+	RecentEdgeEventLimit         int
+	DefaultCenterLat             float64
+	DefaultCenterLng             float64
+	DefaultZoom                  float64
+	DefaultRegion                string
+	MapRegionPreset              string
+	MapBounds                    live.CoordinateBounds
+	PublicMode                   bool
+	StrictRFOnly                 bool
+	MaxUnverifiedEdgeKM          float64
+	AppVersion                   string
+	GitSHA                       string
+	BuildTime                    string
+	PublicIATARestricted         bool
+	PublicRegionRestricted       bool
+	PublicIATAs                  []string
+	TrustProxyHeaders            bool
+	TrustedProxyCIDRs            []string
+	MetricsPublic                bool
+	PublicCacheMaxReconcileAgeMs int64
+	PublicEventsEnabled          bool
+	PublicViewportEnabled        bool
+	PublicNOCEnabled             bool
+	PublicCoverageEnabled        bool
+	PublicLOSEnabled             bool
+	PublicSchemaEnabled          bool
+	PublicIntegrationsEnabled    bool
+	UnboundedRetention           bool
 }
 
 type Server struct {
-	Config            Config
-	Store             *store.Store
-	Hub               *live.Hub
-	PublicHub         *live.Hub
-	Runtime           *live.RuntimeStats
-	Log               *slog.Logger
-	MQTTConnected     func() bool
-	MQTTTotal         func() int64
-	MQTTStatus        func(time.Time) imqtt.Status
-	PublicState       func() (live.PublicLiveState, bool)
-	PublicCacheStatus func(time.Time) live.PublicCacheStatus
-	PublicAllowsIATA  func(string) bool
-	SolarConditions   func() *solar.Conditions
+	Config                Config
+	Store                 *store.Store
+	Hub                   *live.Hub
+	PublicHub             *live.Hub
+	Runtime               *live.RuntimeStats
+	Log                   *slog.Logger
+	MQTTConnected         func() bool
+	MQTTTotal             func() int64
+	MQTTStatus            func(time.Time) imqtt.Status
+	PublicState           func() (live.PublicLiveState, bool)
+	PublicStateSerialized func() (live.PublicStateSerialization, bool)
+	PublicCacheStatus     func(time.Time) live.PublicCacheStatus
+	PublicAllowsIATA      func(string) bool
+	SolarConditions       func() *solar.Conditions
+	StaticAssetsReady     func() bool
 
 	historyLocations *historyLocationCache
 	summaryCache     *historySummaryCache
 	rateLimiter      *rateLimiter
+	wsAdmission      *wsAdmissionLimiter
 	startTime        time.Time
 	memStatsMu       sync.Mutex
 	memStatsCached   runtime.MemStats
@@ -187,11 +217,15 @@ func (s *Server) Routes() http.Handler {
 	if s.rateLimiter == nil {
 		s.rateLimiter = newRateLimiter(60, 30)
 	}
+	if s.wsAdmission == nil {
+		s.wsAdmission = newWSAdmissionLimiter(5)
+	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /metrics", s.metrics)
+	mux.HandleFunc("GET /metrics", http.NotFound)
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /readyz", s.readyz)
 	mux.HandleFunc("GET /api/v1/public/state", s.rateLimited(s.publicState))
+	mux.HandleFunc("GET /api/v1/public/bootstrap", s.rateLimited(s.publicBootstrap))
 	mux.HandleFunc("GET /api/v1/public/history", s.rateLimited(s.publicHistory))
 	mux.HandleFunc("GET /api/v1/public/history/summary", s.rateLimited(s.publicHistorySummary))
 	mux.HandleFunc("GET /api/v1/public/events", s.rateLimited(s.publicEvents))
@@ -205,7 +239,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/public/los/profile", s.rateLimited(s.publicLOSProfile))
 	mux.HandleFunc("GET /api/v1/public/schema", s.rateLimited(s.publicSchema))
 	mux.HandleFunc("GET /api/v1/public/integrations/home-assistant", s.rateLimited(s.publicSensorSummary))
-	mux.Handle("GET /ws/public", s.PublicHub)
+	mux.HandleFunc("GET /ws/public", s.publicWebSocket)
 	if !s.Config.PublicMode {
 		mux.HandleFunc("GET /api/v1/live/state", s.liveState)
 		mux.HandleFunc("GET /api/v1/nodes", s.nodes)
@@ -221,9 +255,31 @@ func (s *Server) Routes() http.Handler {
 	return withSecurityHeaders(mux)
 }
 
+func (s *Server) MetricsRoutes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /metrics", s.metrics)
+	return withSecurityHeaders(mux)
+}
+
+func (s *Server) publicWebSocket(w http.ResponseWriter, r *http.Request) {
+	if s.PublicHub == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("public websocket unavailable"))
+		return
+	}
+	ip := clientIP(r, s.Config.TrustProxyHeaders, s.Config.TrustedProxyCIDRs)
+	if !s.wsAdmission.acquire(ip) {
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, errors.New("public websocket connection limit exceeded"))
+		return
+	}
+	if upgraded := s.PublicHub.ServeHTTPWithClose(w, r, func() { s.wsAdmission.release(ip) }); !upgraded {
+		s.wsAdmission.release(ip)
+	}
+}
+
 func (s *Server) rateLimited(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.rateLimiter.allow(clientIP(r, s.Config.TrustProxyHeaders)) {
+		if !s.rateLimiter.allow(clientIP(r, s.Config.TrustProxyHeaders, s.Config.TrustedProxyCIDRs)) {
 			w.Header().Set("Retry-After", "60")
 			writeError(w, http.StatusTooManyRequests, errors.New("rate limit exceeded"))
 			return
@@ -233,16 +289,112 @@ func (s *Server) rateLimited(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.operationalStatus(r.Context(), false))
+	writeJSON(w, http.StatusOK, s.healthStatus(time.Now()))
+}
+
+func (s *Server) healthStatus(now time.Time) map[string]any {
+	cacheStatus := live.PublicCacheStatus{}
+	if s.PublicCacheStatus != nil {
+		cacheStatus = s.PublicCacheStatus(now)
+	}
+	mqttStatus := imqtt.Status{Connected: s.mqttConnected()}
+	if s.MQTTStatus != nil {
+		mqttStatus = s.MQTTStatus(now)
+	}
+	state := live.PublicLiveState{}
+	if s.PublicState != nil {
+		state, _ = s.PublicState()
+	}
+	runtimeHealth := s.publicRuntimeHealth(now, state)
+	dbReady := s.Store != nil
+	staticReady := s.staticAssetsReady()
+	publicStateReady := cacheStatus.Ready
+	mqttSessionReady := !mqttStatus.Enabled || mqttStatus.SessionReady
+	ready := dbReady && staticReady && publicStateReady && mqttSessionReady && runtimeHealth.StoragePressureState != "critical" && !s.Config.UnboundedRetention
+	return map[string]any{
+		"ok": true, "ready": ready,
+		"dbReady": dbReady, "staticReady": staticReady, "publicStateReady": publicStateReady,
+		"mqttSessionReady": mqttSessionReady,
+		"datasetState":     runtimeHealth.DatasetState, "datasetStartedAt": runtimeHealth.DatasetStartedAt,
+		"storagePressureState": runtimeHealth.StoragePressureState,
+		"version":              fallbackString(s.Config.AppVersion, "dev"), "gitSha": fallbackString(s.Config.GitSHA, "unknown"),
+		"buildTime": fallbackString(s.Config.BuildTime, "unknown"),
+	}
 }
 
 func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
-	status := s.operationalStatus(r.Context(), true)
+	status := s.readinessStatus(r.Context())
 	code := http.StatusOK
 	if ready, ok := status["ready"].(bool); !ok || !ready {
 		code = http.StatusServiceUnavailable
 	}
 	writeJSON(w, code, status)
+}
+
+func (s *Server) readinessStatus(ctx context.Context) map[string]any {
+	now := time.Now()
+	dbReady := false
+	if s.Store != nil {
+		pingCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+		dbReady = s.Store.Ping(pingCtx) == nil
+		cancel()
+	}
+	staticReady := s.staticAssetsReady()
+	cacheStatus := live.PublicCacheStatus{}
+	if s.PublicCacheStatus != nil {
+		cacheStatus = s.PublicCacheStatus(now)
+	}
+	mqttStatus := imqtt.Status{Connected: s.mqttConnected()}
+	if s.MQTTStatus != nil {
+		mqttStatus = s.MQTTStatus(now)
+	}
+	runtimeStats := live.RuntimeStatsSnapshot{}
+	if s.Runtime != nil {
+		runtimeStats = s.Runtime.Snapshot()
+	}
+	derivedOldestAgeMs := currentQueueAgeMs(now.UnixMilli(), runtimeStats.DerivedOldestAtMs)
+	storage := store.StorageInfo{PressureState: "ok"}
+	if s.Store != nil {
+		storage = s.Store.StorageInfo()
+	}
+	state := live.PublicLiveState{}
+	if s.PublicState != nil {
+		state, _ = s.PublicState()
+	}
+	runtimeHealth := s.publicRuntimeHealth(now, state)
+	maxReconcileAge := s.Config.PublicCacheMaxReconcileAgeMs
+	if maxReconcileAge <= 0 {
+		maxReconcileAge = 30_000
+	}
+	mqttReady := !mqttStatus.Enabled || mqttStatus.SessionReady
+	primaryOccupancyReady := mqttStatus.QueueCapacity <= 0 || mqttStatus.QueueDepth*4 < mqttStatus.QueueCapacity*3
+	derivedOccupancyReady := runtimeStats.DerivedQueueCapacity <= 0 || runtimeStats.DerivedQueueDepth*4 < runtimeStats.DerivedQueueCapacity*3
+	queueOccupancyReady := primaryOccupancyReady && derivedOccupancyReady
+	queueAgeReady := mqttStatus.OldestQueueItemAgeMs <= 2_000 && derivedOldestAgeMs <= 2_000
+	cacheReady := cacheStatus.Ready && cacheStatus.FullReconcileAgeMs <= maxReconcileAge && !runtimeStats.CacheRefreshLastFailed
+	countersReady := mqttStatus.DroppedMessages == 0 && runtimeStats.DerivedDropped == 0 && runtimeStats.DerivedFailures == 0 && runtimeStats.StoreWriteFailures == 0 && runtimeStats.StoreWriteFullErrors == 0
+	storageReady := storage.PressureState != "critical"
+	reasons := []string{}
+	for _, item := range []struct {
+		ok     bool
+		reason string
+	}{
+		{dbReady, "database_unavailable"}, {staticReady, "static_assets_missing"}, {cacheReady, "public_cache_stale_or_failed"},
+		{mqttReady, "mqtt_session_not_ready"}, {queueOccupancyReady, "ingest_queue_occupancy_high"}, {queueAgeReady, "ingest_queue_oldest_item_stale"},
+		{countersReady, "process_ingest_error_counter_nonzero"}, {storageReady, "storage_critical"}, {!s.Config.UnboundedRetention, "unbounded_retention"},
+	} {
+		if !item.ok {
+			reasons = append(reasons, item.reason)
+		}
+	}
+	ready := len(reasons) == 0
+	return map[string]any{
+		"ok": ready, "ready": ready, "reasons": reasons,
+		"dbReady": dbReady, "staticReady": staticReady, "publicStateReady": cacheStatus.Ready,
+		"mqttSessionReady": mqttReady, "datasetState": runtimeHealth.DatasetState,
+		"storagePressureState": storage.PressureState,
+		"version":              fallbackString(s.Config.AppVersion, "dev"), "gitSha": fallbackString(s.Config.GitSHA, "unknown"),
+	}
 }
 
 func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[string]any {
@@ -263,7 +415,7 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 		mqttStatus = s.MQTTStatus(now)
 	}
 	publicHubStats := s.publicHubStats()
-	staticReady := StaticReady()
+	staticReady := s.staticAssetsReady()
 	runtimeStats := live.RuntimeStatsSnapshot{}
 	if s.Runtime != nil {
 		runtimeStats = s.Runtime.Snapshot()
@@ -287,13 +439,22 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 		"publicStateReady":                cacheStatus.Ready,
 		"cacheAgeMs":                      cacheStatus.CacheAgeMs,
 		"cacheUpdatedAt":                  cacheStatus.UpdatedAt,
+		"fullReconciledAt":                cacheStatus.FullReconciledAt,
+		"fullReconcileAgeMs":              cacheStatus.FullReconcileAgeMs,
 		"cacheTruncatedNodes":             cacheStatus.TruncatedNodes,
 		"cacheTruncatedRoutes":            cacheStatus.TruncatedRoutes,
 		"cacheTruncatedRecentPulses":      cacheStatus.TruncatedRecentPulses,
 		"cacheTruncatedRecentActivity":    cacheStatus.TruncatedRecentActivity,
 		"mqttConnected":                   mqttStatus.Connected,
+		"mqttSubscribed":                  mqttStatus.Subscribed,
+		"mqttSessionReady":                !mqttStatus.Enabled || mqttStatus.SessionReady,
+		"mqttQueueDepth":                  mqttStatus.QueueDepth,
+		"mqttQueueCapacity":               mqttStatus.QueueCapacity,
+		"mqttQueueOldestItemAgeMs":        mqttStatus.OldestQueueItemAgeMs,
 		"mqttLastMessageAgeMs":            mqttStatus.LastMessageAgeMs,
 		"mqttMessages":                    mqttStatus.TotalMessages,
+		"mqttAcceptedMessages":            mqttStatus.AcceptedMessages,
+		"mqttProcessedMessages":           mqttStatus.ProcessedMessages,
 		"mqttDroppedMessages":             mqttStatus.DroppedMessages,
 		"mqttReconnects":                  mqttStatus.Reconnects,
 		"mqttMalformedTopics":             mqttStatus.MalformedTopics,
@@ -340,14 +501,40 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 		"packetPathSearchIndexSynced":     runtimeStats.PacketPathSearchIndexLastSync,
 		"packetPathSearchIndexRemaining":  runtimeStats.PacketPathSearchIndexRemaining,
 		"packetPathBackfillRemaining":     runtimeStats.PacketPathBackfillRemaining,
+		"storeWriteAttempts":              runtimeStats.StoreWriteAttempts,
+		"storeWriteRetries":               runtimeStats.StoreWriteRetries,
+		"storeWriteFailures":              runtimeStats.StoreWriteFailures,
+		"storeWriteBusyErrors":            runtimeStats.StoreWriteBusyErrors,
+		"storeWriteFullErrors":            runtimeStats.StoreWriteFullErrors,
+		"storeWriteLatencyMs":             runtimeStats.StoreWriteLastLatencyMs,
 		"cacheRefreshFailures":            runtimeStats.CacheRefreshFailures,
+		"cacheRefreshLastFailed":          runtimeStats.CacheRefreshLastFailed,
+		"ingestDuplicateSuppressions":     runtimeStats.IngestDuplicateSuppressions,
+		"derivedAccepted":                 runtimeStats.DerivedAccepted,
+		"derivedProcessed":                runtimeStats.DerivedProcessed,
+		"derivedDropped":                  runtimeStats.DerivedDropped,
+		"derivedFailures":                 runtimeStats.DerivedFailures,
+		"derivedQueueDepth":               runtimeStats.DerivedQueueDepth,
+		"derivedQueueCapacity":            runtimeStats.DerivedQueueCapacity,
+		"derivedOldestAt":                 runtimeStats.DerivedOldestAtMs,
+		"derivedOldestItemAgeMs":          currentQueueAgeMs(now.UnixMilli(), runtimeStats.DerivedOldestAtMs),
+		"derivedLatencyMs":                runtimeStats.DerivedLastLatencyMs,
+		"counterReset":                    "process_restart",
 		"packetCountRefreshFailures":      runtimeStats.PacketCountRefreshFailures,
 		"packetCountRefreshLatencyMs":     runtimeStats.PacketCountRefreshLastLatencyMs,
 		"packetCountRefreshLastAt":        runtimeStats.PacketCountRefreshLastAtMs,
 		"cached":                          cacheStatus.Ready,
 	}
+	runtimeHealth := s.publicRuntimeHealth(now, live.PublicLiveState{})
+	payload["datasetState"] = runtimeHealth.DatasetState
+	payload["datasetStartedAt"] = runtimeHealth.DatasetStartedAt
+	payload["storagePressureState"] = runtimeHealth.StoragePressureState
 	if s.PublicState != nil {
 		if state, ok := s.PublicState(); ok {
+			runtimeHealth := s.publicRuntimeHealth(now, state)
+			payload["datasetState"] = runtimeHealth.DatasetState
+			payload["datasetStartedAt"] = runtimeHealth.DatasetStartedAt
+			payload["storagePressureState"] = runtimeHealth.StoragePressureState
 			payload["packets"] = state.Stats.Packets
 			payload["nodesWithPosition"] = state.Stats.ActiveNodes
 			payload["edgeEvents"] = state.Stats.ActiveRoutes
@@ -369,9 +556,49 @@ func (s *Server) operationalStatus(ctx context.Context, includeDB bool) map[stri
 		}
 	}
 	if includeDB {
-		payload["ready"] = dbReady && cacheStatus.Ready && staticReady
+		mqttReady := !mqttStatus.Enabled || mqttStatus.SessionReady
+		storageReady := s.Store == nil || s.Store.StorageInfo().PressureState != "critical"
+		payload["ready"] = dbReady && cacheStatus.Ready && staticReady && mqttReady && storageReady && !s.Config.UnboundedRetention
 	}
 	return payload
+}
+
+func (s *Server) staticAssetsReady() bool {
+	if s.StaticAssetsReady != nil {
+		return s.StaticAssetsReady()
+	}
+	return StaticReady()
+}
+
+func (s *Server) publicRuntimeHealth(now time.Time, state live.PublicLiveState) live.PublicRuntimeHealth {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	mqttStatus := imqtt.Status{Connected: s.mqttConnected()}
+	if s.MQTTStatus != nil {
+		mqttStatus = s.MQTTStatus(now)
+	}
+	sessionReady := !mqttStatus.Enabled || mqttStatus.SessionReady
+	datasetState := "fresh_start"
+	if state.Stats.Packets > 0 {
+		datasetState = "live"
+	} else if sessionReady {
+		datasetState = "warming"
+	}
+	storageState := "ok"
+	if s.Store != nil {
+		storageState = s.Store.StorageInfo().PressureState
+	}
+	startedAt := s.startTime.UnixMilli()
+	if s.startTime.IsZero() {
+		startedAt = now.UnixMilli()
+	}
+	return live.PublicRuntimeHealth{
+		MQTTSessionReady:     sessionReady,
+		DatasetState:         datasetState,
+		DatasetStartedAt:     startedAt,
+		StoragePressureState: storageState,
+	}
 }
 
 func publicLatestAgeMs(now time.Time, latest int64) int64 {
@@ -383,6 +610,13 @@ func publicLatestAgeMs(now time.Time, latest int64) int64 {
 		return 0
 	}
 	return age
+}
+
+func currentQueueAgeMs(nowMs int64, oldestAtMs int64) int64 {
+	if oldestAtMs <= 0 {
+		return 0
+	}
+	return max(nowMs-oldestAtMs, 0)
 }
 
 func latestRoutePulseAt(items []live.PublicRoutePulse) int64 {
@@ -414,6 +648,8 @@ const (
 	liveStateWarming      = "warming"
 	liveStateMoving       = "moving"
 	liveStateDegraded     = "degraded"
+
+	packetIngestStaleAfterMs = 60_000
 )
 
 type publicLiveHealthSnapshot struct {
@@ -434,7 +670,7 @@ func publicLiveHealth(cacheAgeMs int64, routePulseAgeMs int64, observerBurstAgeM
 		packetState = liveStateDisconnected
 	} else if mqttStatus.LastMessageAgeMs < 0 {
 		packetState = liveStateMissing
-	} else if mqttStatus.LastMessageAgeMs > 5_000 {
+	} else if mqttStatus.LastMessageAgeMs > packetIngestStaleAfterMs {
 		packetState = liveStateStale
 	}
 
@@ -451,8 +687,6 @@ func publicLiveHealth(cacheAgeMs int64, routePulseAgeMs int64, observerBurstAgeM
 	mapMotionState := liveStateQuiet
 	if mapMotionFresh {
 		mapMotionState = liveStateMoving
-	} else if routeState == liveStateMissing && observerState == liveStateMissing {
-		mapMotionState = liveStateMissing
 	}
 
 	packetFresh := packetState == liveStateFresh
@@ -480,7 +714,7 @@ func publicLiveHealth(cacheAgeMs int64, routePulseAgeMs int64, observerBurstAgeM
 
 func motionState(ageMs int64) string {
 	if ageMs < 0 {
-		return liveStateMissing
+		return liveStateQuiet
 	}
 	if ageMs <= 120_000 {
 		return liveStateFresh
@@ -502,6 +736,31 @@ func (s *Server) publicState(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		s.recordPublicState(time.Since(start), failed)
 	}()
+	if s.PublicStateSerialized != nil {
+		if serialized, ok := s.PublicStateSerialized(); ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("ETag", serialized.ETag)
+			w.Header().Set("Cache-Control", "public, max-age=5")
+			w.Header().Add("Vary", "Accept-Encoding")
+			if r.Header.Get("If-None-Match") == serialized.ETag {
+				w.WriteHeader(http.StatusNotModified)
+				failed = false
+				return
+			}
+			body := serialized.JSON
+			if strings.Contains(strings.ToLower(r.Header.Get("Accept-Encoding")), "gzip") && len(serialized.Gzip) > 0 {
+				w.Header().Set("Content-Encoding", "gzip")
+				body = serialized.Gzip
+			}
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			w.WriteHeader(http.StatusOK)
+			if _, err := w.Write(body); err != nil {
+				return
+			}
+			failed = false
+			return
+		}
+	}
 	if s.PublicState != nil {
 		if state, ok := s.PublicState(); ok {
 			now := time.Now().UnixMilli()
@@ -2182,7 +2441,7 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.cartocdn.com https://*.maplibre.org https://*.openfreemap.org https://tiles.openfreemap.org https://s3.amazonaws.com https://demotiles.maplibre.org https://*.basemaps.cartocdn.com https://tile.openweathermap.org; connect-src 'self' wss: ws: https://api.github.com https://services.swpc.noaa.gov https://*.cartocdn.com https://*.openfreemap.org https://tiles.openfreemap.org https://s3.amazonaws.com https://demotiles.maplibre.org https://*.basemaps.cartocdn.com https://api.openweathermap.org https://tile.openweathermap.org https://cloudflareinsights.com; font-src 'self' https://tiles.openfreemap.org https://fonts.openfreemap.org https://demotiles.maplibre.org; worker-src 'self' blob:")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.cartocdn.com https://*.maplibre.org https://*.openfreemap.org https://tiles.openfreemap.org https://s3.amazonaws.com https://demotiles.maplibre.org https://*.basemaps.cartocdn.com https://tile.openweathermap.org; connect-src 'self' wss: ws: https://services.swpc.noaa.gov https://*.cartocdn.com https://*.openfreemap.org https://tiles.openfreemap.org https://s3.amazonaws.com https://demotiles.maplibre.org https://*.basemaps.cartocdn.com https://api.openweathermap.org https://tile.openweathermap.org https://cloudflareinsights.com; font-src 'self' https://tiles.openfreemap.org https://fonts.openfreemap.org https://demotiles.maplibre.org; worker-src 'self' blob:")
 		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 		next.ServeHTTP(w, r)
 	}))
@@ -2222,6 +2481,9 @@ func (w gzipResponseWriter) Write(data []byte) (int, error) {
 }
 
 func shouldGzip(r *http.Request) bool {
+	if r.URL.Path == "/api/v1/public/state" {
+		return false
+	}
 	if strings.Contains(strings.ToLower(r.Header.Get("Upgrade")), "websocket") {
 		return false
 	}

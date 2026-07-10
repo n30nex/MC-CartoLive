@@ -108,7 +108,7 @@ LIMIT ?`
 	}
 	args = append(args, limit)
 
-	rows, err := s.db.QueryContext(ctx, sqlText, args...)
+	rows, err := s.reader().QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +147,7 @@ ORDER BY e.heard_at_ms DESC, e.id DESC
 LIMIT ?`
 	args = append(args, limit)
 
-	rows, err := s.db.QueryContext(ctx, sqlText, args...)
+	rows, err := s.reader().QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +272,7 @@ LIMIT ?`
 	args = append(args, packetArgs...)
 	args = append(args, limit)
 
-	rows, err := s.db.QueryContext(ctx, sqlText, args...)
+	rows, err := s.reader().QueryContext(ctx, sqlText, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +342,7 @@ func (s *Store) PublicHistorySummary(ctx context.Context, from int64, to int64, 
 	if bucketMs <= 0 {
 		bucketMs = int64(time.Hour / time.Millisecond)
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 SELECT COALESCE(po.iata, '') AS iata, CAST((e.heard_at_ms - ?) / ? AS INTEGER) AS bucket, COUNT(*) AS count
 FROM live_edge_events e
 LEFT JOIN packet_observations po ON po.id=e.observation_id
@@ -368,7 +368,7 @@ func (s *Store) PublicHistorySummaryTotals(ctx context.Context, from int64, to i
 	if bucketMs <= 0 {
 		bucketMs = int64(time.Hour / time.Millisecond)
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.reader().QueryContext(ctx, `
 SELECT '' AS iata, CAST((heard_at_ms - ?) / ? AS INTEGER) AS bucket, COUNT(*) AS count
 FROM live_edge_events
 WHERE heard_at_ms >= ? AND heard_at_ms <= ?

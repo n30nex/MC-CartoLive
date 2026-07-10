@@ -1,19 +1,6 @@
-export interface RepoStats {
-  stars: number;
-  forks: number;
-}
-
-export interface CachedRepoStats {
-  fetchedAt: number;
-  stats: RepoStats;
-}
-
 export const GITHUB_REPO_OWNER = 'n30nex';
 export const GITHUB_REPO_NAME = 'MC-CartoLive';
 export const GITHUB_REPO_URL = `https://github.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}`;
-export const GITHUB_REPO_API_URL = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}`;
-export const GITHUB_STATS_CACHE_KEY = 'mc-cartolive-github-stats';
-export const GITHUB_STATS_CACHE_TTL_MS = 30 * 60_000;
 
 const SHORT_SHA_LENGTH = 7;
 const COMPACT_UTC_BUILD_TIME_RE = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/;
@@ -117,35 +104,4 @@ function parseBuildZoneOffsetMinutes(zone: string): number {
   if (offsetHours > 23 || offsetMinutes > 59) return Number.NaN;
   const total = offsetHours * 60 + offsetMinutes;
   return sign === '+' ? total : -total;
-}
-
-export function normalizeRepoStats(payload: unknown): RepoStats | null {
-  if (!payload || typeof payload !== 'object') return null;
-  const maybe = payload as { stargazers_count?: unknown; forks_count?: unknown };
-  const stars = typeof maybe.stargazers_count === 'number' ? maybe.stargazers_count : null;
-  const forks = typeof maybe.forks_count === 'number' ? maybe.forks_count : null;
-  if (stars === null || forks === null) return null;
-  return { stars: Math.max(0, Math.floor(stars)), forks: Math.max(0, Math.floor(forks)) };
-}
-
-export function readCachedRepoStats(storage: Storage | undefined, now = Date.now(), ttlMs = GITHUB_STATS_CACHE_TTL_MS): RepoStats | null {
-  if (!storage) return null;
-  try {
-    const cached = JSON.parse(storage.getItem(GITHUB_STATS_CACHE_KEY) ?? 'null') as CachedRepoStats | null;
-    if (!cached || now - cached.fetchedAt > ttlMs) return null;
-    if (!Number.isFinite(cached.fetchedAt)) return null;
-    if (!Number.isFinite(cached.stats.stars) || !Number.isFinite(cached.stats.forks)) return null;
-    return cached.stats;
-  } catch {
-    return null;
-  }
-}
-
-export function writeCachedRepoStats(storage: Storage | undefined, stats: RepoStats, now = Date.now()): void {
-  if (!storage) return;
-  try {
-    storage.setItem(GITHUB_STATS_CACHE_KEY, JSON.stringify({ fetchedAt: now, stats }));
-  } catch {
-    // Best-effort cache only.
-  }
 }

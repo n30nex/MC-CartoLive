@@ -203,9 +203,31 @@ export type PublicEvent =
 
 export interface PublicEventsResponse {
   serverTime: number;
+  oldestSeq: number;
   latestSeq: number;
+  resetRequired: boolean;
   events: PublicEvent[];
   nextCursor?: string;
+}
+
+export interface PublicMapCluster {
+  id: string;
+  latitude: number;
+  longitude: number;
+  count: number;
+  activityCount?: number;
+  lastSeen?: number;
+  region?: string;
+}
+
+export interface PublicBootstrapResponse {
+  serverTime: number;
+  map?: PublicMapConfig;
+  stats: PublicStats;
+  latestSeq: number;
+  health: RuntimeHealth;
+  clusters: PublicMapCluster[];
+  recentActivity: PublicActivity[];
 }
 
 export interface PublicViewportResponse {
@@ -213,6 +235,7 @@ export interface PublicViewportResponse {
   latestSeq?: number;
   nodes: PublicNode[];
   routes: PublicRoute[];
+  clusters?: PublicMapCluster[];
   events?: PublicEvent[];
   bbox?: number[];
   zoom?: number;
@@ -421,46 +444,17 @@ export interface PublicHistorySummaryResponse {
 export interface RuntimeHealth {
   ok?: boolean;
   ready?: boolean;
+  reasons?: string[];
   version?: string;
   gitSha?: string;
   buildTime?: string;
-  cached?: boolean;
   dbReady?: boolean;
   staticReady?: boolean;
   publicStateReady?: boolean;
-  mqttConnected?: boolean;
-  mqttMessages?: number;
-  mqttDroppedMessages?: number;
-  mqttMalformedTopics?: number;
-  mqttReconnects?: number;
-  mqttLastMessageAgeMs?: number;
-  cacheAgeMs?: number;
-  cacheRefreshFailures?: number;
-  publicStateRequests?: number;
-  publicStateErrors?: number;
-  publicHistoryRequests?: number;
-  publicHistoryErrors?: number;
-  publicHistoryLatencyMs?: number;
-  publicSummaryRequests?: number;
-  publicSummaryErrors?: number;
-  packetIngestState?: string;
-  packetIngestFresh?: boolean;
-  publicCacheState?: string;
-  publicLiveFresh?: boolean;
-  mapMotionState?: string;
-  routeMotionState?: string;
-  observerMotionState?: string;
-  liveConfidenceState?: string;
-  recentRoutePulseAgeMs?: number;
-  recentObserverBurstAgeMs?: number;
-  packets?: number;
-  nodesWithPosition?: number;
-  edgeEvents?: number;
-  unresolved?: number;
-  wsClients?: number;
-  wsDroppedMessages?: number;
-  wsQueueHighWater?: number;
-  wsPingFailures?: number;
+  mqttSessionReady?: boolean;
+  datasetState?: 'fresh_start' | 'warming' | 'live' | string;
+  datasetStartedAt?: number;
+  storagePressureState?: 'ok' | 'warn' | 'critical' | string;
 }
 
 export type Health = RuntimeHealth;
