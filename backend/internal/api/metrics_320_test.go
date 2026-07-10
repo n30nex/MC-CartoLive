@@ -3,7 +3,12 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"meshcore-canada-live-map/backend/internal/live"
+	imqtt "meshcore-canada-live-map/backend/internal/mqtt"
 )
 
 func TestPublicMetricsAreLoopbackOnlyByDefault(t *testing.T) {
@@ -29,6 +34,7 @@ func TestPublicMetricsAreLoopbackOnlyByDefault(t *testing.T) {
 		t.Fatalf("dedicated loopback metrics status=%d want 200", dedicatedResponse.Code)
 	}
 }
+
 func TestDedicatedMetricsUsesListenerBoundary(t *testing.T) {
 	server := &Server{Config: Config{PublicMode: true}}
 	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -37,5 +43,28 @@ func TestDedicatedMetricsUsesListenerBoundary(t *testing.T) {
 	server.metrics(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("dedicated metrics status=%d want 200", response.Code)
+	}
+}
+
+func TestDetailedMetricsReportConfiguredQueueCapacities(t *testing.T) {
+	runtimeStats := live.NewRuntimeStats()
+	runtimeStats.UpdateDerivedQueue(0, 1024, 0)
+	server := &Server{
+		Runtime: runtimeStats,
+		MQTTStatus: func(time.Time) imqtt.Status {
+			return imqtt.Status{QueueCapacity: 4096}
+		},
+	}
+	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	response := httptest.NewRecorder()
+	server.metrics(response, request)
+	body := response.Body.String()
+	for _, metric := range []string{
+		"meshcore_mqtt_queue_capacity 4096",
+		"meshcore_derived_queue_capacity 1024",
+	} {
+		if !strings.Contains(body, metric) {
+			t.Fatalf("metrics missing %q: %s", metric, body)
+		}
 	}
 }

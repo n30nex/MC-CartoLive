@@ -47,18 +47,54 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
           echo "build_time=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Require successful main CI for the tagged SHA
+      - name: Require successful main CI and CodeQL for the tagged SHA
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          runs_json="$(gh api --method GET \
-            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
-            -f head_sha="$MERGE_SHA" -f status=completed -f per_page=100)"
-          count="$(printf '%s' "$runs_json" | jq --arg repository "$REPOSITORY" \
-            '[.workflow_runs[] | select(.conclusion == "success" and .event == "push" and .head_branch == "main" and .head_repository.full_name == $repository)] | length')"
-          test "$count" -gt 0
+          for workflow in ci.yml codeql.yml; do
+            runs_json="$(gh api --method GET \
+              "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs" \
+              -f head_sha="$MERGE_SHA" -f status=completed -f per_page=100)"
+            count="$(printf '%s' "$runs_json" | jq --arg repository "$REPOSITORY" \
+              '[.workflow_runs[] | select(.conclusion == "success" and .event == "push" and .head_branch == "main" and .head_repository.full_name == $repository)] | length')"
+            test "$count" -gt 0
+          done
+      - name: Load canonical full performance evidence
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          artifact_name="release-performance-full-$MERGE_SHA"
+          artifact_json="$(gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/artifacts" \
+            -f name="$artifact_name" -f per_page=100)"
+          artifact_id="$(printf '%s' "$artifact_json" | jq -r '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty')"
+          run_id="$(printf '%s' "$artifact_json" | jq -r --argjson id "${artifact_id:-0}" '.artifacts[] | select(.id == $id) | .workflow_run.id')"
+          test -n "$artifact_id"
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")"
+          printf '%s' "$run_json" | jq -e \
+            --arg sha "$MERGE_SHA" --arg repository "$GITHUB_REPOSITORY" \
+            '.name == "Release performance gate" and .path == ".github/workflows/release-performance.yml" and .conclusion == "success" and .event == "workflow_dispatch" and .head_branch == "main" and .head_sha == $sha and .head_repository.full_name == $repository' >/dev/null
+          rm -rf /tmp/mc-cartolive-performance-evidence
+          mkdir -p /tmp/mc-cartolive-performance-evidence
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > /tmp/mc-cartolive-performance.zip
+          unzip -q /tmp/mc-cartolive-performance.zip -d /tmp/mc-cartolive-performance-evidence
+          report=/tmp/mc-cartolive-performance-evidence/report.json
+          test -f "$report"
+          workflow_ref="$GITHUB_REPOSITORY/.github/workflows/release-performance.yml@refs/heads/main"
+          jq -e \
+            --arg sha "$MERGE_SHA" --arg repository "$GITHUB_REPOSITORY" \
+            --arg runId "$run_id" --arg version "$VERSION" --arg workflowRef "$workflow_ref" \
+            '.version == $version and .profile == "full" and .canonicalReleaseProof == true and .passed == true and (.failures | length) == 0 and
+             .github.sha == $sha and .github.ref == "refs/heads/main" and .github.repository == $repository and .github.event == "workflow_dispatch" and .github.workflow == "Release performance gate" and .github.workflowRef == $workflowRef and .github.runId == $runId and
+             .config == {sustainedRate:20,sustainedSeconds:1800,burstRate:100,burstSeconds:60,apiRows:5000000,apiPathRows:10000,apiEvents:20000,apiSamples:200,wsClients:250,wsSeconds:1800,wsQuietSeconds:70,wsIsolationEvents:1000,wsIsolationRate:100,wsIsolationBytes:4096,mqttQueueCapacity:4096,derivedQueueCapacity:1024,metricSampleMs:250,memoryLimitBytes:629145600} and
+             .phases.sustainedIngest.passed == true and .phases.sustainedIngest.reportedPrimaryQueueCapacities == [4096] and .phases.sustainedIngest.reportedDerivedQueueCapacities == [1024] and .phases.sustainedIngest.processRssSource == "linux-proc-status-vmrss" and .phases.sustainedIngest.processRssP95Bytes > 0 and .phases.sustainedIngest.processRssP95Bytes < 629145600 and
+             .phases.burstIngest.passed == true and .phases.burstIngest.reportedPrimaryQueueCapacities == [4096] and .phases.burstIngest.reportedDerivedQueueCapacities == [1024] and .phases.burstIngest.processRssSource == "linux-proc-status-vmrss" and .phases.burstIngest.processRssP95Bytes > 0 and .phases.burstIngest.processRssP95Bytes < 629145600 and
+             .phases.api.passed == true and .phases.api.seeded.observationRows >= 5000000 and .phases.websocket.passed == true and .phases.websocket.clients == 250' "$report" >/dev/null
       - name: Load immutable candidate evidence
         id: evidence
         env:

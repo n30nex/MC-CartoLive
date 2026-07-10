@@ -53,6 +53,12 @@ const productionCompose = read('docker-compose.production.yml');
 if (/^\s+build:/m.test(productionCompose)) errors.push('production Compose must not build');
 if (!productionCompose.includes('MC_CARTOLIVE_IMAGE:?')) errors.push('production Compose must require MC_CARTOLIVE_IMAGE');
 if (!productionCompose.includes('127.0.0.1:39476:8080')) errors.push('production diagnostics must bind to loopback');
+if (!productionCompose.includes('MQTT_INGEST_QUEUE_SIZE: "4096"')) {
+  errors.push('production Compose must pin the normalized ingest queue to 4096');
+}
+if (!productionCompose.includes('DERIVED_INGEST_QUEUE_SIZE: "1024"')) {
+  errors.push('production Compose must pin the derived ingest queue to 1024');
+}
 for (const identity of ['APP_VERSION:', 'GIT_SHA:', 'BUILD_TIME:', 'VITE_GIT_SHA:', 'VITE_BUILD_TIME:']) {
   if (productionCompose.includes(identity)) errors.push(`production Compose must not override compiled ${identity.slice(0, -1)}`);
 }
@@ -75,6 +81,17 @@ for (const proof of [
 ]) {
   if (!publishWorkflow.includes(proof)) errors.push(`tag workflow does not reverify candidate trust proof: ${proof}`);
 }
+for (const gate of [
+  'for workflow in ci.yml codeql.yml',
+  'release-performance-full-$MERGE_SHA',
+  '.canonicalReleaseProof == true',
+  '.github.runId == $runId',
+  '.config == {sustainedRate:20',
+  'reportedDerivedQueueCapacities == [1024]',
+  'processRssP95Bytes < 629145600',
+]) {
+  if (!publishWorkflow.includes(gate)) errors.push(`tag workflow does not require exact release-gate evidence: ${gate}`);
+}
 
 const candidateWorkflow = read('.github/workflows/image-candidate.yml');
 for (const boundary of [
@@ -89,6 +106,20 @@ for (const boundary of [
   'verifiedMainSha:$verifiedMainSha',
 ]) {
   if (!candidateWorkflow.includes(boundary)) errors.push(`candidate workflow trust boundary is missing: ${boundary}`);
+}
+
+const performanceGate = read('scripts/performance-gate.mjs');
+for (const contract of [
+  "derivedQueueCapacity: envNumber('PERF_DERIVED_QUEUE_CAPACITY', 1024)",
+  'derivedQueueCapacity: 1024',
+  "processRssSource: 'linux-proc-status-vmrss'",
+  "fs.readFile(`/proc/${pid}/status`, 'utf8')",
+  'reportedPrimaryQueueCapacities',
+  'reportedDerivedQueueCapacities',
+  "ref: 'refs/heads/main'",
+  "event: 'workflow_dispatch'",
+]) {
+  if (!performanceGate.includes(contract)) errors.push(`canonical performance contract is missing: ${contract}`);
 }
 
 const deployScript = read('scripts/deploy.sh');

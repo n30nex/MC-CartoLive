@@ -11,8 +11,10 @@ run the scaled `smoke` profile automatically. It can also be selected from the
 harness, its smoke profile, or its full load profile on an operator workstation
 or on the production droplet.
 
-Run the locked release profile on `codex/release-3.2.0` with the GitHub Actions
-**Release performance gate** workflow. The full defaults are:
+After the protected merge, run the locked release profile by manually
+dispatching the GitHub Actions **Release performance gate** workflow on `main`.
+The successful report must be bound to the exact merge SHA that will receive
+the release tag. The full defaults are:
 
 - 20 normalized messages/second for 30 minutes;
 - 100 normalized messages/second for 60 seconds;
@@ -25,16 +27,22 @@ Run the locked release profile on `codex/release-3.2.0` with the GitHub Actions
 The workflow exposes the main duration and count overrides for scaled smoke
 diagnosis. Every setting is also configurable through `PERF_*` variables; see
 the configuration block at the top of `scripts/performance-gate.mjs`. The full
-profile rejects every override, records the GitHub run identity in its report,
-and is accepted only with the unchanged locked defaults.
+profile rejects every override or non-main/non-dispatch context, records the
+GitHub repository, event, ref, SHA, and run identity in its report, and is
+accepted only with the unchanged locked defaults. Tag promotion downloads that
+exact run's artifact and fails closed if its context or results differ.
+Promotion separately requires successful push-triggered CI and CodeQL runs for
+the same tagged SHA.
 
 ## Strict assertions
 
 The ingest phases require exact accepted, processed, database-row, and unique
 `ingest_id` counts; zero primary/derived queue drops; zero retry duplicate
 suppressions; zero failed, busy, or full-disk writes; queue-oldest p99 below two
-seconds; peak normalized-queue occupancy below 75%; Go system-memory p95 below
-600 MiB; and no process goroutine growth after drain.
+seconds; peak normalized-queue occupancy below 75%; process RSS p95 below
+600 MiB; and no process goroutine growth after drain. The production queue
+capacities are asserted from reported runtime metrics: 4,096 normalized
+messages and 1,024 derived projection jobs.
 
 The API phase requires no 5xx response, cached state origin p95 below 50 ms,
 public packet-path p95 below 300 ms, retained-event resume p95 below 100 ms,
@@ -55,7 +63,8 @@ The machine-readable result is
 `artifacts/performance-gate/report.json`; phase logs are written beside it and
 uploaded even on failure. Timings are direct loopback origin timings, so the
 public-path 300 ms budget (which includes ingress) remains more permissive than
-the measured origin result. `meshcore_memory_sys_bytes` is the enforced
-cross-platform Go process-memory measure. The harness does not represent
+the measured origin result. Memory acceptance uses the Go process's real Linux
+`VmRSS` from `/proc/<pid>/status`; Go runtime `Sys` remains diagnostic only. The
+harness does not represent
 Cloudflare latency, DigitalOcean host contention, or the separate 30-minute
 production candidate observation; those remain deployment-window proofs.

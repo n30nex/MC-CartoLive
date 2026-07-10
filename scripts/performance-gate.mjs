@@ -70,7 +70,7 @@ const config = {
   wsIsolationRate: envNumber('PERF_WS_ISOLATION_RATE', defaults.wsIsolationRate),
   wsIsolationBytes: envNumber('PERF_WS_ISOLATION_BYTES', defaults.wsIsolationBytes),
   mqttQueueCapacity: envNumber('PERF_MQTT_QUEUE_CAPACITY', 4096),
-  derivedQueueCapacity: envNumber('PERF_DERIVED_QUEUE_CAPACITY', 8192),
+  derivedQueueCapacity: envNumber('PERF_DERIVED_QUEUE_CAPACITY', 1024),
   metricSampleMs: envNumber('PERF_METRIC_SAMPLE_MS', 250),
   memoryLimitBytes: envNumber('PERF_MEMORY_LIMIT_BYTES', 600 * 1024 * 1024),
 };
@@ -78,7 +78,7 @@ const config = {
 const canonicalFullConfig = {
   ...defaults,
   mqttQueueCapacity: 4096,
-  derivedQueueCapacity: 8192,
+  derivedQueueCapacity: 1024,
   metricSampleMs: 250,
   memoryLimitBytes: 600 * 1024 * 1024,
 };
@@ -87,24 +87,45 @@ const fullConfigDeviations = profileName === 'full'
       .filter(([key, value]) => config[key] !== value)
       .map(([key, value]) => `${key}=${config[key]} (required ${value})`)
   : [];
+const githubContext = {
+  sha: process.env.GITHUB_SHA ?? '',
+  ref: process.env.GITHUB_REF ?? '',
+  repository: process.env.GITHUB_REPOSITORY ?? '',
+  event: process.env.GITHUB_EVENT_NAME ?? '',
+  workflow: process.env.GITHUB_WORKFLOW ?? '',
+  workflowRef: process.env.GITHUB_WORKFLOW_REF ?? '',
+  runId: process.env.GITHUB_RUN_ID ?? '',
+  runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? '',
+};
+const canonicalFullContext = {
+  ref: 'refs/heads/main',
+  repository: 'n30nex/MC-CartoLive',
+  event: 'workflow_dispatch',
+  workflow: 'Release performance gate',
+};
+const fullContextDeviations = profileName === 'full'
+  ? [
+      ...Object.entries(canonicalFullContext)
+        .filter(([key, value]) => githubContext[key] !== value)
+        .map(([key, value]) => `github.${key}=${githubContext[key]} (required ${value})`),
+      ...(/^[0-9a-f]{40}$/.test(githubContext.sha) ? [] : [`github.sha=${githubContext.sha} (required full commit SHA)`]),
+      ...(/^[0-9]+$/.test(githubContext.runId) ? [] : [`github.runId=${githubContext.runId} (required numeric run ID)`]),
+    ]
+  : [];
+const fullProofDeviations = [...fullConfigDeviations, ...fullContextDeviations];
 
 const report = {
   version: '3.2.0',
   profile: profileName,
-  canonicalReleaseProof: profileName === 'full' && fullConfigDeviations.length === 0,
+  canonicalReleaseProof: profileName === 'full' && fullProofDeviations.length === 0,
   startedAt: new Date().toISOString(),
   host: { platform: process.platform, arch: process.arch, node: process.version },
-  github: {
-    sha: process.env.GITHUB_SHA ?? '',
-    ref: process.env.GITHUB_REF ?? '',
-    runId: process.env.GITHUB_RUN_ID ?? '',
-    runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? '',
-  },
+  github: githubContext,
   config,
   thresholds: {
     queueOldestP99Ms: '< 2000',
     queueOccupancyMax: '< 0.75',
-    memorySysP95Bytes: `< ${config.memoryLimitBytes}`,
+    processRssP95Bytes: `< ${config.memoryLimitBytes}`,
     goroutineGrowth: '<= 0',
     cachedStateOriginP95Ms: '< 50',
     publicPathP95Ms: '< 300',
@@ -123,8 +144,8 @@ let httpAgent;
 
 try {
   await fs.mkdir(artifactDir, { recursive: true });
-  if (fullConfigDeviations.length > 0) {
-    throw new Error(`full release proof requires the locked configuration: ${fullConfigDeviations.join(', ')}`);
+  if (fullProofDeviations.length > 0) {
+    throw new Error(`full release proof requires the locked configuration and GitHub context: ${fullProofDeviations.join(', ')}`);
   }
   tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'mc-cartolive-perf-'));
   binaries = await prepareBinaries(tempRoot);
@@ -209,7 +230,8 @@ async function runIngestPhase(label, rate, durationSeconds) {
       ensureRunning(app);
       const metrics = await fetchMetrics(metricsPort);
       const at = Date.now();
-      samples.push({ at, ...metrics });
+      const processRssBytes = await readProcessRSSBytes(app.child.pid);
+      samples.push({ at, processRssBytes, ...metrics });
       const accepted = metric(metrics, 'meshcore_mqtt_messages_accepted_total');
       const processed = metric(metrics, 'meshcore_mqtt_messages_processed_total');
       const derivedDepth = metric(metrics, 'meshcore_derived_queue_depth');
@@ -233,7 +255,10 @@ async function runIngestPhase(label, rate, durationSeconds) {
   ]);
   const oldest = samples.map((sample) => metric(sample, 'meshcore_mqtt_queue_oldest_item_age_ms'));
   const occupancies = samples.map((sample) => metric(sample, 'meshcore_mqtt_queue_depth') / config.mqttQueueCapacity);
-  const memory = samples.map((sample) => metric(sample, 'meshcore_memory_sys_bytes'));
+  const processRSS = samples.map((sample) => Number(sample.processRssBytes));
+  const goRuntimeSys = samples.map((sample) => metric(sample, 'meshcore_memory_sys_bytes'));
+  const reportedPrimaryQueueCapacities = uniqueSorted(samples.map((sample) => metric(sample, 'meshcore_mqtt_queue_capacity'))).filter((value) => value > 0);
+  const reportedDerivedQueueCapacities = uniqueSorted(samples.map((sample) => metric(sample, 'meshcore_derived_queue_capacity'))).filter((value) => value > 0);
   const baselineGoroutines = median(samples
     .filter((sample) => metric(sample, 'meshcore_mqtt_messages_accepted_total') === 0)
     .map((sample) => metric(sample, 'meshcore_goroutines')));
@@ -257,7 +282,11 @@ async function runIngestPhase(label, rate, durationSeconds) {
     duplicateSuppressions: metric(finalMetrics, 'meshcore_ingest_duplicate_suppressions_total'),
     queueOldestP99Ms: percentile(oldest, 0.99),
     queueOccupancyMax: Math.max(0, ...occupancies),
-    memorySysP95Bytes: percentile(memory, 0.95),
+    processRssSource: 'linux-proc-status-vmrss',
+    processRssP95Bytes: percentile(processRSS, 0.95),
+    goRuntimeSysP95Bytes: percentile(goRuntimeSys, 0.95),
+    reportedPrimaryQueueCapacities,
+    reportedDerivedQueueCapacities,
     goroutinesBaseline: baselineGoroutines,
     goroutinesFinal: finalGoroutines,
     goroutineGrowth: finalGoroutines - baselineGoroutines,
@@ -278,7 +307,9 @@ async function runIngestPhase(label, rate, durationSeconds) {
   check(result, dbStats.uniqueIngestIds === expected, `unique ingest IDs=${dbStats.uniqueIngestIds}, want ${expected}`);
   check(result, result.queueOldestP99Ms < 2000, `queue oldest p99=${result.queueOldestP99Ms}ms, must be <2000ms`);
   check(result, result.queueOccupancyMax < 0.75, `queue occupancy max=${result.queueOccupancyMax}, must be <0.75`);
-  check(result, result.memorySysP95Bytes < config.memoryLimitBytes, `memory sys p95=${result.memorySysP95Bytes}, limit=${config.memoryLimitBytes}`);
+  check(result, reportedPrimaryQueueCapacities.length === 1 && reportedPrimaryQueueCapacities[0] === config.mqttQueueCapacity, `reported primary queue capacities=${reportedPrimaryQueueCapacities.join(',')}, want ${config.mqttQueueCapacity}`);
+  check(result, reportedDerivedQueueCapacities.length === 1 && reportedDerivedQueueCapacities[0] === config.derivedQueueCapacity, `reported derived queue capacities=${reportedDerivedQueueCapacities.join(',')}, want ${config.derivedQueueCapacity}`);
+  check(result, result.processRssP95Bytes > 0 && result.processRssP95Bytes < config.memoryLimitBytes, `process RSS p95=${result.processRssP95Bytes}, limit=${config.memoryLimitBytes}`);
   check(result, result.goroutineGrowth <= 0, `goroutines grew by ${result.goroutineGrowth}`);
   check(result, result.storeWriteFailures === 0, `store write failures=${result.storeWriteFailures}`);
   check(result, result.storeBusyErrors === 0, `store busy errors=${result.storeBusyErrors}`);
@@ -520,6 +551,18 @@ async function fetchMetrics(port) {
   return metrics;
 }
 
+async function readProcessRSSBytes(pid) {
+  if (process.platform !== 'linux' || !Number.isInteger(pid) || pid <= 0) {
+    throw new Error(`process RSS proof requires a live Linux PID, got platform=${process.platform} pid=${pid}`);
+  }
+  const status = await fs.readFile(`/proc/${pid}/status`, 'utf8');
+  const match = /^VmRSS:\s+(\d+)\s+kB$/m.exec(status);
+  if (!match) throw new Error(`VmRSS is unavailable for process ${pid}`);
+  const bytes = Number(match[1]) * 1024;
+  if (!Number.isSafeInteger(bytes) || bytes <= 0) throw new Error(`invalid VmRSS for process ${pid}: ${match[1]} kB`);
+  return bytes;
+}
+
 function metric(sample, name) {
   const value = Number(sample?.[name] ?? 0);
   return Number.isFinite(value) ? value : 0;
@@ -655,6 +698,10 @@ function percentile(values, fraction) {
 
 function median(values) {
   return percentile(values, 0.5);
+}
+
+function uniqueSorted(values) {
+  return [...new Set(values.filter(Number.isFinite))].sort((a, b) => a - b);
 }
 
 function check(result, condition, failure) {
