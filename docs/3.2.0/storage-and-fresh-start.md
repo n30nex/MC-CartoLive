@@ -24,6 +24,12 @@ rollback digests, and refuses destructive mode unless it receives both:
 --confirm-fresh-database DELETE-MC-CARTOLIVE-PRODUCTION-DATA
 ```
 
+After deletion, the deploy script discovers the selected image's numeric
+runtime user and group in a network-isolated helper container, then assigns
+only the bounded `data/` directory to that identity with mode `0750`. The same
+step runs for an empty-database rollback. This preserves `data/config.yaml`
+while allowing a non-root image to create SQLite files on a clean host.
+
 Rollback restores the previous application digest against another new empty
 database. It does not restore the deleted history.
 

@@ -298,6 +298,9 @@ rollback() {
 		delete_database || return 1
 	fi
 	compose "$PREVIOUS_IMAGE" pull "$SERVICE" || return 1
+	if [ "$fresh_database_started" -eq 1 ]; then
+		prepare_data_directory_for_image "$PREVIOUS_IMAGE" || return 1
+	fi
 	compose "$PREVIOUS_IMAGE" up -d --no-build --remove-orphans "$SERVICE" || return 1
 	if wait_ready; then
 		printf 'Rollback image is ready. Historical data was intentionally not restored.\n' >&2
@@ -362,6 +365,21 @@ verify_candidate_identity() {
 	fi
 }
 
+prepare_data_directory_for_image() {
+	local image="$1"
+	local runtime_uid runtime_gid
+	runtime_uid="$(docker run --rm --network none --read-only --entrypoint id "$image" -u 2>/dev/null)" || return 1
+	runtime_gid="$(docker run --rm --network none --read-only --entrypoint id "$image" -g 2>/dev/null)" || return 1
+	if [[ ! "$runtime_uid" =~ ^[0-9]+$ ]] || [[ ! "$runtime_gid" =~ ^[0-9]+$ ]]; then
+		printf 'Could not determine runtime UID/GID for %s.\n' "$image" >&2
+		return 1
+	fi
+	docker run --rm --network none --read-only --user 0:0 --entrypoint chown \
+		--mount "type=bind,src=$DATA_DIR,dst=/data" "$image" "$runtime_uid:$runtime_gid" /data >/dev/null || return 1
+	docker run --rm --network none --read-only --user 0:0 --entrypoint chmod \
+		--mount "type=bind,src=$DATA_DIR,dst=/data" "$image" 0750 /data >/dev/null || return 1
+}
+
 printf 'Pre-pulling immutable candidate: %s\n' "$IMAGE"
 compose "$IMAGE" pull "$SERVICE"
 verify_candidate_identity
@@ -401,6 +419,10 @@ if [ "$FRESH_DATABASE" -eq 1 ]; then
 	sanitize_release_runtime_env
 	fresh_database_started=1
 	delete_database
+	if ! prepare_data_directory_for_image "$IMAGE"; then
+		printf 'Could not prepare the fresh data directory for the candidate image.\n' >&2
+		exit 1
+	fi
 	actual_free_kb="$(free_kb)"
 	if [ "$actual_free_kb" -lt "$required_kb" ]; then
 		printf 'Free space after deletion is below %s GiB.\n' "$MIN_FREE_GB" >&2

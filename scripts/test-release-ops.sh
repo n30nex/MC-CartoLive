@@ -121,6 +121,13 @@ if [ "${1:-}" = "image" ] && [ "${2:-}" = "inspect" ]; then
 	esac
 	exit 0
 fi
+if [ "${1:-}" = "run" ]; then
+	case " $* " in
+		*" --entrypoint id "*" -u "*) printf '1000\n' ;;
+		*" --entrypoint id "*" -g "*) printf '1000\n' ;;
+	esac
+	exit 0
+fi
 if [ "${1:-}" = "compose" ]; then
 	case " $* " in
 		*" version "*) exit 0 ;;
@@ -390,6 +397,8 @@ grep -q "^MC_CARTOLIVE_GIT_SHA=$MERGE_SHA$" "$tmp/fresh_success/deploy-state/cur
 grep -q '^MC_CARTOLIVE_CANDIDATE_RUN_ID=123456789$' "$tmp/fresh_success/deploy-state/current.env"
 grep -q '^MC_CARTOLIVE_CANDIDATE_RUN_ATTEMPT=1$' "$tmp/fresh_success/deploy-state/current.env"
 grep -q "^MC_CARTOLIVE_CANDIDATE_TAG=candidate-$MERGE_SHA-123456789-1$" "$tmp/fresh_success/deploy-state/current.env"
+grep -q -- '--entrypoint chown ' "$tmp/fresh_success/docker.log"
+grep -q -- '--entrypoint chmod ' "$tmp/fresh_success/docker.log"
 grep -q 'check-public-privacy.mjs http://127.0.0.1:39476 --origin https://carto.example.test' "$tmp/fresh_success/node.log"
 
 echo "release operations contracts ok"

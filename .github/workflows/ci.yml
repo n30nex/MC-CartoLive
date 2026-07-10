@@ -225,7 +225,12 @@ jobs:
       - name: Start fixture app
         run: |
           cp .env.example .env
-          docker compose up --build -d --remove-orphans
+          docker compose build
+          app_uid="$(docker run --rm --entrypoint id mc-cartolive:dev -u)"
+          app_gid="$(docker run --rm --entrypoint id mc-cartolive:dev -g)"
+          [[ "$app_uid" =~ ^[0-9]+$ && "$app_gid" =~ ^[0-9]+$ ]]
+          sudo install -d -m 0750 -o "$app_uid" -g "$app_gid" data
+          docker compose up --no-build -d --remove-orphans
       - name: Wait for readiness
         run: |
           for i in $(seq 1 90); do
