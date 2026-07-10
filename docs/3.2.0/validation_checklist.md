@@ -33,15 +33,27 @@ collected for the exact candidate digest and commit.
 ## Candidate and package
 
 - [ ] The candidate is one `linux/amd64,linux/arm64` manifest at
-  `sha-<full-commit>` and reports the exact compiled version/SHA/build time.
+  `candidate-<full-commit>-<workflow-run-id>-<run-attempt>` and reports the
+  exact compiled version/SHA/build time. A rerun creates a different tag and
+  artifact instead of overwriting earlier evidence.
+- [ ] Every platform's OCI labels agree on candidate workflow run ID, run
+  attempt, run-specific tag, revision, version, and build time; the compiled
+  health identity matches that same build time and SHA.
+- [ ] Candidate authorization has downloaded and validated the successful
+  canonical `full` performance report for the exact
+  `codex/release-3.2.0` PR head before it receives package-write permission.
 - [ ] Synthetic and worldwide fixture package smoke passes against the exact
   Canada-asset production candidate digest.
 - [ ] No unwaived high/critical image vulnerability exists.
 - [ ] OCI/GitHub provenance and SPDX SBOM attestations verify.
-- [ ] Deployment archive, release manifest, OpenAPI, SBOM, SARIF, and checksums
-  contain no secret or live-data artifact.
-- [ ] `3.2.0`, `3.2`, and `latest` resolve to the candidate digest after
-  promotion.
+- [ ] Deployment archive, release manifest, standalone `ROLLBACK.md`, OpenAPI,
+  SBOM, SARIF, and checksums contain no secret or live-data artifact.
+- [ ] The annotated release tag trailers name the deployed candidate run ID,
+  run attempt, deployment time, and exact soaked digest; tag time is at least
+  30 minutes after deployment, promotion loads that unique artifact, and it
+  never chooses a newest or mutable candidate.
+- [ ] `3.2.0`, `3.2`, `sha-<full-commit>`, and `latest` resolve to the candidate
+  digest after promotion.
 
 ## Performance and resilience
 
@@ -70,7 +82,8 @@ collected for the exact candidate digest and commit.
 - [ ] The MQTT-disabled proof boot initializes schema 32000 with zero
   packet/node/observer/route/event rows; `quick_check=ok`, foreign-key check is
   empty, event reset is immediate, and release metadata matches.
-- [ ] Root has at least 25 GiB free after deletion.
+- [ ] Root has at least 25 GiB free and strictly less than 25% usage after
+  deletion.
 - [ ] MQTT session is ready within 60 seconds. Traffic advances sequence/packet
   state when present; absent traffic remains `warming` without restart.
 - [ ] Before `current.env` is written or the watchdog is restored, the bundled
@@ -82,8 +95,8 @@ collected for the exact candidate digest and commit.
 ## Follow-up
 
 - [ ] `mc-cartolive-release-audit.timer` is enabled before cutover and its
-  deployment identity includes the immutable digest, full Git SHA, and UTC
-  deployment time.
+  deployment identity includes the immutable digest, full Git SHA, candidate
+  workflow run ID/attempt/tag, and UTC deployment time.
 - [ ] The automated 24-hour result is `passed=true`; readiness, integrity,
   queue/error counters, watchdog/container state, alert delivery, and the
   25-GiB free-space gate are verified.

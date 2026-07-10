@@ -67,7 +67,9 @@ standard non-destructive digest deployment.
 
 ## Readiness and dataset warming
 
-- `/healthz` is cheap liveness.
+- `/healthz` is cheap liveness plus a coarse sanitized dependency summary; its
+  `ready` field is informational, while `/readyz` is the authoritative
+  fail-closed serving gate.
 - `/readyz` covers database/static/cache/session/writer state and reports
   only sanitized readiness booleans/states/reasons plus compiled release
   identity; queue and ingest details remain loopback metrics only.

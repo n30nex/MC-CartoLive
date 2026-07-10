@@ -55,10 +55,13 @@ normal packaged upgrades.
 
 ## Release assets
 
-The GitHub release contains the digest-pinned deployment archive, release
-manifest, OpenAPI document, SPDX SBOM, Trivy SARIF, and `SHA256SUMS`. GitHub and
-OCI provenance are attached separately as attestations. Verify checksums and
-the manifest digest before moving files to a production host.
+The GitHub release contains the digest-pinned deployment archive, standalone
+`ROLLBACK.md`, release manifest, OpenAPI document, SPDX SBOM, Trivy SARIF, and
+`SHA256SUMS`. GitHub and OCI provenance are attached separately as
+attestations. Candidate tags and artifacts include the workflow run ID and run
+attempt, while the annotated release tag binds that exact evidence to the
+deployed digest. Verify checksums and the manifest digest before moving files
+to a production host.
 
 See [upgrade and rollback](upgrade-and-rollback.md),
 [storage/fresh-start policy](storage-and-fresh-start.md), and the

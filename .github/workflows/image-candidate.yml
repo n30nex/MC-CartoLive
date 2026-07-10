@@ -28,8 +28,9 @@ jobs:
     permissions:
       actions: read
       contents: read
+      pull-requests: read
     outputs:
-      authorized: ${{ steps.trust.outputs.authorized }}
+      authorized: ${{ steps.premerge.outputs.authorized }}
       source_sha: ${{ steps.trust.outputs.source_sha }}
       source_tag: ${{ steps.trust.outputs.source_tag }}
       source_ci_run_id: ${{ steps.trust.outputs.source_ci_run_id }}
@@ -37,6 +38,8 @@ jobs:
       source_ci_head_branch: ${{ steps.trust.outputs.source_ci_head_branch }}
       source_ci_head_repository: ${{ steps.trust.outputs.source_ci_head_repository }}
       verified_main_sha: ${{ steps.trust.outputs.verified_main_sha }}
+      premerge_head_sha: ${{ steps.premerge.outputs.head_sha }}
+      premerge_run_id: ${{ steps.premerge.outputs.run_id }}
     steps:
       - name: Verify successful push CI is current repository main
         id: trust
@@ -62,14 +65,71 @@ jobs:
           current_main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           [[ "$current_main_sha" =~ ^[0-9a-f]{40}$ ]]
           test "$SOURCE_SHA" = "$current_main_sha"
-          echo "authorized=true" >> "$GITHUB_OUTPUT"
           echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
-          echo "source_tag=sha-$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "source_tag=candidate-$SOURCE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
           echo "source_ci_run_id=$SOURCE_CI_RUN_ID" >> "$GITHUB_OUTPUT"
           echo "source_ci_event=$SOURCE_CI_EVENT" >> "$GITHUB_OUTPUT"
           echo "source_ci_head_branch=$SOURCE_CI_HEAD_BRANCH" >> "$GITHUB_OUTPUT"
           echo "source_ci_head_repository=$SOURCE_CI_HEAD_REPOSITORY" >> "$GITHUB_OUTPUT"
           echo "verified_main_sha=$current_main_sha" >> "$GITHUB_OUTPUT"
+      - name: Require canonical full proof on the merged release head
+        id: premerge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.trust.outputs.source_sha }}
+        run: |
+          prs_json="$(gh api --method GET -H "Accept: application/vnd.github+json" \
+            "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/pulls")"
+          release_pr="$(printf '%s' "$prs_json" | jq -c \
+            --arg sha "$SOURCE_SHA" --arg repository "$GITHUB_REPOSITORY" \
+            '[.[] | select(.merged_at != null and .merge_commit_sha == $sha and .base.ref == "main" and .head.ref == "codex/release-3.2.0" and .head.repo.full_name == $repository)]')"
+          release_pr_count="$(printf '%s' "$release_pr" | jq 'length')"
+          if [ "$release_pr_count" -eq 0 ]; then
+            echo "authorized=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          test "$release_pr_count" -eq 1
+          head_sha="$(printf '%s' "$release_pr" | jq -r '.[0].head.sha')"
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          artifact_name="release-performance-full-$head_sha"
+          artifact_json="$(gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/artifacts" \
+            -f name="$artifact_name" -f per_page=100)"
+          artifact_id=""
+          run_id=""
+          while read -r candidate_id candidate_run_id; do
+            [[ "$candidate_id" =~ ^[0-9]+$ ]] || continue
+            [[ "$candidate_run_id" =~ ^[0-9]+$ ]] || continue
+            run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run_id")"
+            if printf '%s' "$run_json" | jq -e \
+              --arg sha "$head_sha" --arg repository "$GITHUB_REPOSITORY" \
+              '.name == "Release performance gate" and .path == ".github/workflows/release-performance.yml" and .conclusion == "success" and .event == "workflow_dispatch" and .head_branch == "codex/release-3.2.0" and .head_sha == $sha and .head_repository.full_name == $repository' >/dev/null; then
+              artifact_id="$candidate_id"
+              run_id="$candidate_run_id"
+              break
+            fi
+          done < <(printf '%s' "$artifact_json" | jq -r '.artifacts | map(select(.expired == false)) | sort_by(.id)[] | [.id,.workflow_run.id] | @tsv')
+          test -n "$artifact_id"
+          test -n "$run_id"
+
+          rm -rf /tmp/mc-cartolive-premerge-proof
+          mkdir -p /tmp/mc-cartolive-premerge-proof
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > /tmp/mc-cartolive-premerge-proof.zip
+          unzip -q /tmp/mc-cartolive-premerge-proof.zip -d /tmp/mc-cartolive-premerge-proof
+          report=/tmp/mc-cartolive-premerge-proof/report.json
+          test -f "$report"
+          workflow_ref="$GITHUB_REPOSITORY/.github/workflows/release-performance.yml@refs/heads/codex/release-3.2.0"
+          jq -e \
+            --arg sha "$head_sha" --arg repository "$GITHUB_REPOSITORY" \
+            --arg runId "$run_id" --arg workflowRef "$workflow_ref" \
+            '.profile == "full" and .canonicalReleaseProof == true and .passed == true and (.failures | length) == 0 and
+             .github.sha == $sha and .github.ref == "refs/heads/codex/release-3.2.0" and .github.repository == $repository and .github.event == "workflow_dispatch" and .github.workflow == "Release performance gate" and .github.workflowRef == $workflowRef and .github.runId == $runId and
+             .config.sustainedRate == 20 and .config.sustainedSeconds == 1800 and .config.burstRate == 100 and .config.burstSeconds == 60 and .config.apiRows == 5000000 and .config.wsClients == 250 and .config.wsSeconds == 1800 and .config.mqttQueueCapacity == 4096 and .config.derivedQueueCapacity == 1024 and .config.memoryLimitBytes == 629145600 and
+             .phases.sustainedIngest.passed == true and .phases.burstIngest.passed == true and .phases.api.passed == true and .phases.websocket.passed == true' "$report" >/dev/null
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "authorized=true" >> "$GITHUB_OUTPUT"
 
   candidate:
     name: Multi-platform candidate
@@ -90,13 +150,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ needs.authorize.outputs.source_sha }}
           VERIFIED_MAIN_SHA: ${{ needs.authorize.outputs.verified_main_sha }}
+          CANDIDATE_TAG: ${{ needs.authorize.outputs.source_tag }}
         run: |
           current_main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$SOURCE_SHA" = "$VERIFIED_MAIN_SHA"
           test "$SOURCE_SHA" = "$current_main_sha"
+          [[ "$CANDIDATE_TAG" =~ ^candidate-$SOURCE_SHA-[0-9]+-[0-9]+$ ]]
           echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
-          echo "tag=sha-$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "tag=$CANDIDATE_TAG" >> "$GITHUB_OUTPUT"
           echo "current_main_sha=$current_main_sha" >> "$GITHUB_OUTPUT"
       - name: Checkout successful source
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -145,6 +207,9 @@ jobs:
             org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
             org.opencontainers.image.created=${{ steps.meta.outputs.build_time }}
             org.opencontainers.image.licenses=MIT
+            org.mc-cartolive.candidate.workflow-run-id=${{ github.run_id }}
+            org.mc-cartolive.candidate.workflow-run-attempt=${{ github.run_attempt }}
+            org.mc-cartolive.candidate.tag=${{ steps.source.outputs.tag }}
           build-args: |
             APP_VERSION=${{ steps.meta.outputs.version }}
             GIT_SHA=${{ steps.source.outputs.sha }}
@@ -192,6 +257,10 @@ jobs:
           SOURCE_CI_HEAD_REPOSITORY: ${{ needs.authorize.outputs.source_ci_head_repository }}
           VERIFIED_MAIN_SHA: ${{ steps.source.outputs.current_main_sha }}
           CANDIDATE_WORKFLOW_RUN_ID: ${{ github.run_id }}
+          CANDIDATE_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CANDIDATE_TAG: ${{ steps.source.outputs.tag }}
+          PREMERGE_HEAD_SHA: ${{ needs.authorize.outputs.premerge_head_sha }}
+          PREMERGE_RUN_ID: ${{ needs.authorize.outputs.premerge_run_id }}
         run: |
           jq -n \
             --arg repository "${REGISTRY}/${IMAGE_NAME}" \
@@ -202,13 +271,14 @@ jobs:
             --arg sourceCiConclusion "$SOURCE_CI_CONCLUSION" --arg sourceCiWorkflow "$SOURCE_CI_WORKFLOW" \
             --arg sourceCiEvent "$SOURCE_CI_EVENT" --arg sourceCiHeadBranch "$SOURCE_CI_HEAD_BRANCH" \
             --arg sourceCiHeadRepository "$SOURCE_CI_HEAD_REPOSITORY" --arg verifiedMainSha "$VERIFIED_MAIN_SHA" \
-            --arg candidateWorkflowRunId "$CANDIDATE_WORKFLOW_RUN_ID" \
-            '{repository:$repository,image:$image,digest:$digest,gitSha:$gitSha,version:$version,buildTime:$buildTime,platforms:["linux/amd64","linux/arm64"],sourceCiRunId:$sourceCiRunId,sourceCiHeadSha:$sourceCiHeadSha,sourceCiConclusion:$sourceCiConclusion,sourceCiWorkflow:$sourceCiWorkflow,sourceCiEvent:$sourceCiEvent,sourceCiHeadBranch:$sourceCiHeadBranch,sourceCiHeadRepository:$sourceCiHeadRepository,verifiedMainRef:"refs/heads/main",verifiedMainSha:$verifiedMainSha,candidateWorkflowRunId:$candidateWorkflowRunId}' \
+            --arg candidateWorkflowRunId "$CANDIDATE_WORKFLOW_RUN_ID" --arg candidateWorkflowRunAttempt "$CANDIDATE_WORKFLOW_RUN_ATTEMPT" \
+            --arg candidateTag "$CANDIDATE_TAG" --arg premergeHeadSha "$PREMERGE_HEAD_SHA" --arg premergeRunId "$PREMERGE_RUN_ID" \
+            '{repository:$repository,image:$image,digest:$digest,gitSha:$gitSha,version:$version,buildTime:$buildTime,platforms:["linux/amd64","linux/arm64"],sourceCiRunId:$sourceCiRunId,sourceCiHeadSha:$sourceCiHeadSha,sourceCiConclusion:$sourceCiConclusion,sourceCiWorkflow:$sourceCiWorkflow,sourceCiEvent:$sourceCiEvent,sourceCiHeadBranch:$sourceCiHeadBranch,sourceCiHeadRepository:$sourceCiHeadRepository,verifiedMainRef:"refs/heads/main",verifiedMainSha:$verifiedMainSha,candidateWorkflowRunId:$candidateWorkflowRunId,candidateWorkflowRunAttempt:$candidateWorkflowRunAttempt,candidateTag:$candidateTag,premergeHeadRef:"refs/heads/codex/release-3.2.0",premergeHeadSha:$premergeHeadSha,premergeRunId:$premergeRunId}' \
             > candidate-manifest.json
       - name: Upload candidate evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-candidate-${{ steps.source.outputs.sha }}
+          name: release-candidate-${{ steps.source.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             candidate-manifest.json
             trivy-candidate.sarif

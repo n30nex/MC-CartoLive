@@ -15,7 +15,10 @@ Before merge, manually dispatch the locked release profile on
 `codex/release-3.2.0`; that exact branch-head result is a required PR gate.
 After the protected merge, dispatch it again on `main`. The second successful
 report must be bound to the exact merge SHA that will receive the release tag
-and is required by promotion. The full defaults are:
+and is required by promotion. The candidate workflow also resolves the merged
+PR head and downloads that exact pre-merge report before its package-write job
+can run, so documentation or branch-protection drift cannot silently omit the
+pre-merge proof. The full defaults are:
 
 - 20 normalized messages/second for 30 minutes;
 - 100 normalized messages/second for 60 seconds;

@@ -112,6 +112,9 @@ if [ "${1:-}" = "image" ] && [ "${2:-}" = "inspect" ]; then
 		*org.opencontainers.image.revision*) printf '%s\n' "$MOCK_MERGE_SHA" ;;
 		*org.opencontainers.image.source*) printf '%s\n' 'https://github.com/n30nex/MC-CartoLive' ;;
 		*org.opencontainers.image.version*) printf '%s\n' '3.2.0' ;;
+		*org.mc-cartolive.candidate.workflow-run-id*) printf '%s\n' '123456789' ;;
+		*org.mc-cartolive.candidate.workflow-run-attempt*) printf '%s\n' '1' ;;
+		*org.mc-cartolive.candidate.tag*) printf '%s\n' "candidate-$MOCK_MERGE_SHA-123456789-1" ;;
 	esac
 	exit 0
 fi
@@ -123,6 +126,9 @@ if [ "${1:-}" = "compose" ]; then
 			count=$((count + 1))
 			printf '%s' "$count" >"$MOCK_DOWN_COUNT_FILE"
 			if [ "$MOCK_SCENARIO" = "down_fail" ] && [ "$count" -eq 1 ]; then exit 1; fi
+			if [ "$MOCK_SCENARIO" = "rollback_down_fail" ] && [ "$count" -eq 1 ]; then exit 1; fi
+			if [ "$MOCK_SCENARIO" = "fresh_rollback_down_fail" ] && [ "$count" -eq 3 ]; then exit 1; fi
+			: >"$MOCK_CURRENT_IMAGE_FILE"
 			;;
 		*" up "*)
 			if [ "$MOCK_SCENARIO" = "rollback_fail" ] && [ "$MC_CARTOLIVE_IMAGE" = "$MOCK_PREVIOUS_IMAGE" ]; then exit 1; fi
@@ -132,7 +138,12 @@ if [ "${1:-}" = "compose" ]; then
 	esac
 	exit 0
 fi
+if [ "${1:-}" = "ps" ]; then
+	if [ "$MOCK_SCENARIO" = "rollback_absence_fail" ]; then printf 'deadbeef\n'; fi
+	exit 0
+fi
 if [ "${1:-}" = "inspect" ]; then
+	[ -s "$MOCK_CURRENT_IMAGE_FILE" ] || exit 1
 	cat "$MOCK_CURRENT_IMAGE_FILE"
 	exit 0
 fi
@@ -153,7 +164,7 @@ while [ "$#" -gt 0 ]; do
 done
 if [ "$(cat "$MOCK_CURRENT_IMAGE_FILE" 2>/dev/null)" = "$MOCK_PREVIOUS_IMAGE" ]; then
 	body='{"ready":true}'
-elif [ "$MOCK_SCENARIO" = "fresh_success" ] || [ "$MOCK_SCENARIO" = "privacy_fail" ]; then
+elif [ "$MOCK_SCENARIO" = "fresh_success" ] || [ "$MOCK_SCENARIO" = "privacy_fail" ] || [ "$MOCK_SCENARIO" = "fresh_rollback_down_fail" ] || [ "$MOCK_SCENARIO" = "root_usage_high" ]; then
 	case "$url" in
 		*/api/v1/public/events*) body='{"resetRequired":true}' ;;
 		*/api/v1/public/state*) body='{"stats":{"packets":0,"activeNodes":0,"activeRoutes":0}}' ;;
@@ -172,7 +183,7 @@ printf '%s\n' "$*" >>"$MOCK_NODE_LOG"
 	if [ "$MOCK_SCENARIO" = node_old ]; then printf 'v16.20.2\n'; else printf 'v22.17.0\n'; fi
 	exit 0
 }
-[ "$MOCK_SCENARIO" != privacy_fail ]
+[ "$MOCK_SCENARIO" != privacy_fail ] && [ "$MOCK_SCENARIO" != fresh_rollback_down_fail ]
 EOF
 cat >"$tmp/bin/systemctl" <<'EOF'
 #!/usr/bin/env sh
@@ -185,7 +196,12 @@ count="$(cat "$MOCK_DF_COUNT_FILE" 2>/dev/null || printf '0')"
 count=$((count + 1))
 printf '%s' "$count" >"$MOCK_DF_COUNT_FILE"
 if [ "$MOCK_SCENARIO" = "after_delete" ] && [ "$count" -eq 2 ]; then exit 1; fi
-printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\nmock 100000000 1 99999999 1%% /\n'
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+if [ "$MOCK_SCENARIO" = "root_usage_high" ] && [ "${2:-}" = "/" ]; then
+	printf 'mock 100000000 25000000 75000000 25%% /\n'
+else
+	printf 'mock 100000000 1 99999999 1%% /\n'
+fi
 EOF
 cat >"$tmp/bin/sqlite3" <<'EOF'
 #!/usr/bin/env sh
@@ -239,7 +255,7 @@ run_failed_deploy() {
 	  MOCK_NODE_LOG="$tmp/$name/node.log" \
 	  MC_CARTOLIVE_DEPLOY_STATE_DIR="$tmp/$name/deploy-state" \
 	  MC_CARTOLIVE_READY_TIMEOUT_SECONDS=1 \
-	  MC_CARTOLIVE_MIN_FREE_GB=1 \
+	  MC_CARTOLIVE_MIN_FREE_GB=25 \
 	  PATH="$tmp/bin:$PATH" \
 	  "$ROOT/scripts/deploy.sh" --repo "$repo" --image "$DIGEST" --previous-image "$PREVIOUS" --expected-git-sha "$MERGE_SHA" "$@" >/dev/null 2>&1; then
 		echo "deploy scenario $name unexpectedly succeeded" >&2
@@ -262,7 +278,7 @@ run_successful_fresh_deploy() {
 	  MOCK_NODE_LOG="$tmp/$name/node.log" \
 	  MC_CARTOLIVE_DEPLOY_STATE_DIR="$tmp/$name/deploy-state" \
 	  MC_CARTOLIVE_READY_TIMEOUT_SECONDS=1 \
-	  MC_CARTOLIVE_MIN_FREE_GB=1 \
+	  MC_CARTOLIVE_MIN_FREE_GB=25 \
 	  PATH="$tmp/bin:$PATH" \
 	  "$ROOT/scripts/deploy.sh" --repo "$repo" --image "$DIGEST" --previous-image "$PREVIOUS" --expected-git-sha "$MERGE_SHA" \
 	    --fresh-database --confirm-fresh-database DELETE-MC-CARTOLIVE-PRODUCTION-DATA >/dev/null
@@ -298,6 +314,13 @@ test "$(grep -c '^PUBLIC_EVENT_RETENTION_HOURS=24$' "$tmp/after_delete/repo/.env
 test "$(grep -c '^ALLOW_UNBOUNDED_RETENTION=false$' "$tmp/after_delete/repo/.env")" -eq 1
 grep -q '^start mc-cartolive-watchdog.timer$' "$tmp/after_delete/systemctl.log"
 
+# The irreversible cutover also refuses to proceed when deletion leaves root
+# at 25% usage: the fixed release gate is strictly less than 25%.
+prepare_repo root_usage_high
+run_failed_deploy root_usage_high root_usage_high --fresh-database --confirm-fresh-database DELETE-MC-CARTOLIVE-PRODUCTION-DATA
+grep -q " up .*image=$PREVIOUS" "$tmp/root_usage_high/docker.log"
+grep -q '^start mc-cartolive-watchdog.timer$' "$tmp/root_usage_high/systemctl.log"
+
 # Failed rollback readiness/up remains fail-closed with watchdog disabled.
 prepare_repo rollback_fail
 run_failed_deploy rollback_fail rollback_fail
@@ -305,6 +328,31 @@ if grep -q '^start mc-cartolive-watchdog.timer$' "$tmp/rollback_fail/systemctl.l
 	echo "watchdog restarted despite failed rollback" >&2
 	exit 1
 fi
+
+# Rollback may neither delete the fresh candidate DB nor start the old digest
+# until compose down succeeds and Docker confirms the named container is gone.
+prepare_repo rollback_down_fail
+run_failed_deploy rollback_down_fail rollback_down_fail
+test -f "$tmp/rollback_down_fail/repo/data/meshcore-live.db"
+test -f "$tmp/rollback_down_fail/repo/backups/legacy.db"
+test ! -e "$tmp/rollback_down_fail/deploy-state/current.env"
+if grep -q " up .*image=$PREVIOUS" "$tmp/rollback_down_fail/docker.log"; then exit 1; fi
+if grep -q '^start mc-cartolive-watchdog.timer$' "$tmp/rollback_down_fail/systemctl.log"; then exit 1; fi
+
+prepare_repo rollback_absence_fail
+run_failed_deploy rollback_absence_fail rollback_absence_fail
+test -f "$tmp/rollback_absence_fail/repo/data/meshcore-live.db"
+test -f "$tmp/rollback_absence_fail/repo/backups/legacy.db"
+test ! -e "$tmp/rollback_absence_fail/deploy-state/current.env"
+if grep -q " up .*image=$PREVIOUS" "$tmp/rollback_absence_fail/docker.log"; then exit 1; fi
+if grep -q '^start mc-cartolive-watchdog.timer$' "$tmp/rollback_absence_fail/systemctl.log"; then exit 1; fi
+
+prepare_repo fresh_rollback_down_fail
+run_failed_deploy fresh_rollback_down_fail fresh_rollback_down_fail --fresh-database --confirm-fresh-database DELETE-MC-CARTOLIVE-PRODUCTION-DATA
+test -f "$tmp/fresh_rollback_down_fail/repo/data/meshcore-live.db"
+test ! -e "$tmp/fresh_rollback_down_fail/deploy-state/current.env"
+if grep -q " up .*image=$PREVIOUS" "$tmp/fresh_rollback_down_fail/docker.log"; then exit 1; fi
+if grep -q '^start mc-cartolive-watchdog.timer$' "$tmp/fresh_rollback_down_fail/systemctl.log"; then exit 1; fi
 
 # The destructive hosted mode fails before stopping the watchdog or deleting
 # data when the staged Node.js runtime is older than the credential-free gate.
@@ -336,6 +384,9 @@ test "$(grep -c ' up .*image=.*mqtt=$' "$tmp/fresh_success/docker.log")" -eq 1
 grep -q '^start mc-cartolive-watchdog.timer$' "$tmp/fresh_success/systemctl.log"
 grep -q "^MC_CARTOLIVE_IMAGE=$DIGEST$" "$tmp/fresh_success/deploy-state/current.env"
 grep -q "^MC_CARTOLIVE_GIT_SHA=$MERGE_SHA$" "$tmp/fresh_success/deploy-state/current.env"
+grep -q '^MC_CARTOLIVE_CANDIDATE_RUN_ID=123456789$' "$tmp/fresh_success/deploy-state/current.env"
+grep -q '^MC_CARTOLIVE_CANDIDATE_RUN_ATTEMPT=1$' "$tmp/fresh_success/deploy-state/current.env"
+grep -q "^MC_CARTOLIVE_CANDIDATE_TAG=candidate-$MERGE_SHA-123456789-1$" "$tmp/fresh_success/deploy-state/current.env"
 grep -q 'check-public-privacy.mjs http://127.0.0.1:39476 --origin https://carto.example.test' "$tmp/fresh_success/node.log"
 
 echo "release operations contracts ok"

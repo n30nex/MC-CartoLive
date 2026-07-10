@@ -28,6 +28,16 @@ service untouched; remeasure instead of assuming that evidence is still fresh.
 
 ## Digest deployment
 
+The release candidate is identified by the complete tuple
+`<merge-sha>, <candidate-workflow-run-id>, <run-attempt>, <digest>`. Candidate
+workflow reruns publish distinct
+`candidate-<sha>-<run-id>-<attempt>` tags and
+`release-candidate-<sha>-<run-id>-<attempt>` artifacts. Download the chosen
+artifact and deploy its `image` digest; do not choose the newest artifact and do
+not deploy a mutable `sha-*` alias. Candidate authorization itself fails unless
+the exact merged release-branch head already has canonical full performance
+proof.
+
 For a normal non-destructive upgrade:
 
 ```bash
@@ -67,6 +77,17 @@ node scripts/package-smoke.mjs \
 
 Always check event reset, bootstrap/state, WebSocket hello, privacy, compiled
 identity, Docker restart/OOM state, and disk space.
+
+After the 30-minute soak, create the annotated release tag with
+`Candidate-Run-Id`, `Candidate-Run-Attempt`, `Candidate-Digest`, and
+`Candidate-Deployed-At` trailers as
+shown in [upgrade and rollback](3.2.0/upgrade-and-rollback.md). The digest must
+come from `/var/lib/mc-cartolive-deploy/current.env` and match the running
+container; the same record captures the candidate run ID, run attempt, and
+run-specific tag from OCI labels verified before cutover. Promotion uses that
+exact run-specific artifact and digest, then
+publishes `3.2.0`, `3.2`, `sha-<merge-sha>`, and `latest` plus a standalone
+`ROLLBACK.md` asset.
 
 ## Watchdog
 

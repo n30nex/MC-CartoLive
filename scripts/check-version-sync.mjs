@@ -66,8 +66,8 @@ for (const identity of ['APP_VERSION:', 'GIT_SHA:', 'BUILD_TIME:', 'VITE_GIT_SHA
 const publishWorkflow = read('.github/workflows/docker-publish.yml');
 if (publishWorkflow.includes('docker/build-push-action@')) errors.push('tag workflow must promote a candidate, never rebuild');
 if (!publishWorkflow.includes('imagetools create')) errors.push('tag workflow must promote by manifest digest');
-if (!publishWorkflow.includes('candidate-manifest.json') || !publishWorkflow.includes('test "$digest" = "$EVIDENCE_DIGEST"')) {
-  errors.push('tag workflow must bind the mutable candidate tag to immutable candidate evidence');
+if (!publishWorkflow.includes('candidate-manifest.json') || !publishWorkflow.includes('test "$digest" = "$CANDIDATE_DIGEST"')) {
+  errors.push('tag workflow must bind exact run-specific candidate evidence to the annotated digest');
 }
 if (!publishWorkflow.includes('git cat-file -t') || !publishWorkflow.includes('org.opencontainers.image.revision')) {
   errors.push('tag workflow must require an annotated tag and exact OCI revision');
@@ -78,6 +78,22 @@ for (const proof of [
   '.verifiedMainSha == $sha',
   '.head_repository.full_name == $repository',
   'test "$current_main_sha" = "$MERGE_SHA"',
+  'Candidate-Run-Id:',
+  'Candidate-Run-Attempt:',
+  'Candidate-Digest:',
+  'Candidate-Deployed-At:',
+  'release-candidate-$MERGE_SHA-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT',
+  '.run_attempt == $attempt',
+  'candidate="$image:$CANDIDATE_TAG"',
+  '--tag "$image:sha-${{ steps.release.outputs.merge_sha }}"',
+  'RELEASE_BUILD_TIME: ${{ steps.evidence.outputs.build_time }}',
+  'test "$image_created" = "$EXPECTED_BUILD_TIME"',
+  'test "$image_candidate_run_id" = "$CANDIDATE_RUN_ID"',
+  'test "$image_candidate_run_attempt" = "$CANDIDATE_RUN_ATTEMPT"',
+  'test "$image_candidate_tag" = "$CANDIDATE_TAG"',
+  '.buildTime == $buildTime and .gitSha == $gitSha',
+  'test "$tagger_epoch" -ge $((deployed_epoch + 1800))',
+  'upgrade-and-rollback.md artifacts/release/assets/ROLLBACK.md',
 ]) {
   if (!publishWorkflow.includes(proof)) errors.push(`tag workflow does not reverify candidate trust proof: ${proof}`);
 }
@@ -104,6 +120,15 @@ for (const boundary of [
   'sourceCiEvent:$sourceCiEvent',
   'sourceCiHeadRepository:$sourceCiHeadRepository',
   'verifiedMainSha:$verifiedMainSha',
+  'candidate-$SOURCE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT',
+  'release-candidate-${{ steps.source.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}',
+  'Require canonical full proof on the merged release head',
+  'refs/heads/codex/release-3.2.0',
+  '.canonicalReleaseProof == true',
+  'candidateWorkflowRunAttempt:$candidateWorkflowRunAttempt',
+  'org.mc-cartolive.candidate.workflow-run-id=${{ github.run_id }}',
+  'org.mc-cartolive.candidate.workflow-run-attempt=${{ github.run_attempt }}',
+  'org.mc-cartolive.candidate.tag=${{ steps.source.outputs.tag }}',
 ]) {
   if (!candidateWorkflow.includes(boundary)) errors.push(`candidate workflow trust boundary is missing: ${boundary}`);
 }
@@ -116,7 +141,8 @@ for (const contract of [
   "fs.readFile(`/proc/${pid}/status`, 'utf8')",
   'reportedPrimaryQueueCapacities',
   'reportedDerivedQueueCapacities',
-  "ref: 'refs/heads/main'",
+  "const canonicalFullRefs = new Set(['refs/heads/main', 'refs/heads/codex/release-3.2.0'])",
+  'canonicalFullRefs.has(githubContext.ref)',
   "event: 'workflow_dispatch'",
 ]) {
   if (!performanceGate.includes(contract)) errors.push(`canonical performance contract is missing: ${contract}`);
@@ -126,6 +152,25 @@ const deployScript = read('scripts/deploy.sh');
 if (!deployScript.includes('[ -n "$EXPECTED_GIT_SHA" ] || die')) errors.push('deploy must require an expected merge SHA');
 if (!deployScript.includes('org.opencontainers.image.revision') || !deployScript.includes('trap on_exit EXIT')) {
   errors.push('deploy must verify immutable image identity and install the fail-safe EXIT trap');
+}
+for (const deployGate of [
+  'stop_compose_and_verify_absent',
+  'docker ps --all --quiet --filter',
+  '[ "$MIN_FREE_GB" -ge 25 ]',
+  '[ "$actual_root_usage" -gt "$MAX_ROOT_USAGE_PERCENT" ]',
+  'MC_CARTOLIVE_CANDIDATE_RUN_ID=$CANDIDATE_RUN_ID',
+  'MC_CARTOLIVE_CANDIDATE_RUN_ATTEMPT=$CANDIDATE_RUN_ATTEMPT',
+]) {
+  if (!deployScript.includes(deployGate)) errors.push(`deploy release safety gate is missing: ${deployGate}`);
+}
+
+for (const script of ['scripts/live-smoke.ps1', 'scripts/soak-check.sh', 'scripts/release-check.sh', 'scripts/package-smoke.mjs']) {
+  const smokeSource = read(script);
+  for (const removedHealthField of ['packetIngestState', 'publicCacheState', 'liveConfidenceState']) {
+    if (smokeSource.includes(removedHealthField)) {
+      errors.push(`${script} must not rely on removed detailed /healthz field ${removedHealthField}`);
+    }
+  }
 }
 
 for (const workflow of readdirSync(join(root, '.github', 'workflows')).filter((name) => name.endsWith('.yml'))) {

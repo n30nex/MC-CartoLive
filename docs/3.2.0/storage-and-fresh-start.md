@@ -63,7 +63,9 @@ Before release work, reclaim unused BuildKit cache without touching the running
 database and require at least 9 GiB free and less than 75% root usage. Before
 destructive cutover, the deploy script checks that current free space plus the
 database/backup footprint can yield at least 25 GiB. It checks the real free
-space again after deletion before starting the candidate.
+space again after deletion and separately requires root usage to be strictly
+below 25% before starting the candidate. The minimum free-space threshold
+cannot be configured below 25 GiB in destructive mode.
 
 After release:
 
