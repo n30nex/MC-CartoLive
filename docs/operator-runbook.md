@@ -41,15 +41,15 @@ proof.
 For a normal non-destructive upgrade:
 
 ```bash
-bash scripts/deploy.sh \
+MC_CARTOLIVE_REQUIRE_PRIVACY_SCAN=1 bash scripts/deploy.sh \
   --image ghcr.io/n30nex/mc-cartolive@sha256:<candidate> \
   --previous-image ghcr.io/n30nex/mc-cartolive@sha256:<previous> \
   --expected-git-sha <full-release-sha>
 ```
 
-For the one authorized hosted 3.2.0 fresh start, use the command in
-[upgrade-and-rollback](3.2.0/upgrade-and-rollback.md). It requires the explicit
-destruction token and starts rollback with another empty database.
+The hosted 3.2.0 release uses this non-destructive path after a verified
+off-root-disk backup and migration rehearsal. Do not pass the fresh-database
+flags; see [upgrade-and-rollback](3.2.0/upgrade-and-rollback.md).
 
 From Windows:
 
@@ -57,8 +57,6 @@ From Windows:
 .\scripts\deploy-live.ps1 `
   -Image 'ghcr.io/n30nex/mc-cartolive@sha256:<candidate>' `
   -PreviousImage 'ghcr.io/n30nex/mc-cartolive@sha256:<previous>' `
-  -FreshDatabase `
-  -FreshDatabaseConfirmation DELETE-MC-CARTOLIVE-PRODUCTION-DATA `
   -ExpectedVersion 3.2.0 -ExpectedGitSha <full-sha>
 ```
 
@@ -125,8 +123,8 @@ df -h /opt/MC-CartoLive/data
 
 ## Automated 3.2 release audits
 
-Install the post-release audit beside the watchdog before the destructive
-cutover. It is an hourly, persistent timer; each deployment is keyed by its
+Install the post-release audit beside the watchdog before cutover. It is an
+hourly, persistent timer; each deployment is keyed by its
 immutable digest, Git SHA, and deployment timestamp, so restarting the timer or
 re-running a completed phase cannot duplicate or overwrite evidence.
 
@@ -141,8 +139,9 @@ systemctl enable --now mc-cartolive-release-audit.timer
 ```
 
 The 24-hour phase checks readiness, the loopback-only metrics listener, SQLite
-quick/foreign-key integrity, schema identity, queue and error counters, the
-container/watchdog, and the 25 GiB free-space gate. Day 8 additionally enforces
+quick/foreign-key integrity, schema identity, queue and error counters, and the
+container/watchdog. A preserved database requires at least 9 GiB and 20% free;
+a destructive fresh start retains its 25 GiB gate. Day 8 additionally enforces
 seven days plus six hours for observations, 25 hours for public events, and a
 WAL below 256 MiB, then atomically records the database-plus-WAL baseline. Day
 14 repeats retention/WAL checks and requires growth from that day-8 baseline to
@@ -213,4 +212,5 @@ expose the raw packet/key material behind a diagnosis.
 3. Stop optional projection/propagation work before changing truth or privacy
    controls.
 4. Roll back by immutable digest; never reset branches or build on the droplet.
-5. Treat data deleted by the authorized fresh cutover as unrecoverable.
+5. Keep the pre-upgrade block-volume backup until the 24-hour audit is green;
+   treat explicitly fresh-deleted data as unrecoverable.

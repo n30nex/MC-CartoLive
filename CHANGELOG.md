@@ -19,7 +19,8 @@ in Git history, not in the active documentation set.
   deployment contract gates.
 - Compiled release identity into the artifact and replaced production host
   builds/branch resets with immutable digest deployment and rollback.
-- Added the hosted fresh-database cutover controls, bounded watchdog,
+- Added data-preserving hosted cutover evidence, optional fresh-database
+  controls, bounded watchdog,
   multi-platform candidate promotion, release manifest, deployment archive,
   OpenAPI, SPDX SBOM, checksums, provenance, and operator documentation.
 - Folded the unreleased 3.1 candidate work into 3.2.0. No 3.1 release tag is

@@ -50,7 +50,7 @@ try {
   # Every remote argument is either validated by a strict image/SHA/path regex
   # above or is the fixed confirmation token, so single-quote wrapping is safe.
   $quoted = $args | ForEach-Object { "'$_'" }
-  $remote = "cd '$RepoPath' && bash scripts/deploy.sh " + ($quoted -join " ")
+  $remote = "cd '$RepoPath' && MC_CARTOLIVE_REQUIRE_PRIVACY_SCAN=1 bash scripts/deploy.sh " + ($quoted -join " ")
 
   Write-Host "Deploying immutable image: $Image"
   Write-Host "Rollback image: $PreviousImage"

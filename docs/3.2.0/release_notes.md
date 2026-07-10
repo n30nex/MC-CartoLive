@@ -28,17 +28,17 @@ tag or production migration waypoint.
 - GitHub Actions builds one amd64/arm64 candidate, smokes/scans/attests its
   digest, and promotes that exact digest to `3.2.0`, `3.2`, and `latest`.
 
-## Production fresh start
+## Production data preservation
 
-The hosted Canada 3.2.0 cutover intentionally starts with a new SQLite database.
-The prior DB, WAL/SHM files, and every file under the dedicated `backups/`
-directory are permanently deleted. They are not uploaded or archived. `.env`
-and `data/config.yaml` are preserved, except stale release-identity keys are
-removed from `.env` because identity now belongs to the artifact.
+The hosted Canada 3.2.0 cutover preserves the existing SQLite database and
+applies schema 32000 transactionally. A consistent pre-upgrade backup is kept
+on separate DigitalOcean block storage and the migration is rehearsed against a
+copy before production deployment. `.env` and `data/config.yaml` are preserved;
+stale release-identity keys are removed because identity belongs to the
+immutable artifact.
 
-This is an operator decision for the hosted service, not a requirement for
-third-party installations. The application retains forward migrations for
-normal packaged upgrades.
+The destructive fresh-database mode remains available only as an explicitly
+confirmed operator tool. It is not used for the hosted 3.2.0 release.
 
 ## Compatibility
 

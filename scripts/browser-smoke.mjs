@@ -355,7 +355,7 @@ async function runReleaseGate(browser, viewport) {
         metricDeltas = await runGateStep(errors, checks, 'second-batch listener, DOM-node, and JS-heap growth plateaus', async () => assertReleaseGateMetricGrowth(baselineMetrics, postStyleMetrics));
       }
       await page.keyboard.press('Escape');
-      await styleDrawer.waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => undefined);
+      await styleDrawer.waitFor({ state: 'hidden', timeout: 5_000 });
     }
     await recoverReleaseGateUI(page);
 
@@ -1008,18 +1008,22 @@ async function smokePalettePicker(page, viewport) {
 }
 
 async function smokeMapSettings(page, viewport) {
-  const toggle = page.locator('.map-settings-toggle').first();
+  const toggle = page.locator('.operator-action.map-settings-toggle').first();
   await toggle.waitFor({ state: 'visible', timeout: 12_000 });
-  await toggle.click({ force: true });
+  if (await toggle.getAttribute('aria-pressed') !== 'true') {
+    await toggle.click({ force: true });
+  }
+  const drawer = page.getByRole('dialog', { name: /^Map settings$/i });
+  await drawer.waitFor({ state: 'visible', timeout: 5_000 });
   await assertVisibleInViewport(page, '.map-settings-drawer', 'map settings drawer', viewport);
-  await page.locator('.map-settings-drawer').getByRole('heading', { name: /^Modes$/i }).waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('.map-settings-drawer').getByRole('button', { name: /Watch/i }).waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('.map-settings-drawer').getByRole('button', { name: /Explore/i }).waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('.map-settings-drawer').getByRole('button', { name: /Terrain/i }).waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('.map-settings-drawer').getByRole('button', { name: /Studio/i }).waitFor({ state: 'visible', timeout: 5_000 });
-  await page.locator('.map-settings-drawer').getByText(/3D And RF/i).waitFor({ state: 'visible', timeout: 5_000 });
-  await page.getByRole('button', { name: /Close map settings/i }).click();
-  await page.waitForSelector('.map-settings-drawer', { state: 'hidden', timeout: 5_000 });
+  await drawer.getByRole('heading', { name: /^Modes$/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await drawer.getByRole('button', { name: /Watch/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await drawer.getByRole('button', { name: /Explore/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await drawer.getByRole('button', { name: /Terrain/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await drawer.getByRole('button', { name: /Studio/i }).waitFor({ state: 'visible', timeout: 5_000 });
+  await drawer.getByText(/3D And RF/i).waitFor({ state: 'visible', timeout: 5_000 });
+  await drawer.getByRole('button', { name: /Close map settings/i }).click();
+  await drawer.waitFor({ state: 'hidden', timeout: 5_000 });
 }
 
 async function smokeVcr(page, viewport) {

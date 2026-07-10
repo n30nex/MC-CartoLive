@@ -12,6 +12,9 @@ MIN_FREE_GB="${MC_CARTOLIVE_MIN_FREE_GB:-25}"
 MAX_ROOT_USAGE_PERCENT="${MC_CARTOLIVE_MAX_ROOT_USAGE_PERCENT:-24}"
 READY_TIMEOUT_SECONDS="${MC_CARTOLIVE_READY_TIMEOUT_SECONDS:-120}"
 PUBLIC_BASE_URL="${MC_CARTOLIVE_PUBLIC_BASE_URL:-}"
+REQUIRE_PRIVACY_SCAN="${MC_CARTOLIVE_REQUIRE_PRIVACY_SCAN:-0}"
+MIN_PRESERVED_FREE_GB="${MC_CARTOLIVE_MIN_PRESERVED_FREE_GB:-9}"
+MAX_PRESERVED_ROOT_USAGE_PERCENT="${MC_CARTOLIVE_MAX_PRESERVED_ROOT_USAGE_PERCENT:-74}"
 IMAGE=""
 PREVIOUS_IMAGE=""
 EXPECTED_GIT_SHA=""
@@ -36,11 +39,11 @@ Options:
   --confirm-fresh-database TOKEN        Required token: DELETE-MC-CARTOLIVE-PRODUCTION-DATA
 
 The script never builds an image and never resets a Git branch. Without
---fresh-database it preserves the existing database. The 3.2.0 production
-cutover requires both destructive flags and an immutable rollback digest.
-Success also requires the bundled Node.js privacy/WebSocket-hello gate using
-the configured PUBLIC_BASE_URL origin, at least 25 GiB free after deletion,
-and root filesystem usage strictly below 25%.
+--fresh-database it preserves the existing database. Set
+MC_CARTOLIVE_REQUIRE_PRIVACY_SCAN=1 for the bundled Node.js public
+privacy/WebSocket-hello gate. Preserved mode requires 9 GiB free and less than
+75% root usage by default. Destructive mode retains its explicit token,
+25-GiB, and below-25% gates.
 EOF
 }
 
@@ -76,12 +79,15 @@ if [[ ! "$EXPECTED_GIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
 	die "--expected-git-sha must be a full lowercase Git SHA"
 fi
 [[ "$MIN_FREE_GB" =~ ^[1-9][0-9]*$ ]] || die "MC_CARTOLIVE_MIN_FREE_GB must be a positive integer"
+[[ "$MIN_PRESERVED_FREE_GB" =~ ^[1-9][0-9]*$ ]] || die "MC_CARTOLIVE_MIN_PRESERVED_FREE_GB must be a positive integer"
+[[ "$MAX_PRESERVED_ROOT_USAGE_PERCENT" =~ ^([1-9]|[1-9][0-9])$ ]] || die "MC_CARTOLIVE_MAX_PRESERVED_ROOT_USAGE_PERCENT must be between 1 and 99"
+case "$REQUIRE_PRIVACY_SCAN" in 0|1) ;; *) die "MC_CARTOLIVE_REQUIRE_PRIVACY_SCAN must be 0 or 1" ;; esac
 [[ "$MAX_ROOT_USAGE_PERCENT" =~ ^([1-9]|1[0-9]|2[0-4])$ ]] || die "MC_CARTOLIVE_MAX_ROOT_USAGE_PERCENT must be between 1 and 24"
 [[ "$READY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] || die "MC_CARTOLIVE_READY_TIMEOUT_SECONDS must be a positive integer"
 if [ "$FRESH_DATABASE" -eq 1 ]; then
+	REQUIRE_PRIVACY_SCAN=1
 	[ "$CONFIRM_FRESH_DATABASE" = "$CONFIRM_TOKEN" ] || die "fresh database requires --confirm-fresh-database $CONFIRM_TOKEN"
 	[ "$MIN_FREE_GB" -ge 25 ] || die "fresh database requires MC_CARTOLIVE_MIN_FREE_GB of at least 25"
-	command -v sqlite3 >/dev/null 2>&1 || die "sqlite3 is required to prove the fresh database schema"
 elif [ -n "$CONFIRM_FRESH_DATABASE" ]; then
 	die "confirmation token supplied without --fresh-database"
 fi
@@ -98,6 +104,7 @@ esac
 command -v docker >/dev/null 2>&1 || die "docker is required"
 docker compose version >/dev/null 2>&1 || die "docker compose v2 is required"
 command -v curl >/dev/null 2>&1 || die "curl is required"
+command -v sqlite3 >/dev/null 2>&1 || die "sqlite3 is required for release database verification"
 
 DATA_DIR="$REPO/data"
 BACKUP_DIR="$REPO/backups"
@@ -108,6 +115,9 @@ DATA_DIR="$(CDPATH='' cd "$DATA_DIR" && pwd -P)"
 BACKUP_DIR="$(CDPATH='' cd "$BACKUP_DIR" && pwd -P)"
 case "$DATA_DIR" in "$REPO"/*) ;; *) die "data directory escaped repo" ;; esac
 case "$BACKUP_DIR" in "$REPO"/*) ;; *) die "backup directory escaped repo" ;; esac
+if [ "$FRESH_DATABASE" -eq 0 ] && [ ! -f "$DATA_DIR/meshcore-live.db" ]; then
+	die "preserved deployment requires an existing SQLite database"
+fi
 PRIVACY_SCRIPT="$REPO/scripts/check-public-privacy.mjs"
 
 runtime_env_value() {
@@ -131,12 +141,12 @@ runtime_env_value() {
 	' "$REPO/.env"
 }
 
-if [ "$FRESH_DATABASE" -eq 1 ]; then
-	command -v node >/dev/null 2>&1 || die "Node.js 18 or newer is required for the destructive privacy/WebSocket gate"
+if [ "$REQUIRE_PRIVACY_SCAN" -eq 1 ]; then
+	command -v node >/dev/null 2>&1 || die "Node.js 18 or newer is required for the privacy/WebSocket gate"
 	node_version="$(node --version 2>/dev/null || true)"
 	if [[ "$node_version" =~ ^v([0-9]+)\. ]]; then node_major="${BASH_REMATCH[1]}"; else node_major=0; fi
 	if [ "$node_major" -lt 18 ]; then
-		die "Node.js 18 or newer is required for the destructive privacy/WebSocket gate"
+		die "Node.js 18 or newer is required for the privacy/WebSocket gate"
 	fi
 	[ -f "$PRIVACY_SCRIPT" ] || die "bundled public privacy scanner is missing"
 	if [ -z "$PUBLIC_BASE_URL" ]; then PUBLIC_BASE_URL="$(runtime_env_value PUBLIC_BASE_URL)"; fi
@@ -277,14 +287,23 @@ verify_release() {
 	printf '%s' "$events_json" | grep -q '"resetRequired"[[:space:]]*:[[:space:]]*true' || return 1
 	[ -n "$state_json" ] || return 1
 	[ "$(docker inspect --format '{{.Config.Image}}' "$CONTAINER")" = "$IMAGE" ] || return 1
-	if command -v sqlite3 >/dev/null 2>&1; then
-		[ "$(sqlite3 "$DATA_DIR/meshcore-live.db" 'PRAGMA quick_check;' 2>/dev/null)" = "ok" ] || return 1
-		[ -z "$(sqlite3 "$DATA_DIR/meshcore-live.db" 'PRAGMA foreign_key_check;' 2>/dev/null)" ] || return 1
+	[ "$(sqlite3 "$DATA_DIR/meshcore-live.db" 'PRAGMA quick_check;' 2>/dev/null)" = "ok" ] || return 1
+	[ -z "$(sqlite3 "$DATA_DIR/meshcore-live.db" 'PRAGMA foreign_key_check;' 2>/dev/null)" ] || return 1
+	[ "$(sqlite3 "$DATA_DIR/meshcore-live.db" 'PRAGMA user_version;' 2>/dev/null)" = "$(expected_schema_version)" ] || return 1
+	if [ "$FRESH_DATABASE" -eq 0 ]; then
+		observation_high_water_after="$(sqlite3 "$DATA_DIR/meshcore-live.db" 'SELECT COALESCE(MAX(id), 0) FROM packet_observations;' 2>/dev/null)" || return 1
+		edge_high_water_after="$(sqlite3 "$DATA_DIR/meshcore-live.db" 'SELECT COALESCE(MAX(id), 0) FROM live_edge_events;' 2>/dev/null)" || return 1
+		event_high_water_after="$(sqlite3 "$DATA_DIR/meshcore-live.db" 'SELECT COALESCE(MAX(seq), 0) FROM public_events;' 2>/dev/null)" || return 1
+		case "$observation_high_water_after:$edge_high_water_after:$event_high_water_after" in *[!0-9:]*) return 1 ;; esac
+		[ "$observation_high_water_after" -ge "$observation_high_water_before" ] || return 1
+		[ "$edge_high_water_after" -ge "$edge_high_water_before" ] || return 1
+		[ "$event_high_water_after" -ge "$event_high_water_before" ] || return 1
+		[ "$(hash_if_present "$DATA_DIR/config.yaml")" = "$config_hash_before" ] || return 1
 	fi
 	# This single credential-free gate scans every production public route and
 	# requires the first WebSocket frame to be a valid hello using the configured
 	# production Origin, while connecting to the loopback candidate.
-	if [ "$FRESH_DATABASE" -eq 1 ]; then
+	if [ "$REQUIRE_PRIVACY_SCAN" -eq 1 ]; then
 		node "$PRIVACY_SCRIPT" "$LOCAL_BASE_URL" --origin "$PUBLIC_BASE_URL" || return 1
 	fi
 	return 0
@@ -303,7 +322,11 @@ rollback() {
 	fi
 	compose "$PREVIOUS_IMAGE" up -d --no-build --remove-orphans "$SERVICE" || return 1
 	if wait_ready; then
-		printf 'Rollback image is ready. Historical data was intentionally not restored.\n' >&2
+		if [ "$fresh_database_started" -eq 1 ]; then
+			printf 'Rollback image is ready with the intentionally empty database.\n' >&2
+		else
+			printf 'Rollback image is ready with the preserved database.\n' >&2
+		fi
 		return 0
 	fi
 	printf 'Rollback image failed readiness; watchdog remains disabled.\n' >&2
@@ -358,11 +381,9 @@ verify_candidate_identity() {
 	[ "$revision" = "$EXPECTED_GIT_SHA" ] || die "candidate OCI revision $revision does not match expected merge SHA $EXPECTED_GIT_SHA"
 	[ "$source" = "https://github.com/n30nex/MC-CartoLive" ] || die "candidate OCI source is not the release repository"
 	[ "$image_version" = "$version" ] || die "candidate OCI version $image_version does not match VERSION $version"
-	if [ "$FRESH_DATABASE" -eq 1 ] || [ -n "$CANDIDATE_RUN_ID$CANDIDATE_RUN_ATTEMPT$CANDIDATE_TAG" ]; then
-		[[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || die "candidate OCI workflow run ID is missing or invalid"
-		[[ "$CANDIDATE_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || die "candidate OCI workflow run attempt is missing or invalid"
-		[ "$CANDIDATE_TAG" = "candidate-$EXPECTED_GIT_SHA-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT" ] || die "candidate OCI evidence tag does not match its merge SHA/run/attempt"
-	fi
+	[[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || die "candidate OCI workflow run ID is missing or invalid"
+	[[ "$CANDIDATE_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || die "candidate OCI workflow run attempt is missing or invalid"
+	[ "$CANDIDATE_TAG" = "candidate-$EXPECTED_GIT_SHA-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT" ] || die "candidate OCI evidence tag does not match its merge SHA/run/attempt"
 }
 
 prepare_data_directory_for_image() {
@@ -390,6 +411,27 @@ if [ "$FRESH_DATABASE" -eq 1 ]; then
 	projected_kb=$(( $(free_kb) + $(database_kb) ))
 	required_kb=$(( MIN_FREE_GB * 1024 * 1024 ))
 	[ "$projected_kb" -ge "$required_kb" ] || die "projected free space after deletion is below ${MIN_FREE_GB} GiB"
+else
+	preserved_required_kb=$(( MIN_PRESERVED_FREE_GB * 1024 * 1024 ))
+	preserved_free_kb="$(free_kb)"
+	preserved_root_usage="$(root_usage_percent)"
+	[ "$preserved_free_kb" -ge "$preserved_required_kb" ] || die "preserved deployment requires at least ${MIN_PRESERVED_FREE_GB} GiB free"
+	if [[ ! "$preserved_root_usage" =~ ^[0-9]+$ ]] || [ "$preserved_root_usage" -gt "$MAX_PRESERVED_ROOT_USAGE_PERCENT" ]; then
+		die "preserved deployment root usage must be at most ${MAX_PRESERVED_ROOT_USAGE_PERCENT}%"
+	fi
+fi
+
+observation_high_water_before=0
+edge_high_water_before=0
+event_high_water_before=0
+config_hash_before="$(hash_if_present "$DATA_DIR/config.yaml")"
+if [ "$FRESH_DATABASE" -eq 0 ]; then
+	observation_high_water_before="$(sqlite3 "$DATA_DIR/meshcore-live.db" 'SELECT COALESCE(MAX(id), 0) FROM packet_observations;')"
+	edge_high_water_before="$(sqlite3 "$DATA_DIR/meshcore-live.db" 'SELECT COALESCE(MAX(id), 0) FROM live_edge_events;')"
+	event_high_water_before="$(sqlite3 "$DATA_DIR/meshcore-live.db" 'SELECT COALESCE(MAX(seq), 0) FROM public_events;')"
+	case "$observation_high_water_before:$edge_high_water_before:$event_high_water_before" in
+		*[!0-9:]*) die "could not record preserved database high-water marks" ;;
+	esac
 fi
 
 watchdog_was_active=0
@@ -412,11 +454,12 @@ if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet mc-cartol
 	fi
 fi
 
+sanitize_release_runtime_env
+
 if [ "$FRESH_DATABASE" -eq 1 ]; then
 	printf 'Stopping writer and permanently deleting live SQLite data and backups.\n'
 	service_mutated=1
 	stop_compose_and_verify_absent "$IMAGE" "fresh cutover"
-	sanitize_release_runtime_env
 	fresh_database_started=1
 	delete_database
 	if ! prepare_data_directory_for_image "$IMAGE"; then
@@ -454,12 +497,14 @@ if ! wait_ready || ! verify_release; then
 	exit 1
 fi
 
+if [ "$FRESH_DATABASE" -eq 1 ]; then database_mode=fresh; else database_mode=preserved; fi
 cat >"$STATE_DIR/current.env" <<EOF
 MC_CARTOLIVE_IMAGE=$IMAGE
 MC_CARTOLIVE_PREVIOUS_IMAGE=$PREVIOUS_IMAGE
 MC_CARTOLIVE_DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 MC_CARTOLIVE_VERSION=$(tr -d '\r\n' < "$REPO/VERSION")
 MC_CARTOLIVE_GIT_SHA=$EXPECTED_GIT_SHA
+MC_CARTOLIVE_DATABASE_MODE=$database_mode
 MC_CARTOLIVE_CANDIDATE_RUN_ID=$CANDIDATE_RUN_ID
 MC_CARTOLIVE_CANDIDATE_RUN_ATTEMPT=$CANDIDATE_RUN_ATTEMPT
 MC_CARTOLIVE_CANDIDATE_TAG=$CANDIDATE_TAG

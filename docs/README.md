@@ -18,10 +18,10 @@ is preserved by version.
 
 | Document | Purpose |
 | --- | --- |
-| [Release notes](3.2.0/release_notes.md) | Product, compatibility, package, and hosted fresh-start summary. |
+| [Release notes](3.2.0/release_notes.md) | Product, compatibility, package, and hosted data-preservation summary. |
 | [Validation checklist](3.2.0/validation_checklist.md) | Fail-closed CI, candidate, load, cutover, and soak gates. |
-| [Upgrade and rollback](3.2.0/upgrade-and-rollback.md) | Fifteen-minute digest cutover and empty-DB rollback. |
-| [Storage and fresh start](3.2.0/storage-and-fresh-start.md) | Destruction boundary, retention, maintenance, and capacity. |
+| [Upgrade and rollback](3.2.0/upgrade-and-rollback.md) | Digest cutover, transactional migration, and data-preserving rollback. |
+| [Storage and preservation](3.2.0/storage-and-fresh-start.md) | Backup boundary, optional destruction mode, retention, maintenance, and capacity. |
 | [Public API changes](3.2.0/public-api.md) | Bootstrap, cursor reset, clusters, and public health. |
 | [Security and operations](3.2.0/security-and-operations.md) | Firewall, proxy, metrics, alerts, supply chain, and secrets. |
 

@@ -1,118 +1,78 @@
 # 3.2.0 Upgrade And Rollback
 
-This procedure is for the hosted fresh-database release. It is intentionally
-digest-based and destructive. Do not substitute a mutable tag.
+The hosted release is an immutable-digest, data-preserving upgrade. Do not use
+a mutable tag and do not pass the destructive fresh-database flags.
 
-## Before the 15-minute window
+## Before the maintenance window
 
-1. Record `/healthz`, `/readyz`, the current container image/digest, Git SHA,
-   working-tree hash, `docker inspect` restart/OOM state, and `df -h`.
-2. Confirm no build is active. Reclaim unused BuildKit cache and verify at least
-   9 GiB free without stopping production.
-3. Apply staged OS updates and reboot while the existing service/data are still
-   recoverable. Abort if the old service is not healthy within five minutes.
-4. Copy the 3.2.0 deployment bundle into `/opt/MC-CartoLive`, preserving the
-   private `.env` and `data/config.yaml` already on the host.
-5. Resolve one successful candidate workflow run and attempt. Download its
-   uniquely named
-   `release-candidate-<merge-sha>-<run-id>-<run-attempt>` artifact, verify its
-   manifest and attestation, and record its run ID, run attempt, and full
-   `@sha256:` image. Never resolve the candidate from a newest artifact or a
-   `sha-*` tag. Resolve the previous image to a full digest and pull both.
-6. Run the candidate with a temporary volume on loopback port 39477 and the
-   synthetic fixture. Verify version/SHA, readiness, public event reset,
-   WebSocket hello, and the public privacy scan; then remove the candidate
-   container/volume.
+1. Record `/healthz`, `/readyz`, the running image, Git SHA, dirty-tree hash,
+   restart/OOM state, database/WAL sizes, and filesystem capacity.
+2. Reclaim only unused builder cache and require at least 9 GiB and 20% free.
+3. Apply staged OS updates and reboot while the existing application and data
+   are recoverable. Abort if the old service is not healthy within five minutes.
+4. Create an encrypted block volume in the same region. A low-priority raw copy
+   while the service is live may pre-seed it, but that copy is not a backup.
+   Stop the watchdog and writer, checkpoint the WAL, synchronize the quiesced
+   database to the volume, and restart the old digest. Require
+   `quick_check=ok`, no foreign-key violations, and matching row/schema
+   metadata. Snapshot the idle volume and keep that immutable pre-upgrade
+   snapshot through the 24-hour audit.
+5. Run the exact candidate against the verified volume copy with MQTT disabled
+   on loopback port 39477; the volume snapshot remains the rollback source.
+   Record migration duration, peak storage, schema 32000, integrity, retained
+   row counts, event reset, WebSocket hello, and the public privacy scan.
+6. Resolve one successful candidate workflow run and attempt. Verify the
+   uniquely named artifact, attestation, full merge SHA, and `@sha256:` digest.
+   Pre-pull that digest and the previous immutable digest.
 
-## Cutover
-
-Use the full digests:
+## Data-preserving cutover
 
 ```bash
 cd /opt/MC-CartoLive
-apt-get install -y nodejs
-node --version # must be v18 or newer
-bash scripts/deploy.sh \
+node --version # v18 or newer for the privacy/WebSocket validation
+MC_CARTOLIVE_REQUIRE_PRIVACY_SCAN=1 bash scripts/deploy.sh \
   --image ghcr.io/n30nex/mc-cartolive@sha256:<candidate-digest> \
   --previous-image ghcr.io/n30nex/mc-cartolive@sha256:<previous-digest> \
-  --expected-git-sha <full-release-sha> \
-  --fresh-database \
-  --confirm-fresh-database DELETE-MC-CARTOLIVE-PRODUCTION-DATA
+  --expected-git-sha <full-release-sha>
 ```
 
-The script pre-pulls both images, stops the watchdog, stops the writer, proves
-the named Compose container is absent, removes
-stale release identity/runtime variables, fixes the production retention values,
-permanently deletes the database and backup directory contents, and checks free
-space (at least 25 GiB free and root strictly below 25% usage). It then boots
-the candidate once with MQTT disabled, proves schema 32000
-and zero packet/node/observer/route/event rows, stops that proof instance, and
-starts the same database and digest with the preserved production MQTT setting.
-No on-host build occurs. Each start has up to 120 seconds for readiness. It
-additionally requires:
+Without `--fresh-database`, the script preserves the SQLite DB, WAL/SHM, and
+`data/config.yaml`. It pre-pulls both digests, verifies candidate OCI identity,
+stops the watchdog, starts the candidate without building, and allows the
+forward-only transaction to add missing columns/indexes and set schema 32000.
+It writes `MC_CARTOLIVE_DATABASE_MODE=preserved` only after readiness and
+release verification pass.
 
-- the compiled version to match `VERSION`
-- candidate workflow run ID, run attempt, and run-specific tag OCI labels to
-  agree with the candidate merge SHA
-- the fresh database schema to match the packaged manifest
-- zero packet/node/observer/route/event rows before MQTT is enabled
-- `afterSeq=0` to return `resetRequired=true`
-- public state to serialize successfully
-- every public HTTP response to pass the bundled credential-free privacy scan
-- `/ws/public` to upgrade with the configured production Origin and send a
-  valid version-1 `hello` as its first text frame
-- SQLite `quick_check=ok` and no foreign-key violations
+Before restoring the watchdog, also require:
 
-The deploy script connects the scan to loopback so it proves the candidate
-that is actually being cut over, while using `PUBLIC_BASE_URL` from the
-preserved production `.env` as the WebSocket Origin. Node.js 18 or newer is
-staged as an OS prerequisite; no npm install, browser, credential, or uploaded
-data is needed.
-`current.env` records the deployed digest plus the candidate workflow run ID,
-run attempt, and run-specific tag read from verified OCI labels.
-`deployment_succeeded` and watchdog restoration happen only after this
-transaction passes. A failure enters the existing immutable-digest
-rollback path; if rollback fails at any gate, the watchdog remains disabled
-for explicit operator recovery.
+- `PRAGMA quick_check` is `ok` and `foreign_key_check` is empty
+- schema version is 32000 and pre-existing packet/observation/event rows remain
+- `afterSeq=0` returns HTTP 200 with `resetRequired=true`
+- bootstrap/state and the first version-1 WebSocket `hello` are valid
+- every public route passes `scripts/check-public-privacy.mjs`
+- compiled version/SHA/build time and the running digest match the candidate
+- MQTT session readiness, zero queue drops, and no busy/full error storm
 
-An empty database may be ready with `datasetState=warming`. The watchdog must
-not restart it merely because no RF traffic has arrived yet.
+The destructive mode remains available for an explicitly approved future
+operation, but it is not the 3.2.0 hosted procedure.
 
 ## Automatic rollback
 
-If readiness or smoke validation fails, the script stops the candidate, deletes
-its new database, and starts the supplied previous digest with another empty
-database. The watchdog remains disabled if rollback also fails. Historical data
-is never restored. Candidate `docker compose down` must succeed and a separate
-Docker query must prove the named container is absent before rollback deletes
-the new database or starts the previous digest. Failure of either check is
-fail-closed: data is left in place, the previous digest is not started, and the
-watchdog remains disabled for operator recovery.
+If candidate startup or validation fails, the deploy script stops it and starts
+the previous immutable digest against the preserved, additively migrated
+database. Schema 32000 changes are additive, so the previous application can
+ignore them. The watchdog remains disabled if rollback readiness fails.
 
-Manual equivalent:
-
-```bash
-set -euo pipefail
-systemctl stop mc-cartolive-watchdog.timer
-MC_CARTOLIVE_IMAGE=ghcr.io/n30nex/mc-cartolive@sha256:<candidate-digest> \
-  docker compose -f docker-compose.production.yml down
-remaining="$(docker ps --all --quiet --filter 'name=^/meshcore-canada-live-map$')" || exit 1
-test -z "$remaining"
-rm -f data/meshcore-live.db data/meshcore-live.db-wal data/meshcore-live.db-shm
-MC_CARTOLIVE_IMAGE=ghcr.io/n30nex/mc-cartolive@sha256:<previous-digest> \
-  docker compose -f docker-compose.production.yml up -d --no-build
-```
-
-Use the scripted path whenever possible because it also verifies paths,
-configuration preservation, digests, free space, and post-start state.
+If the live database itself is damaged, stop all writers, restore the verified
+pre-upgrade block-volume snapshot to `data/meshcore-live.db`, remove only the
+corresponding WAL/SHM created after that restored snapshot, verify integrity,
+and start the previous digest. Never overwrite the preserved backup in place.
 
 ## Promotion and soak
 
-Keep the candidate running for 30 minutes. Do not create `v3.2.0` if there is a
-restart, OOM, `SQLITE_FULL`, busy storm, queue drop, cache failure, MQTT session
-loss, public 5xx, privacy finding, or release-metadata mismatch. Once clean,
-read the exact deployed digest from the mode-0600 deployment record, and use the
-same candidate workflow run ID and attempt whose artifact produced that digest:
+Keep the candidate running for at least 30 minutes. Do not create `v3.2.0` if
+there is a restart, OOM, `SQLITE_FULL`, busy storm, queue drop, cache failure,
+MQTT loss, public 5xx, privacy finding, metadata mismatch, or row discontinuity.
 
 ```bash
 set -euo pipefail
@@ -120,6 +80,7 @@ cd /opt/MC-CartoLive
 set -a
 . /var/lib/mc-cartolive-deploy/current.env
 set +a
+test "$MC_CARTOLIVE_DATABASE_MODE" = preserved
 test "$MC_CARTOLIVE_GIT_SHA" = "$(git rev-parse HEAD)"
 test "$(docker inspect --format '{{.Config.Image}}' meshcore-canada-live-map)" = "$MC_CARTOLIVE_IMAGE"
 candidate_digest="${MC_CARTOLIVE_IMAGE##*@}"
@@ -138,19 +99,8 @@ git tag -a v3.2.0 "$MC_CARTOLIVE_GIT_SHA" -F /tmp/mc-cartolive-v3.2.0-tag.txt
 git push origin v3.2.0
 ```
 
-The promotion workflow rejects lightweight tags, duplicate/missing trailers,
-an annotated tag created less than 30 minutes after the recorded deployment,
-an artifact name that does not exactly include that run and attempt, a manifest
-digest that differs from the trailer, and a run-specific registry tag that no
-longer resolves to the same digest. It promotes the exact digest without
-rebuilding to `3.2.0`, `3.2`, `sha-<merge-sha>`, and `latest`, uses the candidate
-manifest build time for packaged metadata, and publishes `ROLLBACK.md` as a
-standalone release asset.
-
-Repeat evidence collection after 24 hours and retention/storage checks on days
-8 and 14. Install and enable `mc-cartolive-release-audit.timer` before cutover;
-the packaged timer captures these phases automatically from loopback readiness,
-metrics, bounded read-only SQLite checks, disk/WAL state, and watchdog state.
-Inspect the mode-0600 JSON results in
-`/var/log/mc-cartolive-release-audit/`; a failed phase retries hourly and keeps
-the systemd service failed until a subsequent sample passes.
+Promotion consumes that run-specific artifact and promotes the same digest,
+without rebuilding, to `3.2.0`, `3.2`, `sha-<merge-sha>`, and `latest`.
+Install `mc-cartolive-release-audit.timer` before cutover. Preserved mode
+requires at least 9 GiB and 20% free at 24 hours; day 8 and day 14 enforce
+retention, WAL, and bounded database-growth checks.

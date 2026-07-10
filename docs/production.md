@@ -54,16 +54,17 @@ disables unbounded retention. It also uses a five-second SQLite busy deadline.
 
 ## First-party 3.2.0 cutover
 
-The hosted release intentionally deletes the old database and old backups.
-Follow [the exact upgrade/rollback procedure](3.2.0/upgrade-and-rollback.md) and
-[storage policy](3.2.0/storage-and-fresh-start.md). There is no historical-data
-rollback.
+The hosted release preserves and transactionally migrates the existing SQLite
+database. Before cutover, quiesce the writer and create a verified SQLite copy
+on separate block storage, snapshot it, and rehearse the migration against the
+volume copy. Follow
+[the exact upgrade/rollback procedure](3.2.0/upgrade-and-rollback.md) and
+[storage policy](3.2.0/storage-and-fresh-start.md).
 
-Normal third-party upgrades may omit the destructive flags; schema migrations
-are forward-only and transactional. Back up third-party data according to the
-operator's own recovery policy before upgrading. Node.js is required only for
-the hosted destructive fresh-database privacy/WebSocket transaction, not for a
-standard non-destructive digest deployment.
+Deploy without `--fresh-database`; that flag and its deletion token remain an
+explicit recovery/operator tool, not the hosted 3.2.0 procedure. Migrations are
+forward-only, additive, and transactional. Node.js 18 or newer is staged for
+the bundled credential-free privacy/WebSocket validation.
 
 ## Readiness and dataset warming
 

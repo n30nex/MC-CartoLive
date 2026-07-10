@@ -69,26 +69,25 @@ collected for the exact candidate digest and commit.
   app CSS at most 32 KiB; MapLibre vendor CSS is reported separately, and
   showcase/export chunks are lazy.
 
-## Hosted fresh cutover
+## Hosted data-preserving cutover
 
 - [ ] Build cache is reclaimed without changing the running service; root has
   at least 9 GiB free before maintenance.
 - [ ] Host packages/reboot complete and the old service returns healthy before
-  any data deletion.
+  any database migration.
 - [ ] Candidate and previous digests are pre-pulled; loopback 39477 candidate
   smoke and privacy checks pass.
-- [ ] Fresh-delete confirmation is recorded; `.env` and `data/config.yaml` are
-  preserved while stale identity variables, DB/WAL/SHM, and backups are removed.
-- [ ] The MQTT-disabled proof boot initializes schema 32000 with zero
-  packet/node/observer/route/event rows; `quick_check=ok`, foreign-key check is
-  empty, event reset is immediate, and release metadata matches.
-- [ ] Root has at least 25 GiB free and strictly less than 25% usage after
-  deletion.
+- [ ] A consistent pre-upgrade SQLite backup on separate block storage passes
+  quick/foreign-key checks and remains immutable through the 24-hour audit.
+- [ ] The exact candidate migrates a rehearsal copy to schema 32000 with row
+  continuity, bounded time/storage, immediate event reset, and valid metadata.
+- [ ] Production deploy omits destructive flags, records database mode
+  `preserved`, and retains the DB/WAL/SHM and `data/config.yaml`.
+- [ ] The live filesystem has at least 9 GiB and 20% free throughout migration.
 - [ ] MQTT session is ready within 60 seconds. Traffic advances sequence/packet
   state when present; absent traffic remains `warming` without restart.
-- [ ] Before `current.env` is written or the watchdog is restored, the bundled
-  production-Origin privacy scan passes every public HTTP route and proves a
-  version-1 WebSocket `hello` from the loopback candidate.
+- [ ] Before the watchdog is restored, the production-Origin privacy scan
+  passes every public HTTP route and proves a version-1 WebSocket `hello`.
 - [ ] Thirty-minute immediate soak has no restart, OOM, full/busy storm, queue
   drop, cache failure, MQTT loss, public 5xx, or privacy finding.
 
@@ -99,7 +98,7 @@ collected for the exact candidate digest and commit.
   workflow run ID/attempt/tag, and UTC deployment time.
 - [ ] The automated 24-hour result is `passed=true`; readiness, integrity,
   queue/error counters, watchdog/container state, alert delivery, and the
-  25-GiB free-space gate are verified.
+  mode-aware free-space gate are verified (9 GiB/20% for preserved data).
 - [ ] The automated day-8 result is `passed=true`; observation age is at most
   seven days plus six hours, public-event age at most 25 hours, WAL below 256
   MiB, and the database-plus-WAL baseline exists.

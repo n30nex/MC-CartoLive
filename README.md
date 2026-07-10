@@ -189,7 +189,7 @@ Live post-deploy smoke:
 - [Changelog](CHANGELOG.md)
 - [3.2.0 release notes](docs/3.2.0/release_notes.md)
 - [3.2.0 validation checklist](docs/3.2.0/validation_checklist.md)
-- [3.2.0 fresh-start storage policy](docs/3.2.0/storage-and-fresh-start.md)
+- [3.2.0 storage and preservation policy](docs/3.2.0/storage-and-fresh-start.md)
 - [3.2.0 upgrade and rollback](docs/3.2.0/upgrade-and-rollback.md)
 - [3.2.0 public API changes](docs/3.2.0/public-api.md)
 - [3.0.2 release notes](docs/3.0.2/release_notes.md)

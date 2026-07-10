@@ -64,7 +64,7 @@ EOF
 cat >"$tmp/bin/df" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' 'Filesystem 1024-blocks Used Available Capacity Mounted on'
-printf '%s\n' '/dev/mock 52428800 5242880 47185920 10% /'
+printf '%s\n' '/dev/mock 52428800 41943040 10485760 80% /'
 EOF
 
 cat >"$tmp/bin/docker" <<'EOF'
@@ -98,6 +98,7 @@ MC_CARTOLIVE_PREVIOUS_IMAGE=ghcr.io/n30nex/mc-cartolive@sha256:bbbbbbbbbbbbbbbbb
 MC_CARTOLIVE_DEPLOYED_AT=$deployed_at
 MC_CARTOLIVE_VERSION=3.2.0
 MC_CARTOLIVE_GIT_SHA=0123456789abcdef0123456789abcdef01234567
+MC_CARTOLIVE_DATABASE_MODE=preserved
 EOF
 
 run_audit() {
@@ -121,7 +122,7 @@ run_audit() {
 # The 24-hour evidence is written once and contains only aggregate fields.
 run_audit "$((deployed_epoch + 86460))"
 result_24h="$(find "$tmp/results" -name '*.24h.json' -print -quit)"
-jq -e '.passed == true and .phase == "24h" and .filesystem.freeBytes >= 25 * 1024 * 1024 * 1024' "$result_24h" >/dev/null
+jq -e '.passed == true and .phase == "24h" and .release.databaseMode == "preserved" and .filesystem.min24hFreeGiB == 9 and .filesystem.freeBytes >= 9 * 1024 * 1024 * 1024 and .filesystem.freeBytes < 25 * 1024 * 1024 * 1024' "$result_24h" >/dev/null
 
 # Day 8 rejects over-retention values and does not create a growth baseline.
 if run_audit "$((deployed_epoch + 691260))" 626400001 90000001 >/dev/null 2>&1; then

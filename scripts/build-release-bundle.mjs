@@ -74,10 +74,11 @@ const manifest = {
   },
   database: {
     schemaVersion,
-    productionCutover: 'fresh_database',
+    productionCutover: 'preserve_database',
     retentionDays: 7,
     publicEventRetentionHours: 24,
-    historicalDataRecovery: false
+    historicalDataRecovery: true,
+    historicalDataRecoveryMethod: 'operator_block_volume_backup'
   },
   releaseIdentity: 'compiled_immutable',
   operations: {
@@ -108,9 +109,10 @@ writeFileSync(join(stage, 'README.txt'), `MC-CartoLive ${version} deployment bun
 This package deploys the prebuilt image by immutable digest. It does not build
 on the target host. Read docs/upgrade-and-rollback.md before running anything.
 
-The hosted 3.2.0 cutover intentionally deletes the old SQLite database and its
-backups. That operation requires both destructive flags and the exact token:
-DELETE-MC-CARTOLIVE-PRODUCTION-DATA
+The hosted 3.2.0 cutover preserves and transactionally migrates the existing
+SQLite database. Take and verify an off-root-disk backup before deployment and
+omit all destructive fresh-database flags. The destructive mode remains an
+explicit operator tool but is not the hosted 3.2.0 procedure.
 
 Image: ${image}
 Git SHA: ${gitSha}
@@ -120,10 +122,9 @@ Before cutover, install and enable deploy/systemd/mc-cartolive-release-audit.tim
 It records privacy-safe 24-hour, day-8, and day-14 evidence without exporting
 database rows or runtime secrets. See docs/storage-and-fresh-start.md.
 
-The destructive hosted cutover requires Node.js 18 or newer for the bundled
-credential-free public privacy and WebSocket-hello transaction. Standard
-non-destructive third-party digest deploys do not require Node.js. The deploy
-does not install packages.
+Node.js 18 or newer is staged on the hosted system for the bundled
+credential-free public privacy and WebSocket-hello validation. The deploy does
+not install packages.
 `);
 
 console.log(JSON.stringify({ version, image, gitSha, schemaVersion, stage, manifest: join(outputRoot, 'release-manifest.json') }, null, 2));

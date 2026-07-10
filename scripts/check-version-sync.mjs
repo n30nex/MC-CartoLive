@@ -160,6 +160,7 @@ for (const deployGate of [
   '[ "$actual_root_usage" -gt "$MAX_ROOT_USAGE_PERCENT" ]',
   'MC_CARTOLIVE_CANDIDATE_RUN_ID=$CANDIDATE_RUN_ID',
   'MC_CARTOLIVE_CANDIDATE_RUN_ATTEMPT=$CANDIDATE_RUN_ATTEMPT',
+  'MC_CARTOLIVE_DATABASE_MODE=$database_mode',
 ]) {
   if (!deployScript.includes(deployGate)) errors.push(`deploy release safety gate is missing: ${deployGate}`);
 }

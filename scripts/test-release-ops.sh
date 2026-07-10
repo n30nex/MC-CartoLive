@@ -143,7 +143,7 @@ if [ "${1:-}" = "compose" ]; then
 		*" up "*)
 			if [ "$MOCK_SCENARIO" = "rollback_fail" ] && [ "$MC_CARTOLIVE_IMAGE" = "$MOCK_PREVIOUS_IMAGE" ]; then exit 1; fi
 			printf '%s' "$MC_CARTOLIVE_IMAGE" >"$MOCK_CURRENT_IMAGE_FILE"
-			: >"$MOCK_DATABASE_FILE"
+			if [ "$MOCK_SCENARIO" != "preserve_success" ]; then : >"$MOCK_DATABASE_FILE"; fi
 			;;
 	esac
 	exit 0
@@ -174,7 +174,7 @@ while [ "$#" -gt 0 ]; do
 done
 if [ "$(cat "$MOCK_CURRENT_IMAGE_FILE" 2>/dev/null)" = "$MOCK_PREVIOUS_IMAGE" ]; then
 	body='{"ready":true}'
-elif [ "$MOCK_SCENARIO" = "fresh_success" ] || [ "$MOCK_SCENARIO" = "privacy_fail" ] || [ "$MOCK_SCENARIO" = "fresh_rollback_down_fail" ] || [ "$MOCK_SCENARIO" = "root_usage_high" ]; then
+elif [ "$MOCK_SCENARIO" = "fresh_success" ] || [ "$MOCK_SCENARIO" = "preserve_success" ] || [ "$MOCK_SCENARIO" = "privacy_fail" ] || [ "$MOCK_SCENARIO" = "fresh_rollback_down_fail" ] || [ "$MOCK_SCENARIO" = "root_usage_high" ]; then
 	case "$url" in
 		*/api/v1/public/events*) body='{"resetRequired":true}' ;;
 		*/api/v1/public/state*) body='{"stats":{"packets":0,"activeNodes":0,"activeRoutes":0}}' ;;
@@ -294,6 +294,26 @@ run_successful_fresh_deploy() {
 	    --fresh-database --confirm-fresh-database DELETE-MC-CARTOLIVE-PRODUCTION-DATA >/dev/null
 }
 
+run_successful_preserved_deploy() {
+	name="$1"
+	repo="$tmp/$name/repo"
+	MOCK_SCENARIO=preserve_success \
+	  MOCK_CURRENT_IMAGE_FILE="$tmp/$name/current-image" \
+	  MOCK_DATABASE_FILE="$repo/data/meshcore-live.db" \
+	  MOCK_PREVIOUS_IMAGE="$PREVIOUS" \
+	  MOCK_MERGE_SHA="$MERGE_SHA" \
+	  MOCK_SYSTEMCTL_LOG="$tmp/$name/systemctl.log" \
+	  MOCK_DOCKER_LOG="$tmp/$name/docker.log" \
+	  MOCK_DOWN_COUNT_FILE="$tmp/$name/down-count" \
+	  MOCK_DF_COUNT_FILE="$tmp/$name/df-count" \
+	  MOCK_NODE_LOG="$tmp/$name/node.log" \
+	  MC_CARTOLIVE_DEPLOY_STATE_DIR="$tmp/$name/deploy-state" \
+	  MC_CARTOLIVE_READY_TIMEOUT_SECONDS=1 \
+	  MC_CARTOLIVE_REQUIRE_PRIVACY_SCAN=1 \
+	  PATH="$tmp/bin:$PATH" \
+	  "$ROOT/scripts/deploy.sh" --repo "$repo" --image "$DIGEST" --previous-image "$PREVIOUS" --expected-git-sha "$MERGE_SHA" >/dev/null
+}
+
 # Explicit candidate-readiness failure: rollback succeeds and restores timer.
 prepare_repo unready
 run_failed_deploy unready unready
@@ -394,11 +414,22 @@ test "$(grep -c ' up .*image=.*mqtt=$' "$tmp/fresh_success/docker.log")" -eq 1
 grep -q '^start mc-cartolive-watchdog.timer$' "$tmp/fresh_success/systemctl.log"
 grep -q "^MC_CARTOLIVE_IMAGE=$DIGEST$" "$tmp/fresh_success/deploy-state/current.env"
 grep -q "^MC_CARTOLIVE_GIT_SHA=$MERGE_SHA$" "$tmp/fresh_success/deploy-state/current.env"
+grep -q '^MC_CARTOLIVE_DATABASE_MODE=fresh$' "$tmp/fresh_success/deploy-state/current.env"
 grep -q '^MC_CARTOLIVE_CANDIDATE_RUN_ID=123456789$' "$tmp/fresh_success/deploy-state/current.env"
 grep -q '^MC_CARTOLIVE_CANDIDATE_RUN_ATTEMPT=1$' "$tmp/fresh_success/deploy-state/current.env"
 grep -q "^MC_CARTOLIVE_CANDIDATE_TAG=candidate-$MERGE_SHA-123456789-1$" "$tmp/fresh_success/deploy-state/current.env"
 grep -q -- '--entrypoint chown ' "$tmp/fresh_success/docker.log"
 grep -q -- '--entrypoint chmod ' "$tmp/fresh_success/docker.log"
 grep -q 'check-public-privacy.mjs http://127.0.0.1:39476 --origin https://carto.example.test' "$tmp/fresh_success/node.log"
+
+# The hosted path preserves the database/backups, performs the same public
+# privacy transaction when requested, and records the mode for later audits.
+prepare_repo preserve_success
+run_successful_preserved_deploy preserve_success
+grep -qx 'old-db' "$tmp/preserve_success/repo/data/meshcore-live.db"
+test -f "$tmp/preserve_success/repo/backups/legacy.db"
+test -f "$tmp/preserve_success/repo/data/config.yaml"
+grep -q '^MC_CARTOLIVE_DATABASE_MODE=preserved$' "$tmp/preserve_success/deploy-state/current.env"
+grep -q 'check-public-privacy.mjs http://127.0.0.1:39476 --origin https://carto.example.test' "$tmp/preserve_success/node.log"
 
 echo "release operations contracts ok"

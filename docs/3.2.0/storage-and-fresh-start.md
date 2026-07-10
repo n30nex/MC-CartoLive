@@ -1,37 +1,35 @@
-# 3.2.0 Storage And Fresh-Start Policy
+# 3.2.0 Storage, Preservation, And Fresh-Start Policy
 
 ## Hosted cutover contract
 
-The hosted `carto.canadaverse.org` 3.2.0 release has no historical-data
-recovery path. During the authorized maintenance window:
+The hosted `carto.canadaverse.org` 3.2.0 release preserves the running SQLite
+database. Before the maintenance window, create and verify a transactionally
+consistent backup on separate block storage and rehearse schema 32000 migration
+against a copy. Keep the pre-upgrade backup through the 24-hour audit.
 
-- stop the writer/container and watchdog first
-- preserve `.env` and `data/config.yaml`
-- remove stale `APP_VERSION`, `GIT_SHA`, `BUILD_TIME`, `VITE_GIT_SHA`, and
-  `VITE_BUILD_TIME` lines from `.env`
-- replace stale retention overrides with the locked seven-day/24-hour policy
-- permanently delete `data/meshcore-live.db`, `-wal`, and `-shm`
-- permanently delete all contents of the dedicated `backups/` directory
-- boot schema 32000 with MQTT disabled and prove zero packet, node, observer,
-  route, and event rows before enabling the preserved production MQTT setting
+During cutover, stop the watchdog and writer, preserve `.env` and
+`data/config.yaml`, remove stale release-identity overrides, enforce the locked
+seven-day/24-hour retention policy, and deploy without `--fresh-database`.
+The additive migration must preserve rows, pass integrity/privacy checks, and
+record `MC_CARTOLIVE_DATABASE_MODE=preserved` before the watchdog returns.
 
-`scripts/deploy.sh` implements those boundaries. It validates canonical paths,
-rejects symlinked data/backup directories, requires immutable candidate and
-rollback digests, and refuses destructive mode unless it receives both:
+The optional destructive mode remains fail-closed and is not part of the
+hosted 3.2.0 release. It requires both:
 
 ```text
 --fresh-database
 --confirm-fresh-database DELETE-MC-CARTOLIVE-PRODUCTION-DATA
 ```
 
-After deletion, the deploy script discovers the selected image's numeric
+In destructive mode, the deploy script discovers the selected image's numeric
 runtime user and group in a network-isolated helper container, then assigns
 only the bounded `data/` directory to that identity with mode `0750`. The same
 step runs for an empty-database rollback. This preserves `data/config.yaml`
 while allowing a non-root image to create SQLite files on a clean host.
 
-Rollback restores the previous application digest against another new empty
-database. It does not restore the deleted history.
+Normal rollback starts the previous digest against the preserved, additively
+migrated database. Disaster recovery restores the verified block-volume backup
+before starting either digest.
 
 ## Retention after cutover
 
@@ -66,12 +64,12 @@ fail-closed so an accidentally unbounded public deployment cannot look healthy.
 ## Capacity gates
 
 Before release work, reclaim unused BuildKit cache without touching the running
-database and require at least 9 GiB free and less than 75% root usage. Before
-destructive cutover, the deploy script checks that current free space plus the
-database/backup footprint can yield at least 25 GiB. It checks the real free
-space again after deletion and separately requires root usage to be strictly
-below 25% before starting the candidate. The minimum free-space threshold
-cannot be configured below 25 GiB in destructive mode.
+database and require at least 9 GiB free and less than 75% root usage. A
+preserved deployment keeps its recovery copy on separate block storage and the
+24-hour audit requires at least 9 GiB plus 20% free on the live filesystem.
+Destructive mode still checks that deletion can yield at least 25 GiB, verifies
+that space after deletion, and requires root usage below 25% before starting
+the candidate.
 
 After release:
 

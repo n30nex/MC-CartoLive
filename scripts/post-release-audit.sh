@@ -15,6 +15,7 @@ WATCHDOG_STATE="${MC_CARTOLIVE_WATCHDOG_STATE:-/var/lib/mc-cartolive-watchdog/st
 SQL_TIMEOUT_SECONDS="${MC_CARTOLIVE_AUDIT_SQL_TIMEOUT_SECONDS:-120}"
 EXPECTED_SCHEMA_VERSION="${MC_CARTOLIVE_AUDIT_SCHEMA_VERSION:-32000}"
 MIN_24H_FREE_GIB="${MC_CARTOLIVE_AUDIT_MIN_24H_FREE_GIB:-25}"
+MIN_PRESERVED_FREE_GIB="${MC_CARTOLIVE_AUDIT_MIN_PRESERVED_FREE_GIB:-9}"
 MIN_FREE_PERCENT="${MC_CARTOLIVE_AUDIT_MIN_FREE_PERCENT:-20}"
 NOW_EPOCH="${MC_CARTOLIVE_AUDIT_NOW_EPOCH:-$(date -u +%s)}"
 
@@ -23,11 +24,11 @@ EVENT_MAX_AGE_MS=90000000        # 25 hours
 WAL_MAX_BYTES=268435456           # 256 MiB
 DAY8_LATEST_SECONDS=777600        # do not invent a late day-8 growth baseline
 
-case "$SQL_TIMEOUT_SECONDS:$EXPECTED_SCHEMA_VERSION:$MIN_24H_FREE_GIB:$MIN_FREE_PERCENT:$NOW_EPOCH" in
+case "$SQL_TIMEOUT_SECONDS:$EXPECTED_SCHEMA_VERSION:$MIN_24H_FREE_GIB:$MIN_PRESERVED_FREE_GIB:$MIN_FREE_PERCENT:$NOW_EPOCH" in
 	*[!0-9:]*) printf 'post-release audit: numeric configuration is invalid\n' >&2; exit 2 ;;
 esac
 if [ "$SQL_TIMEOUT_SECONDS" -le 0 ] || [ "$EXPECTED_SCHEMA_VERSION" -le 0 ]; then exit 2; fi
-if [ "$MIN_24H_FREE_GIB" -le 0 ] || [ "$MIN_FREE_PERCENT" -le 0 ]; then exit 2; fi
+if [ "$MIN_24H_FREE_GIB" -le 0 ] || [ "$MIN_PRESERVED_FREE_GIB" -le 0 ] || [ "$MIN_FREE_PERCENT" -le 0 ]; then exit 2; fi
 
 for dependency in awk cp curl date df dirname docker flock jq mktemp mv rm sha256sum sqlite3 stat systemctl timeout tr; do
 	command -v "$dependency" >/dev/null 2>&1 || {
@@ -60,6 +61,7 @@ image="$(read_key "$DEPLOY_CURRENT" MC_CARTOLIVE_IMAGE)"
 deployed_at="$(read_key "$DEPLOY_CURRENT" MC_CARTOLIVE_DEPLOYED_AT)"
 version="$(read_key "$DEPLOY_CURRENT" MC_CARTOLIVE_VERSION)"
 git_sha="$(read_key "$DEPLOY_CURRENT" MC_CARTOLIVE_GIT_SHA)"
+database_mode="$(read_key "$DEPLOY_CURRENT" MC_CARTOLIVE_DATABASE_MODE)"
 case "$image" in *@sha256:*) ;; *) printf 'post-release audit: immutable deployment identity is invalid\n' >&2; exit 2 ;; esac
 image_digest="${image##*@}"
 case "$image_digest" in sha256:*[!0-9a-f]*|sha256:) exit 2 ;; esac
@@ -67,6 +69,11 @@ case "$image_digest" in sha256:*[!0-9a-f]*|sha256:) exit 2 ;; esac
 case "$version" in ''|*[!0-9.]*) printf 'post-release audit: release version is invalid\n' >&2; exit 2 ;; esac
 [ "${#git_sha}" -eq 40 ] || { printf 'post-release audit: release Git identity is invalid\n' >&2; exit 2; }
 case "$git_sha" in *[!0-9a-f]*) exit 2 ;; esac
+case "$database_mode" in
+	fresh) min_24h_free_gib="$MIN_24H_FREE_GIB" ;;
+	preserved) min_24h_free_gib="$MIN_PRESERVED_FREE_GIB" ;;
+	*) printf 'post-release audit: database mode is invalid\n' >&2; exit 2 ;;
+esac
 deployed_epoch="$(date -u -d "$deployed_at" +%s 2>/dev/null || true)"
 case "$deployed_epoch" in ''|*[!0-9]*) printf 'post-release audit: deployment timestamp is invalid\n' >&2; exit 2 ;; esac
 [ "$NOW_EPOCH" -ge "$deployed_epoch" ] || {
@@ -265,7 +272,7 @@ write_phase_result() {
 	baseline_bytes_json=null
 
 	if [ "$phase" = 24h ]; then
-		min_free_bytes=$((MIN_24H_FREE_GIB * 1024 * 1024 * 1024))
+		min_free_bytes=$((min_24h_free_gib * 1024 * 1024 * 1024))
 		[ "$free_bytes" -ge "$min_free_bytes" ] || printf '%s\n' filesystem_free_below_24h_gate >>"$phase_errors"
 	fi
 	if [ "$phase" = day8 ] || [ "$phase" = day14 ]; then
@@ -304,7 +311,7 @@ write_phase_result() {
 	result_tmp="$tmp_dir/result-$phase.json"
 	jq -n \
 		--arg phase "$phase" --arg completedAt "$completed_at" --arg deployedAt "$deployed_at" \
-		--arg version "$version" --arg gitSha "$git_sha" --arg imageDigest "$image_digest" \
+		--arg version "$version" --arg gitSha "$git_sha" --arg imageDigest "$image_digest" --arg databaseMode "$database_mode" \
 		--arg datasetState "$dataset_state" --arg storageState "$storage_state" --arg cacheState "$cache_state" \
 		--arg containerStatus "$container_status" --arg quickCheck "$quick_check" --arg foreignKeyCheck "$foreign_key_check" \
 		--argjson passed "$passed" --argjson errors "$errors_json" --argjson deploymentAgeSeconds "$deployment_age" \
@@ -313,7 +320,7 @@ write_phase_result() {
 		--argjson publicEventAgeMs "$event_age_json" --argjson databaseBytes "$database_bytes" \
 		--argjson walBytes "$wal_bytes" --argjson databaseAndWalBytes "$database_and_wal_bytes" \
 		--argjson baselineBytes "$baseline_bytes_json" --argjson growthBasisPoints "$growth_basis_points_json" \
-		--argjson freeBytes "$free_bytes" --argjson freePercent "$free_percent" \
+		--argjson freeBytes "$free_bytes" --argjson freePercent "$free_percent" --argjson min24hFreeGiB "$min_24h_free_gib" \
 		--argjson queueDepth "$queue_depth" --argjson queueOldestAgeMs "$queue_age_ms" \
 		--argjson accepted "$accepted_total" --argjson processed "$processed_total" --argjson dropped "$dropped_total" \
 		--argjson writeRetries "$write_retries_total" --argjson writeFailures "$write_failures_total" \
@@ -324,7 +331,7 @@ write_phase_result() {
 		--argjson uptimeSeconds "$uptime_seconds" --argjson containerRestarts "$container_restarts" --argjson containerIdentityMatches "$container_identity_matches" \
 		--argjson containerOOM "$container_oom_json" --argjson watchdogTimerActive "$watchdog_timer_active" \
 		--argjson watchdogFailures "$watchdog_failures" --argjson watchdogRecentRestarts "$watchdog_recent_restarts" \
-		'{formatVersion:1,phase:$phase,completedAt:$completedAt,passed:$passed,errors:$errors,release:{version:$version,gitSha:$gitSha,imageDigest:$imageDigest,deployedAt:$deployedAt,deploymentAgeSeconds:$deploymentAgeSeconds},readiness:{ready:$ready,dbReady:$dbReady,mqttSessionReady:$mqttSessionReady,publicStateReady:$publicStateReady,datasetState:$datasetState,storagePressureState:$storageState,publicCacheState:$cacheState},database:{schemaVersion:$schemaVersion,quickCheck:$quickCheck,foreignKeyCheck:$foreignKeyCheck,oldestObservationAgeMs:$observationAgeMs,oldestPublicEventAgeMs:$publicEventAgeMs,databaseBytes:$databaseBytes,walBytes:$walBytes,databaseAndWalBytes:$databaseAndWalBytes,day8BaselineBytes:$baselineBytes,growthBasisPoints:$growthBasisPoints},filesystem:{freeBytes:$freeBytes,freePercent:$freePercent},ingest:{queueDepth:$queueDepth,queueOldestItemAgeMs:$queueOldestAgeMs,acceptedTotal:$accepted,processedTotal:$processed,droppedTotal:$dropped,writeRetriesTotal:$writeRetries,writeFailuresTotal:$writeFailures,fullErrorsTotal:$fullErrors,busyErrorsTotal:$busyErrors,lastWriteLatencyMs:$writeLatencyMs,duplicateSuppressionsTotal:$duplicateSuppressions,derivedQueueDepth:$derivedDepth,derivedQueueOldestItemAgeMs:$derivedOldestAgeMs,derivedDroppedTotal:$derivedDropped,cacheRefreshFailuresTotal:$cacheFailures},process:{uptimeSeconds:$uptimeSeconds,containerStatus:$containerStatus,containerRestartCount:$containerRestarts,containerIdentityMatches:$containerIdentityMatches,oomKilled:$containerOOM},watchdog:{timerActive:$watchdogTimerActive,pendingFailures:$watchdogFailures,restartsInLastSixHours:$watchdogRecentRestarts}}' >"$result_tmp"
+		'{formatVersion:1,phase:$phase,completedAt:$completedAt,passed:$passed,errors:$errors,release:{version:$version,gitSha:$gitSha,imageDigest:$imageDigest,deployedAt:$deployedAt,deploymentAgeSeconds:$deploymentAgeSeconds,databaseMode:$databaseMode},readiness:{ready:$ready,dbReady:$dbReady,mqttSessionReady:$mqttSessionReady,publicStateReady:$publicStateReady,datasetState:$datasetState,storagePressureState:$storageState,publicCacheState:$cacheState},database:{schemaVersion:$schemaVersion,quickCheck:$quickCheck,foreignKeyCheck:$foreignKeyCheck,oldestObservationAgeMs:$observationAgeMs,oldestPublicEventAgeMs:$publicEventAgeMs,databaseBytes:$databaseBytes,walBytes:$walBytes,databaseAndWalBytes:$databaseAndWalBytes,day8BaselineBytes:$baselineBytes,growthBasisPoints:$growthBasisPoints},filesystem:{freeBytes:$freeBytes,freePercent:$freePercent,min24hFreeGiB:$min24hFreeGiB},ingest:{queueDepth:$queueDepth,queueOldestItemAgeMs:$queueOldestAgeMs,acceptedTotal:$accepted,processedTotal:$processed,droppedTotal:$dropped,writeRetriesTotal:$writeRetries,writeFailuresTotal:$writeFailures,fullErrorsTotal:$fullErrors,busyErrorsTotal:$busyErrors,lastWriteLatencyMs:$writeLatencyMs,duplicateSuppressionsTotal:$duplicateSuppressions,derivedQueueDepth:$derivedDepth,derivedQueueOldestItemAgeMs:$derivedOldestAgeMs,derivedDroppedTotal:$derivedDropped,cacheRefreshFailuresTotal:$cacheFailures},process:{uptimeSeconds:$uptimeSeconds,containerStatus:$containerStatus,containerRestartCount:$containerRestarts,containerIdentityMatches:$containerIdentityMatches,oomKilled:$containerOOM},watchdog:{timerActive:$watchdogTimerActive,pendingFailures:$watchdogFailures,restartsInLastSixHours:$watchdogRecentRestarts}}' >"$result_tmp"
 	chmod 0600 "$result_tmp"
 	if [ "$passed" = true ]; then
 		mv -f "$result_tmp" "$(phase_result "$phase")"
