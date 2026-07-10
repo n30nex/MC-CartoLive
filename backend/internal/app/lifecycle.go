@@ -95,10 +95,13 @@ func NewApplication(ctx context.Context, cfg Config, log *slog.Logger) (*Applica
 	}
 	st.SetCoordinatePolicy(coordinatePolicy)
 	yc := loadYAMLConfig(cfg.ConfigYAML, log)
+	resolver := resolve.New(st, yc.ForwarderRoles)
 	for _, node := range yc.ManualNodes {
 		if node.PublicKey != "" {
 			if err := st.ApplyManualNode(ctx, node.PublicKey, node.Name, node.Latitude, node.Longitude, node.Source); err != nil {
 				log.Warn("manual node override failed", "publicKey", redact(node.PublicKey), "error", err)
+			} else {
+				resolver.InvalidateCandidates()
 			}
 		}
 	}
@@ -107,7 +110,6 @@ func NewApplication(ctx context.Context, cfg Config, log *slog.Logger) (*Applica
 	publicHub.SetResumeEnabled(cfg.PublicWSResumeEnabled)
 	publicHub.SetSubscriptionsEnabled(cfg.PublicWSSubscriptionsEnabled)
 	publicCache := live.NewPublicStateCache(live.NewPublicIATAFilter(publicIATAs(cfg.PublicRegions, yc)))
-	resolver := resolve.New(st, yc.ForwarderRoles)
 	derivedQueueSize := cfg.DerivedIngestQueueSize
 	if derivedQueueSize < 1 {
 		derivedQueueSize = 1024
@@ -252,6 +254,7 @@ func (a *Application) processDerivedMQTT(ctx context.Context, msg imqtt.Normaliz
 		if err != nil {
 			a.Log.Warn("advert node upsert failed", "packetHash", parsed.PacketHash, "error", err)
 		} else {
+			a.Resolver.InvalidateCandidates()
 			advertNode = &node
 			a.broadcastNodeUpdateForIATA(ctx, node, msg.TopicInfo.IATA, msg.IngestID+":advert-node")
 		}

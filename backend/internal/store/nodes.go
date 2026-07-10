@@ -17,6 +17,8 @@ import (
 )
 
 func (s *Store) UpsertAdvertNode(ctx context.Context, iata string, advert meshcore.Advert, heardAt int64) (live.Node, error) {
+	finishCandidateMutation := s.beginCandidateMutation()
+	defer finishCandidateMutation()
 	nodeID := uuid.NewString()
 	name := advert.Name
 	lat, lng := s.nullableMapLatLng(advert.Latitude, advert.Longitude)
@@ -61,6 +63,10 @@ ON CONFLICT(public_key) DO UPDATE SET
 }
 
 func (s *Store) UpsertObserver(ctx context.Context, msg mq.NormalizedMessage) error {
+	if msg.TopicInfo.Subtopic == "status" {
+		finishCandidateMutation := s.beginCandidateMutation()
+		defer finishCandidateMutation()
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -562,6 +568,8 @@ func (s *Store) ApplyManualNode(ctx context.Context, publicKey, name string, lat
 	if !s.validMapCoords(lat, lng) {
 		return fmt.Errorf("manual node coordinates outside valid map bounds")
 	}
+	finishCandidateMutation := s.beginCandidateMutation()
+	defer finishCandidateMutation()
 	now := time.Now().UnixMilli()
 	role := "repeater"
 	if source == "" {

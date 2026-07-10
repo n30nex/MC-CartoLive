@@ -47,6 +47,7 @@ func (a *Application) HandleMQTT(ctx context.Context, msg imqtt.NormalizedMessag
 			a.Log.Warn("status upsert failed", "error", err)
 			return
 		}
+		a.Resolver.InvalidateCandidates()
 		a.enqueueDerivedIngest(derivedIngestJob{msg: msg, queuedAtMs: time.Now().UnixMilli()})
 		return
 	}

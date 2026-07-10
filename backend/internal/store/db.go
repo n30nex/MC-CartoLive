@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"meshcore-canada-live-map/backend/internal/live"
@@ -22,11 +23,36 @@ var schemaSQL string
 const SchemaVersion = 32000
 
 type Store struct {
-	db               *sql.DB
-	readDB           *sql.DB
-	path             string
-	coordinatePolicy live.CoordinatePolicy
-	migrationHook    func(string) error
+	db                  *sql.DB
+	readDB              *sql.DB
+	path                string
+	coordinatePolicy    live.CoordinatePolicy
+	migrationHook       func(string) error
+	candidateGeneration atomic.Uint64
+}
+
+// CandidateGeneration is a monotonic version of the node data used by the RF
+// prefix resolver. The resolver checks it on every lookup so an application
+// invalidation accidentally omitted at a call site cannot reuse stale truth.
+func (s *Store) CandidateGeneration() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.candidateGeneration.Load()
+}
+
+func (s *Store) bumpCandidateGeneration() {
+	if s != nil {
+		s.candidateGeneration.Add(1)
+	}
+}
+
+// beginCandidateMutation brackets a candidate-affecting store operation. The
+// first bump prevents reuse while the mutation is in flight; the deferred bump
+// makes every success or partial failure visible before the method returns.
+func (s *Store) beginCandidateMutation() func() {
+	s.bumpCandidateGeneration()
+	return s.bumpCandidateGeneration
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {
