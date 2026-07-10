@@ -111,8 +111,14 @@ storage_restart_safe() {
 	space="$(df -Pk "$DATA_DIR" 2>/dev/null | awk 'NR > 1 {total=$2; free=$4} END {if (total ~ /^[0-9]+$/ && free ~ /^[0-9]+$/) print total, free}')"
 	total_kb="$(printf '%s' "$space" | awk '{print $1}')"
 	free_kb="$(printf '%s' "$space" | awk '{print $2}')"
-	case "$total_kb:$free_kb" in
-		''|:|*[!0-9:]*|0:*)
+	case "$total_kb" in
+		''|*[!0-9]*|0)
+			log "restart_suppressed condition=data_filesystem_probe_failed"
+			return 1
+			;;
+	esac
+	case "$free_kb" in
+		''|*[!0-9]*)
 			log "restart_suppressed condition=data_filesystem_probe_failed"
 			return 1
 			;;

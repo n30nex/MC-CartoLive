@@ -76,6 +76,9 @@ test ! -s "$tmp/docker.log"
 for _ in 1 2 3; do run_watchdog '' 000 '' 1000 100; done
 test ! -s "$tmp/docker.log"
 grep -q 'condition=data_filesystem_pressure' "$tmp/watchdog.log"
+run_watchdog '' 000 '' 0 800
+test ! -s "$tmp/docker.log"
+grep -q 'condition=data_filesystem_probe_failed' "$tmp/watchdog.log"
 for _ in 1 2 3; do run_watchdog '' 000 'database write failed: SQLITE_FULL' 1000 800; done
 test ! -s "$tmp/docker.log"
 grep -q 'condition=recent_sqlite_full' "$tmp/watchdog.log"
