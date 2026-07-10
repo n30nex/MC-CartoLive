@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -7,13 +8,20 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const version = read('VERSION').trim();
 const schema = JSON.parse(read('docs/public-api.openapi.json'));
 const backendRoutes = read('backend/internal/api/routes.go');
-const backendSchema = read('backend/internal/api/public_extended.go');
+const backendSchema = `${read('backend/internal/api/public_extended.go')}\n${read('backend/internal/api/public_openapi.go')}`;
 const errors = [];
+
+const generated = spawnSync(process.execPath, [join(root, 'scripts', 'generate-public-openapi.mjs'), '--check'], {
+  cwd: root,
+  encoding: 'utf8'
+});
+if (generated.status !== 0) errors.push((generated.stderr || generated.stdout || 'generated OpenAPI drift').trim());
 
 if (schema.openapi !== '3.1.0') errors.push('openapi document version must be 3.1.0');
 if (schema.info?.version !== version) errors.push(`schema version ${schema.info?.version} does not match VERSION ${version}`);
 if (!backendSchema.includes('publicOpenAPISchema(s.Config.AppVersion)')) errors.push('runtime schema must use compiled Config.AppVersion');
-if (!backendSchema.includes('"version": version')) errors.push('runtime schema must populate info.version dynamically');
+if (!backendSchema.includes('//go:embed public-openapi.json')) errors.push('runtime schema must embed the generated contract');
+if (!backendSchema.includes('info["version"] = version')) errors.push('runtime schema must populate info.version dynamically');
 
 const requiredPaths = [
   '/healthz', '/readyz', '/api/v1/public/state', '/api/v1/public/bootstrap',
@@ -30,12 +38,26 @@ for (const path of requiredPaths) {
 }
 
 for (const component of [
-  'RuntimeStatus', 'PublicRuntimeHealth', 'PublicBootstrapResponse', 'PublicEventsResponse',
-  'PublicViewportResponse', 'PublicLiveState', 'PublicNode', 'PublicRoute', 'PublicMapCluster'
+  'RuntimeOperationalStatus', 'RuntimeReadinessStatus', 'PublicRuntimeHealth', 'PublicBootstrapResponse',
+  'PublicEventsResponse', 'PublicViewportResponse', 'PublicLiveState', 'PublicHistoryResponse',
+  'PublicHistorySummaryResponse', 'PublicPacketsResponse', 'PublicChatResponse', 'PublicNOCResponse',
+  'SolarConditions', 'PublicPropagationResponse', 'PublicCoverageResponse', 'PublicLOSProfileResponse',
+  'PublicSensorSummaryResponse', 'OpenAPIDocument', 'WebSocketClientMessage', 'WebSocketServerMessage',
+  'PublicNode', 'PublicRoute', 'PublicMapCluster'
 ]) {
   if (!schema.components?.schemas?.[component]) errors.push(`missing public schema component ${component}`);
 }
-if (!schema.paths?.['/ws/public']?.get?.['x-websocket-messages']) errors.push('WebSocket message inventory is missing');
+const websocket = schema.paths?.['/ws/public']?.get?.['x-websocket-messages'];
+if (websocket?.client?.$ref !== '#/components/schemas/WebSocketClientMessage') errors.push('WebSocket client message contract is missing');
+if (websocket?.server?.$ref !== '#/components/schemas/WebSocketServerMessage') errors.push('WebSocket server message contract is missing');
+
+if (schema.components?.schemas?.SanitizedPublicObject) errors.push('catch-all SanitizedPublicObject is forbidden');
+if (JSON.stringify(schema).includes('Legacy endpoint-specific public DTO')) errors.push('legacy catch-all schema remains');
+for (const path of requiredPaths.filter((path) => path !== '/ws/public')) {
+  const response = schema.paths[path].get.responses?.['200'];
+  const successSchema = response?.content?.['application/json']?.schema;
+  if (!successSchema?.$ref) errors.push(`${path} 200 response must use a named exact schema`);
+}
 
 for (const forbidden of ['rawHex', 'rawJson', 'payloadHex', 'pathHex', 'packetHash', 'observerPublicKey']) {
   if (!schema['x-public-forbidden-fields']?.includes(forbidden)) errors.push(`missing forbidden field marker ${forbidden}`);
