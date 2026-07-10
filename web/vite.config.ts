@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const packageJSON = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version?: string };
 const GITHUB_REPO_URL = 'https://github.com/n30nex/MC-CartoLive';
@@ -35,6 +36,11 @@ function buildTime(): string {
 }
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@mc-active-asset-pack': fileURLToPath(new URL(`./src/assets/v3/${APP_ASSET_PACK}Pack.ts`, import.meta.url))
+    }
+  },
   plugins: [
     react(),
     {
