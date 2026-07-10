@@ -203,9 +203,31 @@ export type PublicEvent =
 
 export interface PublicEventsResponse {
   serverTime: number;
+  oldestSeq: number;
   latestSeq: number;
+  resetRequired: boolean;
   events: PublicEvent[];
   nextCursor?: string;
+}
+
+export interface PublicMapCluster {
+  id: string;
+  latitude: number;
+  longitude: number;
+  count: number;
+  activityCount?: number;
+  lastSeen?: number;
+  region?: string;
+}
+
+export interface PublicBootstrapResponse {
+  serverTime: number;
+  map?: PublicMapConfig;
+  stats: PublicStats;
+  latestSeq: number;
+  health: RuntimeHealth;
+  clusters: PublicMapCluster[];
+  recentActivity: PublicActivity[];
 }
 
 export interface PublicViewportResponse {
@@ -213,6 +235,7 @@ export interface PublicViewportResponse {
   latestSeq?: number;
   nodes: PublicNode[];
   routes: PublicRoute[];
+  clusters?: PublicMapCluster[];
   events?: PublicEvent[];
   bbox?: number[];
   zoom?: number;
@@ -429,6 +452,7 @@ export interface RuntimeHealth {
   staticReady?: boolean;
   publicStateReady?: boolean;
   mqttConnected?: boolean;
+  mqttSessionReady?: boolean;
   mqttMessages?: number;
   mqttDroppedMessages?: number;
   mqttMalformedTopics?: number;
@@ -451,6 +475,9 @@ export interface RuntimeHealth {
   routeMotionState?: string;
   observerMotionState?: string;
   liveConfidenceState?: string;
+  datasetState?: 'fresh_start' | 'warming' | 'live' | string;
+  datasetStartedAt?: number;
+  storagePressureState?: 'ok' | 'warn' | 'critical' | string;
   recentRoutePulseAgeMs?: number;
   recentObserverBurstAgeMs?: number;
   packets?: number;

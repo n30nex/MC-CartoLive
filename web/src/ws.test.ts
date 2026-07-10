@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { WS_RECONNECT_BASE_MS, WS_RECONNECT_MAX_MS, connectPublicSocket, publicSocketSubscriptionsEnabled, reconnectDelayMs } from './ws';
+import { WS_INBOUND_SILENCE_MS, WS_RECONNECT_BASE_MS, WS_RECONNECT_MAX_MS, connectPublicSocket, publicSocketSubscriptionsEnabled, reconnectDelayMs } from './ws';
 
 const originalWebSocket = window.WebSocket;
 
@@ -79,9 +79,37 @@ describe('public websocket reconnect backoff', () => {
     expect(statuses).toEqual(['connecting', 'live', 'error', 'recovering']);
     socket.close();
   });
+
+  it('reconnects after prolonged inbound silence and refreshes liveness on every frame', () => {
+    vi.useFakeTimers();
+    const statuses: string[] = [];
+    const sockets: FakeWebSocket[] = [];
+    Object.defineProperty(window, 'WebSocket', {
+      configurable: true,
+      writable: true,
+      value: class extends FakeWebSocket {
+        constructor(url: string) {
+          super(url);
+          sockets.push(this);
+        }
+      }
+    });
+
+    const socket = connectPublicSocket(() => undefined, (status) => statuses.push(status));
+    sockets[0].emit('open');
+    vi.advanceTimersByTime(WS_INBOUND_SILENCE_MS - 1_000);
+    sockets[0].emit('message', { data: JSON.stringify({ v: 1, type: 'pong' }) });
+    vi.advanceTimersByTime(1_001);
+    expect(sockets[0].closed).toBe(false);
+    vi.advanceTimersByTime(WS_INBOUND_SILENCE_MS);
+    expect(sockets[0].closed).toBe(true);
+    expect(statuses).toContain('stale');
+    expect(statuses.at(-1)).toBe('recovering');
+    socket.close();
+  });
 });
 
-type FakeListener = () => void;
+type FakeListener = (event: { data?: string }) => void;
 
 class FakeWebSocket {
   static readonly OPEN = 1;
@@ -110,7 +138,7 @@ class FakeWebSocket {
     this.readyState = 3;
   }
 
-  emit(type: string) {
-    for (const listener of this.listeners.get(type) ?? []) listener();
+  emit(type: string, event: { data?: string } = {}) {
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
 }

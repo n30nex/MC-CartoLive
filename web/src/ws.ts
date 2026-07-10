@@ -7,6 +7,7 @@ export interface LiveSocket {
 export const WS_RECONNECT_BASE_MS = 800;
 export const WS_RECONNECT_MAX_MS = 15_000;
 export const WS_RECONNECT_JITTER_MS = 500;
+export const WS_INBOUND_SILENCE_MS = 65_000;
 
 export function reconnectDelayMs(attempts: number, random = Math.random): number {
   const attempt = Math.max(0, Math.floor(attempts));
@@ -29,11 +30,34 @@ export function connectPublicSocket(onMessage: (message: PublicLiveEnvelope) => 
   let closed = false;
   let retryTimer: number | undefined;
   let pingTimer: number | undefined;
+  let livenessTimer: number | undefined;
   let attempts = 0;
 
   const clearPingTimer = () => {
     if (pingTimer !== undefined) window.clearInterval(pingTimer);
     pingTimer = undefined;
+  };
+
+  const clearLivenessTimer = () => {
+    if (livenessTimer !== undefined) window.clearTimeout(livenessTimer);
+    livenessTimer = undefined;
+  };
+
+  const resetLivenessTimer = () => {
+    clearLivenessTimer();
+    if (closed) return;
+    livenessTimer = window.setTimeout(() => {
+      livenessTimer = undefined;
+      onStatus('stale');
+      const staleSocket = socket;
+      socket = null;
+      try {
+        staleSocket?.close();
+      } catch {
+        // Reconnect scheduling is independent of a browser close failure.
+      }
+      scheduleReconnect();
+    }, WS_INBOUND_SILENCE_MS);
   };
 
   const scheduleReconnect = () => {
@@ -49,6 +73,7 @@ export function connectPublicSocket(onMessage: (message: PublicLiveEnvelope) => 
 
   const handleSendFailure = () => {
     clearPingTimer();
+    clearLivenessTimer();
     onStatus('error');
     const activeSocket = socket;
     socket = null;
@@ -85,6 +110,7 @@ export function connectPublicSocket(onMessage: (message: PublicLiveEnvelope) => 
       attempts = 0;
       onStatus('live');
       onOpen?.();
+      resetLivenessTimer();
       if (publicSocketSubscriptionsEnabled() && !sendJSON({ v: 1, type: 'subscribe', id: 'public-map' })) return;
       pingTimer = window.setInterval(() => {
         sendJSON({ type: 'ping' });
@@ -92,6 +118,7 @@ export function connectPublicSocket(onMessage: (message: PublicLiveEnvelope) => 
     });
     socket.addEventListener('close', () => {
       clearPingTimer();
+      clearLivenessTimer();
       if (closed) {
         onStatus('closed');
         return;
@@ -100,6 +127,7 @@ export function connectPublicSocket(onMessage: (message: PublicLiveEnvelope) => 
     });
     socket.addEventListener('error', () => onStatus('error'));
     socket.addEventListener('message', (event) => {
+      resetLivenessTimer();
       try {
         onMessage(JSON.parse(event.data) as PublicLiveEnvelope);
       } catch {
@@ -115,6 +143,7 @@ export function connectPublicSocket(onMessage: (message: PublicLiveEnvelope) => 
       closed = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       clearPingTimer();
+      clearLivenessTimer();
       socket?.close();
     }
   };

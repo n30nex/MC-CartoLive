@@ -84,7 +84,7 @@ describe('panel chrome helpers', () => {
   });
 
   it('starts Busy Pathways hidden but restores it when showing all panels', () => {
-    expect(INITIAL_CHROME_PANEL_VISIBILITY).toEqual({ search: true, legend: true, hotRoutes: false });
+    expect(INITIAL_CHROME_PANEL_VISIBILITY).toEqual({ search: true, legend: false, hotRoutes: false });
     expect(DEFAULT_CHROME_PANEL_VISIBILITY).toEqual({ search: true, legend: true, hotRoutes: true });
 
     const initial: ChromeVisibilityState = {

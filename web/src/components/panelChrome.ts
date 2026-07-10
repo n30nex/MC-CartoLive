@@ -29,7 +29,7 @@ export const DEFAULT_CHROME_PANEL_VISIBILITY: Record<ChromePanelID, boolean> = {
 
 export const INITIAL_CHROME_PANEL_VISIBILITY: Record<ChromePanelID, boolean> = {
   search: true,
-  legend: true,
+  legend: false,
   hotRoutes: false
 };
 

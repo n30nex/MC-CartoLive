@@ -52,4 +52,14 @@ describe('share view URLs', () => {
     const url = buildSharedViewURL('https://routes.canadaverse.org/', { lat: 43.6532, lng: -79.3832, z: 15.5, pitch: 46.44, bearing: -11.24 }, {});
     expect(url).toBe('https://routes.canadaverse.org/?lat=43.6532&lng=-79.3832&z=15.5&pitch=46.4&bearing=-11.2');
   });
+
+  it('round-trips a privacy-safe Replay Studio deep link', () => {
+    const url = buildSharedViewURL('https://routes.canadaverse.org/', { lat: 43, lng: -79, z: 8 }, {
+      route: 'route:abc', studio: true, replayPacket: 'packet-123', replayRoute: 'route:abc'
+    });
+    expect(parseSharedView(new URL(url).search)).toMatchObject({ studio: true, replayPacket: 'packet-123', replayRoute: 'route:abc', route: 'route:abc' });
+    expect(buildSharedViewURL('https://routes.canadaverse.org/', { lat: 43, lng: -79, z: 8 }, {
+      studio: true, replayPacket: 'secret / raw payload'
+    })).not.toContain('secret');
+  });
 });

@@ -1,11 +1,14 @@
-import { appVersion } from './buildInfo';
+import { appVersion, gitSha } from './buildInfo';
 
 const LEGACY_CACHE_PREFIX = 'mc-cartolive';
 const SW_CLEANUP_RELOAD_KEY = `mc-cartolive-sw-cleanup-reload-${appVersion}`;
+export const SERVICE_WORKER_UPDATE_EVENT = 'mc-cartolive:service-worker-update';
 
 type CacheStorageLike = Pick<CacheStorage, 'keys' | 'delete'>;
-type ServiceWorkerRegistrationLike = Pick<ServiceWorkerRegistration, 'unregister'>;
-type ServiceWorkerContainerLike = Pick<ServiceWorkerContainer, 'controller' | 'register' | 'getRegistrations'>;
+type ServiceWorkerRegistrationLike = Pick<ServiceWorkerRegistration, 'unregister'> & Partial<Pick<ServiceWorkerRegistration, 'installing' | 'addEventListener'>>;
+type ServiceWorkerContainerLike = Pick<ServiceWorkerContainer, 'controller' | 'getRegistrations'> & {
+  register?: (scriptURL: string, options?: RegistrationOptions) => Promise<ServiceWorkerRegistrationLike>;
+};
 
 export interface ServiceWorkerWindowLike {
   addEventListener?: Window['addEventListener'];
@@ -14,6 +17,7 @@ export interface ServiceWorkerWindowLike {
   location?: Pick<Location, 'reload'>;
   navigator?: Navigator & { serviceWorker?: ServiceWorkerContainerLike };
   sessionStorage?: Pick<Storage, 'getItem' | 'setItem'>;
+  dispatchEvent?: Window['dispatchEvent'];
 }
 
 export function serviceWorkerEnabled(env: Record<string, unknown> = import.meta.env): boolean {
@@ -23,13 +27,40 @@ export function serviceWorkerEnabled(env: Record<string, unknown> = import.meta.
 export function configureServiceWorker(win: ServiceWorkerWindowLike = window): void {
   if (serviceWorkerEnabled()) {
     runOnLoad(() => {
-      void win.navigator?.serviceWorker?.register('/sw.js').catch(() => undefined);
+      const register = win.navigator?.serviceWorker?.register;
+      if (!register) return;
+      void register.call(win.navigator?.serviceWorker, serviceWorkerScriptURL(), { updateViaCache: 'none' })
+        .then((registration) => watchForServiceWorkerUpdate(registration, win))
+        .catch(() => undefined);
     }, win);
     return;
   }
   runOnLoad(() => {
     void cleanupLegacyServiceWorkers(win).catch(() => undefined);
   }, win);
+}
+
+export function serviceWorkerScriptURL(version = appVersion, sha = gitSha): string {
+  const params = new URLSearchParams({ version: version || 'dev', sha: (sha || 'dev').slice(0, 12) });
+  return `/sw.js?${params.toString()}`;
+}
+
+export function serviceWorkerMayCacheURL(urlValue: string, origin: string): boolean {
+  try {
+    return new URL(urlValue, origin).origin === new URL(origin).origin;
+  } catch {
+    return false;
+  }
+}
+
+function watchForServiceWorkerUpdate(registration: ServiceWorkerRegistrationLike, win: ServiceWorkerWindowLike): void {
+  registration.addEventListener?.('updatefound', () => {
+    const worker = registration.installing;
+    worker?.addEventListener('statechange', () => {
+      if (worker.state !== 'installed' || !win.navigator?.serviceWorker?.controller) return;
+      win.dispatchEvent?.(new CustomEvent(SERVICE_WORKER_UPDATE_EVENT));
+    });
+  });
 }
 
 export async function cleanupLegacyServiceWorkers(win: ServiceWorkerWindowLike = window): Promise<void> {

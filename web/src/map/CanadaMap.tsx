@@ -1413,6 +1413,7 @@ function CanadaMap({
   const openFreeMap3DImportRef = useRef<Promise<void> | null>(null);
   const loadedRef = useRef(false);
   const layerEventsBoundRef = useRef(false);
+  const layerEventsCleanupRef = useRef<(() => void) | null>(null);
   const initialViewAppliedRef = useRef(false);
   const fitInitialNodesRef = useRef(false);
   const positionedNodesReadyRef = useRef(false);
@@ -1787,7 +1788,7 @@ function CanadaMap({
       maxZoom: 18,
       maxPitch: 85,
       fadeDuration: 0,
-      canvasContextAttributes: { antialias: true, preserveDrawingBuffer: true },
+      canvasContextAttributes: { antialias: true, preserveDrawingBuffer: false },
       attributionControl: { compact: true }
     });
     map.dragRotate.enable();
@@ -1890,7 +1891,7 @@ function CanadaMap({
         addPublicLayers(map);
         applyLayerSettings(map, layerSettingsRef.current, themeModeRef.current, styleSettingsRef.current);
         if (!layerEventsBoundRef.current) {
-          bindLayerEvents(map, nodesRef, nodeMeshActivityAtRef, selectedNodeRef, plotModeRef, plotNodePickRef, plotMapPointRef, clearSelectionRef, setHoveredNode);
+          layerEventsCleanupRef.current = bindLayerEvents(map, nodesRef, nodeMeshActivityAtRef, selectedNodeRef, plotModeRef, plotNodePickRef, plotMapPointRef, clearSelectionRef, setHoveredNode);
           layerEventsBoundRef.current = true;
         }
       } catch (error) {
@@ -1959,6 +1960,9 @@ function CanadaMap({
       map.off('load', initializeMapLayers);
       map.off('style.load', initializeMapLayers);
       map.off('styledata', initializeMapLayers);
+      layerEventsCleanupRef.current?.();
+      layerEventsCleanupRef.current = null;
+      layerEventsBoundRef.current = false;
       if (nodeLabelFrameRef.current !== null) window.cancelAnimationFrame(nodeLabelFrameRef.current);
       nodeLabelFrameRef.current = null;
       if (pulseSchedulerTimerRef.current !== null) window.clearTimeout(pulseSchedulerTimerRef.current);
@@ -2031,6 +2035,8 @@ function CanadaMap({
     clearClusterActivityGlowStates(map, clusterActivityGlowRef.current);
     stopClusterActivityGlowTimer(clusterActivityGlowTimerRef);
     destroyOpenFreeMap3D();
+    layerEventsCleanupRef.current?.();
+    layerEventsCleanupRef.current = null;
     layerEventsBoundRef.current = false;
 
     const applyStyle = () => {
@@ -2366,8 +2372,8 @@ function CanadaMap({
       <div
         ref={containerRef}
         className="map-container"
-        role="application"
-        aria-label="Live MeshCore Canada network map"
+        role="region"
+        aria-label="Live MeshCore Canada network map. Use the surrounding controls to explore."
         aria-description={`${nodes.length} nodes, ${routes.length} routes visible`}
       />
       {mapInitError && !loading && (
@@ -3803,7 +3809,7 @@ function bindLayerEvents(
   plotMapPointRef: MutableRefObject<(point: { lat: number; lng: number }) => void>,
   clearSelectionRef: MutableRefObject<() => void>,
   setHoveredNode: Dispatch<SetStateAction<HoveredNodeToast | null>>
-) {
+): () => void {
   const expandClusterFeature = async (feature: maplibregl.MapGeoJSONFeature | undefined) => {
     const typedFeature = feature as any;
     const clusterID = typedFeature?.properties?.cluster_id;
@@ -3831,7 +3837,7 @@ function bindLayerEvents(
       return { node, x, y, lastHeardAt: nodeEffectiveActivityAt(node, nodeMeshActivityAtRef.current.get(node.id)) };
     });
   };
-  map.on('click', async (event) => {
+  const handleMapClick = async (event: maplibregl.MapMouseEvent) => {
     const nodeLayers = [OBSERVER_LAYER, NODE_ICON_LAYER, NODE_LAYER].filter((layerID) => map.getLayer(layerID));
     const nodeFeature = nodeLayers.length > 0
       ? map.queryRenderedFeatures(event.point, { layers: nodeLayers }).find((feature) => typeof feature.properties?.id === 'string')
@@ -3859,21 +3865,41 @@ function bindLayerEvents(
     if (await expandClusterFeature(clusterFeature)) return;
 
     clearSelectionRef.current();
-  });
+  };
+  const handleNodePointerLeave = () => setHoveredNode(null);
+  const handleInteractivePointerEnter = () => {
+    map.getCanvas().style.cursor = 'pointer';
+  };
+  const handleInteractivePointerLeave = () => {
+    map.getCanvas().style.cursor = '';
+  };
+  const interactiveLayers = [CLUSTER_LAYER, CLUSTER_COUNT_LAYER, NODE_LAYER, NODE_ICON_LAYER, OBSERVER_LAYER];
+  map.on('click', handleMapClick);
   map.on('mousemove', NODE_LAYER, handleNodePointerMove);
   map.on('mousemove', NODE_ICON_LAYER, handleNodePointerMove);
   map.on('mousemove', OBSERVER_LAYER, handleNodePointerMove);
-  map.on('mouseleave', NODE_LAYER, () => setHoveredNode(null));
-  map.on('mouseleave', NODE_ICON_LAYER, () => setHoveredNode(null));
-  map.on('mouseleave', OBSERVER_LAYER, () => setHoveredNode(null));
-  for (const layer of [CLUSTER_LAYER, CLUSTER_COUNT_LAYER, NODE_LAYER, NODE_ICON_LAYER, OBSERVER_LAYER]) {
-    map.on('mouseenter', layer, () => {
-      map.getCanvas().style.cursor = 'pointer';
-    });
-    map.on('mouseleave', layer, () => {
-      map.getCanvas().style.cursor = '';
-    });
+  map.on('mouseleave', NODE_LAYER, handleNodePointerLeave);
+  map.on('mouseleave', NODE_ICON_LAYER, handleNodePointerLeave);
+  map.on('mouseleave', OBSERVER_LAYER, handleNodePointerLeave);
+  for (const layer of interactiveLayers) {
+    map.on('mouseenter', layer, handleInteractivePointerEnter);
+    map.on('mouseleave', layer, handleInteractivePointerLeave);
   }
+  return () => {
+    map.off('click', handleMapClick);
+    map.off('mousemove', NODE_LAYER, handleNodePointerMove);
+    map.off('mousemove', NODE_ICON_LAYER, handleNodePointerMove);
+    map.off('mousemove', OBSERVER_LAYER, handleNodePointerMove);
+    map.off('mouseleave', NODE_LAYER, handleNodePointerLeave);
+    map.off('mouseleave', NODE_ICON_LAYER, handleNodePointerLeave);
+    map.off('mouseleave', OBSERVER_LAYER, handleNodePointerLeave);
+    for (const layer of interactiveLayers) {
+      map.off('mouseenter', layer, handleInteractivePointerEnter);
+      map.off('mouseleave', layer, handleInteractivePointerLeave);
+    }
+    setHoveredNode(null);
+    map.getCanvas().style.cursor = '';
+  };
 }
 
 function NodeHoverToast({ hovered, now }: { hovered: HoveredNodeToast; now: number }) {

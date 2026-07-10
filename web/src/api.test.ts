@@ -1,5 +1,42 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchPublicChat, fetchPublicPackets, fetchPublicPropagation } from './api';
+import { JSON_REQUEST_TIMEOUT_MS, fetchPublicBootstrap, fetchPublicChat, fetchPublicEvents, fetchPublicPackets, fetchPublicPropagation } from './api';
+
+describe('public transport contracts', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('normalizes event reset metadata without scanning history', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ serverTime: '100', oldestSeq: '40', latestSeq: '60', resetRequired: true, nextCursor: 60, events: [] }), { status: 200 })));
+    await expect(fetchPublicEvents({ afterSeq: 0 })).resolves.toEqual({ serverTime: 100, oldestSeq: 40, latestSeq: 60, resetRequired: true, nextCursor: '60', events: [] });
+  });
+
+  it('normalizes bootstrap clusters and public-safe health', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      serverTime: 100,
+      latestSeq: 20,
+      stats: { packets: 1 },
+      health: { mqttSessionReady: true, datasetState: 'warming', datasetStartedAt: 90, storagePressureState: 'ok' },
+      clusters: [{ id: 'yyz', lat: '43.6', lng: '-79.3', count: '12', region: 'YYZ' }],
+      recentActivity: []
+    }), { status: 200 })));
+    const response = await fetchPublicBootstrap();
+    expect(response.clusters[0]).toEqual({ id: 'yyz', latitude: 43.6, longitude: -79.3, count: 12, activityCount: undefined, lastSeen: undefined, region: 'YYZ' });
+    expect(response.health).toMatchObject({ mqttSessionReady: true, datasetState: 'warming', storagePressureState: 'ok' });
+  });
+
+  it('aborts JSON requests after ten seconds', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason ?? new DOMException('Aborted', 'AbortError')), { once: true });
+    })));
+    const request = fetchPublicEvents({ afterSeq: 2 });
+    const rejection = expect(request).rejects.toMatchObject({ name: 'TimeoutError' });
+    await vi.advanceTimersByTimeAsync(JSON_REQUEST_TIMEOUT_MS);
+    await rejection;
+  });
+});
 
 describe('fetchPublicPackets', () => {
   afterEach(() => {

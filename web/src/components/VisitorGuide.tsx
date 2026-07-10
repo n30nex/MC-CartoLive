@@ -34,9 +34,9 @@ export default function VisitorGuide({
       <button type="button" className="visitor-guide-close" aria-label="Dismiss map guide" onClick={dismiss}>
         <X size={14} />
       </button>
-      <span className="panel-eyebrow">3.0.2 Map</span>
-      <h2>Follow recent traffic</h2>
-      <p>Comets and fading trails show current public RF activity. Route lines, terrain, and propagation stay optional so the first view stays clear.</p>
+      <span className="panel-eyebrow">Live map</span>
+      <h2>Watch RF traffic move</h2>
+      <p>Comets show current public traffic. Select a node or pathway for details, then open Replay Studio for a guided route story.</p>
       <div className="visitor-guide-actions">
         <button type="button" onClick={onOpenSettings}>
           <SlidersHorizontal size={14} />
