@@ -3,7 +3,7 @@ set -eu
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:39476}"
 BROWSER_SMOKE_BASE_URL="${BROWSER_SMOKE_BASE_URL:-$BASE_URL}"
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-}"
 LOCAL_IMAGE="${LOCAL_IMAGE:-mc-cartolive-meshcore-live-map:latest}"
 
@@ -26,7 +26,7 @@ go tool govulncheck ./...
 cd "$ROOT/web"
 npm ci
 npm audit --audit-level=high
-npm test -- --run
+npm test -- --run --pool=threads --maxWorkers=2
 npm run build
 node "$ROOT/scripts/check-frontend-budget.mjs"
 
@@ -47,6 +47,7 @@ fi
 curl -fsS "$BASE_URL/healthz" >/tmp/mc-cartolive-health.json
 curl -fsS "$BASE_URL/readyz" >/tmp/mc-cartolive-ready.json
 curl -fsS "$BASE_URL/api/v1/public/state" >/tmp/mc-cartolive-state.json
+curl -fsS "$BASE_URL/api/v1/public/bootstrap" >/tmp/mc-cartolive-bootstrap.json
 
 NOW="$(date -u +%s)000"
 FROM="$((NOW - 600000))"
@@ -72,6 +73,7 @@ echo "container runtime: $CONTAINER_RUNTIME"
 echo "health:  /tmp/mc-cartolive-health.json"
 echo "ready:   /tmp/mc-cartolive-ready.json"
 echo "state:   /tmp/mc-cartolive-state.json"
+echo "bootstrap: /tmp/mc-cartolive-bootstrap.json"
 echo "history: /tmp/mc-cartolive-history.json"
 echo "summary: /tmp/mc-cartolive-history-summary.json"
 echo "packets: /tmp/mc-cartolive-packets.json"

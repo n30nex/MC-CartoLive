@@ -10,8 +10,9 @@ const from = now - 10 * 60 * 1000;
 const endpoints = [
   { path: '/healthz', type: 'json' },
   { path: '/readyz', type: 'json' },
-  { path: '/metrics', type: 'text' },
+  { path: '/metrics', type: 'text', optionalNotFound: true },
   { path: '/api/v1/public/state', type: 'json' },
+  { path: '/api/v1/public/bootstrap', type: 'json' },
   { path: '/api/v1/public/events?afterSeq=0&limit=25', type: 'json' },
   { path: '/api/v1/public/viewport?bbox=-142,41,-52,84&zoom=4&limit=25', type: 'json' },
   { path: '/api/v1/public/noc', type: 'json' },
@@ -67,6 +68,7 @@ const findings = [];
 for (const endpoint of endpoints) {
   const url = `${baseUrl}${endpoint.path}`;
   const response = await fetch(url, { headers: { accept: 'application/json' } });
+  if (endpoint.optionalNotFound && response.status === 404) continue;
   if (!response.ok) {
     throw new Error(`${endpoint.path} returned ${response.status}`);
   }

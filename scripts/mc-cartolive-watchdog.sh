@@ -1,68 +1,70 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 set -u
 
-APP_DIR="${MC_CARTOLIVE_APP_DIR:-/opt/MC-CartoLive}"
-SERVICE="${MC_CARTOLIVE_SERVICE:-meshcore-live-map}"
+CONTAINER="${MC_CARTOLIVE_CONTAINER:-meshcore-canada-live-map}"
 READY_URL="${MC_CARTOLIVE_READY_URL:-http://127.0.0.1:39476/readyz}"
 STATE_DIR="${MC_CARTOLIVE_STATE_DIR:-/var/lib/mc-cartolive-watchdog}"
 LOG_FILE="${MC_CARTOLIVE_LOG_FILE:-/var/log/mc-cartolive-watchdog.log}"
 MAX_FAILURES="${MC_CARTOLIVE_MAX_FAILURES:-3}"
-MIN_RESTART_SECONDS="${MC_CARTOLIVE_MIN_RESTART_SECONDS:-600}"
-MAX_CACHE_AGE_MS="${MC_CARTOLIVE_MAX_CACHE_AGE_MS:-120000}"
+MAX_RESTARTS="${MC_CARTOLIVE_MAX_RESTARTS:-2}"
+RESTART_WINDOW_SECONDS="${MC_CARTOLIVE_RESTART_WINDOW_SECONDS:-21600}"
+BASE_COOLDOWN_SECONDS="${MC_CARTOLIVE_BASE_COOLDOWN_SECONDS:-600}"
 VERBOSE="${MC_CARTOLIVE_VERBOSE:-0}"
 
 STATE_FILE="$STATE_DIR/state.env"
 LOCK_FILE="$STATE_DIR/watchdog.lock"
-
 mkdir -p "$STATE_DIR" "$(dirname "$LOG_FILE")"
+chmod 0700 "$STATE_DIR" 2>/dev/null || true
 
 if command -v flock >/dev/null 2>&1; then
 	exec 9>"$LOCK_FILE"
 	flock -n 9 || exit 0
 else
 	LOCK_DIR="$LOCK_FILE.d"
-	if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-		exit 0
-	fi
+	if ! mkdir "$LOCK_DIR" 2>/dev/null; then exit 0; fi
 	trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
 fi
 
-log() {
-	printf '%s %s\n' "$(date -Is)" "$*" >>"$LOG_FILE"
-}
-
+log() { printf '%s %s\n' "$(date -Is)" "$*" >>"$LOG_FILE"; }
 as_int() {
-	case "${1:-}" in
-		''|*[!0-9]*) printf '0' ;;
-		*) printf '%s' "$1" ;;
-	esac
+	case "${1:-}" in ''|*[!0-9]*) printf '0' ;; *) printf '%s' "$1" ;; esac
 }
 
 failures=0
+restart_1=0
+restart_2=0
 last_restart=0
-last_dropped=-1
 if [ -f "$STATE_FILE" ]; then
+	# The file is root-owned/mode 0600 and every loaded value is normalized below.
+	# shellcheck disable=SC1090
 	. "$STATE_FILE"
 fi
 failures="$(as_int "$failures")"
+restart_1="$(as_int "$restart_1")"
+restart_2="$(as_int "$restart_2")"
 last_restart="$(as_int "$last_restart")"
-case "${last_dropped:-}" in
-	-1) ;;
-	''|*[!0-9]*) last_dropped=-1 ;;
-esac
 MAX_FAILURES="$(as_int "$MAX_FAILURES")"
-MIN_RESTART_SECONDS="$(as_int "$MIN_RESTART_SECONDS")"
-MAX_CACHE_AGE_MS="$(as_int "$MAX_CACHE_AGE_MS")"
+MAX_RESTARTS="$(as_int "$MAX_RESTARTS")"
+RESTART_WINDOW_SECONDS="$(as_int "$RESTART_WINDOW_SECONDS")"
+BASE_COOLDOWN_SECONDS="$(as_int "$BASE_COOLDOWN_SECONDS")"
 [ "$MAX_FAILURES" -gt 0 ] || MAX_FAILURES=3
-[ "$MIN_RESTART_SECONDS" -gt 0 ] || MIN_RESTART_SECONDS=600
-[ "$MAX_CACHE_AGE_MS" -gt 0 ] || MAX_CACHE_AGE_MS=120000
+[ "$MAX_RESTARTS" -gt 0 ] || MAX_RESTARTS=2
+# The state format has two slots by design; never allow configuration to widen
+# the release invariant beyond two restarts per rolling six-hour window.
+[ "$MAX_RESTARTS" -le 2 ] || MAX_RESTARTS=2
+[ "$RESTART_WINDOW_SECONDS" -gt 0 ] || RESTART_WINDOW_SECONDS=21600
+[ "$BASE_COOLDOWN_SECONDS" -gt 0 ] || BASE_COOLDOWN_SECONDS=600
 
 write_state() {
-	cat >"$STATE_FILE" <<EOF
+	state_tmp="$STATE_FILE.tmp.$$"
+	cat >"$state_tmp" <<EOF
 failures=$1
-last_restart=$2
-last_dropped=$3
+restart_1=$2
+restart_2=$3
+last_restart=$4
 EOF
+	chmod 0600 "$state_tmp"
+	mv -f "$state_tmp" "$STATE_FILE"
 }
 
 tmp_body="$(mktemp)"
@@ -81,72 +83,90 @@ json_value() {
 	fi
 }
 
-reason=""
-add_reason() {
-	if [ -z "$reason" ]; then
-		reason="$1"
-	else
-		reason="$reason;$1"
-	fi
-}
+now="$(date +%s)"
+window_start=$((now - RESTART_WINDOW_SECONDS))
+[ "$restart_1" -ge "$window_start" ] || restart_1=0
+[ "$restart_2" -ge "$window_start" ] || restart_2=0
+restart_count=0
+[ "$restart_1" -gt 0 ] && restart_count=$((restart_count + 1))
+[ "$restart_2" -gt 0 ] && restart_count=$((restart_count + 1))
 
-case "$http_code" in
-	2*) ;;
-	000) add_reason "curl_failed=${curl_error:-unknown}" ;;
-	*) add_reason "http=$http_code" ;;
+dataset_state="$(json_value datasetState)"
+storage_state="$(json_value storagePressureState)"
+cache_state="$(json_value publicCacheState)"
+mqtt_session="$(json_value mqttSessionReady)"
+mqtt_connected="$(json_value mqttConnected)"
+db_ready="$(json_value dbReady)"
+
+# Storage pressure, an intentionally empty/warming dataset, and quiet RF traffic
+# are operator conditions. Restarting cannot repair them and can make them worse.
+case "$storage_state" in
+	warn|critical)
+		log "restart_suppressed condition=storagePressureState:$storage_state http=$http_code"
+		write_state 0 "$restart_1" "$restart_2" "$last_restart"
+		exit 0
+		;;
+esac
+case "$dataset_state" in
+	fresh_start|warming)
+		[ "$VERBOSE" = "1" ] && log "ok condition=datasetState:$dataset_state http=$http_code"
+		write_state 0 "$restart_1" "$restart_2" "$last_restart"
+		exit 0
+		;;
 esac
 
-ready="$(json_value ready)"
-public_live="$(json_value publicLiveFresh)"
-packet_ingest="$(json_value packetIngestFresh)"
-cache_state="$(json_value publicCacheState)"
-live_confidence="$(json_value liveConfidenceState)"
-mqtt_connected="$(json_value mqttConnected)"
-cache_age="$(as_int "$(json_value cacheAgeMs)")"
-dropped="$(as_int "$(json_value mqttDroppedMessages)")"
-
-[ "$ready" = "true" ] || add_reason "ready=${ready:-missing}"
-[ "$public_live" = "true" ] || add_reason "publicLiveFresh=${public_live:-missing}"
-[ "$packet_ingest" = "true" ] || add_reason "packetIngestFresh=${packet_ingest:-missing}"
-[ "$mqtt_connected" = "true" ] || add_reason "mqttConnected=${mqtt_connected:-missing}"
-[ "$cache_state" != "stale" ] || add_reason "publicCacheState=stale"
-[ "$live_confidence" != "degraded" ] || add_reason "liveConfidenceState=degraded"
-if [ "$cache_age" -gt "$MAX_CACHE_AGE_MS" ]; then
-	add_reason "cacheAgeMs=$cache_age"
+reason=""
+case "$http_code" in
+	000|'') reason="process_unreachable:${curl_error:-unknown}" ;;
+	5*) [ -n "$json" ] || reason="http_$http_code" ;;
+esac
+if [ -z "$reason" ]; then
+	case "$cache_state" in failed|unavailable|stale) reason="public_cache_$cache_state" ;; esac
 fi
-if [ "$last_dropped" != "-1" ] && [ "$dropped" -gt "$last_dropped" ]; then
-	add_reason "mqttDroppedMessages=$last_dropped->$dropped"
+if [ -z "$reason" ] && [ "$db_ready" = "false" ]; then reason="database_unavailable"; fi
+if [ -z "$reason" ]; then
+	if [ -n "$mqtt_session" ] && [ "$mqtt_session" = "false" ]; then
+		reason="mqtt_session_unready"
+	elif [ -z "$mqtt_session" ] && [ "$mqtt_connected" = "false" ]; then
+		reason="mqtt_disconnected"
+	fi
 fi
 
-now="$(date +%s)"
 if [ -z "$reason" ]; then
 	if [ "$failures" -gt 0 ] || [ "$VERBOSE" = "1" ]; then
-		log "ok ready=true publicLiveFresh=true cacheAgeMs=$cache_age mqttDroppedMessages=$dropped"
+		log "ok http=$http_code datasetState=${dataset_state:-unknown} publicCacheState=${cache_state:-unknown}"
 	fi
-	write_state 0 "$last_restart" "$dropped"
+	write_state 0 "$restart_1" "$restart_2" "$last_restart"
 	exit 0
 fi
 
 failures=$((failures + 1))
-write_state "$failures" "$last_restart" "$dropped"
+write_state "$failures" "$restart_1" "$restart_2" "$last_restart"
 log "bad_sample failures=$failures reason=$reason"
+[ "$failures" -ge "$MAX_FAILURES" ] || exit 0
 
-if [ "$failures" -lt "$MAX_FAILURES" ]; then
+if [ "$restart_count" -ge "$MAX_RESTARTS" ]; then
+	log "restart_suppressed reason=window_limit restarts=$restart_count windowSeconds=$RESTART_WINDOW_SECONDS"
 	exit 0
 fi
 
+# Exponential cooldown: 10 minutes before the first restart, 20 before the
+# second. The rolling-window cap remains the primary loop guard.
+cooldown=$BASE_COOLDOWN_SECONDS
+[ "$restart_count" -eq 0 ] || cooldown=$((BASE_COOLDOWN_SECONDS * 2))
 since_restart=$((now - last_restart))
-if [ "$last_restart" -gt 0 ] && [ "$since_restart" -lt "$MIN_RESTART_SECONDS" ]; then
-	log "restart_suppressed sinceLastRestartSeconds=$since_restart minRestartSeconds=$MIN_RESTART_SECONDS"
+if [ "$last_restart" -gt 0 ] && [ "$since_restart" -lt "$cooldown" ]; then
+	log "restart_suppressed reason=cooldown sinceLastRestartSeconds=$since_restart cooldownSeconds=$cooldown"
 	exit 0
 fi
 
-log "restarting service=$SERVICE appDir=$APP_DIR reason=$reason"
-if cd "$APP_DIR" && (docker compose restart "$SERVICE" || docker compose up -d "$SERVICE"); then
-	write_state 0 "$now" 0
-	log "restart_complete service=$SERVICE"
+log "restarting container=$CONTAINER reason=$reason restartNumber=$((restart_count + 1))"
+if docker restart "$CONTAINER" >/dev/null; then
+	if [ "$restart_1" -eq 0 ]; then restart_1="$now"; else restart_2="$now"; fi
+	write_state 0 "$restart_1" "$restart_2" "$now"
+	log "restart_complete container=$CONTAINER"
 	exit 0
 fi
 
-log "restart_failed service=$SERVICE"
+log "restart_failed container=$CONTAINER"
 exit 1

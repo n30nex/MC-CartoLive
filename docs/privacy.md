@@ -92,10 +92,12 @@ public map anchors. They must stay inside the same privacy boundary as
 full public keys, path hex, summaries, channel secrets, or resolver debug
 reasons.
 
-Raw packet, observation, live edge, public event/search, observer status, and
-propagation history retention defaults to seven days. Public history, packet,
-chat, event, viewport backfill, and propagation searches are capped to at most
-seven days even when callers request a larger range.
+Raw packet, observation, live edge/search, observer status, and propagation
+history retention defaults to seven days. Public WebSocket-resume events use a
+separate 24-hour retention window. Public history, packet, chat, viewport
+backfill, and propagation searches remain bounded even when callers request a
+larger range. Expired event cursors return a reset instruction rather than raw
+or unbounded history.
 
 ## Tests
 

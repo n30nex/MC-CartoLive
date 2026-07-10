@@ -8,13 +8,15 @@ The public deployment should use `PUBLIC_MODE=true`, which exposes only:
 - `/healthz`
 - `/readyz`
 - `/api/v1/public/state`
+- `/api/v1/public/bootstrap`
 - `/api/v1/public/history`
 - `/api/v1/public/history/summary`
 - `/api/v1/public/packets`
 - `/ws/public`
 - the static dashboard
 
-Internal debug APIs must stay disabled for public deployments.
+Internal debug APIs must stay disabled for public deployments. Detailed
+`/metrics` is loopback-only by default in public mode.
 
 ## Private Runtime Data
 
@@ -42,6 +44,10 @@ privately first, then share only the minimum sanitized reproduction details.
 Public API responses are expected to omit public keys, packet hashes, raw packet
 summaries, path hex, observer public keys, and resolver debug reasons. Any
 change that touches public response shaping must keep the privacy tests passing.
+
+Production must use immutable image digests, keep port 39476 loopback-only, and
+restrict the port-80 ingress to the configured proxy network. Forwarded client
+headers are trusted only when the immediate peer matches `TRUSTED_PROXY_CIDRS`.
 
 ## Display-String Hardening
 

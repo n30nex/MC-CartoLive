@@ -1,5 +1,5 @@
 [Unit]
-Description=Run MC-CartoLive public freshness watchdog
+Description=Run MC-CartoLive bounded recovery watchdog
 
 [Timer]
 OnBootSec=2min

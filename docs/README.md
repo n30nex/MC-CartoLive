@@ -9,17 +9,28 @@ is preserved by version.
 | Document | Purpose |
 | --- | --- |
 | [Production deployment](production.md) | First deploy, upgrades, runtime notes, and production readiness. |
-| [Operator runbook](operator-runbook.md) | Smoke checks, diagnostics, backup, restore, and privacy checks. |
+| [Operator runbook](operator-runbook.md) | Capacity, digest deploy, watchdog, smoke, soak, and incidents. |
 | [Development](development.md) | Local Podman, fixtures, backend/frontend commands, and release checks. |
 | [Privacy model](privacy.md) | Private inputs, public outputs, route truth, and test expectations. |
 | [Roadmap](roadmap.md) | Current baseline and active 3.x direction. |
 
-## 3.1.0 Release Package
+## 3.2.0 Release Package
 
 | Document | Purpose |
 | --- | --- |
-| [Release notes](3.1.0/release_notes.md) | Product-facing 3.1.0 overhaul summary and compatibility notes. |
-| [Validation checklist](3.1.0/validation_checklist.md) | Local, package, privacy, browser, and live deployment validation checklist. |
+| [Release notes](3.2.0/release_notes.md) | Product, compatibility, package, and hosted fresh-start summary. |
+| [Validation checklist](3.2.0/validation_checklist.md) | Fail-closed CI, candidate, load, cutover, and soak gates. |
+| [Upgrade and rollback](3.2.0/upgrade-and-rollback.md) | Fifteen-minute digest cutover and empty-DB rollback. |
+| [Storage and fresh start](3.2.0/storage-and-fresh-start.md) | Destruction boundary, retention, maintenance, and capacity. |
+| [Public API changes](3.2.0/public-api.md) | Bootstrap, cursor reset, clusters, and public health. |
+| [Security and operations](3.2.0/security-and-operations.md) | Firewall, proxy, metrics, alerts, supply chain, and secrets. |
+
+## Unreleased 3.1 Candidate Archive
+
+| Document | Purpose |
+| --- | --- |
+| [Release notes](3.1.0/release_notes.md) | Historical candidate notes folded into 3.2.0; 3.1 was not tagged. |
+| [Validation checklist](3.1.0/validation_checklist.md) | Historical pre-release evidence superseded by the 3.2 gate. |
 
 ## 3.0.2 Release Package
 

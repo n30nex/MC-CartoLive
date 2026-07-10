@@ -1,5 +1,5 @@
 [Unit]
-Description=MC-CartoLive public freshness watchdog
+Description=MC-CartoLive bounded recovery watchdog
 Wants=docker.service
 After=docker.service network-online.target
 

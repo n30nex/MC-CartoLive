@@ -1,0 +1,75 @@
+# 3.2.0 Storage And Fresh-Start Policy
+
+## Hosted cutover contract
+
+The hosted `carto.canadaverse.org` 3.2.0 release has no historical-data
+recovery path. During the authorized maintenance window:
+
+- stop the writer/container and watchdog first
+- preserve `.env` and `data/config.yaml`
+- remove stale `APP_VERSION`, `GIT_SHA`, `BUILD_TIME`, `VITE_GIT_SHA`, and
+  `VITE_BUILD_TIME` lines from `.env`
+- permanently delete `data/meshcore-live.db`, `-wal`, and `-shm`
+- permanently delete all contents of the dedicated `backups/` directory
+- start schema 32000 from an empty database
+
+`scripts/deploy.sh` implements those boundaries. It validates canonical paths,
+rejects symlinked data/backup directories, requires immutable candidate and
+rollback digests, and refuses destructive mode unless it receives both:
+
+```text
+--fresh-database
+--confirm-fresh-database DELETE-MC-CARTOLIVE-PRODUCTION-DATA
+```
+
+Rollback restores the previous application digest against another new empty
+database. It does not restore the deleted history.
+
+## Retention after cutover
+
+Production fixes these values in its Compose contract:
+
+```text
+DATA_RETENTION_DAYS=7
+PUBLIC_EVENT_RETENTION_HOURS=24
+ALLOW_UNBOUNDED_RETENTION=false
+```
+
+Raw observations, packet/history/search projections, observer status, and
+other bounded history are pruned in small batches. Compact latest-route
+summaries may outlive raw history but contain only the public-safe fields needed
+to draw the current network.
+
+A negative observation retention value is rejected in public mode unless the
+development override is explicit. Even with that override, readiness remains
+fail-closed so an accidentally unbounded public deployment cannot look healthy.
+
+## SQLite maintenance
+
+- Fresh databases enable incremental auto-vacuum before schema creation.
+- Startup runs `PRAGMA optimize=0x10002`; routine maintenance runs bounded
+  `PRAGMA optimize` and incremental reclamation.
+- Production never performs an automatic full `VACUUM` or full `ANALYZE`.
+- Schema migrations are transactional and recorded in `schema_migrations` and
+  `PRAGMA user_version`.
+- WAL, busy/full errors, writer queue age, queue depth, duplicates, and drops
+  are operational signals. Do not hide pressure by increasing retry timeouts.
+
+## Capacity gates
+
+Before release work, reclaim unused BuildKit cache without touching the running
+database and require at least 9 GiB free and less than 75% root usage. Before
+destructive cutover, the deploy script checks that current free space plus the
+database/backup footprint can yield at least 25 GiB. It checks the real free
+space again after deletion before starting the candidate.
+
+After release:
+
+- WAL should remain below 256 MiB in steady operation.
+- On day 8, the oldest observation should be no older than seven days plus the
+  maintenance allowance; public events should be no older than 25 hours.
+- Database plus WAL growth from day 8 to day 14 should remain below 10% under a
+  comparable traffic rate.
+- Any `SQLITE_FULL`, sustained busy storm, application queue drop, or critical
+  storage state is a release incident. The watchdog deliberately does not
+  restart for storage pressure.

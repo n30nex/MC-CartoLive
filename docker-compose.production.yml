@@ -1,0 +1,50 @@
+services:
+  meshcore-live-map:
+    image: ${MC_CARTOLIVE_IMAGE:?Set MC_CARTOLIVE_IMAGE to ghcr.io/n30nex/mc-cartolive@sha256:<digest>}
+    container_name: meshcore-canada-live-map
+    ports:
+      # Operator diagnostics remain local. Port 80 is the Cloudflare-facing
+      # ingress and must be restricted to Cloudflare source CIDRs by firewall.
+      - "127.0.0.1:39476:8080"
+      - "80:8080"
+    env_file:
+      - .env
+    environment:
+      DATA_RETENTION_DAYS: "7"
+      PUBLIC_EVENT_RETENTION_HOURS: "24"
+      ALLOW_UNBOUNDED_RETENTION: "false"
+      METRICS_PUBLIC: "false"
+      TRUST_PROXY_HEADERS: "true"
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,2400:cb00::/32,2606:4700::/32,2803:f800::/32,2405:b500::/32,2405:8100::/32,2a06:98c0::/29,2c0f:f248::/32}
+      SQLITE_MAX_OPEN_CONNS: ${SQLITE_MAX_OPEN_CONNS:-4}
+      SQLITE_BUSY_TIMEOUT_MS: ${SQLITE_BUSY_TIMEOUT_MS:-5000}
+      SQLITE_CACHE_SIZE_KB: ${SQLITE_CACHE_SIZE_KB:-16000}
+      SQLITE_MMAP_SIZE_BYTES: ${SQLITE_MMAP_SIZE_BYTES:-67108864}
+    volumes:
+      - ./data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    restart: unless-stopped

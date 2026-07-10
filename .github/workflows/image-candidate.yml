@@ -1,0 +1,138 @@
+name: Build release candidate
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+  security-events: write
+
+concurrency:
+  group: release-candidate-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: n30nex/mc-cartolive
+
+jobs:
+  candidate:
+    name: Multi-platform candidate
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Resolve source commit
+        id: source
+        env:
+          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          sha="$WORKFLOW_SHA"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-$sha" >> "$GITHUB_OUTPUT"
+      - name: Checkout successful source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          fetch-depth: 1
+      - name: Verify version and build metadata
+        id: meta
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          node scripts/check-version-sync.mjs
+          version="$(tr -d '\r\n' < VERSION)"
+          build_time="$(git show -s --format=%cI HEAD)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build_time=$build_time" >> "$GITHUB_OUTPUT"
+          echo "build_number=${SOURCE_SHA::12}" >> "$GITHUB_OUTPUT"
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Log in to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push candidate once
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.source.outputs.tag }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.title=MC-CartoLive
+            org.opencontainers.image.description=Public-safe MeshCore MQTT live map with RF Replay Studio
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.build_time }}
+            org.opencontainers.image.licenses=MIT
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
+            GIT_SHA=${{ steps.source.outputs.sha }}
+            BUILD_TIME=${{ steps.meta.outputs.build_time }}
+            VITE_BUILD_NUMBER=${{ steps.meta.outputs.build_number }}
+            VITE_APP_ASSET_PACK=canada
+            VITE_ENABLE_SERVICE_WORKER=true
+      - name: Smoke exact candidate digest
+        run: |
+          node scripts/package-smoke.mjs \
+            --image "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}" \
+            --version "${{ steps.meta.outputs.version }}" --pull
+      - name: Scan exact candidate digest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: sarif
+          output: trivy-candidate.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Upload scan results
+        if: always() && hashFiles('trivy-candidate.sarif') != ''
+        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          sarif_file: trivy-candidate.sarif
+      - name: Attest candidate digest
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Record candidate manifest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          BUILD_TIME: ${{ steps.meta.outputs.build_time }}
+        run: |
+          jq -n \
+            --arg image "${REGISTRY}/${IMAGE_NAME}@${DIGEST}" \
+            --arg digest "$DIGEST" --arg gitSha "$SOURCE_SHA" \
+            --arg version "$VERSION" --arg buildTime "$BUILD_TIME" \
+            '{image:$image,digest:$digest,gitSha:$gitSha,version:$version,buildTime:$buildTime,platforms:["linux/amd64","linux/arm64"]}' \
+            > candidate-manifest.json
+      - name: Upload candidate evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate-${{ steps.source.outputs.sha }}
+          path: |
+            candidate-manifest.json
+            trivy-candidate.sarif
+          if-no-files-found: error
+          retention-days: 30

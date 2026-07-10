@@ -46,7 +46,7 @@ try {
   try {
     npm ci
     npm audit --audit-level=high
-    npm test -- --run
+    npm test -- --run --pool=threads --maxWorkers=2
     npm run build
     node (Join-Path $root "scripts/check-frontend-budget.mjs")
   }
@@ -71,6 +71,7 @@ try {
   $health = Invoke-RestMethod "$BaseUrl/healthz"
   $ready = Invoke-RestMethod "$BaseUrl/readyz"
   $state = Invoke-RestMethod "$BaseUrl/api/v1/public/state"
+  $bootstrap = Invoke-RestMethod "$BaseUrl/api/v1/public/bootstrap"
   $now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
   $from = $now - 600000
   $history = Invoke-RestMethod "$BaseUrl/api/v1/public/history?from=$from&to=$now&limit=25"
@@ -99,6 +100,7 @@ try {
     Packets = $state.stats.packets
     Nodes = $state.stats.activeNodes
     Routes = $state.stats.activeRoutes
+    BootstrapLatestSeq = $bootstrap.latestSeq
     HistoryEvents = $history.window.count
     HistorySummaryBuckets = @($historySummary.buckets).Count
     PacketPaths = $packets.window.count

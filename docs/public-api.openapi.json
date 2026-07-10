@@ -2,33 +2,190 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MC-CartoLive Public API",
-    "version": "3.1.0"
+    "version": "3.2.0",
+    "description": "Privacy-safe public HTTP and WebSocket contract. Internal analyzer/debug routes are intentionally excluded."
   },
+  "servers": [{ "url": "/" }],
   "paths": {
-    "/api/v1/public/state": { "get": { "summary": "Public live state" } },
-    "/api/v1/public/events": { "get": { "summary": "Public event backfill by durable sequence" } },
-    "/api/v1/public/viewport": { "get": { "summary": "Viewport-scoped public map data" } },
-    "/api/v1/public/noc": { "get": { "summary": "Public-safe operations summary" } },
-    "/api/v1/public/packets": { "get": { "summary": "Public packet paths" } },
-    "/api/v1/public/chat": { "get": { "summary": "Public chat messages" } },
-    "/api/v1/public/coverage": { "get": { "summary": "Coarse public coverage cells" } },
-    "/api/v1/public/los/profile": { "get": { "summary": "Public LOS profile" } },
-    "/api/v1/public/schema": { "get": { "summary": "Static checked public API schema" } },
-    "/api/v1/public/propagation": { "get": { "summary": "Public propagation events" } },
-    "/api/v1/public/integrations/home-assistant": { "get": { "summary": "Public-safe sensor summary" } }
+    "/healthz": {
+      "get": { "summary": "Cheap public liveness", "responses": { "200": { "$ref": "#/components/responses/RuntimeStatus" } } }
+    },
+    "/readyz": {
+      "get": { "summary": "Public-safe dependency readiness", "responses": { "200": { "$ref": "#/components/responses/RuntimeStatus" }, "503": { "$ref": "#/components/responses/RuntimeStatus" } } }
+    },
+    "/api/v1/public/state": {
+      "get": { "summary": "Compatibility full public live state", "responses": { "200": { "description": "Sanitized state", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PublicLiveState" } } } } } }
+    },
+    "/api/v1/public/bootstrap": {
+      "get": { "summary": "Compact initial map bootstrap", "responses": { "200": { "description": "Compact sanitized bootstrap", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PublicBootstrapResponse" } } } }, "503": { "$ref": "#/components/responses/Error" } } }
+    },
+    "/api/v1/public/events": {
+      "get": {
+        "summary": "Durable public event resume with bounded reset semantics",
+        "parameters": [
+          { "$ref": "#/components/parameters/AfterSeq" },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Region" },
+          { "name": "payload", "in": "query", "schema": { "type": "string" } },
+          { "name": "event", "in": "query", "schema": { "type": "string" } },
+          { "name": "messageOnly", "in": "query", "schema": { "type": "boolean" } }
+        ],
+        "responses": { "200": { "description": "Events or immediate reset instruction", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PublicEventsResponse" } } } } }
+      }
+    },
+    "/api/v1/public/viewport": {
+      "get": {
+        "summary": "Viewport-scoped nodes, routes, clusters, and events",
+        "parameters": [
+          { "name": "bbox", "in": "query", "required": true, "description": "minLng,minLat,maxLng,maxLat", "schema": { "type": "string" } },
+          { "name": "zoom", "in": "query", "schema": { "type": "number" } },
+          { "$ref": "#/components/parameters/Limit" }
+        ],
+        "responses": { "200": { "description": "Sanitized viewport", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PublicViewportResponse" } } } }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/api/v1/public/history": {
+      "get": { "summary": "Bounded routed-event history", "parameters": [{ "$ref": "#/components/parameters/From" }, { "$ref": "#/components/parameters/To" }, { "$ref": "#/components/parameters/Limit" }, { "$ref": "#/components/parameters/Region" }], "responses": { "200": { "$ref": "#/components/responses/History" } } }
+    },
+    "/api/v1/public/history/summary": {
+      "get": { "summary": "Bounded history buckets", "parameters": [{ "$ref": "#/components/parameters/From" }, { "$ref": "#/components/parameters/To" }, { "name": "bucketMs", "in": "query", "schema": { "type": "integer", "format": "int64" } }], "responses": { "200": { "$ref": "#/components/responses/SanitizedObject" } } }
+    },
+    "/api/v1/public/packets": {
+      "get": { "summary": "Sanitized true-path packet projections", "parameters": [{ "$ref": "#/components/parameters/From" }, { "$ref": "#/components/parameters/To" }, { "$ref": "#/components/parameters/Limit" }, { "$ref": "#/components/parameters/Region" }], "responses": { "200": { "$ref": "#/components/responses/SanitizedObject" } } }
+    },
+    "/api/v1/public/chat": {
+      "get": { "summary": "Sanitized decoded public chat", "parameters": [{ "$ref": "#/components/parameters/From" }, { "$ref": "#/components/parameters/To" }, { "$ref": "#/components/parameters/Limit" }, { "$ref": "#/components/parameters/Region" }], "responses": { "200": { "$ref": "#/components/responses/SanitizedObject" } } }
+    },
+    "/api/v1/public/noc": {
+      "get": { "summary": "Public-safe operations summary", "responses": { "200": { "$ref": "#/components/responses/SanitizedObject" } } }
+    },
+    "/api/v1/public/solar": {
+      "get": { "summary": "Public solar conditions", "responses": { "200": { "$ref": "#/components/responses/SanitizedObject" } } }
+    },
+    "/api/v1/public/propagation": {
+      "get": { "summary": "Bounded public propagation events", "parameters": [{ "$ref": "#/components/parameters/From" }, { "$ref": "#/components/parameters/To" }, { "$ref": "#/components/parameters/Limit" }], "responses": { "200": { "$ref": "#/components/responses/SanitizedObject" } } }
+    },
+    "/api/v1/public/coverage": {
+      "get": { "summary": "Coarse public coverage cells", "parameters": [{ "$ref": "#/components/parameters/Limit" }], "responses": { "200": { "$ref": "#/components/responses/SanitizedObject" } } }
+    },
+    "/api/v1/public/los/profile": {
+      "get": { "summary": "Public line-of-sight profile", "parameters": [
+        { "name": "aLat", "in": "query", "required": true, "schema": { "type": "number" } },
+        { "name": "aLng", "in": "query", "required": true, "schema": { "type": "number" } },
+        { "name": "bLat", "in": "query", "required": true, "schema": { "type": "number" } },
+        { "name": "bLng", "in": "query", "required": true, "schema": { "type": "number" } }
+      ], "responses": { "200": { "$ref": "#/components/responses/SanitizedObject" }, "400": { "$ref": "#/components/responses/Error" } } }
+    },
+    "/api/v1/public/schema": {
+      "get": { "summary": "Runtime public OpenAPI inventory", "responses": { "200": { "$ref": "#/components/responses/SanitizedObject" } } }
+    },
+    "/api/v1/public/integrations/home-assistant": {
+      "get": { "summary": "Public-safe aggregate sensor summary", "responses": { "200": { "$ref": "#/components/responses/SanitizedObject" } } }
+    },
+    "/ws/public": {
+      "get": {
+        "summary": "Public WebSocket upgrade",
+        "description": "Upgrades to the sanitized public stream. Clients send hello/ping subscription envelopes and receive hello/event/pong/lagged/reset envelopes.",
+        "x-websocket-messages": {
+          "client": ["hello", "ping", "subscribe"],
+          "server": ["hello", "event", "pong", "lagged", "reset"]
+        },
+        "responses": { "101": { "description": "Switching Protocols" }, "403": { "$ref": "#/components/responses/Error" }, "429": { "$ref": "#/components/responses/Error" } }
+      }
+    }
   },
-  "x-public-forbidden-fields": [
-    "publicKey",
-    "observerPublicKey",
-    "packetHash",
-    "rawHex",
-    "rawJson",
-    "payloadHex",
-    "pathHex",
-    "resolver",
-    "debug",
-    "secret",
-    "token",
-    "password"
-  ]
+  "components": {
+    "parameters": {
+      "AfterSeq": { "name": "afterSeq", "in": "query", "schema": { "type": "integer", "format": "int64", "minimum": 0 } },
+      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 1000 } },
+      "From": { "name": "from", "in": "query", "schema": { "type": "integer", "format": "int64", "description": "Unix milliseconds" } },
+      "To": { "name": "to", "in": "query", "schema": { "type": "integer", "format": "int64", "description": "Unix milliseconds" } },
+      "Region": { "name": "region", "in": "query", "schema": { "type": "string" } }
+    },
+    "responses": {
+      "RuntimeStatus": { "description": "Sanitized runtime state", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RuntimeStatus" } } } },
+      "History": { "description": "Bounded history", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PublicHistoryResponse" } } } },
+      "SanitizedObject": { "description": "Endpoint-specific sanitized public object", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SanitizedPublicObject" } } } },
+      "Error": { "description": "Public-safe error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    },
+    "schemas": {
+      "RuntimeStatus": {
+        "type": "object",
+        "required": ["version", "gitSha", "buildTime"],
+        "properties": {
+          "ok": { "type": "boolean" }, "ready": { "type": "boolean" },
+          "version": { "type": "string" }, "gitSha": { "type": "string" }, "buildTime": { "type": "string" },
+          "mqttConnected": { "type": "boolean" }, "mqttSessionReady": { "type": "boolean" },
+          "datasetState": { "$ref": "#/components/schemas/DatasetState" },
+          "datasetStartedAt": { "type": "integer", "format": "int64" },
+          "storagePressureState": { "$ref": "#/components/schemas/StoragePressureState" }
+        },
+        "additionalProperties": true
+      },
+      "DatasetState": { "type": "string", "enum": ["fresh_start", "warming", "live"] },
+      "StoragePressureState": { "type": "string", "enum": ["ok", "warn", "critical"] },
+      "PublicRuntimeHealth": {
+        "type": "object", "additionalProperties": false,
+        "required": ["mqttSessionReady", "datasetState", "datasetStartedAt", "storagePressureState"],
+        "properties": {
+          "mqttSessionReady": { "type": "boolean" }, "datasetState": { "$ref": "#/components/schemas/DatasetState" },
+          "datasetStartedAt": { "type": "integer", "format": "int64" }, "storagePressureState": { "$ref": "#/components/schemas/StoragePressureState" }
+        }
+      },
+      "PublicMapConfig": {
+        "type": "object", "properties": {
+          "regionPreset": { "type": "string" }, "defaultRegion": { "type": "string" },
+          "defaultCenter": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+          "defaultZoom": { "type": "number" }, "bounds": { "type": "object" }
+        }
+      },
+      "PublicStats": {
+        "type": "object", "required": ["packets", "activeNodes", "activeRoutes", "mqttConnected", "mqttMessages", "wsClients", "serverTime"],
+        "properties": {
+          "packets": { "type": "integer", "format": "int64" }, "activeNodes": { "type": "integer", "format": "int64" },
+          "activeRoutes": { "type": "integer", "format": "int64" }, "mqttConnected": { "type": "boolean" },
+          "mqttMessages": { "type": "integer", "format": "int64" }, "wsClients": { "type": "integer" },
+          "serverTime": { "type": "integer", "format": "int64" }, "latestSeq": { "type": "integer", "format": "int64" }
+        }, "additionalProperties": true
+      },
+      "PublicNode": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "label", "role", "latitude", "longitude", "lastSeen", "firstSeen", "iatasHeardIn", "activityCount"],
+        "properties": {
+          "seq": { "type": "integer", "format": "int64" }, "id": { "type": "string" }, "label": { "type": "string" },
+          "role": { "type": "string" }, "isObserver": { "type": "boolean" }, "latitude": { "type": "number" },
+          "longitude": { "type": "number" }, "lastSeen": { "type": "integer", "format": "int64" },
+          "firstSeen": { "type": "integer", "format": "int64" }, "iatasHeardIn": { "type": "array", "items": { "type": "string" } },
+          "regionsHeardIn": { "type": "array", "items": { "type": "string" } }, "activityCount": { "type": "integer", "format": "int64" }
+        }
+      },
+      "PublicRouteEndpoint": {
+        "type": "object", "additionalProperties": false, "required": ["nodeId", "label", "lat", "lng"],
+        "properties": { "nodeId": { "type": "string" }, "label": { "type": "string" }, "lat": { "type": "number" }, "lng": { "type": "number" }, "pathHash3": { "type": "string", "pattern": "^[0-9a-fA-F]{6}$" } }
+      },
+      "PublicRoute": {
+        "type": "object", "required": ["id", "from", "to", "distanceKm", "packetCount", "lastHeard", "frequencyBucket", "payloadTypeNames"],
+        "properties": {
+          "id": { "type": "string" }, "from": { "$ref": "#/components/schemas/PublicRouteEndpoint" }, "to": { "$ref": "#/components/schemas/PublicRouteEndpoint" },
+          "distanceKm": { "type": "number" }, "packetCount": { "type": "integer" }, "lastHeard": { "type": "integer", "format": "int64" },
+          "frequencyBucket": { "type": "integer" }, "payloadTypeNames": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "PublicMapCluster": {
+        "type": "object", "additionalProperties": false, "required": ["id", "latitude", "longitude", "count"],
+        "properties": { "id": { "type": "string" }, "latitude": { "type": "number" }, "longitude": { "type": "number" }, "count": { "type": "integer" }, "activityCount": { "type": "integer", "format": "int64" }, "lastSeen": { "type": "integer", "format": "int64" }, "region": { "type": "string" } }
+      },
+      "PublicActivity": { "type": "object", "required": ["id", "kind", "payloadTypeName", "heardAt", "hopCount", "hasRoute", "animationState", "resolutionBucket"], "properties": { "seq": { "type": "integer", "format": "int64" }, "id": { "type": "string" }, "kind": { "type": "string" }, "payloadTypeName": { "type": "string" }, "heardAt": { "type": "integer", "format": "int64" }, "hopCount": { "type": "integer" }, "hasRoute": { "type": "boolean" }, "animationState": { "type": "string" }, "resolutionBucket": { "type": "string" } }, "additionalProperties": true },
+      "PublicEvent": { "type": "object", "required": ["seq", "type", "at", "data"], "properties": { "seq": { "type": "integer", "format": "int64" }, "type": { "type": "string" }, "at": { "type": "integer", "format": "int64" }, "receivedAt": { "type": "integer", "format": "int64" }, "region": { "type": "string" }, "payloadTypeName": { "type": "string" }, "message": { "type": "boolean" }, "routeIds": { "type": "array", "items": { "type": "string" } }, "nodeIds": { "type": "array", "items": { "type": "string" } }, "data": { "type": "object" } } },
+      "PublicEventsResponse": { "type": "object", "additionalProperties": false, "required": ["serverTime", "oldestSeq", "latestSeq", "events", "resetRequired"], "properties": { "serverTime": { "type": "integer", "format": "int64" }, "oldestSeq": { "type": "integer", "format": "int64" }, "latestSeq": { "type": "integer", "format": "int64" }, "events": { "type": "array", "items": { "$ref": "#/components/schemas/PublicEvent" } }, "nextCursor": { "type": "string" }, "resetRequired": { "type": "boolean" } } },
+      "PublicLiveState": { "type": "object", "required": ["serverTime", "stats", "nodes", "routes", "recentActivity", "updatedAt"], "properties": { "serverTime": { "type": "integer", "format": "int64" }, "map": { "$ref": "#/components/schemas/PublicMapConfig" }, "stats": { "$ref": "#/components/schemas/PublicStats" }, "nodes": { "type": "array", "items": { "$ref": "#/components/schemas/PublicNode" } }, "routes": { "type": "array", "items": { "$ref": "#/components/schemas/PublicRoute" } }, "recentPulses": { "type": "array", "items": { "type": "object" } }, "recentActivity": { "type": "array", "items": { "$ref": "#/components/schemas/PublicActivity" } }, "updatedAt": { "type": "integer", "format": "int64" } } },
+      "PublicBootstrapResponse": { "type": "object", "additionalProperties": false, "required": ["serverTime", "map", "stats", "latestSeq", "health", "clusters", "recentActivity"], "properties": { "serverTime": { "type": "integer", "format": "int64" }, "map": { "$ref": "#/components/schemas/PublicMapConfig" }, "stats": { "$ref": "#/components/schemas/PublicStats" }, "latestSeq": { "type": "integer", "format": "int64" }, "health": { "$ref": "#/components/schemas/PublicRuntimeHealth" }, "clusters": { "type": "array", "items": { "$ref": "#/components/schemas/PublicMapCluster" } }, "recentActivity": { "type": "array", "items": { "$ref": "#/components/schemas/PublicActivity" } } } },
+      "PublicViewportResponse": { "type": "object", "required": ["serverTime", "nodes", "routes"], "properties": { "serverTime": { "type": "integer", "format": "int64" }, "latestSeq": { "type": "integer", "format": "int64" }, "nodes": { "type": "array", "items": { "$ref": "#/components/schemas/PublicNode" } }, "routes": { "type": "array", "items": { "$ref": "#/components/schemas/PublicRoute" } }, "clusters": { "type": "array", "items": { "$ref": "#/components/schemas/PublicMapCluster" } }, "events": { "type": "array", "items": { "$ref": "#/components/schemas/PublicEvent" } }, "bbox": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }, "zoom": { "type": "number" } } },
+      "PublicHistoryWindow": { "type": "object", "required": ["from", "to", "count"], "properties": { "from": { "type": "integer", "format": "int64" }, "to": { "type": "integer", "format": "int64" }, "count": { "type": "integer" } } },
+      "PublicHistoryResponse": { "type": "object", "required": ["serverTime", "events", "window"], "properties": { "serverTime": { "type": "integer", "format": "int64" }, "events": { "type": "array", "items": { "type": "object", "required": ["type", "at", "data"], "properties": { "type": { "type": "string" }, "at": { "type": "integer", "format": "int64" }, "data": { "type": "object" } } } }, "nextCursor": { "type": "string" }, "window": { "$ref": "#/components/schemas/PublicHistoryWindow" } } },
+      "SanitizedPublicObject": { "type": "object", "description": "Legacy endpoint-specific public DTO. Fields are sanitized and are additionally covered by privacy tests.", "additionalProperties": true },
+      "Error": { "type": "object", "required": ["error"], "properties": { "error": { "type": "string" } }, "additionalProperties": false }
+    }
+  },
+  "x-public-forbidden-fields": ["publicKey", "observerPublicKey", "packetHash", "rawHex", "rawJson", "payloadHex", "pathHex", "resolver", "debug", "secret", "token", "password"]
 }

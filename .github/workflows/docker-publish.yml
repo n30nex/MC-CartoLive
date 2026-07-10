@@ -1,98 +1,143 @@
-name: Publish Docker image
+name: Promote and publish release
 
 on:
   push:
-    tags:
-      - "v*.*.*"
-  workflow_dispatch:
+    tags: ["v*.*.*"]
 
 permissions:
-  contents: read
+  contents: write
   packages: write
   attestations: write
   id-token: write
+  security-events: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: n30nex/mc-cartolive
 
 jobs:
-  publish:
-    name: Build and publish GHCR image
+  promote:
+    name: Promote tested digest and publish package
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
+      - name: Checkout tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+      - name: Verify tag, VERSION, and ancestry
+        id: release
+        run: |
+          version="$(tr -d '\r\n' < VERSION)"
+          test "$GITHUB_REF_NAME" = "v$version"
+          git fetch origin main --depth=1
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          node scripts/check-version-sync.mjs
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Require successful main CI for the tagged SHA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          count="$(gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f head_sha="$GITHUB_SHA" -f status=completed -f per_page=100 \
+            --jq '[.workflow_runs[] | select(.conclusion == "success" and .head_branch == "main")] | length')"
+          test "$count" -gt 0
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
-
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Prepare build metadata
-        id: build_meta
+      - name: Resolve previously built candidate
+        id: candidate
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
-            version="$(tr -d '\r\n' < VERSION)"
-          fi
-          short_sha="${GITHUB_SHA::7}"
-          build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          build_number="$(date -u +%Y%m%dT%H%M%SZ)"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "git_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
-          echo "build_time=$build_time" >> "$GITHUB_OUTPUT"
-          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
-
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=sha,format=short
-          labels: |
-            org.opencontainers.image.title=MC-CartoLive
-            org.opencontainers.image.description=Public-safe MeshCore MQTT live map with routed packet replay
-            org.opencontainers.image.source=https://github.com/n30nex/MC-CartoLive
-            org.opencontainers.image.licenses=MIT
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        id: build
-        with:
-          context: .
-          push: true
-          provenance: true
-          sbom: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            APP_VERSION=${{ steps.build_meta.outputs.version }}
-            VITE_GIT_SHA=${{ steps.build_meta.outputs.git_sha }}
-            VITE_BUILD_TIME=${{ steps.build_meta.outputs.build_time }}
-            VITE_BUILD_NUMBER=${{ steps.build_meta.outputs.build_number }}
-
-      - name: Smoke published GHCR image
+          image="${REGISTRY}/${IMAGE_NAME}"
+          candidate="$image:sha-$GITHUB_SHA"
+          inspect="$(docker buildx imagetools inspect "$candidate")"
+          digest="$(printf '%s\n' "$inspect" | awk '$1 == "Digest:" {print $2; exit}')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "image=$image@$digest" >> "$GITHUB_OUTPUT"
+      - name: Verify candidate provenance belongs to this repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh attestation verify "oci://${{ steps.candidate.outputs.image }}" --repo "$GITHUB_REPOSITORY"
+      - name: Re-smoke exact candidate
         run: |
           node scripts/package-smoke.mjs \
-            --image "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}" \
-            --version "${{ steps.build_meta.outputs.version }}" \
-            --pull
-
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@v4
+            --image "${{ steps.candidate.outputs.image }}" \
+            --version "${{ steps.release.outputs.version }}" --pull
+      - name: Re-scan exact candidate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
+          image-ref: ${{ steps.candidate.outputs.image }}
+          format: sarif
+          output: trivy-release.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Upload release scan
+        if: always() && hashFiles('trivy-release.sarif') != ''
+        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          sarif_file: trivy-release.sarif
+      - name: Promote the same manifest digest
+        run: |
+          image="${REGISTRY}/${IMAGE_NAME}"
+          source="${{ steps.candidate.outputs.image }}"
+          docker buildx imagetools create \
+            --tag "$image:${{ steps.release.outputs.version }}" \
+            --tag "$image:${{ steps.release.outputs.minor }}" \
+            --tag "$image:latest" \
+            "$source"
+          for tag in "${{ steps.release.outputs.version }}" "${{ steps.release.outputs.minor }}" latest; do
+            promoted="$(docker buildx imagetools inspect "$image:$tag" | awk '$1 == "Digest:" {print $2; exit}')"
+            test "$promoted" = "${{ steps.candidate.outputs.digest }}"
+          done
+      - name: Generate SPDX SBOM asset
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.candidate.outputs.image }}
+          format: spdx-json
+          output-file: /tmp/mc-cartolive-${{ steps.release.outputs.version }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Build deployment bundle and release manifest
+        env:
+          RELEASE_IMAGE: ${{ steps.candidate.outputs.image }}
+          RELEASE_GIT_SHA: ${{ github.sha }}
+          RELEASE_BUILD_TIME: ${{ steps.release.outputs.build_time }}
+        run: |
+          node scripts/build-release-bundle.mjs
+          mkdir -p artifacts/release/assets
+          tar -C artifacts/release/stage -czf "artifacts/release/assets/mc-cartolive-${{ steps.release.outputs.version }}-deploy.tar.gz" \
+            "mc-cartolive-${{ steps.release.outputs.version }}"
+          cp artifacts/release/release-manifest.json artifacts/release/assets/
+          cp docs/public-api.openapi.json artifacts/release/assets/
+          cp trivy-release.sarif artifacts/release/assets/
+          cp "/tmp/mc-cartolive-${{ steps.release.outputs.version }}.spdx.json" artifacts/release/assets/
+      - name: Generate checksums
+        working-directory: artifacts/release/assets
+        run: sha256sum * > SHA256SUMS
+      - name: Attest release assets
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-path: artifacts/release/assets/*
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/release/assets/* \
+            --verify-tag \
+            --title "MC-CartoLive ${{ steps.release.outputs.version }}" \
+            --notes-file docs/3.2.0/release_notes.md
