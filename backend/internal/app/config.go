@@ -74,6 +74,8 @@ type Config struct {
 	MetricsPublic                   bool
 	ConfigYAML                      string
 	FixtureReplayPath               string
+	FixtureReplayRatePerSecond      int
+	FixtureReplayStartDelayMs       int
 	FixtureRecordEnabled            bool
 	DataRetentionDays               int // 0 = default 7 days; negative requires an explicit non-production override
 }
@@ -153,6 +155,8 @@ func LoadConfig() (Config, error) {
 		MetricsPublic:                   envBool("METRICS_PUBLIC", false),
 		ConfigYAML:                      envString("CONFIG_YAML", "./data/config.yaml"),
 		FixtureReplayPath:               os.Getenv("FIXTURE_REPLAY_PATH"),
+		FixtureReplayRatePerSecond:      envInt("FIXTURE_REPLAY_RATE_PER_SECOND", 0),
+		FixtureReplayStartDelayMs:       envInt("FIXTURE_REPLAY_START_DELAY_MS", 0),
 		FixtureRecordEnabled:            envBool("FIXTURE_RECORD_ENABLED", false),
 		DataRetentionDays:               envInt("DATA_RETENTION_DAYS", 7),
 	}

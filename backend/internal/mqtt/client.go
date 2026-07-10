@@ -71,6 +71,10 @@ func NewClient(cfg ClientConfig, log *slog.Logger, handler Handler) *Client {
 }
 
 func (c *Client) Start(ctx context.Context) error {
+	// Keep the normalized queue worker available when the network subscriber is
+	// disabled. Synthetic fixture replay and release load gates deliberately use
+	// the same bounded queue and writer path as production MQTT traffic.
+	go c.dispatch(ctx)
 	if !c.cfg.Enabled {
 		c.log.Info("mqtt disabled")
 		return nil
@@ -78,8 +82,6 @@ func (c *Client) Start(ctx context.Context) error {
 	if err := c.cfg.Auth.Validate(); err != nil {
 		return err
 	}
-	go c.dispatch(ctx)
-
 	c.clientMu.Lock()
 	c.client = c.buildPahoClient()
 	client := c.client
@@ -259,24 +261,39 @@ func (c *Client) onMessage() paho.MessageHandler {
 			c.log.Debug("mqtt normalize failed", "topic", topic, "error", err)
 			return
 		}
+		c.SubmitNormalized(normalized)
+	}
+}
+
+// SubmitNormalized puts an already parsed MQTT message through the same
+// bounded queue used by the network callback. It is intentionally useful for
+// credential-free fixture replay and reproducible release load gates. A fresh
+// ingest ID is assigned once, before enqueueing, and is preserved by retries.
+func (c *Client) SubmitNormalized(normalized NormalizedMessage) bool {
+	if c == nil || c.shutdown.Load() {
+		return false
+	}
+	if normalized.IngestID == "" {
 		normalized.IngestID = uuid.NewString()
-		c.total.Add(1)
-		c.lastMessageAt.Store(normalized.HeardAtMs)
-		now := time.Now().UnixMilli()
-		queued := queuedMessage{message: normalized, enqueuedAt: now}
-		c.queueAgeMu.Lock()
-		select {
-		case c.queue <- queued:
-			c.queueTimes = append(c.queueTimes, now)
-			c.accepted.Add(1)
-			c.queueAgeMu.Unlock()
-		default:
-			c.queueAgeMu.Unlock()
-			dropped := c.dropped.Add(1)
-			if dropped == 1 || dropped%100 == 0 {
-				c.log.Warn("mqtt ingest queue full; dropping normalized message", "dropped", dropped, "queueSize", c.cfg.QueueSize)
-			}
+	}
+	c.total.Add(1)
+	c.lastMessageAt.Store(normalized.HeardAtMs)
+	now := time.Now().UnixMilli()
+	queued := queuedMessage{message: normalized, enqueuedAt: now}
+	c.queueAgeMu.Lock()
+	select {
+	case c.queue <- queued:
+		c.queueTimes = append(c.queueTimes, now)
+		c.accepted.Add(1)
+		c.queueAgeMu.Unlock()
+		return true
+	default:
+		c.queueAgeMu.Unlock()
+		dropped := c.dropped.Add(1)
+		if dropped == 1 || dropped%100 == 0 {
+			c.log.Warn("mqtt ingest queue full; dropping normalized message", "dropped", dropped, "queueSize", c.cfg.QueueSize)
 		}
+		return false
 	}
 }
 

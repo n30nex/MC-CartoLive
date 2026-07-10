@@ -191,3 +191,16 @@ func TestLoadConfigBuildIdentityIgnoresEnvironmentOverrides(t *testing.T) {
 		t.Fatalf("build identity was overridden by environment: %#v", cfg)
 	}
 }
+
+func TestLoadConfigFixturePerformanceControls(t *testing.T) {
+	t.Setenv("MQTT_ENABLED", "false")
+	t.Setenv("FIXTURE_REPLAY_RATE_PER_SECOND", "100")
+	t.Setenv("FIXTURE_REPLAY_START_DELAY_MS", "250")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.FixtureReplayRatePerSecond != 100 || cfg.FixtureReplayStartDelayMs != 250 {
+		t.Fatalf("fixture controls = %d/%d", cfg.FixtureReplayRatePerSecond, cfg.FixtureReplayStartDelayMs)
+	}
+}

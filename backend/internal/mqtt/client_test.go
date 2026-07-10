@@ -95,6 +95,33 @@ func TestQueueStatusTracksAcceptedProcessedAndOldest(t *testing.T) {
 	t.Fatal("processed counter did not advance")
 }
 
+func TestDisabledClientDispatchesSubmittedNormalizedFixture(t *testing.T) {
+	processed := make(chan NormalizedMessage, 1)
+	client := NewClient(ClientConfig{Enabled: false, QueueSize: 2}, slog.New(slog.NewTextHandler(io.Discard, nil)), func(_ context.Context, msg NormalizedMessage) {
+		processed <- msg
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := client.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	msg, err := Normalize("meshcore/YYZ/ABCDEF012345/packets", []byte(`{"raw":"0102"}`), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !client.SubmitNormalized(msg) {
+		t.Fatal("fixture message was not accepted")
+	}
+	select {
+	case got := <-processed:
+		if got.IngestID == "" {
+			t.Fatal("submitted fixture message has empty ingest ID")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("disabled client did not dispatch submitted fixture message")
+	}
+}
+
 func TestQueueOldestTracksCurrentFIFOHead(t *testing.T) {
 	client := NewClient(ClientConfig{QueueSize: 4}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 	client.queueAgeMu.Lock()

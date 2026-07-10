@@ -17,13 +17,30 @@ type fixtureLine struct {
 }
 
 func (a *Application) replayFixture(ctx context.Context, path string) {
+	if delay := time.Duration(max(a.Config.FixtureReplayStartDelayMs, 0)) * time.Millisecond; delay > 0 {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		a.Log.Warn("fixture replay open failed", "path", path, "error", err)
 		return
 	}
 	defer f.Close()
+	interval := 150 * time.Millisecond
+	if rate := a.Config.FixtureReplayRatePerSecond; rate > 0 {
+		interval = time.Second / time.Duration(rate)
+		if interval < time.Millisecond {
+			interval = time.Millisecond
+		}
+	}
 	scanner := bufio.NewScanner(f)
+	first := true
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
@@ -44,8 +61,17 @@ func (a *Application) replayFixture(ctx context.Context, path string) {
 			a.Log.Debug("fixture normalize failed", "error", err)
 			continue
 		}
-		a.HandleMQTT(ctx, msg)
-		time.Sleep(150 * time.Millisecond)
+		if !first {
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+		}
+		first = false
+		a.MQTT.SubmitNormalized(msg)
 	}
 	if err := scanner.Err(); err != nil {
 		a.Log.Warn("fixture replay read failed", "path", path, "error", err)
