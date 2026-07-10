@@ -120,12 +120,19 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           VERSION: ${{ steps.meta.outputs.version }}
           BUILD_TIME: ${{ steps.meta.outputs.build_time }}
+          SOURCE_CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_CI_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          SOURCE_CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          SOURCE_CI_WORKFLOW: ${{ github.event.workflow_run.name }}
         run: |
           jq -n \
+            --arg repository "${REGISTRY}/${IMAGE_NAME}" \
             --arg image "${REGISTRY}/${IMAGE_NAME}@${DIGEST}" \
             --arg digest "$DIGEST" --arg gitSha "$SOURCE_SHA" \
             --arg version "$VERSION" --arg buildTime "$BUILD_TIME" \
-            '{image:$image,digest:$digest,gitSha:$gitSha,version:$version,buildTime:$buildTime,platforms:["linux/amd64","linux/arm64"]}' \
+            --arg sourceCiRunId "$SOURCE_CI_RUN_ID" --arg sourceCiHeadSha "$SOURCE_CI_HEAD_SHA" \
+            --arg sourceCiConclusion "$SOURCE_CI_CONCLUSION" --arg sourceCiWorkflow "$SOURCE_CI_WORKFLOW" \
+            '{repository:$repository,image:$image,digest:$digest,gitSha:$gitSha,version:$version,buildTime:$buildTime,platforms:["linux/amd64","linux/arm64"],sourceCiRunId:$sourceCiRunId,sourceCiHeadSha:$sourceCiHeadSha,sourceCiConclusion:$sourceCiConclusion,sourceCiWorkflow:$sourceCiWorkflow}' \
             > candidate-manifest.json
       - name: Upload candidate evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

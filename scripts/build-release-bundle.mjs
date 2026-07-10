@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const version = read('VERSION').trim();
 const image = String(process.env.RELEASE_IMAGE ?? '').trim();
-const gitSha = String(process.env.RELEASE_GIT_SHA ?? git('rev-parse', 'HEAD')).trim();
+const gitSha = String(process.env.RELEASE_GIT_SHA ?? '').trim();
 const buildTime = String(process.env.RELEASE_BUILD_TIME ?? new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')).trim();
 const outputRoot = resolve(root, process.env.RELEASE_OUTPUT_DIR ?? 'artifacts/release');
 
@@ -104,10 +103,6 @@ console.log(JSON.stringify({ version, image, gitSha, schemaVersion, stage, manif
 
 function read(relativePath) {
   return readFileSync(join(root, relativePath), 'utf8');
-}
-
-function git(...args) {
-  return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 }
 
 function assert(condition, message) {

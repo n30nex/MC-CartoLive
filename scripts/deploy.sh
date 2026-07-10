@@ -63,7 +63,8 @@ done
 is_digest_ref "$IMAGE" || die "--image must be an immutable @sha256 reference"
 [ -n "$PREVIOUS_IMAGE" ] || die "--previous-image is required for bounded rollback"
 is_digest_ref "$PREVIOUS_IMAGE" || die "--previous-image must be an immutable @sha256 reference"
-if [ -n "$EXPECTED_GIT_SHA" ] && [[ ! "$EXPECTED_GIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+[ -n "$EXPECTED_GIT_SHA" ] || die "--expected-git-sha is required and must identify the release merge commit"
+if [[ ! "$EXPECTED_GIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
 	die "--expected-git-sha must be a full lowercase Git SHA"
 fi
 [[ "$MIN_FREE_GB" =~ ^[1-9][0-9]*$ ]] || die "MC_CARTOLIVE_MIN_FREE_GB must be a positive integer"
@@ -133,8 +134,14 @@ delete_database() {
 	# The canonical-path and no-symlink guards above make this bounded deletion
 	# cover every old file and directory naming convention without escaping REPO.
 	find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-	[ "$(hash_if_present "$DATA_DIR/config.yaml")" = "$config_hash_before" ] || die "data/config.yaml changed during database deletion"
-	[ "$(hash_if_present "$REPO/.env")" = "$env_hash_before" ] || die ".env changed during database deletion"
+	if [ "$(hash_if_present "$DATA_DIR/config.yaml")" != "$config_hash_before" ]; then
+		printf 'data/config.yaml changed during database deletion\n' >&2
+		return 1
+	fi
+	if [ "$(hash_if_present "$REPO/.env")" != "$env_hash_before" ]; then
+		printf '.env changed during database deletion\n' >&2
+		return 1
+	fi
 }
 
 sanitize_release_identity_env() {
@@ -155,9 +162,7 @@ verify_release() {
 	version="$(tr -d '\r\n' < "$REPO/VERSION")"
 	printf '%s' "$ready_json" | grep -q '"ready"[[:space:]]*:[[:space:]]*true'
 	printf '%s' "$ready_json" | grep -q "\"version\"[[:space:]]*:[[:space:]]*\"$version\""
-	if [ -n "$EXPECTED_GIT_SHA" ]; then
-		printf '%s' "$ready_json" | grep -q "\"gitSha\"[[:space:]]*:[[:space:]]*\"$EXPECTED_GIT_SHA\""
-	fi
+	printf '%s' "$ready_json" | grep -q "\"gitSha\"[[:space:]]*:[[:space:]]*\"$EXPECTED_GIT_SHA\""
 	printf '%s' "$events_json" | grep -q '"resetRequired"[[:space:]]*:[[:space:]]*true'
 	printf '%s' "$state_json" >/dev/null
 	[ "$(docker inspect --format '{{.Config.Image}}' "$CONTAINER")" = "$IMAGE" ]
@@ -170,14 +175,13 @@ verify_release() {
 rollback() {
 	printf 'Candidate failed; rolling back to %s\n' "$PREVIOUS_IMAGE" >&2
 	compose "$IMAGE" down --remove-orphans || true
-	if [ "$FRESH_DATABASE" -eq 1 ]; then
+	if [ "$fresh_database_started" -eq 1 ]; then
 		printf 'Fresh-cutover rollback also starts with an empty database.\n' >&2
-		delete_database
+		delete_database || return 1
 	fi
-	compose "$PREVIOUS_IMAGE" pull "$SERVICE"
-	compose "$PREVIOUS_IMAGE" up -d --no-build --remove-orphans "$SERVICE"
+	compose "$PREVIOUS_IMAGE" pull "$SERVICE" || return 1
+	compose "$PREVIOUS_IMAGE" up -d --no-build --remove-orphans "$SERVICE" || return 1
 	if wait_ready; then
-		if [ "${timer_was_active:-0}" -eq 1 ]; then systemctl start mc-cartolive-watchdog.timer; fi
 		printf 'Rollback image is ready. Historical data was intentionally not restored.\n' >&2
 		return 0
 	fi
@@ -185,12 +189,58 @@ rollback() {
 	return 1
 }
 
+restore_watchdog() {
+	if [ "$watchdog_was_active" -eq 1 ] && [ "$watchdog_stopped" -eq 1 ]; then
+		if systemctl start mc-cartolive-watchdog.timer; then
+			watchdog_stopped=0
+			return 0
+		fi
+		printf 'Failed to restore mc-cartolive-watchdog.timer\n' >&2
+		return 1
+	fi
+	return 0
+}
+
+attempt_rollback() {
+	if rollback; then
+		rollback_succeeded=1
+		return 0
+	fi
+	rollback_failed=1
+	return 1
+}
+
+on_exit() {
+	rc=$?
+	trap - EXIT INT TERM
+	set +e
+	if [ "$rc" -ne 0 ] && [ "$service_mutated" -eq 1 ] && [ "$deployment_succeeded" -eq 0 ] && [ "$rollback_succeeded" -eq 0 ] && [ "$rollback_failed" -eq 0 ]; then
+		printf 'Unexpected deployment exit; attempting immutable rollback.\n' >&2
+		attempt_rollback
+	fi
+	if [ "$rollback_failed" -eq 0 ]; then
+		if ! restore_watchdog && [ "$rc" -eq 0 ]; then rc=1; fi
+	elif [ "$watchdog_stopped" -eq 1 ]; then
+		printf 'Rollback readiness failed; watchdog intentionally remains disabled.\n' >&2
+	fi
+	exit "$rc"
+}
+
+verify_candidate_identity() {
+	version="$(tr -d '\r\n' < "$REPO/VERSION")"
+	revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$IMAGE")"
+	source="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "$IMAGE")"
+	image_version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$IMAGE")"
+	[ "$revision" = "$EXPECTED_GIT_SHA" ] || die "candidate OCI revision $revision does not match expected merge SHA $EXPECTED_GIT_SHA"
+	[ "$source" = "https://github.com/n30nex/MC-CartoLive" ] || die "candidate OCI source is not the release repository"
+	[ "$image_version" = "$version" ] || die "candidate OCI version $image_version does not match VERSION $version"
+}
+
 printf 'Pre-pulling immutable candidate: %s\n' "$IMAGE"
 compose "$IMAGE" pull "$SERVICE"
-if [ -n "$PREVIOUS_IMAGE" ]; then
-	printf 'Pre-pulling immutable rollback: %s\n' "$PREVIOUS_IMAGE"
-	compose "$PREVIOUS_IMAGE" pull "$SERVICE"
-fi
+verify_candidate_identity
+printf 'Pre-pulling immutable rollback: %s\n' "$PREVIOUS_IMAGE"
+compose "$PREVIOUS_IMAGE" pull "$SERVICE"
 
 if [ "$FRESH_DATABASE" -eq 1 ]; then
 	projected_kb=$(( $(free_kb) + $(database_kb) ))
@@ -198,33 +248,47 @@ if [ "$FRESH_DATABASE" -eq 1 ]; then
 	[ "$projected_kb" -ge "$required_kb" ] || die "projected free space after deletion is below ${MIN_FREE_GB} GiB"
 fi
 
-timer_was_active=0
+watchdog_was_active=0
+watchdog_stopped=0
+service_mutated=0
+fresh_database_started=0
+deployment_succeeded=0
+rollback_succeeded=0
+rollback_failed=0
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet mc-cartolive-watchdog.timer; then
-	timer_was_active=1
-	systemctl stop mc-cartolive-watchdog.timer
+	watchdog_was_active=1
+	if systemctl stop mc-cartolive-watchdog.timer; then
+		watchdog_stopped=1
+	else
+		die "could not stop mc-cartolive-watchdog.timer"
+	fi
 fi
 
 if [ "$FRESH_DATABASE" -eq 1 ]; then
 	printf 'Stopping writer and permanently deleting live SQLite data and backups.\n'
-	compose "$IMAGE" down --remove-orphans || true
+	service_mutated=1
+	compose "$IMAGE" down --remove-orphans
 	sanitize_release_identity_env
+	fresh_database_started=1
 	delete_database
 	actual_free_kb="$(free_kb)"
 	if [ "$actual_free_kb" -lt "$required_kb" ]; then
-		printf 'Free space after deletion is below %s GiB; rolling back application digest.\n' "$MIN_FREE_GB" >&2
-		rollback || true
+		printf 'Free space after deletion is below %s GiB.\n' "$MIN_FREE_GB" >&2
 		exit 1
 	fi
 fi
 
 printf 'Starting candidate without an on-host build.\n'
+service_mutated=1
 if ! compose "$IMAGE" up -d --no-build --remove-orphans "$SERVICE"; then
-	if [ -n "$PREVIOUS_IMAGE" ]; then rollback || true; fi
 	exit 1
 fi
 if ! wait_ready || ! verify_release; then
 	compose "$IMAGE" logs --tail=240 "$SERVICE" >&2 || true
-	if [ -n "$PREVIOUS_IMAGE" ]; then rollback || true; fi
 	exit 1
 fi
 
@@ -236,9 +300,8 @@ MC_CARTOLIVE_VERSION=$(tr -d '\r\n' < "$REPO/VERSION")
 EOF
 chmod 0600 "$STATE_DIR/current.env"
 
-if [ "$timer_was_active" -eq 1 ]; then
-	systemctl start mc-cartolive-watchdog.timer
-fi
+deployment_succeeded=1
+restore_watchdog
 
 printf 'Deployment healthy: %s\n' "$IMAGE"
 printf 'Free space: %s GiB\n' "$(awk -v kb="$(free_kb)" 'BEGIN {printf "%.1f", kb/1024/1024}')"

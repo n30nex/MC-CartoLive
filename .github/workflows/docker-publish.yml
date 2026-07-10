@@ -5,6 +5,7 @@ on:
     tags: ["v*.*.*"]
 
 permissions:
+  actions: read
   contents: write
   packages: write
   attestations: write
@@ -32,23 +33,66 @@ jobs:
       - name: Verify tag, VERSION, and ancestry
         id: release
         run: |
+          tag_ref="refs/tags/$GITHUB_REF_NAME"
+          test "$(git cat-file -t "$tag_ref")" = "tag"
+          merge_sha="$(git rev-parse "$tag_ref^{}")"
+          test "$merge_sha" = "$(git rev-parse HEAD)"
           version="$(tr -d '\r\n' < VERSION)"
           test "$GITHUB_REF_NAME" = "v$version"
           git fetch origin main --depth=1
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          git merge-base --is-ancestor "$merge_sha" origin/main
           node scripts/check-version-sync.mjs
+          echo "merge_sha=$merge_sha" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
           echo "build_time=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
       - name: Require successful main CI for the tagged SHA
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
         run: |
           count="$(gh api --method GET \
             "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
-            -f head_sha="$GITHUB_SHA" -f status=completed -f per_page=100 \
+            -f head_sha="$MERGE_SHA" -f status=completed -f per_page=100 \
             --jq '[.workflow_runs[] | select(.conclusion == "success" and .head_branch == "main")] | length')"
           test "$count" -gt 0
+      - name: Load immutable candidate evidence
+        id: evidence
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          artifact_name="release-candidate-$MERGE_SHA"
+          artifact_json="$(gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/artifacts" \
+            -f name="$artifact_name" -f per_page=100)"
+          artifact_id="$(printf '%s' "$artifact_json" | jq -r '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty')"
+          run_id="$(printf '%s' "$artifact_json" | jq -r --argjson id "${artifact_id:-0}" '.artifacts[] | select(.id == $id) | .workflow_run.id')"
+          test -n "$artifact_id"
+          test -n "$run_id"
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")"
+          printf '%s' "$run_json" | jq -e \
+            '.conclusion == "success" and .path == ".github/workflows/image-candidate.yml" and .event == "workflow_run" and .head_branch == "main"' >/dev/null
+          rm -rf /tmp/mc-cartolive-candidate-evidence
+          mkdir -p /tmp/mc-cartolive-candidate-evidence
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > /tmp/mc-cartolive-candidate.zip
+          unzip -q /tmp/mc-cartolive-candidate.zip -d /tmp/mc-cartolive-candidate-evidence
+          manifest=/tmp/mc-cartolive-candidate-evidence/candidate-manifest.json
+          test -f "$manifest"
+          printf '%s' "$(cat "$manifest")" | jq -e \
+            --arg sha "$MERGE_SHA" --arg version "$VERSION" --arg repository "${REGISTRY}/${IMAGE_NAME}" \
+            '.gitSha == $sha and .sourceCiHeadSha == $sha and .sourceCiConclusion == "success" and .sourceCiWorkflow == "CI" and .version == $version and .repository == $repository' >/dev/null
+          source_ci_run_id="$(jq -r '.sourceCiRunId' "$manifest")"
+          [[ "$source_ci_run_id" =~ ^[0-9]+$ ]]
+          source_ci_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_ci_run_id")"
+          printf '%s' "$source_ci_json" | jq -e --arg sha "$MERGE_SHA" \
+            '.name == "CI" and .conclusion == "success" and .head_branch == "main" and .head_sha == $sha' >/dev/null
+          digest="$(jq -r '.digest' "$manifest")"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$(jq -r '.image' "$manifest")" = "${REGISTRY}/${IMAGE_NAME}@$digest"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
       - name: Set up Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - name: Log in to GHCR
@@ -60,14 +104,38 @@ jobs:
       - name: Resolve previously built candidate
         id: candidate
         shell: bash
+        env:
+          MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
+          EVIDENCE_DIGEST: ${{ steps.evidence.outputs.digest }}
         run: |
           image="${REGISTRY}/${IMAGE_NAME}"
-          candidate="$image:sha-$GITHUB_SHA"
+          candidate="$image:sha-$MERGE_SHA"
           inspect="$(docker buildx imagetools inspect "$candidate")"
           digest="$(printf '%s\n' "$inspect" | awk '$1 == "Digest:" {print $2; exit}')"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$digest" = "$EVIDENCE_DIGEST"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
           echo "image=$image@$digest" >> "$GITHUB_OUTPUT"
+      - name: Verify OCI identity on every release platform
+        env:
+          MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
+          VERSION: ${{ steps.release.outputs.version }}
+          CANDIDATE_IMAGE: ${{ steps.candidate.outputs.image }}
+        run: |
+          for platform in linux/amd64 linux/arm64; do
+            docker pull --platform "$platform" "$CANDIDATE_IMAGE"
+            container_id="$(docker create --platform "$platform" "$CANDIDATE_IMAGE")"
+            image_id="$(docker inspect --format '{{.Image}}' "$container_id")"
+            revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image_id")"
+            source="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "$image_id")"
+            image_version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image_id")"
+            architecture="$(docker image inspect --format '{{.Architecture}}' "$image_id")"
+            docker rm "$container_id"
+            test "$revision" = "$MERGE_SHA"
+            test "$source" = "https://github.com/$GITHUB_REPOSITORY"
+            test "$image_version" = "$VERSION"
+            test "$architecture" = "${platform#linux/}"
+          done
       - name: Verify candidate provenance belongs to this repository
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -115,7 +183,7 @@ jobs:
       - name: Build deployment bundle and release manifest
         env:
           RELEASE_IMAGE: ${{ steps.candidate.outputs.image }}
-          RELEASE_GIT_SHA: ${{ github.sha }}
+          RELEASE_GIT_SHA: ${{ steps.release.outputs.merge_sha }}
           RELEASE_BUILD_TIME: ${{ steps.release.outputs.build_time }}
         run: |
           node scripts/build-release-bundle.mjs

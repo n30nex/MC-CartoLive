@@ -10,7 +10,9 @@ param(
   [string]$Service = "meshcore-live-map",
   [string]$DiagnoseRegion = "YTR",
   [string]$ExpectedVersion = "",
-  [string]$ExpectedGitSha = "",
+  [Parameter(Mandatory = $true)]
+  [ValidatePattern('^[0-9a-f]{40}$')]
+  [string]$ExpectedGitSha,
   [switch]$FreshDatabase,
   [string]$FreshDatabaseConfirmation = "",
   [switch]$SkipSmoke
@@ -36,8 +38,6 @@ if (-not (Test-Path -LiteralPath $KeyPath)) { throw "SSH key was not found: $Key
 Push-Location $root
 try {
   if (-not $ExpectedVersion) { $ExpectedVersion = (Get-Content VERSION -TotalCount 1).Trim() }
-  if (-not $ExpectedGitSha) { $ExpectedGitSha = (git rev-parse HEAD).Trim() }
-
   $args = @(
     "--image", $Image,
     "--previous-image", $PreviousImage,

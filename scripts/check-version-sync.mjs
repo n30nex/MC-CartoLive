@@ -60,6 +60,18 @@ for (const identity of ['APP_VERSION:', 'GIT_SHA:', 'BUILD_TIME:', 'VITE_GIT_SHA
 const publishWorkflow = read('.github/workflows/docker-publish.yml');
 if (publishWorkflow.includes('docker/build-push-action@')) errors.push('tag workflow must promote a candidate, never rebuild');
 if (!publishWorkflow.includes('imagetools create')) errors.push('tag workflow must promote by manifest digest');
+if (!publishWorkflow.includes('candidate-manifest.json') || !publishWorkflow.includes('test "$digest" = "$EVIDENCE_DIGEST"')) {
+  errors.push('tag workflow must bind the mutable candidate tag to immutable candidate evidence');
+}
+if (!publishWorkflow.includes('git cat-file -t') || !publishWorkflow.includes('org.opencontainers.image.revision')) {
+  errors.push('tag workflow must require an annotated tag and exact OCI revision');
+}
+
+const deployScript = read('scripts/deploy.sh');
+if (!deployScript.includes('[ -n "$EXPECTED_GIT_SHA" ] || die')) errors.push('deploy must require an expected merge SHA');
+if (!deployScript.includes('org.opencontainers.image.revision') || !deployScript.includes('trap on_exit EXIT')) {
+  errors.push('deploy must verify immutable image identity and install the fail-safe EXIT trap');
+}
 
 for (const workflow of readdirSync(join(root, '.github', 'workflows')).filter((name) => name.endsWith('.yml'))) {
   const text = read(join('.github', 'workflows', workflow));
