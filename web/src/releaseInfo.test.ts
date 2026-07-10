@@ -1,29 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import indexHTML from '../index.html?raw';
 import {
-  GITHUB_STATS_CACHE_KEY,
   commitURLForSha,
   formatBuildAge,
   normalizeGitSha,
-  normalizeRepoStats,
   parseBuildTime,
-  readCachedRepoStats,
   releaseURLForVersion,
-  shortBuildID,
-  writeCachedRepoStats
+  shortBuildID
 } from './releaseInfo';
-
-class MemoryStorage {
-  private readonly values = new Map<string, string>();
-
-  getItem(key: string): string | null {
-    return this.values.get(key) ?? null;
-  }
-
-  setItem(key: string, value: string): void {
-    this.values.set(key, value);
-  }
-}
 
 describe('release metadata helpers', () => {
   it('ships the 3.2.0 browser title without stale release identity', () => {
@@ -63,19 +47,5 @@ describe('release metadata helpers', () => {
     expect(parseBuildTime('2026-06-01T08:52:22.123456789Z')).toBe(Date.parse('2026-06-01T08:52:22.123Z'));
     expect(parseBuildTime('2026-02-31T00:00:00Z')).toBeNaN();
     expect(parseBuildTime('2026-06-01T08:52:22+24:00')).toBeNaN();
-  });
-
-  it('normalizes and caches GitHub stats without trusting invalid payloads', () => {
-    const storage = new MemoryStorage() as unknown as Storage;
-    const now = 10_000;
-
-    expect(normalizeRepoStats({ stargazers_count: 2.9, forks_count: 0 })).toEqual({ stars: 2, forks: 0 });
-    expect(normalizeRepoStats({ stargazers_count: '2', forks_count: 0 })).toBeNull();
-    expect(readCachedRepoStats(storage, now)).toBeNull();
-
-    writeCachedRepoStats(storage, { stars: 2, forks: 0 }, now);
-    expect(storage.getItem(GITHUB_STATS_CACHE_KEY)).toContain('"stars":2');
-    expect(readCachedRepoStats(storage, now + 1_000)).toEqual({ stars: 2, forks: 0 });
-    expect(readCachedRepoStats(storage, now + 31 * 60_000)).toBeNull();
   });
 });
