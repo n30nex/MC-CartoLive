@@ -972,7 +972,11 @@ async function smokeLiveMapControls(page, viewport) {
 }
 
 async function waitForTopologyHydration(page, timeout = 15_000) {
-  await page.locator('.app-shell[data-topology-hydrated="true"]').waitFor({ state: 'visible', timeout });
+  await page.waitForFunction(() => {
+    const shell = document.querySelector('.app-shell[data-topology-hydrated="true"]');
+    if (!(shell instanceof HTMLElement)) return false;
+    return Number(shell.dataset.topologyNodeCount) > 0 && Number(shell.dataset.topologyRouteCount) > 0;
+  }, null, { timeout });
 }
 
 async function assertNoNocSummary(page) {
@@ -1019,7 +1023,7 @@ async function smokeMapSettings(page, viewport) {
   await toggle.waitFor({ state: 'visible', timeout: 12_000 });
   if (await toggle.getAttribute('aria-pressed') !== 'true') {
     await toggle.click({ trial: true });
-    await toggle.click();
+    await toggle.dispatchEvent('click');
   }
   const drawer = page.getByRole('dialog', { name: /^Map settings$/i });
   await drawer.waitFor({ state: 'visible', timeout: 5_000 });
