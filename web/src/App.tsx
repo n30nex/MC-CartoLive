@@ -1654,6 +1654,7 @@ function PublicDashboardApp() {
   return (
     <div
       className="app-shell public-dashboard"
+      data-topology-hydrated={initialNodesReceived ? 'true' : 'false'}
       data-theme-mode={themeMode}
       data-theme-palette={selectedThemePalette.id}
       data-vcr-layout={vcrOpen ? 'open' : 'closed'}

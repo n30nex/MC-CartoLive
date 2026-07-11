@@ -220,6 +220,7 @@ async function runScenario(browser, viewport, scenario) {
     await dismissWelcome(page);
     await page.waitForSelector(scenario.waitFor, { state: 'visible', timeout: 45_000 });
     await page.waitForTimeout(900);
+    if (scenario.name === 'live-map') await waitForTopologyHydration(page);
 
     for (const check of scenario.checks) {
       if (check.desktopOnly && viewport.isMobile) continue;
@@ -334,6 +335,8 @@ async function runReleaseGate(browser, viewport) {
       await dismissGuide.click();
       await page.getByRole('region', { name: /First visit map guide/i }).waitFor({ state: 'hidden', timeout: 5_000 });
     }
+
+    await runGateStep(errors, checks, 'full node and route topology hydrates before interactive surfaces', () => waitForTopologyHydration(page));
 
     eventReset = await runGateStep(errors, checks, 'public cursor reset semantics for zero and ahead cursors', () => smokePublicEventReset(page));
 
@@ -966,6 +969,10 @@ async function smokeLiveMapControls(page, viewport) {
   await smokeMapSettings(page, viewport);
   if (!viewport.isMobile) await smokeVcr(page, viewport);
   await smokeTopInfoPanels(page, viewport);
+}
+
+async function waitForTopologyHydration(page, timeout = 15_000) {
+  await page.locator('.app-shell[data-topology-hydrated="true"]').waitFor({ state: 'visible', timeout });
 }
 
 async function assertNoNocSummary(page) {
