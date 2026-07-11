@@ -99,6 +99,7 @@ jobs:
           bash scripts/test-post-release-audit.sh
           node scripts/test-websocket-flow-probe.mjs
           node scripts/test-public-privacy-retry.mjs
+          node scripts/test-public-privacy-websocket.mjs
           node scripts/check-cloudflare-cidrs.mjs --online
       - name: Compose contracts
         run: |
@@ -135,6 +136,7 @@ jobs:
           test -f artifacts/release/stage/mc-cartolive-$(tr -d '\r\n' < VERSION)/docker-compose.production.yml
           test -f artifacts/release/stage/mc-cartolive-$(tr -d '\r\n' < VERSION)/scripts/check-public-privacy.mjs
           test -f artifacts/release/stage/mc-cartolive-$(tr -d '\r\n' < VERSION)/scripts/public-privacy-retry.mjs
+          test -f artifacts/release/stage/mc-cartolive-$(tr -d '\r\n' < VERSION)/scripts/public-privacy-websocket.mjs
 
   docker:
     name: Container build, smoke, scan
