@@ -44,7 +44,9 @@ unchanged.
 ## Release and operations
 
 - Desktop and mobile browser smoke runs on pull requests and protected-main
-  pushes and is required before candidate creation.
+  pushes and is required before candidate creation. Its follow-on privacy scan
+  honors bounded server `Retry-After` responses without weakening forbidden-field
+  checks.
 - Candidate and release workflows derive the release branch and documentation
   directory from `VERSION`; the one-off 3.2.0 publisher is retired.
 - One source commit produces two attested multi-platform images. The `world`

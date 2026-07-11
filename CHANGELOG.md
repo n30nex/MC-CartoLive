@@ -22,7 +22,8 @@ in Git history, not in the active documentation set.
   can no longer replace the current live stream. Direct packet-path map
   animation remains available from sanitized packet records.
 - Made desktop/mobile browser smoke and active-flow soak fail-closed release
-  evidence; repaired the sandboxed post-release audit and remote metrics path.
+  evidence; made the privacy scanner honor bounded `Retry-After` responses after
+  browser load; repaired the sandboxed post-release audit and remote metrics path.
 - Replaced 3.2.0-specific/one-off release automation with version-derived,
   immutable dual-image publication: generic world tags and separate Canada
   tags/digest for the hosted droplet.

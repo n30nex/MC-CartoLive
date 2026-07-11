@@ -39,6 +39,7 @@ const files = [
   ['scripts/mc-cartolive-watchdog.sh', 'scripts/mc-cartolive-watchdog.sh'],
   ['scripts/post-release-audit.sh', 'scripts/post-release-audit.sh'],
   ['scripts/check-public-privacy.mjs', 'scripts/check-public-privacy.mjs'],
+  ['scripts/public-privacy-retry.mjs', 'scripts/public-privacy-retry.mjs'],
   ['scripts/websocket-flow-probe.mjs', 'scripts/websocket-flow-probe.mjs'],
   ['scripts/live-smoke.ps1', 'scripts/live-smoke.ps1'],
   ['scripts/package-smoke.mjs', 'scripts/package-smoke.mjs'],

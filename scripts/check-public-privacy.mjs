@@ -2,6 +2,7 @@
 import crypto from 'node:crypto';
 import net from 'node:net';
 import tls from 'node:tls';
+import { fetchWithRateLimitRetry } from './public-privacy-retry.mjs';
 
 const options = parseOptions(process.argv.slice(2));
 const baseUrl = normalizeBaseUrl(options.baseUrl || process.env.BASE_URL || 'http://127.0.0.1:39476');
@@ -69,7 +70,7 @@ const findings = [];
 
 for (const endpoint of endpoints) {
   const url = `${baseUrl}${endpoint.path}`;
-  const response = await fetch(url, { headers: { accept: 'application/json' } });
+  const response = await fetchPublicEndpoint(url, endpoint.path);
   if (endpoint.optionalNotFound && response.status === 404) continue;
   if (!response.ok) {
     throw new Error(`${endpoint.path} returned ${response.status}`);
@@ -99,6 +100,14 @@ if (findings.length > 0) {
 }
 
 console.log(`public privacy scan ok: ${baseUrl}`);
+
+async function fetchPublicEndpoint(url, path) {
+  return fetchWithRateLimitRetry(url, { headers: { accept: 'application/json' } }, {
+    onRetry: ({ delayMs }) => {
+      console.warn(`${path} rate limited; retrying in ${Math.ceil(delayMs / 1000)}s`);
+    }
+  });
+}
 
 async function scanPublicWebSocket(base, origin) {
   const url = `${webSocketBaseUrl(base)}/ws/public`;
