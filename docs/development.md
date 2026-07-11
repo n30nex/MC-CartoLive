@@ -121,8 +121,8 @@ Use this checklist after map, playback, or styling changes:
   packet effects, and message bubbles appear together at detail zoom.
 - Follow, WebSocket reconnect, and burst pacing resume packet comets
   without duplicate stale bursts.
-- Packets replay compacts the panel, pauses live flow, fits the full true path,
-  waits briefly, and animates one selected packet path.
+- Packets animation compacts the panel, fits the full true path, waits briefly,
+  and animates one selected path without pausing current live flow.
 - NetGraph opens from the top bar, renders connected public route nodes, supports
   pan/zoom/drag/search, and shows live routed packet comets without exposing raw
   packet IDs or raw path data.

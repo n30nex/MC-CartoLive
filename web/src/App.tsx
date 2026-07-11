@@ -184,10 +184,6 @@ function PublicDashboardApp() {
     markPauseUserOverride();
     setPaused((value) => !value);
   }, [markPauseUserOverride]);
-  const resumeFromClosedPacketTray = useCallback(() => {
-    markPauseUserOverride();
-    setPaused(false);
-  }, [markPauseUserOverride]);
   const {
     packetsOpen,
     setPacketsOpen,
@@ -213,7 +209,6 @@ function PublicDashboardApp() {
     openNodeList,
     selectLabExperiment
   } = useWorkspaceNavigation({
-    onCompactPacketTrayClosed: resumeFromClosedPacketTray,
     onWorkspaceRouteOpened: closeWorkspaceMenus
   });
   const {
@@ -925,7 +920,6 @@ function PublicDashboardApp() {
     setPlotFirstNodeID(null);
     setPlotAreaFirstPoint(null);
     setFollowTraffic(false);
-    setPaused(true);
     selectPacket(packet);
     setPacketsOpen(true);
     setPacketsPanelMode('compactTray');
@@ -968,7 +962,6 @@ function PublicDashboardApp() {
     setPlotFirstNodeID(null);
     setPlotAreaFirstPoint(null);
     setFollowTraffic(false);
-    setPaused(true);
     setPropagationOpen(true);
     setPacketsOpen(false);
     setPacketsPanelMode('expanded');
@@ -1001,11 +994,6 @@ function PublicDashboardApp() {
       travelDurationMs
     });
   }, [clearResolvedSelection, mapSettings.packets, setPacketsOpen, setPacketsPanelMode]);
-
-  const resumeLiveFromPacketTray = useCallback(() => {
-    setPaused(false);
-    setPacketsPanelMode('expanded');
-  }, [setPacketsPanelMode]);
 
   const startNodePlot = useCallback(() => {
     setPlotMode('node');
@@ -1261,6 +1249,7 @@ function PublicDashboardApp() {
       data-latest-pulse-id={state.pulses[0]?.id ?? ''}
       data-theme-mode={themeMode}
       data-theme-palette={selectedThemePalette.id}
+      data-live-flow={paused ? 'paused' : 'live'}
       data-packets-mode={packetsOpen ? packetsPanelMode : 'closed'}
       style={appThemeStyle}
     >
@@ -1709,7 +1698,6 @@ function PublicDashboardApp() {
               onClose={closePackets}
               onExpand={() => setPacketsPanelMode('expanded')}
               onPresentationChange={setWorkspacePresentation}
-              onResumeLive={resumeLiveFromPacketTray}
               onSelectPacket={focusPacketPath}
               onReplayPacket={replayPacketPath}
             />

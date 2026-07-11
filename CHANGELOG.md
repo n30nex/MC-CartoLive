@@ -20,7 +20,8 @@ in Git history, not in the active documentation set.
   teardown, and periodically refreshed route freshness without redraw churn.
 - Removed the Timeline/VCR and RF Replay Studio surfaces so historical playback
   can no longer replace the current live stream. Direct packet-path map
-  animation remains available from sanitized packet records.
+  animation remains available from sanitized packet records without pausing
+  current traffic.
 - Made desktop/mobile browser smoke and active-flow soak fail-closed release
   evidence; made the privacy scanner honor bounded `Retry-After` responses after
   browser load; repaired the sandboxed post-release audit and remote metrics path.

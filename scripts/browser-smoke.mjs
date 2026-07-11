@@ -63,7 +63,7 @@ const scenarios = [
       { selector: '.packets-panel', label: 'Packets panel' },
       { selector: '.packets-summary-strip', label: 'Packets summary strip' }
     ],
-    actions: [smokePacketsReplay]
+    actions: [smokePacketsAnimation]
   },
   {
     name: 'chat',
@@ -1116,12 +1116,12 @@ async function smokeSetupPanel(page, viewport) {
   }
 }
 
-async function smokePacketsReplay(page, viewport) {
+async function smokePacketsAnimation(page, viewport) {
   const row = await waitForPacketRow(page, false);
   if (!row) {
     const empty = await page.locator('.packets-empty').first().textContent({ timeout: 2_000 }).catch(() => 'No packets available');
     if (!empty || !empty.toLowerCase().includes('no true path packets')) {
-      throw new Error(`Packets replay smoke found no row and no clear empty state: ${compactText(empty)}`);
+      throw new Error(`Packets animation smoke found no row and no clear empty state: ${compactText(empty)}`);
     }
     return;
   }
@@ -1139,23 +1139,24 @@ async function smokePacketsReplay(page, viewport) {
   const before = await readMapViewData(page);
   await row.locator('.packet-replay-button').click();
   await page.waitForSelector('.app-shell[data-packets-mode="compactTray"]', { state: 'visible', timeout: 10_000 });
-  await assertVisibleInViewport(page, 'section.packets-compact-tray[aria-label="Selected packet replay"]', 'Packets compact replay tray', viewport);
-  await page.getByRole('button', { name: /Replay again/i }).waitFor({ state: 'visible', timeout: 8_000 });
-  await page.getByRole('button', { name: /Resume live/i }).waitFor({ state: 'visible', timeout: 8_000 });
+  await assertVisibleInViewport(page, 'section.packets-compact-tray[aria-label="Selected packet animation"]', 'Packets compact animation tray', viewport);
+  await page.getByRole('button', { name: /Animate again/i }).waitFor({ state: 'visible', timeout: 8_000 });
+  const liveFlow = await page.locator('.app-shell').getAttribute('data-live-flow');
+  if (liveFlow !== 'live') throw new Error(`PacketTV animation replaced the live stream: ${liveFlow}`);
   const animated = await page.waitForFunction(() => Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0) > 0, null, { timeout: 8_000 }).then(() => true, () => false);
   if (!animated) {
     const active = await page.evaluate(() => ({
       count: Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0),
       ids: Array.isArray(window.__mcCartoLivePerf?.packetActiveCometIDs) ? window.__mcCartoLivePerf.packetActiveCometIDs : []
     }));
-    throw new Error(`PacketTV direct replay did not start its map animation: ${JSON.stringify(active)}`);
+    throw new Error(`PacketTV direct animation did not start its map comet: ${JSON.stringify(active)}`);
   }
 
   if (!viewport.isMobile) {
     await page.waitForTimeout(2600);
     const after = await readMapViewData(page);
     if (before && after && after.baseMode === 'openfreemap' && !mapViewChanged(before, after)) {
-      throw new Error(`OpenFreeMap packet replay did not move the map camera: before=${JSON.stringify(before)} after=${JSON.stringify(after)}`);
+      throw new Error(`OpenFreeMap packet animation did not move the map camera: before=${JSON.stringify(before)} after=${JSON.stringify(after)}`);
     }
   }
 }
@@ -1294,7 +1295,7 @@ async function waitForPacketRow(page, requireRow = true) {
   const error = await page.locator('.packets-error').first().textContent({ timeout: 1_000 }).catch(() => '');
   const empty = await page.locator('.packets-empty').first().textContent({ timeout: 1_000 }).catch(() => '');
   const panel = await page.locator('.packets-panel').first().textContent({ timeout: 1_000 }).catch(() => '');
-  throw new Error(`Packets replay smoke could not load a true path row. ${compactText(error || empty || panel)}`);
+  throw new Error(`Packets animation smoke could not load a true path row. ${compactText(error || empty || panel)}`);
 }
 
 async function activateSetupPreset(page, preset) {

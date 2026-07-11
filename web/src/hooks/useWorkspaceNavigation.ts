@@ -11,7 +11,6 @@ import {
 export type PacketsPanelMode = 'expanded' | 'compactTray';
 
 interface WorkspaceNavigationOptions {
-  onCompactPacketTrayClosed: () => void;
   onWorkspaceRouteOpened: () => void;
 }
 
@@ -29,7 +28,6 @@ function isLabRoute(hash: string): boolean {
  * in App because they are not routes and may be combined with a workspace.
  */
 export function useWorkspaceNavigation({
-  onCompactPacketTrayClosed,
   onWorkspaceRouteOpened
 }: WorkspaceNavigationOptions) {
   const [packetsOpen, setPacketsOpen] = useState(() => window.location.hash === '#/packets');
@@ -86,10 +84,9 @@ export function useWorkspaceNavigation({
 
   const closePackets = useCallback(() => {
     clearHashRoute('#/packets');
-    if (packetsPanelMode === 'compactTray') onCompactPacketTrayClosed();
     setPacketsOpen(false);
     setPacketsPanelMode('expanded');
-  }, [onCompactPacketTrayClosed, packetsPanelMode]);
+  }, []);
 
   const closeNetGraph = useCallback(() => {
     clearHashRoute('#/netgraph');

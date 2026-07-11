@@ -18,8 +18,9 @@ digests promoted as 3.2.1.
   shell, secret, dependency, CodeQL, and vulnerability checks pass.
 - [ ] Desktop 1440x900 and mobile 390x844 browser smoke pass on the PR and the
   protected-main commit. The smoke proves complete topology, advancing live
-  state, absence of retired VCR/Replay Studio controls, visibility/network
-  recovery, and bounded resource growth.
+  state, direct packet animation without pausing live flow, absence of retired
+  VCR/Replay Studio controls, visibility/network recovery, and bounded resource
+  growth.
 
 ## Performance and packaging
 

@@ -25,7 +25,8 @@ unchanged.
   without forcing high-frequency redraws.
 - Timeline/VCR and RF Replay Studio are removed, so historical playback can no
   longer replace the current live stream. Direct sanitized packet-path
-  animation remains available from the Packets surface.
+  animation remains available from the Packets surface without pausing current
+  live traffic.
 
 ## Backend stability
 
