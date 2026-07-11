@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { JSON_REQUEST_TIMEOUT_MS, PUBLIC_STATE_CACHE_MAX_AGE_MS, fetchPublicBootstrap, fetchPublicChat, fetchPublicEvents, fetchPublicPackets, fetchPublicPropagation, fetchPublicState, fetchPublicStateWithFallback, fetchReadyz, readCachedPublicStateSnapshot } from './api';
+import { JSON_REQUEST_TIMEOUT_MS, PUBLIC_HISTORY_REQUEST_TIMEOUT_MS, PUBLIC_STATE_CACHE_MAX_AGE_MS, fetchPublicBootstrap, fetchPublicChat, fetchPublicEvents, fetchPublicHistory, fetchPublicPackets, fetchPublicPropagation, fetchPublicState, fetchPublicStateWithFallback, fetchReadyz, readCachedPublicStateSnapshot } from './api';
 
 describe('public transport contracts', () => {
   afterEach(() => {
@@ -45,6 +45,27 @@ describe('public transport contracts', () => {
     const rejection = expect(request).rejects.toMatchObject({ name: 'TimeoutError' });
     await vi.advanceTimersByTimeAsync(JSON_REQUEST_TIMEOUT_MS);
     await rejection;
+  });
+
+  it('keeps history requests alive beyond the server history deadline', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise((resolve, reject) => {
+      const timer = window.setTimeout(() => resolve(new Response(JSON.stringify({
+        serverTime: 12_000,
+        events: [],
+        window: { from: 1_000, to: 12_000, count: 0 }
+      }), { status: 200 })), JSON_REQUEST_TIMEOUT_MS + 1_000);
+      init?.signal?.addEventListener('abort', () => {
+        window.clearTimeout(timer);
+        reject(init.signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+      }, { once: true });
+    })));
+
+    const request = fetchPublicHistory({ from: 1_000, to: 12_000 });
+    await vi.advanceTimersByTimeAsync(JSON_REQUEST_TIMEOUT_MS + 1_000);
+
+    await expect(request).resolves.toMatchObject({ events: [], window: { count: 0 } });
+    expect(PUBLIC_HISTORY_REQUEST_TIMEOUT_MS).toBeGreaterThan(JSON_REQUEST_TIMEOUT_MS + 1_000);
   });
 
   it('never silently substitutes localStorage for the network state API', async () => {

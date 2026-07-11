@@ -1147,6 +1147,15 @@ async function smokeVcr(page, viewport) {
       clientX: box.x + box.width * 0.55,
       clientY: box.y + box.height * 0.5
     });
+    const syntheticHoverVisible = await page.waitForFunction(() => {
+      const element = document.querySelector('.vcr-hover-time');
+      if (!(element instanceof HTMLElement)) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== 'hidden';
+    }, null, { timeout: 2_000 }).then(() => true, () => false);
+    if (!syntheticHoverVisible) {
+      await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.5);
+    }
     await page.waitForFunction(() => {
       const element = document.querySelector('.vcr-hover-time');
       if (!(element instanceof HTMLElement)) return false;
@@ -1159,7 +1168,21 @@ async function smokeVcr(page, viewport) {
   await page.getByRole('button', { name: /Change replay speed/i }).click();
   await smokeVcrScrubReplay(page);
   await page.getByRole('button', { name: /Hide (?:VCR|replay) controls and return live/i }).click();
-  await page.waitForSelector('.vcr-bar', { state: 'hidden', timeout: 5_000 });
+  const closed = await page.waitForSelector('.vcr-bar', { state: 'hidden', timeout: 5_000 }).then(() => true, () => false);
+  if (!closed) {
+    const closeState = await page.evaluate(() => {
+      const bar = document.querySelector('.vcr-bar');
+      const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
+      const close = document.querySelector('.vcr-close');
+      return {
+        barClass: bar?.className ?? null,
+        readout: readout.replace(/\s+/g, ' ').trim(),
+        closeConnected: close?.isConnected ?? false,
+        closeDisabled: close instanceof HTMLButtonElement ? close.disabled : null
+      };
+    });
+    throw new Error(`VCR close did not return to the mini live clock: ${JSON.stringify(closeState)}`);
+  }
   await assertVisibleInViewport(page, '.vcr-mini-clock', 'mini live clock after VCR close', viewport);
 }
 
@@ -1173,54 +1196,76 @@ async function smokeVcrScrubReplay(page) {
     await page.waitForTimeout(250);
   }
 
-  await setRangeInputValue(page.locator('input.vcr-timeline').first(), replayTarget.timestamp);
-  await page.waitForSelector('.vcr-bar.paused', { state: 'visible', timeout: 8_000 });
-
   // The target lookup and replay loader share the public history quota. Let
   // the continuous token bucket refill before asking the UI for the same
   // bounded window, then prove transient fixture contention is retryable.
   await page.waitForTimeout(1_100);
-  const historyStatuses = [await triggerVcrReplay(page)];
-  const replayStarted = await page.waitForFunction(() => {
-    const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
-    const bar = document.querySelector('.vcr-bar');
-    const readoutText = readout.trim();
-    return readout.includes('REPLAY LOADING') ||
-      /^REPLAY (?!PAUSED)/i.test(readoutText) ||
-      bar?.classList.contains('replay') ||
-      Boolean(document.querySelector('.vcr-live-clock-icon.spinning')) ||
-      /NO REPLAY EVENTS|REPLAY EMPTY|REPLAY ERROR|REPLAY RETRY/i.test(readout);
-  }, null, { timeout: 15_000 }).then(() => true, () => false);
-  const readoutAfterStart = await page.locator('.vcr-readout').first().textContent().catch(() => '');
-  if (!replayStarted && /REPLAY PAUSED/i.test(readoutAfterStart ?? '')) {
-    throw new Error(`VCR replay did not leave paused state: ${compactText(readoutAfterStart)}`);
-  }
-  await page.waitForFunction(() => {
-    const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
-    return !readout.includes('REPLAY LOADING');
-  }, null, { timeout: 20_000 }).catch(() => {});
-  let readoutText = await page.locator('.vcr-readout').first().textContent();
-  for (let retry = 0; retry < 2 && /REPLAY ERROR|REPLAY RETRY/i.test(readoutText ?? ''); retry += 1) {
-    await page.waitForTimeout(1_500 * (retry + 1));
-    historyStatuses.push(await triggerVcrReplay(page));
+  const attempts = [];
+  let readoutText = '';
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) await page.waitForTimeout(1_500 * attempt);
+    await setRangeInputValue(page.locator('input.vcr-timeline').first(), replayTarget.timestamp);
     await page.waitForFunction(() => {
       const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
-      return !readout.includes('REPLAY LOADING');
-    }, null, { timeout: 20_000 });
-    readoutText = await page.locator('.vcr-readout').first().textContent();
+      return document.querySelector('.vcr-bar')?.classList.contains('paused') && /REPLAY PAUSED/i.test(readout);
+    }, null, { timeout: 8_000 });
+
+    const result = await triggerVcrReplay(page);
+    attempts.push(result);
+    readoutText = result.ui.readout;
+    if (!/NO REPLAY EVENTS|REPLAY EMPTY|REPLAY ERROR|REPLAY RETRY/i.test(readoutText)) break;
   }
   if (/NO REPLAY EVENTS|REPLAY EMPTY|REPLAY ERROR|REPLAY RETRY/i.test(readoutText ?? '')) {
-    throw new Error(`VCR replay did not produce replayable route events: ${compactText(readoutText)}; history HTTP ${historyStatuses.join(',')}`);
+    throw new Error(`VCR replay did not produce replayable route events: ${compactText(readoutText)}; attempts ${JSON.stringify(attempts)}`);
   }
 }
 
 async function triggerVcrReplay(page) {
-  const response = page.waitForResponse((candidate) => {
+  const startedAt = Date.now();
+  const responsePromise = page.waitForResponse((candidate) => {
     const url = new URL(candidate.url());
     return url.pathname === '/api/v1/public/history';
-  }, { timeout: 20_000 });
+  }, { timeout: 25_000 });
   await page.getByRole('button', { name: /Replay from selected time/i }).click();
-  return (await response).status();
+  const response = await responsePromise;
+  const finishedError = await response.finished();
+  let body = null;
+  let bodyError = '';
+  try {
+    body = await response.json();
+  } catch (error) {
+    bodyError = error instanceof Error ? error.message : String(error);
+  }
+  const events = Array.isArray(body?.events) ? body.events : [];
+  const routePulseAts = events
+    .filter((event) => event?.type === 'routePulse' && Number.isFinite(event.at))
+    .map((event) => Number(event.at));
+  const firstRoutePulseAt = routePulseAts.length > 0 ? Math.min(...routePulseAts) : null;
+  const lastRoutePulseAt = routePulseAts.length > 0 ? Math.max(...routePulseAts) : null;
+
+  const ui = await page.waitForFunction((expectedAt) => {
+    const bar = document.querySelector('.vcr-bar');
+    const readout = (document.querySelector('.vcr-readout')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    const clockValue = document.querySelector('.vcr-live-clock-time')?.getAttribute('datetime') ?? '';
+    const clockAt = Date.parse(clockValue);
+    const terminalError = /NO REPLAY EVENTS|REPLAY EMPTY|REPLAY ERROR|REPLAY RETRY/i.test(readout);
+    const appliedRoutePulse = Number.isFinite(expectedAt) && Number.isFinite(clockAt) && clockAt >= expectedAt;
+    const replayComplete = bar?.classList.contains('paused') && /REPLAY PAUSED/i.test(readout) && appliedRoutePulse;
+    if (!terminalError && !replayComplete) return false;
+    return { readout, barClass: bar?.className ?? null, clockAt: Number.isFinite(clockAt) ? clockAt : null };
+  }, lastRoutePulseAt, { timeout: 25_000 }).then((handle) => handle.jsonValue());
+
+  return {
+    status: response.status(),
+    elapsedMs: Date.now() - startedAt,
+    responseFinishedError: finishedError instanceof Error ? finishedError.message : null,
+    bodyError,
+    eventCount: events.length,
+    routePulseCount: routePulseAts.length,
+    firstRoutePulseAt,
+    lastRoutePulseAt,
+    ui
+  };
 }
 
 async function smokeSetupPanel(page, viewport) {

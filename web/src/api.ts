@@ -35,13 +35,14 @@ import type {
 
 const PUBLIC_STATE_CACHE_KEY = 'mc-cartolive:last-public-state';
 export const JSON_REQUEST_TIMEOUT_MS = 10_000;
+export const PUBLIC_HISTORY_REQUEST_TIMEOUT_MS = 15_000;
 export const PUBLIC_STATE_CACHE_MAX_AGE_MS = 5 * 60_000;
 const PUBLIC_STATE_CACHE_WRITE_INTERVAL_MS = 60_000;
 let lastPublicStateCacheWriteAt = 0;
 let pendingPublicStateCacheWrite = false;
 
-async function getJSON<T>(url: string, signal?: AbortSignal, cache?: RequestCache): Promise<T> {
-  const request = withRequestTimeout(signal);
+async function getJSON<T>(url: string, signal?: AbortSignal, cache?: RequestCache, timeoutMs = JSON_REQUEST_TIMEOUT_MS): Promise<T> {
+  const request = withRequestTimeout(signal, timeoutMs);
   try {
     const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: request.signal, cache });
     if (!res.ok) {
@@ -53,9 +54,9 @@ async function getJSON<T>(url: string, signal?: AbortSignal, cache?: RequestCach
   }
 }
 
-function withRequestTimeout(signal?: AbortSignal): { signal: AbortSignal; cleanup: () => void } {
+function withRequestTimeout(signal?: AbortSignal, timeoutMs = JSON_REQUEST_TIMEOUT_MS): { signal: AbortSignal; cleanup: () => void } {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), JSON_REQUEST_TIMEOUT_MS);
+  const timeout = window.setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), timeoutMs);
   const abort = () => controller.abort(signal?.reason);
   if (signal?.aborted) abort();
   else signal?.addEventListener('abort', abort, { once: true });
@@ -134,7 +135,10 @@ export function fetchPublicHistory({ from, to, limit, cursor, signal }: PublicHi
   });
   if (limit !== undefined) params.set('limit', Math.round(limit).toString());
   if (cursor) params.set('cursor', cursor);
-  return getJSON<PublicHistoryResponse>(`/api/v1/public/history?${params.toString()}`, signal);
+  // The server intentionally allows a bounded history query up to ten
+  // seconds. Keep the browser deadline above that boundary so a valid 200
+  // response is not aborted while its body is being consumed.
+  return getJSON<PublicHistoryResponse>(`/api/v1/public/history?${params.toString()}`, signal, undefined, PUBLIC_HISTORY_REQUEST_TIMEOUT_MS);
 }
 
 export interface PublicEventsParams {
