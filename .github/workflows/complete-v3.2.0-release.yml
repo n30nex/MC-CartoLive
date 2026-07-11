@@ -1,0 +1,151 @@
+name: Complete v3.2.0 release
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/complete-v3.2.0-release.yml
+
+permissions:
+  actions: read
+  attestations: write
+  contents: write
+  id-token: write
+  packages: write
+
+concurrency:
+  group: complete-v3.2.0-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: v3.2.0
+  RELEASE_VERSION: 3.2.0
+  RELEASE_SHA: d65ce26a78c79e6e66447f8b1389e5e79e21b58d
+  RELEASE_DIGEST: sha256:34c2a5fc1566eb4635e130b995568bb4c69c9d6fb5c37be487bc3af8d9cbff73
+  RELEASE_BUILD_TIME: 2026-07-10T20:42:35-04:00
+  CANDIDATE_RUN_ID: "29133253809"
+  PERFORMANCE_RUN_ID: "29133728803"
+  IMAGE: ghcr.io/n30nex/mc-cartolive
+
+jobs:
+  proof:
+    name: smoke load proof
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Reuse exact release SHA proof
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PERFORMANCE_RUN_ID" |
+            jq -e --arg sha "$RELEASE_SHA" '.conclusion == "success" and .head_sha == $sha and .event == "workflow_dispatch"' >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/compare/${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" |
+            jq -e '.files | length == 1 and .[0].filename == ".github/workflows/complete-v3.2.0-release.yml"' >/dev/null
+
+  complete:
+    name: Promote digest and publish assets
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout immutable release tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify immutable evidence
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          test "$(git cat-file -t "$RELEASE_TAG")" = tag
+          test "$(git rev-parse "$RELEASE_TAG^{}")" = "$RELEASE_SHA"
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$(tr -d '\r\n' < VERSION)" = "$RELEASE_VERSION"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID" |
+            jq -e --arg sha "$RELEASE_SHA" '.conclusion == "success" and .head_sha == $sha' >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PERFORMANCE_RUN_ID" |
+            jq -e --arg sha "$RELEASE_SHA" '.conclusion == "success" and .head_sha == $sha and .event == "workflow_dispatch"' >/dev/null
+          gh attestation verify "oci://$IMAGE@$RELEASE_DIGEST" --repo "$GITHUB_REPOSITORY"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "release already exists" >&2
+            exit 1
+          fi
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Re-scan exact candidate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}@${{ env.RELEASE_DIGEST }}
+          format: sarif
+          output: trivy-release.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ env.IMAGE }}@${{ env.RELEASE_DIGEST }}
+          format: spdx-json
+          output-file: /tmp/mc-cartolive-3.2.0.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Build release assets
+        env:
+          RELEASE_IMAGE: ${{ env.IMAGE }}@${{ env.RELEASE_DIGEST }}
+          RELEASE_GIT_SHA: ${{ env.RELEASE_SHA }}
+        run: |
+          node scripts/build-release-bundle.mjs
+          mkdir -p artifacts/release/assets
+          tar -C artifacts/release/stage -czf artifacts/release/assets/mc-cartolive-3.2.0-deploy.tar.gz mc-cartolive-3.2.0
+          cp artifacts/release/release-manifest.json artifacts/release/assets/
+          cp docs/public-api.openapi.json artifacts/release/assets/
+          cp docs/3.2.0/upgrade-and-rollback.md artifacts/release/assets/ROLLBACK.md
+          cp trivy-release.sarif artifacts/release/assets/
+          cp /tmp/mc-cartolive-3.2.0.spdx.json artifacts/release/assets/
+          cd artifacts/release/assets
+          sha256sum * > SHA256SUMS
+
+      - name: Attest release assets
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-path: artifacts/release/assets/*
+
+      - name: Promote exact manifest digest
+        run: |
+          source="$IMAGE@$RELEASE_DIGEST"
+          docker buildx imagetools create \
+            --tag "$IMAGE:$RELEASE_VERSION" \
+            --tag "$IMAGE:3.2" \
+            --tag "$IMAGE:sha-$RELEASE_SHA" \
+            --tag "$IMAGE:latest" \
+            "$source"
+          for tag in "$RELEASE_VERSION" 3.2 "sha-$RELEASE_SHA" latest; do
+            actual="$(docker buildx imagetools inspect "$IMAGE:$tag" | awk '$1 == "Digest:" {print $2; exit}')"
+            test "$actual" = "$RELEASE_DIGEST"
+          done
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$RELEASE_TAG" artifacts/release/assets/* \
+            --verify-tag \
+            --latest \
+            --title "MC-CartoLive $RELEASE_VERSION" \
+            --notes-file docs/3.2.0/release_notes.md
