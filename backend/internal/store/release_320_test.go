@@ -141,6 +141,51 @@ func TestUpsertPacketAndObservationRetryIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestIdempotencyLookupsUsePartialUniqueIndexes(t *testing.T) {
+	ctx := context.Background()
+	st, err := OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if _, err := st.db.ExecContext(ctx, `PRAGMA automatic_index=OFF`); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		query string
+		index string
+	}{
+		{name: "observation", query: observationByIngestIDSQL, index: "idx_observations_ingest_id"},
+		{name: "edge", query: edgeByIngestIDSQL, index: "idx_live_edge_events_ingest_id"},
+		{name: "public event", query: publicEventByDedupeKeySQL, index: "idx_public_events_dedupe_key"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, err := st.db.QueryContext(ctx, `EXPLAIN QUERY PLAN `+tc.query, "release-lookup-id")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rows.Close()
+			plan := ""
+			for rows.Next() {
+				var id, parent, unused int
+				var detail string
+				if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+					t.Fatal(err)
+				}
+				plan += detail + "\n"
+			}
+			if err := rows.Err(); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(plan, "SEARCH") || !strings.Contains(plan, tc.index) || strings.Contains(plan, "SCAN") {
+				t.Fatalf("idempotency lookup did not seek through %s:\n%s", tc.index, plan)
+			}
+		})
+	}
+}
+
 func TestStoragePressureThresholds(t *testing.T) {
 	for _, tc := range []struct {
 		free float64

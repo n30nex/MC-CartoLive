@@ -29,6 +29,8 @@ type PublicEventFilter struct {
 	MessageOnly     bool
 }
 
+const publicEventByDedupeKeySQL = `SELECT seq FROM public_events WHERE dedupe_key = ? AND dedupe_key != ''`
+
 func (s *Store) InsertPublicEvent(ctx context.Context, event live.PublicEvent) (live.PublicEvent, error) {
 	if s == nil || s.db == nil {
 		return event, fmt.Errorf("store unavailable")
@@ -81,7 +83,7 @@ ON CONFLICT(dedupe_key) WHERE dedupe_key != '' DO NOTHING`,
 		return event, err
 	}
 	if affected, err := result.RowsAffected(); err == nil && affected == 0 && event.DedupeKey != "" {
-		if err := s.db.QueryRowContext(ctx, `SELECT seq FROM public_events WHERE dedupe_key = ?`, event.DedupeKey).Scan(&event.Seq); err != nil {
+		if err := s.db.QueryRowContext(ctx, publicEventByDedupeKeySQL, event.DedupeKey).Scan(&event.Seq); err != nil {
 			return event, err
 		}
 		return event, nil
