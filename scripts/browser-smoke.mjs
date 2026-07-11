@@ -1018,7 +1018,8 @@ async function smokeMapSettings(page, viewport) {
   const toggle = page.locator('.operator-action.map-settings-toggle').first();
   await toggle.waitFor({ state: 'visible', timeout: 12_000 });
   if (await toggle.getAttribute('aria-pressed') !== 'true') {
-    await toggle.click({ force: true });
+    await toggle.click({ trial: true });
+    await toggle.click();
   }
   const drawer = page.getByRole('dialog', { name: /^Map settings$/i });
   await drawer.waitFor({ state: 'visible', timeout: 5_000 });
