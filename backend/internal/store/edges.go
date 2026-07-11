@@ -15,6 +15,8 @@ import (
 
 const maxFutureEdgeSkew = 5 * time.Minute
 
+const edgeByIngestIDSQL = `SELECT id FROM live_edge_events WHERE ingest_id = ? AND ingest_id != ''`
+
 func (s *Store) InsertEdgeEvent(ctx context.Context, event live.EdgeEvent, resolutionStatus, resolutionReason string) (live.EdgeEvent, error) {
 	now := time.Now().UnixMilli()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -29,7 +31,7 @@ func (s *Store) InsertEdgeEvent(ctx context.Context, event live.EdgeEvent, resol
 	}()
 	if event.IngestID != "" {
 		var existingID int64
-		err := tx.QueryRowContext(ctx, `SELECT id FROM live_edge_events WHERE ingest_id = ?`, event.IngestID).Scan(&existingID)
+		err := tx.QueryRowContext(ctx, edgeByIngestIDSQL, event.IngestID).Scan(&existingID)
 		switch {
 		case err == nil:
 			event.ID = existingID

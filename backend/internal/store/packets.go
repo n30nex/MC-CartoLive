@@ -12,6 +12,8 @@ import (
 	"meshcore-canada-live-map/backend/internal/meshcore"
 )
 
+const observationByIngestIDSQL = `SELECT id FROM packet_observations WHERE ingest_id = ? AND ingest_id != ''`
+
 func (s *Store) UpsertPacket(ctx context.Context, parsed meshcore.ParsedPacket, seenAt int64) error {
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO packets (
@@ -55,7 +57,7 @@ func (s *Store) UpsertPacketAndObservation(ctx context.Context, parsed meshcore.
 	}()
 	if in.IngestID != "" {
 		var existingID int64
-		err := tx.QueryRowContext(ctx, `SELECT id FROM packet_observations WHERE ingest_id = ?`, in.IngestID).Scan(&existingID)
+		err := tx.QueryRowContext(ctx, observationByIngestIDSQL, in.IngestID).Scan(&existingID)
 		switch {
 		case err == nil:
 			if err := tx.Commit(); err != nil {

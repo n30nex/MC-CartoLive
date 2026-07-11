@@ -23,6 +23,8 @@ tag or production migration waypoint.
 - SQLite schema version 32000 adds forward migration tracking, optimized event
   indexes, incremental space reclamation, seven-day observation retention, and
   24-hour public-event retention.
+- Idempotent observation, edge, and public-event retry lookups explicitly use
+  their partial unique indexes, avoiding legacy-table scans during ingestion.
 - Release identity is compiled into the binary/frontend. Runtime `.env` values
   cannot claim a different version, Git SHA, or build time.
 - GitHub Actions builds one amd64/arm64 candidate, smokes/scans/attests its
