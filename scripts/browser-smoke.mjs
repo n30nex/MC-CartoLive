@@ -211,6 +211,7 @@ async function runScenario(browser, viewport, scenario) {
 
   try {
     await page.addInitScript(() => {
+      localStorage.setItem('mc-cartolive-debug-perf', '1');
       for (const key of Object.keys(localStorage)) {
         if (key.startsWith('mc-cartolive-welcome-guide-dismissed-')) localStorage.setItem(key, '1');
       }
