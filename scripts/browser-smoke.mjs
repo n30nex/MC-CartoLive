@@ -1023,7 +1023,10 @@ async function smokeMapSettings(page, viewport) {
   await toggle.waitFor({ state: 'visible', timeout: 12_000 });
   if (await toggle.getAttribute('aria-pressed') !== 'true') {
     await toggle.click({ trial: true });
-    await toggle.dispatchEvent('click');
+    await toggle.evaluate((element) => {
+      if (!(element instanceof HTMLButtonElement)) throw new Error('map settings control is not a button');
+      element.click();
+    });
   }
   const drawer = page.getByRole('dialog', { name: /^Map settings$/i });
   await drawer.waitFor({ state: 'visible', timeout: 5_000 });
