@@ -135,16 +135,40 @@ while [ "$(date -u +%s)" -lt "$end_at" ]; do
 done
 
 if wait "$ws_pid"; then ws_ok=1; else ws_ok=0; fi
-[ -n "$first_accepted" ] && [ -n "$last_accepted" ] || { echo "soak failed: MQTT evidence was incomplete" >&2; exit 1; }
+if [ -z "$first_accepted" ] || [ -z "$last_accepted" ]; then
+  echo "soak failed: MQTT evidence was incomplete" >&2
+  exit 1
+fi
 if [ "$last_accepted" -gt "$first_accepted" ]; then
-  [ -n "$first_processed" ] && [ -n "$last_processed" ] && [ "$last_processed" -gt "$first_processed" ] || { echo "soak failed: processed MQTT traffic did not advance" >&2; exit 1; }
-  [ -n "$first_derived_accepted" ] && [ -n "$last_derived_accepted" ] && [ "$last_derived_accepted" -gt "$first_derived_accepted" ] || { echo "soak failed: accepted derived projection work did not advance" >&2; exit 1; }
-  [ -n "$first_derived_processed" ] && [ -n "$last_derived_processed" ] && [ "$last_derived_processed" -gt "$first_derived_processed" ] || { echo "soak failed: processed derived projection work did not advance" >&2; exit 1; }
-  [ -n "$first_latest_seq" ] && [ -n "$last_latest_seq" ] && [ "$last_latest_seq" -gt "$first_latest_seq" ] || { echo "soak failed: public latestSeq did not advance with active traffic" >&2; exit 1; }
-  [ "$ws_ok" -eq 1 ] && grep -q '"eventReceived":true' "$ws_result" || { echo "soak failed: no live WebSocket event was received while MQTT advanced" >&2; exit 1; }
+  if [ -z "$first_processed" ] || [ -z "$last_processed" ] || [ "$last_processed" -le "$first_processed" ]; then
+    echo "soak failed: processed MQTT traffic did not advance" >&2
+    exit 1
+  fi
+  if [ -z "$first_derived_accepted" ] || [ -z "$last_derived_accepted" ] || [ "$last_derived_accepted" -le "$first_derived_accepted" ]; then
+    echo "soak failed: accepted derived projection work did not advance" >&2
+    exit 1
+  fi
+  if [ -z "$first_derived_processed" ] || [ -z "$last_derived_processed" ] || [ "$last_derived_processed" -le "$first_derived_processed" ]; then
+    echo "soak failed: processed derived projection work did not advance" >&2
+    exit 1
+  fi
+  if [ -z "$first_latest_seq" ] || [ -z "$last_latest_seq" ] || [ "$last_latest_seq" -le "$first_latest_seq" ]; then
+    echo "soak failed: public latestSeq did not advance with active traffic" >&2
+    exit 1
+  fi
+  if [ "$ws_ok" -ne 1 ] || ! grep -q '"eventReceived":true' "$ws_result"; then
+    echo "soak failed: no live WebSocket event was received while MQTT advanced" >&2
+    exit 1
+  fi
   echo "soak check complete: active MQTT/derived/public/WebSocket flow proven; output: $OUT_FILE"
 else
-  [ "$last_accepted" -eq "$first_accepted" ] || { echo "soak failed: MQTT acceptance counter moved backwards" >&2; exit 1; }
-  [ "$ws_ok" -eq 1 ] && grep -q '"helloSeq":' "$ws_result" || { echo "soak failed: WebSocket hello was not sustained during the quiet interval" >&2; exit 1; }
+  if [ "$last_accepted" -ne "$first_accepted" ]; then
+    echo "soak failed: MQTT acceptance counter moved backwards" >&2
+    exit 1
+  fi
+  if [ "$ws_ok" -ne 1 ] || ! grep -q '"helloSeq":' "$ws_result"; then
+    echo "soak failed: WebSocket hello was not sustained during the quiet interval" >&2
+    exit 1
+  fi
   echo "soak check complete: healthy quiet interval (no MQTT acceptance change); output: $OUT_FILE"
 fi
