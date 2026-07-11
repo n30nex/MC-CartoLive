@@ -42,6 +42,53 @@ func TestHandleMQTTPersistsEssentialObservationAndQueuesDerivedWork(t *testing.T
 	}
 }
 
+func TestPublishPublicEventSuppressesDedupeRebroadcastAndCacheApply(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cache := live.NewPublicStateCache(live.NewPublicIATAFilter(nil))
+	cache.Replace(live.PublicLiveState{}, nil)
+	app := &Application{
+		Config:      Config{PublicEventsEnabled: true},
+		Store:       st,
+		PublicHub:   live.NewHub(log, 8),
+		PublicCache: cache,
+		Runtime:     live.NewRuntimeStats(),
+		Log:         log,
+	}
+	activity := live.PublicActivity{ID: "activity-once", Kind: "packet", HeardAt: time.Now().UnixMilli()}
+
+	first, apply := app.publishPublicEvent(ctx, "activity", activity, "ingest:activity-once")
+	if !apply {
+		t.Fatal("new durable event was suppressed")
+	}
+	firstActivity := first.(live.PublicActivity)
+	if firstActivity.Seq <= 0 {
+		t.Fatalf("new durable event seq=%d", firstActivity.Seq)
+	}
+	cache.ApplyActivity(firstActivity)
+
+	_, apply = app.publishPublicEvent(ctx, "activity", activity, "ingest:activity-once")
+	if apply {
+		t.Fatal("dedupe conflict was reported as a new live event")
+	}
+	events, _, err := st.ListPublicEventsAfter(ctx, store.PublicEventFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, ok := cache.Snapshot()
+	if !ok {
+		t.Fatal("cache should be ready")
+	}
+	if len(events) != 1 || len(snapshot.RecentActivity) != 1 || snapshot.Stats.Packets != 1 {
+		t.Fatalf("events/activity/packets=%d/%d/%d want 1/1/1", len(events), len(snapshot.RecentActivity), snapshot.Stats.Packets)
+	}
+}
+
 func TestRetryStoreWriteCannotExtendParentDeadline(t *testing.T) {
 	app := &Application{Runtime: live.NewRuntimeStats(), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
@@ -58,15 +105,15 @@ func TestRetryStoreWriteCannotExtendParentDeadline(t *testing.T) {
 	}
 }
 
-func TestDerivedWorkPausesForPrimaryOrStoragePressure(t *testing.T) {
-	if !derivedWorkPausedFor(imqtt.Status{QueueDepth: 50, QueueCapacity: 100}, "ok") {
-		t.Fatal("50% primary queue pressure must pause derived work")
+func TestDerivedWorkKeepsProgressUnderPrimaryAndWarningPressure(t *testing.T) {
+	if derivedWorkPausedFor(imqtt.Status{QueueDepth: 100, QueueCapacity: 100}, "ok") {
+		t.Fatal("primary queue pressure must not freeze live projection work")
 	}
-	if !derivedWorkPausedFor(imqtt.Status{}, "warn") || !derivedWorkPausedFor(imqtt.Status{}, "critical") {
-		t.Fatal("storage pressure must pause derived work")
+	if derivedWorkPausedFor(imqtt.Status{}, "warn") {
+		t.Fatal("storage warning must not freeze live projection work")
 	}
-	if derivedWorkPausedFor(imqtt.Status{QueueDepth: 49, QueueCapacity: 100}, "ok") {
-		t.Fatal("healthy pressure unexpectedly paused derived work")
+	if !derivedWorkPausedFor(imqtt.Status{}, "critical") {
+		t.Fatal("critical storage pressure must pause derived work")
 	}
 }
 

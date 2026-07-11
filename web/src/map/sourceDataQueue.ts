@@ -13,8 +13,10 @@ interface SourceUpdateQueue {
 }
 
 const sourceUpdateQueues = new WeakMap<maplibregl.Map, SourceUpdateQueue>();
+const disposedMaps = new WeakSet<maplibregl.Map>();
 
 export function setSourceData(map: maplibregl.Map, sourceID: string, data: FeatureCollection, signature?: string) {
+  if (disposedMaps.has(map)) return;
   let queue = sourceUpdateQueues.get(map);
   if (!queue) {
     queue = { frame: 0, pending: new Map(), signatures: new Map() };
@@ -30,6 +32,7 @@ export function setSourceData(map: maplibregl.Map, sourceID: string, data: Featu
   queue.pending.set(sourceID, data);
   if (queue.frame !== 0) return;
   queue.frame = window.requestAnimationFrame(() => {
+    if (disposedMaps.has(map)) return;
     queue.frame = 0;
     const pending = [...queue.pending.entries()];
     queue.pending.clear();
@@ -39,6 +42,17 @@ export function setSourceData(map: maplibregl.Map, sourceID: string, data: Featu
       }
     }
   });
+}
+
+export function disposeSourceDataQueue(map: maplibregl.Map): void {
+  disposedMaps.add(map);
+  const queue = sourceUpdateQueues.get(map);
+  if (!queue) return;
+  if (queue.frame !== 0) window.cancelAnimationFrame(queue.frame);
+  queue.frame = 0;
+  queue.pending.clear();
+  queue.signatures.clear();
+  sourceUpdateQueues.delete(map);
 }
 
 function featureCollectionSignature(data: FeatureCollection): string {

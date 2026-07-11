@@ -10,8 +10,8 @@ import {
 } from './releaseInfo';
 
 describe('release metadata helpers', () => {
-  it('ships the 3.2.0 browser title without stale release identity', () => {
-    expect(indexHTML).toContain('<title>MC-CartoLive v3.2.0');
+  it('ships the 3.2.1 browser title without stale release identity', () => {
+    expect(indexHTML).toContain('<title>MC-CartoLive v3.2.1');
     expect(indexHTML).not.toContain('v3.1.0');
   });
   it('builds release and commit links from version and git sha', () => {

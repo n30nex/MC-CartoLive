@@ -5,6 +5,7 @@ ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 DIGEST="ghcr.io/n30nex/mc-cartolive@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 PREVIOUS="ghcr.io/n30nex/mc-cartolive@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 MERGE_SHA="0123456789abcdef0123456789abcdef01234567"
+TEST_VERSION="$(tr -d '\r\n' < "$ROOT/VERSION")"
 
 "$ROOT/scripts/deploy.sh" --help >/dev/null
 if "$ROOT/scripts/deploy.sh" --image latest >/dev/null 2>&1; then
@@ -114,10 +115,11 @@ if [ "${1:-}" = "image" ] && [ "${2:-}" = "inspect" ]; then
 	case " $* " in
 		*org.opencontainers.image.revision*) printf '%s\n' "$MOCK_MERGE_SHA" ;;
 		*org.opencontainers.image.source*) printf '%s\n' 'https://github.com/n30nex/MC-CartoLive' ;;
-		*org.opencontainers.image.version*) printf '%s\n' '3.2.0' ;;
+		*org.opencontainers.image.version*) printf '%s\n' "$MOCK_VERSION" ;;
 		*org.mc-cartolive.candidate.workflow-run-id*) printf '%s\n' '123456789' ;;
 		*org.mc-cartolive.candidate.workflow-run-attempt*) printf '%s\n' '1' ;;
-		*org.mc-cartolive.candidate.tag*) printf '%s\n' "candidate-$MOCK_MERGE_SHA-123456789-1" ;;
+		*org.mc-cartolive.candidate.tag*) printf '%s\n' "candidate-$MOCK_MERGE_SHA-123456789-1-canada" ;;
+		*org.mc-cartolive.asset-pack*) printf '%s\n' 'canada' ;;
 	esac
 	exit 0
 fi
@@ -178,7 +180,7 @@ elif [ "$MOCK_SCENARIO" = "fresh_success" ] || [ "$MOCK_SCENARIO" = "preserve_su
 	case "$url" in
 		*/api/v1/public/events*) body='{"resetRequired":true}' ;;
 		*/api/v1/public/state*) body='{"stats":{"packets":0,"activeNodes":0,"activeRoutes":0}}' ;;
-		*) body="{\"ready\":true,\"version\":\"3.2.0\",\"gitSha\":\"$MOCK_MERGE_SHA\"}" ;;
+		*) body="{\"ready\":true,\"version\":\"$MOCK_VERSION\",\"gitSha\":\"$MOCK_MERGE_SHA\"}" ;;
 	esac
 else
 	body='{"ready":false}'
@@ -230,10 +232,23 @@ prepare_repo() {
 	name="$1"
 	repo="$tmp/$name/repo"
 	mkdir -p "$repo/data" "$repo/backups" "$repo/scripts" "$tmp/$name/deploy-state"
-	printf '3.2.0\n' >"$repo/VERSION"
-	printf 'PUBLIC_MODE=true\nPUBLIC_BASE_URL=https://carto.example.test\nMQTT_ENABLED=true\nAPP_VERSION=old\nGIT_SHA=old\nDATA_RETENTION_DAYS=-1\nPUBLIC_EVENT_RETENTION_HOURS=-1\nALLOW_UNBOUNDED_RETENTION=true\n' >"$repo/.env"
+	printf '%s\n' "$TEST_VERSION" >"$repo/VERSION"
+	printf 'PUBLIC_MODE=true\nPUBLIC_BASE_URL=https://carto.example.test\nMQTT_ENABLED=true\nAPP_VERSION=old\nGIT_SHA=old\nDATA_RETENTION_DAYS=-1\nPUBLIC_EVENT_RETENTION_HOURS=-1\nALLOW_UNBOUNDED_RETENTION=true\nSQLITE_BUSY_TIMEOUT_MS=30000\n' >"$repo/.env"
 	printf '// credential-free scanner fixture\n' >"$repo/scripts/check-public-privacy.mjs"
-	printf '{"database":{"schemaVersion":32000}}\n' >"$repo/release-manifest.json"
+	cat >"$repo/release-manifest.json" <<EOF
+{
+  "manifestVersion": 2,
+  "version": "$TEST_VERSION",
+  "gitSha": "$MERGE_SHA",
+  "images": {
+    "canada": {
+      "reference": "$DIGEST",
+      "assetPack": "canada"
+    }
+  },
+  "database": {"schemaVersion": 32000}
+}
+EOF
 	printf 'operator-config\n' >"$repo/data/config.yaml"
 	printf 'old-db\n' >"$repo/data/meshcore-live.db"
 	printf 'old-backup\n' >"$repo/backups/legacy.db"
@@ -258,6 +273,7 @@ run_failed_deploy() {
 	  MOCK_DATABASE_FILE="$repo/data/meshcore-live.db" \
 	  MOCK_PREVIOUS_IMAGE="$PREVIOUS" \
 	  MOCK_MERGE_SHA="$MERGE_SHA" \
+	  MOCK_VERSION="$TEST_VERSION" \
 	  MOCK_SYSTEMCTL_LOG="$tmp/$name/systemctl.log" \
 	  MOCK_DOCKER_LOG="$tmp/$name/docker.log" \
 	  MOCK_DOWN_COUNT_FILE="$tmp/$name/down-count" \
@@ -281,6 +297,7 @@ run_successful_fresh_deploy() {
 	  MOCK_DATABASE_FILE="$repo/data/meshcore-live.db" \
 	  MOCK_PREVIOUS_IMAGE="$PREVIOUS" \
 	  MOCK_MERGE_SHA="$MERGE_SHA" \
+	  MOCK_VERSION="$TEST_VERSION" \
 	  MOCK_SYSTEMCTL_LOG="$tmp/$name/systemctl.log" \
 	  MOCK_DOCKER_LOG="$tmp/$name/docker.log" \
 	  MOCK_DOWN_COUNT_FILE="$tmp/$name/down-count" \
@@ -302,6 +319,7 @@ run_successful_preserved_deploy() {
 	  MOCK_DATABASE_FILE="$repo/data/meshcore-live.db" \
 	  MOCK_PREVIOUS_IMAGE="$PREVIOUS" \
 	  MOCK_MERGE_SHA="$MERGE_SHA" \
+	  MOCK_VERSION="$TEST_VERSION" \
 	  MOCK_SYSTEMCTL_LOG="$tmp/$name/systemctl.log" \
 	  MOCK_DOCKER_LOG="$tmp/$name/docker.log" \
 	  MOCK_DOWN_COUNT_FILE="$tmp/$name/down-count" \
@@ -313,6 +331,14 @@ run_successful_preserved_deploy() {
 	  PATH="$tmp/bin:$PATH" \
 	  "$ROOT/scripts/deploy.sh" --repo "$repo" --image "$DIGEST" --previous-image "$PREVIOUS" --expected-git-sha "$MERGE_SHA" >/dev/null
 }
+
+# A staged package whose source identity does not match the requested release
+# is rejected before Docker, systemd, or data paths are touched.
+prepare_repo source_mismatch
+sed -i "s/$MERGE_SHA/ffffffffffffffffffffffffffffffffffffffff/" "$tmp/source_mismatch/repo/release-manifest.json"
+run_failed_deploy source_mismatch unready
+test ! -s "$tmp/source_mismatch/docker.log"
+test ! -s "$tmp/source_mismatch/systemctl.log"
 
 # Explicit candidate-readiness failure: rollback succeeds and restores timer.
 prepare_repo unready
@@ -342,6 +368,7 @@ if grep -Eq '^(APP_VERSION|GIT_SHA)=' "$tmp/after_delete/repo/.env"; then exit 1
 test "$(grep -c '^DATA_RETENTION_DAYS=7$' "$tmp/after_delete/repo/.env")" -eq 1
 test "$(grep -c '^PUBLIC_EVENT_RETENTION_HOURS=24$' "$tmp/after_delete/repo/.env")" -eq 1
 test "$(grep -c '^ALLOW_UNBOUNDED_RETENTION=false$' "$tmp/after_delete/repo/.env")" -eq 1
+test "$(grep -c '^SQLITE_BUSY_TIMEOUT_MS=750$' "$tmp/after_delete/repo/.env")" -eq 1
 grep -q '^start mc-cartolive-watchdog.timer$' "$tmp/after_delete/systemctl.log"
 
 # The irreversible cutover also refuses to proceed when deletion leaves root
@@ -417,10 +444,12 @@ grep -q "^MC_CARTOLIVE_GIT_SHA=$MERGE_SHA$" "$tmp/fresh_success/deploy-state/cur
 grep -q '^MC_CARTOLIVE_DATABASE_MODE=fresh$' "$tmp/fresh_success/deploy-state/current.env"
 grep -q '^MC_CARTOLIVE_CANDIDATE_RUN_ID=123456789$' "$tmp/fresh_success/deploy-state/current.env"
 grep -q '^MC_CARTOLIVE_CANDIDATE_RUN_ATTEMPT=1$' "$tmp/fresh_success/deploy-state/current.env"
-grep -q "^MC_CARTOLIVE_CANDIDATE_TAG=candidate-$MERGE_SHA-123456789-1$" "$tmp/fresh_success/deploy-state/current.env"
+grep -q "^MC_CARTOLIVE_CANDIDATE_TAG=candidate-$MERGE_SHA-123456789-1-canada$" "$tmp/fresh_success/deploy-state/current.env"
+grep -q '^MC_CARTOLIVE_ASSET_PACK=canada$' "$tmp/fresh_success/deploy-state/current.env"
 grep -q -- '--entrypoint chown ' "$tmp/fresh_success/docker.log"
 grep -q -- '--entrypoint chmod ' "$tmp/fresh_success/docker.log"
 grep -q 'check-public-privacy.mjs http://127.0.0.1:39476 --origin https://carto.example.test' "$tmp/fresh_success/node.log"
+grep -qx 'SQLITE_BUSY_TIMEOUT_MS=750' "$tmp/fresh_success/repo/.env"
 
 # The hosted path preserves the database/backups, performs the same public
 # privacy transaction when requested, and records the mode for later audits.
@@ -431,5 +460,6 @@ test -f "$tmp/preserve_success/repo/backups/legacy.db"
 test -f "$tmp/preserve_success/repo/data/config.yaml"
 grep -q '^MC_CARTOLIVE_DATABASE_MODE=preserved$' "$tmp/preserve_success/deploy-state/current.env"
 grep -q 'check-public-privacy.mjs http://127.0.0.1:39476 --origin https://carto.example.test' "$tmp/preserve_success/node.log"
+grep -qx 'SQLITE_BUSY_TIMEOUT_MS=750' "$tmp/preserve_success/repo/.env"
 
 echo "release operations contracts ok"

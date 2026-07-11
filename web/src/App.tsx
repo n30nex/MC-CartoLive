@@ -56,6 +56,7 @@ import {
   type ViewportBounds
 } from './components/panelChrome';
 import { capLiveEnvelopeQueue, liveEnvelopeDisplayAt, nextLiveEnvelopeDelayMs, sortLiveEnvelopes, takeDueLiveEnvelopes } from './livePacing';
+import { classifyLiveEnvelopeSequence, helloRequiresCursorResetProbe, liveCursorResetTarget, retainLiveEnvelopesAfterCursor, shouldQueueDurableLiveSequence, takeIncreasingLiveEnvelopes } from './liveCursor';
 import {
   historyEventsToLiveEnvelopes,
   historyFetchWindowFromScrub,
@@ -73,6 +74,7 @@ import { packetToPulse } from './packets';
 import { downloadRouteGifBlob, routeGifAnimationDurationMs, type RouteMapGifExportRequest } from './routeGifExport';
 import { buildSharedViewURL, parseSharedView, type MapViewState } from './shareView';
 import { resolveReplayDeepLink, routeToReplayPacket } from './replayStudio';
+import { beginReplayPauseSession, markReplayPauseUserOverride, pausedAfterReplayExit, type ReplayPauseSession } from './replayPause';
 import type { DashboardAction } from './uiActions';
 import { SERVICE_WORKER_UPDATE_EVENT, activateWaitingServiceWorker, waitingServiceWorkerUpdateAvailable } from './serviceWorker';
 import { useAccessibleDialog } from './lib/useAccessibleDialog';
@@ -151,6 +153,9 @@ function PublicDashboardApp() {
   const [bootstrapClusters, setBootstrapClusters] = useState<PublicMapCluster[]>([]);
   const [socketStatus, setSocketStatus] = useState('starting');
   const [paused, setPaused] = useState(false);
+  const replayPauseSessionRef = useRef<ReplayPauseSession | null>(
+    sharedViewRef.current?.studio ? beginReplayPauseSession(false) : null
+  );
   const [followTraffic, setFollowTraffic] = useState(false);
   const [query, setQuery] = useState(() => sharedViewRef.current?.q ?? '');
   const [clearToken, setClearToken] = useState(0);
@@ -217,7 +222,22 @@ function PublicDashboardApp() {
     setMapSettingsOpen(false);
     setMobileControlsOpen(false);
   }, []);
-  const resumeFromClosedPacketTray = useCallback(() => setPaused(false), []);
+  const finishReplayPauseSession = useCallback(() => {
+    const session = replayPauseSessionRef.current;
+    replayPauseSessionRef.current = null;
+    setPaused((current) => pausedAfterReplayExit(session, current));
+  }, []);
+  const markUserPauseOverride = useCallback(() => {
+    replayPauseSessionRef.current = markReplayPauseUserOverride(replayPauseSessionRef.current);
+  }, []);
+  const togglePausedByUser = useCallback(() => {
+    markUserPauseOverride();
+    setPaused((value) => !value);
+  }, [markUserPauseOverride]);
+  const resumeFromClosedPacketTray = useCallback(() => {
+    markUserPauseOverride();
+    setPaused(false);
+  }, [markUserPauseOverride]);
   const {
     packetsOpen,
     setPacketsOpen,
@@ -287,9 +307,11 @@ function PublicDashboardApp() {
   const GIF_EXPORT_COOLDOWN_MS = 30_000;
   const stateRef = useRef<AppState>(emptyState);
   const latestObservedSeqRef = useRef(0);
+  const latestInboundSeqRef = useRef(0);
   const lastAppliedEventSeqRef = useRef(0);
   const lastQueuedEventSeqRef = useRef(0);
   const eventCursorGenerationRef = useRef(0);
+  const cursorEpochResetActiveRef = useRef(false);
   const eventRecoveryRef = useRef<((latestSeq?: number) => void) | null>(null);
   const lastSnapshotSignatureRef = useRef('');
   const pendingMessagesRef = useRef<PublicLiveEnvelope[]>([]);
@@ -306,7 +328,9 @@ function PublicDashboardApp() {
 
   useEffect(() => {
     stateRef.current = state;
-    latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, publicSequence(state.latestSeq));
+    if (!cursorEpochResetActiveRef.current) {
+      latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, publicSequence(state.latestSeq));
+    }
   }, [state]);
 
   const applyPublicSnapshot = useCallback((liveState: PublicLiveState, recoveryFloor?: number): boolean => {
@@ -325,6 +349,7 @@ function PublicDashboardApp() {
     lastSnapshotSignatureRef.current = signature;
     const snapshotSeq = publicSequence(liveState.stats?.latestSeq);
     latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, snapshotSeq);
+    latestInboundSeqRef.current = Math.max(latestInboundSeqRef.current, snapshotSeq);
     eventCursorGenerationRef.current += 1;
     if (flushMessagesTimerRef.current !== null) {
       window.clearTimeout(flushMessagesTimerRef.current);
@@ -350,7 +375,8 @@ function PublicDashboardApp() {
     setMobileControlsOpen(false);
     setCommandPaletteOpen(false);
     setReplayStudioOpen(false);
-  }, [closeAllWorkspaceSurfaces]);
+    finishReplayPauseSession();
+  }, [closeAllWorkspaceSurfaces, finishReplayPauseSession]);
 
   useEffect(() => {
     writeStoredMapSettings(mapSettings);
@@ -674,10 +700,37 @@ function PublicDashboardApp() {
   useEffect(() => {
     let cancelled = false;
     let cancelDeferredState: () => void = () => undefined;
-    const applyFullState = (result: PublicStateFetchResult) => {
+    let topologySeqFloor = 0;
+    let hydrationRetryTimer: number | null = null;
+    let hydrationRetryAttempt = 0;
+    const reportStateHydrationError = () => {
       if (cancelled) return;
-      setFullStateHydrated(true);
+      setSocketStatus('state-error');
+      setNodeLoadFailed(true);
+    };
+    const scheduleCurrentStateRetry = () => {
+      if (cancelled || hydrationRetryTimer !== null) return;
+      if (hydrationRetryAttempt >= 8) {
+        reportStateHydrationError();
+        return;
+      }
+      const delay = Math.min(1_000, 100 * (2 ** hydrationRetryAttempt));
+      hydrationRetryAttempt += 1;
+      hydrationRetryTimer = window.setTimeout(() => {
+        hydrationRetryTimer = null;
+        void fetchPublicStateWithFallback().then(applyFullState).catch(reportStateHydrationError);
+      }, delay);
+    };
+    function applyFullState(result: PublicStateFetchResult) {
+      if (cancelled) return;
       const liveState = result.state;
+      const snapshotSeq = publicSequence(liveState.stats?.latestSeq);
+      if (result.source === 'network' && snapshotSeq < topologySeqFloor) {
+        scheduleCurrentStateRetry();
+        return;
+      }
+      hydrationRetryAttempt = 0;
+      setFullStateHydrated(true);
       if (!applyPublicSnapshot(liveState)) {
         // Bootstrap and WebSocket activity can advance beyond the cached full
         // snapshot before it arrives. Hydrate its complete topology without
@@ -698,6 +751,7 @@ function PublicDashboardApp() {
       fetchState: fetchPublicStateWithFallback,
       applyBootstrap: (bootstrap) => {
         if (cancelled) return;
+        topologySeqFloor = Math.max(topologySeqFloor, publicSequence(bootstrap.latestSeq));
         setPublicMapConfig(bootstrap.map ?? null);
         setBootstrapClusters(bootstrap.clusters);
         if (stateRef.current.latestSeq <= bootstrap.latestSeq) applyPublicSnapshot(bootstrapToLiveState(bootstrap));
@@ -709,9 +763,7 @@ function PublicDashboardApp() {
         cancelDeferredState = deferStateHydration(task);
       },
       onDeferredStateError: () => {
-        if (cancelled) return;
-        setSocketStatus('state-error');
-        setNodeLoadFailed(true);
+        reportStateHydrationError();
       }
     }).catch(() => {
       if (cancelled) return;
@@ -721,6 +773,7 @@ function PublicDashboardApp() {
     return () => {
       cancelled = true;
       cancelDeferredState();
+      if (hydrationRetryTimer !== null) window.clearTimeout(hydrationRetryTimer);
     };
   }, [applyPublicSnapshot]);
 
@@ -733,6 +786,7 @@ function PublicDashboardApp() {
     let stateRefreshRetryTimer: number | null = null;
     let stateRefreshInFlight = false;
     let stateRefreshFloor = 0;
+    let stateRefreshIsCursorReset = false;
     let resetRecoveryActive = false;
     const scheduleMessagesFlush = () => {
       if (flushMessagesTimerRef.current !== null) return;
@@ -744,34 +798,24 @@ function PublicDashboardApp() {
       flushMessagesTimerRef.current = null;
       if (!active || vcrModeRef.current !== 'live' || pendingMessagesRef.current.length === 0) return;
       const { due, pending } = takeDueLiveEnvelopes(pendingMessagesRef.current, Date.now());
-      const orderedDue = due
-        .filter((message) => publicSequence(message.seq) > 0)
-        .sort((left, right) => publicSequence(left.seq) - publicSequence(right.seq));
-      const contiguous: PublicLiveEnvelope[] = [];
-      let expectedSeq = lastAppliedEventSeqRef.current + 1;
-      let gapTarget = 0;
-      for (const message of orderedDue) {
-        const seq = publicSequence(message.seq);
-        if (seq < expectedSeq) continue;
-        if (seq !== expectedSeq) {
-          gapTarget = Math.max(gapTarget, seq);
-          continue;
-        }
-        contiguous.push(message);
-        expectedSeq = seq + 1;
-      }
-      if (contiguous.length > 0) {
-        lastAppliedEventSeqRef.current = expectedSeq - 1;
-        setState((current) => contiguous.reduce((next, message) => applyPublicEnvelope(next, message), current));
-      }
-      if (gapTarget > 0) {
-        for (const message of pending) gapTarget = Math.max(gapTarget, publicSequence(message.seq));
+      const batch = takeIncreasingLiveEnvelopes(due, lastAppliedEventSeqRef.current);
+      if (batch.invalid) {
+        const recoveryTarget = Math.max(
+          latestObservedSeqRef.current,
+          ...due.map((message) => publicSequence(message.latestSeq) || publicSequence(message.seq)),
+          ...pending.map((message) => publicSequence(message.latestSeq) || publicSequence(message.seq))
+        );
         pendingMessagesRef.current = [];
         lastQueuedEventSeqRef.current = lastAppliedEventSeqRef.current;
-        backfillOrRefresh(gapTarget);
-      } else {
-        pendingMessagesRef.current = pending.filter((message) => publicSequence(message.seq) > lastAppliedEventSeqRef.current);
+        recordLivePendingQueueSize(0);
+        backfillOrRefresh(recoveryTarget > 0 ? recoveryTarget : undefined);
+        return;
       }
+      if (batch.accepted.length > 0) {
+        lastAppliedEventSeqRef.current = batch.cursor;
+        setState((current) => batch.accepted.reduce((next, message) => applyPublicEnvelope(next, message), current));
+      }
+      pendingMessagesRef.current = retainLiveEnvelopesAfterCursor(pending, lastAppliedEventSeqRef.current);
       recordLivePendingQueueSize(pendingMessagesRef.current.length);
       if (pendingMessagesRef.current.length > 0) scheduleMessagesFlush();
     };
@@ -781,16 +825,24 @@ function PublicDashboardApp() {
         bufferVcrMessage(message);
         return;
       }
-      const seq = publicSequence(message.seq);
-      const recoveryTarget = Math.max(seq, publicSequence(message.latestSeq));
-      if (seq === 0 || resetRecoveryActive) {
+      const sequence = classifyLiveEnvelopeSequence(message);
+      const recoveryTarget = Math.max(
+        sequence.kind === 'durable' ? sequence.seq : 0,
+        publicSequence(message.latestSeq)
+      );
+      if (sequence.kind === 'invalid') {
+        pendingMessagesRef.current = [];
+        lastQueuedEventSeqRef.current = lastAppliedEventSeqRef.current;
+        recordLivePendingQueueSize(0);
         backfillOrRefresh(recoveryTarget > 0 ? recoveryTarget : undefined);
         return;
       }
-      if (seq <= lastQueuedEventSeqRef.current) return;
-      if (seq !== lastQueuedEventSeqRef.current + 1) {
-        backfillOrRefresh(recoveryTarget);
+      if (sequence.kind === 'durable' && resetRecoveryActive) {
+        backfillOrRefresh(recoveryTarget > 0 ? recoveryTarget : undefined);
         return;
+      }
+      if (sequence.kind === 'durable') {
+        if (!shouldQueueDurableLiveSequence(sequence.seq, lastAppliedEventSeqRef.current, lastQueuedEventSeqRef.current)) return;
       }
       const nextPending = [...pendingMessagesRef.current, message];
       const cappedPending = capLiveEnvelopeQueue(nextPending);
@@ -798,11 +850,11 @@ function PublicDashboardApp() {
         pendingMessagesRef.current = [];
         lastQueuedEventSeqRef.current = lastAppliedEventSeqRef.current;
         recordLivePendingQueueSize(0);
-        backfillOrRefresh(recoveryTarget);
+        backfillOrRefresh(recoveryTarget > 0 ? recoveryTarget : undefined);
         return;
       }
       pendingMessagesRef.current = cappedPending;
-      lastQueuedEventSeqRef.current = seq;
+      if (sequence.kind === 'durable') lastQueuedEventSeqRef.current = sequence.seq;
       recordLivePendingQueueSize(pendingMessagesRef.current.length);
       scheduleMessagesFlush();
     };
@@ -813,10 +865,15 @@ function PublicDashboardApp() {
         refreshState(stateRefreshFloor);
       }, delayMs);
     };
-    const refreshState = (minimumSeq = 0) => {
+    const refreshState = (minimumSeq = 0, resetCursorEpoch = false) => {
       if (vcrModeRef.current !== 'live') return;
-      stateRefreshFloor = Math.max(stateRefreshFloor, minimumSeq);
-      resetRecoveryActive = stateRefreshFloor > 0;
+      if (resetCursorEpoch) {
+        stateRefreshFloor = Math.max(0, minimumSeq);
+        stateRefreshIsCursorReset = true;
+      } else if (!stateRefreshIsCursorReset) {
+        stateRefreshFloor = Math.max(stateRefreshFloor, minimumSeq);
+      }
+      resetRecoveryActive = stateRefreshIsCursorReset || stateRefreshFloor > 0;
       if (stateRefreshInFlight) {
         // A scheduled stale-snapshot retry may fire before the previous
         // request's finally handler. Keep a retry armed instead of losing the
@@ -845,7 +902,9 @@ function PublicDashboardApp() {
           setNodeLoadFailed(false);
         }
         stateRefreshFloor = 0;
+        stateRefreshIsCursorReset = false;
         resetRecoveryActive = false;
+        cursorEpochResetActiveRef.current = false;
         eventRecoveryRef.current?.(latestObservedSeqRef.current);
       }).catch(() => {
         if (!active) return;
@@ -891,7 +950,7 @@ function PublicDashboardApp() {
                 if (unapplied.length === 0) return;
                 const confirmedCursor = unapplied[unapplied.length - 1]?.seq ?? lastAppliedEventSeqRef.current;
                 lastAppliedEventSeqRef.current = confirmedCursor;
-                pendingMessagesRef.current = pendingMessagesRef.current.filter((message) => publicSequence(message.seq) > confirmedCursor);
+                pendingMessagesRef.current = retainLiveEnvelopesAfterCursor(pendingMessagesRef.current, confirmedCursor);
                 lastQueuedEventSeqRef.current = Math.max(
                   confirmedCursor,
                   ...pendingMessagesRef.current.map((message) => publicSequence(message.seq))
@@ -911,15 +970,32 @@ function PublicDashboardApp() {
             continue;
           }
           if (result.status === 'reset-required' || result.status === 'unrecoverable-gap') {
-            latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, result.latestSeq);
+            const resetTarget = liveCursorResetTarget(
+              result.latestSeq,
+              lastAppliedEventSeqRef.current,
+              latestInboundSeqRef.current
+            );
+            cursorEpochResetActiveRef.current = true;
+            latestObservedSeqRef.current = resetTarget;
+            latestInboundSeqRef.current = resetTarget;
+            queuedRecoveryTarget = resetTarget;
+            queuedRecoveryPoll = false;
+            pendingMessagesRef.current = [];
+            lastQueuedEventSeqRef.current = resetTarget;
+            recordLivePendingQueueSize(0);
+            if (flushMessagesTimerRef.current !== null) {
+              window.clearTimeout(flushMessagesTimerRef.current);
+              flushMessagesTimerRef.current = null;
+            }
             resetRecoveryActive = true;
-            refreshState(result.latestSeq);
+            refreshState(resetTarget, true);
             return;
           }
           if (result.status === 'caught-up') {
             lastAppliedEventSeqRef.current = Math.max(lastAppliedEventSeqRef.current, result.cursor);
-            pendingMessagesRef.current = pendingMessagesRef.current.filter(
-              (message) => publicSequence(message.seq) > lastAppliedEventSeqRef.current
+            pendingMessagesRef.current = retainLiveEnvelopesAfterCursor(
+              pendingMessagesRef.current,
+              lastAppliedEventSeqRef.current
             );
             lastQueuedEventSeqRef.current = Math.max(
               lastAppliedEventSeqRef.current,
@@ -965,10 +1041,13 @@ function PublicDashboardApp() {
     eventRecoveryRef.current = backfillOrRefresh;
     const socket = connectPublicSocket((message) => {
       const observedSeq = Math.max(publicSequence(message.latestSeq), publicSequence(message.seq));
+      if (message.type === 'hello') latestInboundSeqRef.current = observedSeq;
+      else if (observedSeq > 0) latestInboundSeqRef.current = Math.max(latestInboundSeqRef.current, observedSeq);
       latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, observedSeq);
       if (message.type === 'hello') {
         setState((current) => applyPublicEnvelope(current, message));
-        backfillOrRefresh(observedSeq > 0 ? observedSeq : undefined);
+        const resetProbe = helloRequiresCursorResetProbe(observedSeq, lastAppliedEventSeqRef.current);
+        backfillOrRefresh(resetProbe ? undefined : (observedSeq > 0 ? observedSeq : undefined));
         return;
       }
       if (message.type === 'pong') {
@@ -1021,15 +1100,21 @@ function PublicDashboardApp() {
   useEffect(() => {
     if (socketStatus === 'live') return;
     let active = true;
+    let interval: number | null = null;
     const recover = () => {
       if (!active || vcrModeRef.current !== 'live') return;
       eventRecoveryRef.current?.();
     };
-    recover();
-    const interval = window.setInterval(recover, PUBLIC_STATE_FALLBACK_POLL_MS);
+    const startPolling = () => {
+      recover();
+      interval = window.setInterval(recover, PUBLIC_STATE_FALLBACK_POLL_MS);
+    };
+    const negotiating = socketStatus === 'starting' || socketStatus === 'connecting';
+    const initialTimer = window.setTimeout(startPolling, negotiating ? PUBLIC_STATE_FALLBACK_POLL_MS : 0);
     return () => {
       active = false;
-      window.clearInterval(interval);
+      window.clearTimeout(initialTimer);
+      if (interval !== null) window.clearInterval(interval);
     };
   }, [socketStatus]);
 
@@ -1293,9 +1378,10 @@ function PublicDashboardApp() {
 
   const resumeLiveFromPacketTray = useCallback(() => {
     returnToLive();
+    markUserPauseOverride();
     setPaused(false);
     setPacketsPanelMode('expanded');
-  }, [returnToLive]);
+  }, [markUserPauseOverride, returnToLive, setPacketsPanelMode]);
 
   const startNodePlot = useCallback(() => {
     setPlotMode('node');
@@ -1419,7 +1505,7 @@ function PublicDashboardApp() {
         const target = event.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
         event.preventDefault();
-        setPaused((value) => !value);
+        togglePausedByUser();
       }
       if (event.code === 'KeyL') {
         setFollowTraffic((value) => !value);
@@ -1431,7 +1517,7 @@ function PublicDashboardApp() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [clearPlotRoutes, clearSelection]);
+  }, [clearPlotRoutes, clearSelection, togglePausedByUser]);
 
   const shareView = useCallback(async () => {
     const view = mapView ?? (sharedViewRef.current ? { lat: sharedViewRef.current.lat, lng: sharedViewRef.current.lng, z: sharedViewRef.current.z } : null);
@@ -1583,6 +1669,7 @@ function PublicDashboardApp() {
     clearReplayDeepLinkSelection();
   }, [clearReplayDeepLinkSelection, focusPacketPath, fullStateHydrated, replayDeepLinkStatus, selectRoute, state.pulses, state.routes]);
   const openReplayStudio = useCallback(() => {
+    replayPauseSessionRef.current = beginReplayPauseSession(paused);
     setReplayDeepLinkStatus(null);
     if (!selectedPacket && !selectedRoute) {
       const latest = [...visibleRoutes].sort((a, b) => b.lastHeard - a.lastHeard)[0];
@@ -1591,7 +1678,7 @@ function PublicDashboardApp() {
     setReplayStudioOpen(true);
     setPanelsMenuOpen(false);
     setMobileControlsOpen(false);
-  }, [selectRoute, selectedPacket, selectedRoute, visibleRoutes]);
+  }, [paused, selectRoute, selectedPacket, selectedRoute, visibleRoutes]);
   const playReplayStudio = useCallback((packet: PublicPacketPath, speed: number, staticStory: boolean) => {
     if (staticStory) {
       focusPacketPath(packet);
@@ -1612,6 +1699,10 @@ function PublicDashboardApp() {
     actionTokenRef.current = token;
     setMapAction({ type: 'packet', token, segments: [segment] });
   }, []);
+  const closeReplayStudio = useCallback(() => {
+    setReplayStudioOpen(false);
+    finishReplayPauseSession();
+  }, [finishReplayPauseSession]);
   const shareReplayStudio = useCallback(async (packet: PublicPacketPath) => {
     const view = mapView ?? (sharedViewRef.current ? { lat: sharedViewRef.current.lat, lng: sharedViewRef.current.lng, z: sharedViewRef.current.z } : null);
     if (!view) {
@@ -1635,8 +1726,9 @@ function PublicDashboardApp() {
   }, [mapView, query, selectedRouteID, showToast]);
   const openReplayWaterfall = useCallback(() => {
     setReplayStudioOpen(false);
+    finishReplayPauseSession();
     window.location.hash = labExperimentPath(DEFAULT_LAB_EXPERIMENT_ID);
-  }, []);
+  }, [finishReplayPauseSession]);
   const dashboardActions = useMemo<DashboardAction[]>(() => [
     { id: 'replay-studio', label: 'RF Replay Studio', description: replayStudioPacket ? 'Play the selected public pathway' : 'Play the latest public pathway', group: 'Playback', keywords: ['cinematic', 'route', '3d', 'terrain'], run: openReplayStudio },
     { id: 'timeline', label: 'Live timeline', description: 'Rewind or replay recent public traffic', group: 'Playback', keywords: ['vcr', 'history'], run: openVcr },
@@ -1646,9 +1738,9 @@ function PublicDashboardApp() {
     { id: 'propagation', label: 'Propagation', description: 'Open public RF condition history', group: 'Explore', keywords: ['weather', 'los'], run: () => setPropagationOpen(true) },
     { id: 'map-settings', label: 'Map settings', description: 'Change map mode, layers, and motion', group: 'View', keywords: ['terrain', '3d', 'style'], run: () => setMapSettingsOpen(true) },
     { id: 'share', label: 'Share current view', description: 'Copy a privacy-safe map link', group: 'Utility', keywords: ['link', 'copy'], run: shareView },
-    { id: 'pause', label: paused ? 'Resume feed' : 'Pause feed', description: paused ? 'Resume live visual updates' : 'Pause live visual updates', group: 'Playback', run: () => setPaused((value) => !value) },
+    { id: 'pause', label: paused ? 'Resume feed' : 'Pause feed', description: paused ? 'Resume live visual updates' : 'Pause live visual updates', group: 'Playback', run: togglePausedByUser },
     { id: 'toggle-ui', label: chromeHidden ? 'Show map UI' : 'Hide map UI', description: 'Toggle map panels and status chrome', group: 'View', run: toggleChromeVisibility }
-  ], [chromeHidden, openNodeList, openPackets, openReplayStudio, openReplayWaterfall, openVcr, paused, replayStudioPacket, shareView, toggleChromeVisibility]);
+  ], [chromeHidden, openNodeList, openPackets, openReplayStudio, openReplayWaterfall, openVcr, paused, replayStudioPacket, shareView, toggleChromeVisibility, togglePausedByUser]);
   const knownPathwaysOn = mapSettings.layers.routes;
   const workspaceSurfaceOpen = packetsOpen || netGraphOpen || chatOpen || labOpen || nodeListOpen;
   const visitorGuideSuppressed = chromeHidden || packetsOpen || netGraphOpen || chatOpen || labOpen || setupOpen || propagationOpen || vcrOpen || nodeListOpen || shortcutHelpOpen || mapSettingsOpen || mobileControlsOpen || commandPaletteOpen || replayStudioOpen || Boolean(selectedNode || selectedRoute || selectedPacket);
@@ -1659,6 +1751,8 @@ function PublicDashboardApp() {
       data-topology-hydrated={fullStateHydrated ? 'true' : 'false'}
       data-topology-node-count={visibleNodes.length}
       data-topology-route-count={visibleRoutes.length}
+      data-live-seq={state.latestSeq}
+      data-latest-pulse-id={state.pulses[0]?.id ?? ''}
       data-theme-mode={themeMode}
       data-theme-palette={selectedThemePalette.id}
       data-vcr-layout={vcrOpen ? 'open' : 'closed'}
@@ -1859,7 +1953,7 @@ function PublicDashboardApp() {
                   <RotateCcw size={14} />
                   <span>Clear pulses</span>
                 </button>
-                <button type="button" onClick={() => setPaused((value) => !value)}>
+                <button type="button" onClick={togglePausedByUser}>
                   {paused ? <Play size={14} /> : <Pause size={14} />}
                   <span>{paused ? 'Resume feed' : 'Pause feed'}</span>
                 </button>
@@ -2091,7 +2185,7 @@ function PublicDashboardApp() {
               onExportGif={replayStudioPacket ? () => { void exportSelectedPacketGif(replayStudioPacket); } : undefined}
               onExportWebM={replayStudioPacket ? (speed) => { void exportReplayWebM(replayStudioPacket, speed); } : undefined}
               onOpenWaterfall={openReplayWaterfall}
-              onClose={() => setReplayStudioOpen(false)}
+              onClose={closeReplayStudio}
             />
           </Suspense>
         </ErrorBoundary>

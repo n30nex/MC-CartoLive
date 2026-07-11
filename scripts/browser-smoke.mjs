@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { probeCurrentPublicTopology } from './browser-smoke-topology.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -124,6 +125,7 @@ const channel = args.channel ? String(args.channel) : (process.env.PLAYWRIGHT_CH
 
 await mkdir(outputDir, { recursive: true });
 
+const fixtureTopology = await waitForPublicTopology(baseUrl);
 const browser = await launchBrowser({ channel, headless });
 const startedAt = new Date().toISOString();
 const results = [];
@@ -160,6 +162,7 @@ const summary = {
   finishedAt: new Date().toISOString(),
   viewports: viewports.map(({ name, width, height }) => ({ name, width, height })),
   scenarios: scenarios.map(({ name, hash }) => ({ name, hash })),
+  fixtureTopology,
   releaseGates,
   passed: hardFailures === 0,
   failures: hardFailures,
@@ -293,6 +296,7 @@ async function runReleaseGate(browser, viewport) {
   let eventReset = null;
   let visibilityRecovery = null;
   let exportCleanup = null;
+  let liveFlow = null;
   let cdp = null;
 
   await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
@@ -336,13 +340,18 @@ async function runReleaseGate(browser, viewport) {
       await page.getByRole('region', { name: /First visit map guide/i }).waitFor({ state: 'hidden', timeout: 5_000 });
     }
 
-    await runGateStep(errors, checks, 'full node and route topology hydrates before interactive surfaces', () => waitForTopologyHydration(page));
+    const topologyReady = await runGateStep(errors, checks, 'full node and route topology hydrates before interactive surfaces', async () => {
+      await waitForTopologyHydration(page);
+      return true;
+    });
 
     eventReset = await runGateStep(errors, checks, 'public cursor reset semantics for zero and ahead cursors', () => smokePublicEventReset(page));
 
     serviceWorker = await runGateStep(errors, checks, 'service-worker registration/update, no-cache metadata, and bounded versioned caches', () => smokeServiceWorkerSafety(page, context));
 
-    exportCleanup = await runGateStep(errors, checks, 'Ctrl/Cmd+K, focus trap/restore, reduced-motion Replay Studio, and bounded export cleanup', () => smokeCommandReplayAndExport(page, viewport));
+    if (topologyReady) {
+      exportCleanup = await runGateStep(errors, checks, 'Ctrl/Cmd+K, focus trap/restore, reduced-motion Replay Studio, and bounded export cleanup', () => smokeCommandReplayAndExport(page, viewport));
+    }
     await recoverReleaseGateUI(page);
 
     const styleDrawer = await runGateStep(errors, checks, 'style library opens as an accessible modal', () => openStyleChangeSurface(page));
@@ -379,6 +388,9 @@ async function runReleaseGate(browser, viewport) {
       const hiddenExportSurfaces = await countHiddenExportSurfaces(page);
       if (hiddenExportSurfaces !== 0) throw new Error(`temporary export surfaces leaked after release gate: ${hiddenExportSurfaces}`);
     });
+    if (topologyReady) {
+      liveFlow = await runGateStep(errors, checks, 'sparse durable and seq-less fallback events visibly update the live map', () => smokeSparseLiveFlow(page));
+    }
   } catch (error) {
     errors.push(error instanceof Error ? error.message : String(error));
   } finally {
@@ -407,6 +419,7 @@ async function runReleaseGate(browser, viewport) {
     serviceWorker,
     visibilityRecovery,
     exportCleanup,
+    liveFlow,
     downloads,
     metrics: { baseline: baselineMetrics, postStyles: postStyleMetrics, final: finalMetrics, styleDeltas: metricDeltas, finalDeltas: finalMetricDeltas, thresholds: RELEASE_GATE_THRESHOLDS },
     errors
@@ -855,12 +868,26 @@ async function waitForCondition(predicate, timeoutMs, pollMs) {
   return false;
 }
 
+async function waitForPublicTopology(publicBaseUrl, timeoutMs = 45_000) {
+  let diagnostic = 'no response';
+  const ready = await waitForCondition(async () => {
+    const proof = await probeCurrentPublicTopology(publicBaseUrl);
+    diagnostic = proof.diagnostic;
+    return proof.ready;
+  }, timeoutMs, 750);
+  if (!ready) throw new Error(`public fixture topology did not become current: ${diagnostic}`);
+  return diagnostic;
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function installBrowserSmokeInstrumentation() {
   if (window.__mcBrowserSmoke) return;
+  try { window.localStorage.setItem('mc-cartolive-debug-perf', '1'); } catch {}
+  const NativeWebSocket = window.WebSocket;
+  const liveSockets = new Set();
   const state = {
     listeners: 0,
     listenerTypes: Object.create(null),
@@ -945,6 +972,15 @@ function installBrowserSmokeInstrumentation() {
   };
   window.cancelAnimationFrame = (id) => { state.animationFrames.delete(id); return nativeCancelRAF(id); };
 
+  window.WebSocket = new Proxy(NativeWebSocket, {
+    construct(target, args) {
+      const socket = Reflect.construct(target, args, target);
+      liveSockets.add(socket);
+      socket.addEventListener('close', () => liveSockets.delete(socket), { once: true });
+      return socket;
+    }
+  });
+
   window.__mcBrowserSmoke = {
     get timeoutCapMs() { return state.timeoutCapMs; },
     set timeoutCapMs(value) { state.timeoutCapMs = Number.isFinite(value) ? Math.max(1, Number(value)) : null; },
@@ -954,8 +990,83 @@ function installBrowserSmokeInstrumentation() {
       timeouts: state.timeouts.size,
       intervals: state.intervals.size,
       animationFrames: state.animationFrames.size
-    })
+    }),
+    openSocketCount: () => [...liveSockets].filter((candidate) => candidate.readyState === NativeWebSocket.OPEN).length,
+    injectSocketMessages: (messages) => {
+      const socket = [...liveSockets].find((candidate) => candidate.readyState === NativeWebSocket.OPEN);
+      if (!socket) throw new Error('no open public WebSocket available for live-flow smoke');
+      for (const message of messages) {
+        socket.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(message) }));
+      }
+      return messages.length;
+    }
   };
+}
+
+async function smokeSparseLiveFlow(page) {
+  await page.waitForFunction(() => Number(window.__mcBrowserSmoke?.openSocketCount?.() ?? 0) > 0, null, { timeout: 15_000 });
+  const injected = await page.evaluate(async () => {
+    const response = await fetch(`/api/v1/public/state?browserSmokeLive=${Date.now()}`, { cache: 'no-store', headers: { accept: 'application/json' } });
+    if (!response.ok) throw new Error(`full state HTTP ${response.status}`);
+    const state = await response.json();
+    const route = state.routes?.[0];
+    const source = state.recentPulses?.find((pulse) => pulse?.segments?.length) ?? (route ? {
+      id: 'browser-smoke-route-source',
+      payloadTypeName: route.payloadTypeNames?.[0] ?? 'PLAIN_TEXT',
+      heardAt: Date.now(),
+      segments: [{ routeId: route.id, from: route.from, to: route.to, distanceKm: route.distanceKm }]
+    } : null);
+    if (!source?.segments?.length) throw new Error('fixture has no routed topology for live-flow injection');
+    const shell = document.querySelector('.app-shell');
+    if (!(shell instanceof HTMLElement)) throw new Error('app shell is unavailable');
+    const baselineSeq = Number(shell.dataset.liveSeq ?? 0);
+    const firstSeq = baselineSeq + 2;
+    const finalSeq = baselineSeq + 5;
+    const now = Date.now();
+    if (window.__mcCartoLivePerf) {
+      window.__mcCartoLivePerf.packetActiveComets = 0;
+      window.__mcCartoLivePerf.packetActiveCometIDs = [];
+    }
+    const pulse = (id, heardAt) => ({ ...source, id, seq: undefined, heardAt, receivedAt: heardAt, displayAt: heardAt });
+    const messages = [
+      { v: 1, type: 'event', event: 'routePulse', seq: firstSeq, latestSeq: firstSeq, serverTime: now, receivedAt: now, displayAt: now, data: pulse('browser-smoke-sparse-a', now) },
+      { v: 1, type: 'event', event: 'routePulse', seq: 0, latestSeq: firstSeq, serverTime: now + 40, receivedAt: now + 40, displayAt: now + 40, data: pulse('browser-smoke-fallback-zero', now + 40) },
+      { v: 1, type: 'event', event: 'routePulse', seq: finalSeq, latestSeq: finalSeq, serverTime: now + 80, receivedAt: now + 80, displayAt: now + 80, data: pulse('browser-smoke-sparse-b', now + 80) },
+      { v: 1, type: 'event', event: 'routePulse', latestSeq: finalSeq, serverTime: now + 120, receivedAt: now + 120, displayAt: now + 120, data: pulse('browser-smoke-fallback-omitted', now + 120) }
+    ];
+    const count = window.__mcBrowserSmoke.injectSocketMessages(messages);
+    return { baselineSeq, firstSeq, finalSeq, fallbackID: 'browser-smoke-fallback-omitted', count };
+  });
+
+  const applied = await page.waitForFunction(({ finalSeq, fallbackID }) => {
+    const shell = document.querySelector('.app-shell');
+    return shell instanceof HTMLElement && Number(shell.dataset.liveSeq) === finalSeq && shell.dataset.latestPulseId === fallbackID;
+  }, injected, { timeout: 10_000 }).then(() => true, () => false);
+  if (!applied) {
+    const state = await page.evaluate(() => {
+      const shell = document.querySelector('.app-shell');
+      return {
+        liveSeq: shell instanceof HTMLElement ? shell.dataset.liveSeq : null,
+        latestPulseID: shell instanceof HTMLElement ? shell.dataset.latestPulseId : null,
+        vcrLayout: shell instanceof HTMLElement ? shell.dataset.vcrLayout : null,
+        openSockets: Number(window.__mcBrowserSmoke?.openSocketCount?.() ?? 0),
+        activeComets: Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0)
+      };
+    });
+    throw new Error(`injected live events were not applied: expected seq=${injected.finalSeq} pulse=${injected.fallbackID}; observed ${JSON.stringify(state)}`);
+  }
+  const animated = await page.waitForFunction(({ fallbackID }) => {
+    return Array.isArray(window.__mcCartoLivePerf?.packetActiveCometIDs)
+      && window.__mcCartoLivePerf.packetActiveCometIDs.includes(fallbackID);
+  }, injected, { timeout: 10_000 }).then(() => true, () => false);
+  if (!animated) {
+    const active = await page.evaluate(() => ({
+      count: Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0),
+      ids: Array.isArray(window.__mcCartoLivePerf?.packetActiveCometIDs) ? window.__mcCartoLivePerf.packetActiveCometIDs : []
+    }));
+    throw new Error(`injected route pulse ${injected.fallbackID} did not start a visible comet: ${JSON.stringify(active)}`);
+  }
+  return injected;
 }
 
 async function smokeLiveMapControls(page, viewport) {
@@ -1023,9 +1134,19 @@ async function smokeVcr(page, viewport) {
   await assertVisibleInViewport(page, '.vcr-timeline-shell', 'VCR timeline', viewport);
 
   const timeline = page.locator('.vcr-timeline-shell').first();
-  const box = await timeline.boundingBox();
+  const box = await page.evaluate(() => {
+    const element = document.querySelector('.vcr-timeline-shell');
+    if (!(element instanceof HTMLElement)) return null;
+    const rect = element.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  });
   if (box) {
-    await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.5);
+    await timeline.dispatchEvent('pointermove', {
+      bubbles: true,
+      pointerType: 'mouse',
+      clientX: box.x + box.width * 0.55,
+      clientY: box.y + box.height * 0.5
+    });
     await page.waitForFunction(() => {
       const element = document.querySelector('.vcr-hover-time');
       if (!(element instanceof HTMLElement)) return false;

@@ -54,6 +54,21 @@ describe('public transport contracts', () => {
     await expect(fetchPublicStateWithFallback()).resolves.toMatchObject({ source: 'offline-cache', cachedAt: expect.any(Number), state: { stats: { latestSeq: 12 } } });
   });
 
+  it('bypasses a stale browser HTTP cache for full public-state hydration', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      serverTime: 100,
+      stats: { latestSeq: 12 },
+      nodes: [],
+      routes: [],
+      recentActivity: []
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchPublicState();
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/public/state', expect.objectContaining({ cache: 'no-store' }));
+  });
+
   it('rejects offline snapshots outside the bounded freshness window', () => {
     const now = Date.now();
     seedPublicStateCache(now - PUBLIC_STATE_CACHE_MAX_AGE_MS - 1);

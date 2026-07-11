@@ -24,7 +24,7 @@ jobs:
   promote:
     name: Promote tested digest and publish package
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout tag
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -47,19 +47,24 @@ jobs:
           trailers="$(printf '%s\n' "$tag_message" | git interpret-trailers --parse)"
           mapfile -t candidate_run_ids < <(printf '%s\n' "$trailers" | sed -n 's/^Candidate-Run-Id:[[:space:]]*//p')
           mapfile -t candidate_run_attempts < <(printf '%s\n' "$trailers" | sed -n 's/^Candidate-Run-Attempt:[[:space:]]*//p')
-          mapfile -t candidate_digests < <(printf '%s\n' "$trailers" | sed -n 's/^Candidate-Digest:[[:space:]]*//p')
+          mapfile -t candidate_world_digests < <(printf '%s\n' "$trailers" | sed -n 's/^Candidate-World-Digest:[[:space:]]*//p')
+          mapfile -t candidate_canada_digests < <(printf '%s\n' "$trailers" | sed -n 's/^Candidate-Canada-Digest:[[:space:]]*//p')
           mapfile -t candidate_deployed_times < <(printf '%s\n' "$trailers" | sed -n 's/^Candidate-Deployed-At:[[:space:]]*//p')
           test "${#candidate_run_ids[@]}" -eq 1
           test "${#candidate_run_attempts[@]}" -eq 1
-          test "${#candidate_digests[@]}" -eq 1
+          test "${#candidate_world_digests[@]}" -eq 1
+          test "${#candidate_canada_digests[@]}" -eq 1
           test "${#candidate_deployed_times[@]}" -eq 1
           candidate_run_id="${candidate_run_ids[0]}"
           candidate_run_attempt="${candidate_run_attempts[0]}"
-          candidate_digest="${candidate_digests[0]}"
+          candidate_world_digest="${candidate_world_digests[0]}"
+          candidate_canada_digest="${candidate_canada_digests[0]}"
           candidate_deployed_at="${candidate_deployed_times[0]}"
           [[ "$candidate_run_id" =~ ^[1-9][0-9]*$ ]]
           [[ "$candidate_run_attempt" =~ ^[1-9][0-9]*$ ]]
-          [[ "$candidate_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$candidate_world_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$candidate_canada_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$candidate_world_digest" != "$candidate_canada_digest"
           deployed_epoch="$(date -u -d "$candidate_deployed_at" +%s)"
           tagger_epoch="$(git for-each-ref --format='%(taggerdate:unix)' "$tag_ref")"
           [[ "$deployed_epoch" =~ ^[0-9]+$ ]]
@@ -72,7 +77,8 @@ jobs:
           echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
           echo "candidate_run_id=$candidate_run_id" >> "$GITHUB_OUTPUT"
           echo "candidate_run_attempt=$candidate_run_attempt" >> "$GITHUB_OUTPUT"
-          echo "candidate_digest=$candidate_digest" >> "$GITHUB_OUTPUT"
+          echo "candidate_world_digest=$candidate_world_digest" >> "$GITHUB_OUTPUT"
+          echo "candidate_canada_digest=$candidate_canada_digest" >> "$GITHUB_OUTPUT"
           echo "candidate_deployed_at=$candidate_deployed_at" >> "$GITHUB_OUTPUT"
       - name: Require successful main CI and CodeQL for the tagged SHA
         env:
@@ -130,7 +136,8 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
           CANDIDATE_RUN_ID: ${{ steps.release.outputs.candidate_run_id }}
           CANDIDATE_RUN_ATTEMPT: ${{ steps.release.outputs.candidate_run_attempt }}
-          CANDIDATE_DIGEST: ${{ steps.release.outputs.candidate_digest }}
+          CANDIDATE_WORLD_DIGEST: ${{ steps.release.outputs.candidate_world_digest }}
+          CANDIDATE_CANADA_DIGEST: ${{ steps.release.outputs.candidate_canada_digest }}
         run: |
           current_main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           test "$current_main_sha" = "$MERGE_SHA"
@@ -152,29 +159,41 @@ jobs:
           unzip -q /tmp/mc-cartolive-candidate.zip -d /tmp/mc-cartolive-candidate-evidence
           manifest=/tmp/mc-cartolive-candidate-evidence/candidate-manifest.json
           test -f "$manifest"
-          candidate_tag="candidate-$MERGE_SHA-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT"
+          candidate_tag_base="candidate-$MERGE_SHA-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT"
+          world_candidate_tag="$candidate_tag_base-world"
+          canada_candidate_tag="$candidate_tag_base-canada"
+          release_ref="refs/heads/codex/release-$VERSION"
           printf '%s' "$(cat "$manifest")" | jq -e \
             --arg sha "$MERGE_SHA" --arg version "$VERSION" --arg repository "${REGISTRY}/${IMAGE_NAME}" \
             --arg sourceRepository "$GITHUB_REPOSITORY" --arg candidateRunId "$CANDIDATE_RUN_ID" \
-            --arg candidateRunAttempt "$CANDIDATE_RUN_ATTEMPT" --arg candidateTag "$candidate_tag" \
-            '.gitSha == $sha and .sourceCiHeadSha == $sha and .sourceCiConclusion == "success" and .sourceCiWorkflow == "CI" and .sourceCiEvent == "push" and .sourceCiHeadBranch == "main" and .sourceCiHeadRepository == $sourceRepository and .verifiedMainRef == "refs/heads/main" and .verifiedMainSha == $sha and .candidateWorkflowRunId == $candidateRunId and .candidateWorkflowRunAttempt == $candidateRunAttempt and .candidateTag == $candidateTag and .premergeHeadRef == "refs/heads/codex/release-3.2.0" and (.premergeHeadSha | test("^[0-9a-f]{40}$")) and (.premergeRunId | test("^[0-9]+$")) and (.premergeProofDeferred | type == "boolean") and .version == $version and .repository == $repository' >/dev/null
+            --arg candidateRunAttempt "$CANDIDATE_RUN_ATTEMPT" --arg worldCandidateTag "$world_candidate_tag" --arg canadaCandidateTag "$canada_candidate_tag" --arg releaseRef "$release_ref" \
+            '.gitSha == $sha and .sourceCiHeadSha == $sha and .sourceCiConclusion == "success" and .sourceCiBrowserSmokeConclusion == "success" and .sourceCiWorkflow == "CI" and .sourceCiEvent == "push" and .sourceCiHeadBranch == "main" and .sourceCiHeadRepository == $sourceRepository and .verifiedMainRef == "refs/heads/main" and .verifiedMainSha == $sha and .candidateWorkflowRunId == $candidateRunId and .candidateWorkflowRunAttempt == $candidateRunAttempt and .images.world.candidateTag == $worldCandidateTag and .images.world.assetPack == "world" and .images.canada.candidateTag == $canadaCandidateTag and .images.canada.assetPack == "canada" and .premergeHeadRef == $releaseRef and (.premergeHeadSha | test("^[0-9a-f]{40}$")) and (.premergeRunId | test("^[0-9]+$")) and (.premergeProofDeferred | type == "boolean") and .version == $version and .repository == $repository' >/dev/null
           source_ci_run_id="$(jq -r '.sourceCiRunId' "$manifest")"
           [[ "$source_ci_run_id" =~ ^[0-9]+$ ]]
           source_ci_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_ci_run_id")"
           printf '%s' "$source_ci_json" | jq -e --arg sha "$MERGE_SHA" --arg repository "$GITHUB_REPOSITORY" \
             '.name == "CI" and .path == ".github/workflows/ci.yml" and .conclusion == "success" and .event == "push" and .head_branch == "main" and .head_sha == $sha and .head_repository.full_name == $repository' >/dev/null
-          digest="$(jq -r '.digest' "$manifest")"
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          test "$digest" = "$CANDIDATE_DIGEST"
-          test "$(jq -r '.image' "$manifest")" = "${REGISTRY}/${IMAGE_NAME}@$digest"
+          source_ci_jobs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_ci_run_id/jobs?filter=latest&per_page=100")"
+          test "$(printf '%s' "$source_ci_jobs" | jq '[.jobs[] | select(.name == "Desktop and mobile browser smoke" and .conclusion == "success")] | length')" -eq 1
+          world_digest="$(jq -r '.images.world.digest' "$manifest")"
+          canada_digest="$(jq -r '.images.canada.digest' "$manifest")"
+          [[ "$world_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$canada_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$world_digest" = "$CANDIDATE_WORLD_DIGEST"
+          test "$canada_digest" = "$CANDIDATE_CANADA_DIGEST"
+          test "$world_digest" != "$canada_digest"
+          test "$(jq -r '.images.world.image' "$manifest")" = "${REGISTRY}/${IMAGE_NAME}@$world_digest"
+          test "$(jq -r '.images.canada.image' "$manifest")" = "${REGISTRY}/${IMAGE_NAME}@$canada_digest"
           build_time="$(jq -r '.buildTime' "$manifest")"
           test -n "$build_time"
           test "$build_time" != "null"
           date -u -d "$build_time" +%Y-%m-%dT%H:%M:%SZ >/dev/null
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "world_digest=$world_digest" >> "$GITHUB_OUTPUT"
+          echo "canada_digest=$canada_digest" >> "$GITHUB_OUTPUT"
           echo "run_id=$CANDIDATE_RUN_ID" >> "$GITHUB_OUTPUT"
           echo "run_attempt=$CANDIDATE_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-          echo "candidate_tag=$candidate_tag" >> "$GITHUB_OUTPUT"
+          echo "world_candidate_tag=$world_candidate_tag" >> "$GITHUB_OUTPUT"
+          echo "canada_candidate_tag=$canada_candidate_tag" >> "$GITHUB_OUTPUT"
           echo "build_time=$build_time" >> "$GITHUB_OUTPUT"
       - name: Set up Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -188,54 +207,66 @@ jobs:
         id: candidate
         shell: bash
         env:
-          EVIDENCE_DIGEST: ${{ steps.evidence.outputs.digest }}
-          CANDIDATE_TAG: ${{ steps.evidence.outputs.candidate_tag }}
+          WORLD_EVIDENCE_DIGEST: ${{ steps.evidence.outputs.world_digest }}
+          CANADA_EVIDENCE_DIGEST: ${{ steps.evidence.outputs.canada_digest }}
+          WORLD_CANDIDATE_TAG: ${{ steps.evidence.outputs.world_candidate_tag }}
+          CANADA_CANDIDATE_TAG: ${{ steps.evidence.outputs.canada_candidate_tag }}
         run: |
           image="${REGISTRY}/${IMAGE_NAME}"
-          candidate="$image:$CANDIDATE_TAG"
-          inspect="$(docker buildx imagetools inspect "$candidate")"
-          digest="$(printf '%s\n' "$inspect" | awk '$1 == "Digest:" {print $2; exit}')"
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          test "$digest" = "$EVIDENCE_DIGEST"
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          echo "image=$image@$digest" >> "$GITHUB_OUTPUT"
+          for pack in world canada; do
+            if [ "$pack" = world ]; then tag="$WORLD_CANDIDATE_TAG"; expected="$WORLD_EVIDENCE_DIGEST"; else tag="$CANADA_CANDIDATE_TAG"; expected="$CANADA_EVIDENCE_DIGEST"; fi
+            candidate="$image:$tag"
+            inspect="$(docker buildx imagetools inspect "$candidate")"
+            digest="$(printf '%s\n' "$inspect" | awk '$1 == "Digest:" {print $2; exit}')"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            test "$digest" = "$expected"
+            echo "${pack}_digest=$digest" >> "$GITHUB_OUTPUT"
+            echo "${pack}_image=$image@$digest" >> "$GITHUB_OUTPUT"
+          done
       - name: Verify OCI identity on every release platform
         env:
           MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
           VERSION: ${{ steps.release.outputs.version }}
-          CANDIDATE_IMAGE: ${{ steps.candidate.outputs.image }}
+          WORLD_CANDIDATE_IMAGE: ${{ steps.candidate.outputs.world_image }}
+          CANADA_CANDIDATE_IMAGE: ${{ steps.candidate.outputs.canada_image }}
           EXPECTED_BUILD_TIME: ${{ steps.evidence.outputs.build_time }}
           CANDIDATE_RUN_ID: ${{ steps.evidence.outputs.run_id }}
           CANDIDATE_RUN_ATTEMPT: ${{ steps.evidence.outputs.run_attempt }}
-          CANDIDATE_TAG: ${{ steps.evidence.outputs.candidate_tag }}
+          WORLD_CANDIDATE_TAG: ${{ steps.evidence.outputs.world_candidate_tag }}
+          CANADA_CANDIDATE_TAG: ${{ steps.evidence.outputs.canada_candidate_tag }}
         run: |
-          for platform in linux/amd64 linux/arm64; do
-            docker pull --platform "$platform" "$CANDIDATE_IMAGE"
-            container_id="$(docker create --platform "$platform" "$CANDIDATE_IMAGE")"
-            image_id="$(docker inspect --format '{{.Image}}' "$container_id")"
-            revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image_id")"
-            source="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.source" }}' "$image_id")"
-            image_version="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$image_id")"
-            image_created="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.created" }}' "$image_id")"
-            image_candidate_run_id="$(docker image inspect --format '{{ index .Config.Labels "org.mc-cartolive.candidate.workflow-run-id" }}' "$image_id")"
-            image_candidate_run_attempt="$(docker image inspect --format '{{ index .Config.Labels "org.mc-cartolive.candidate.workflow-run-attempt" }}' "$image_id")"
-            image_candidate_tag="$(docker image inspect --format '{{ index .Config.Labels "org.mc-cartolive.candidate.tag" }}' "$image_id")"
-            architecture="$(docker image inspect --format '{{.Architecture}}' "$image_id")"
-            docker rm "$container_id"
-            test "$revision" = "$MERGE_SHA"
-            test "$source" = "https://github.com/$GITHUB_REPOSITORY"
-            test "$image_version" = "$VERSION"
-            test "$image_created" = "$EXPECTED_BUILD_TIME"
-            test "$image_candidate_run_id" = "$CANDIDATE_RUN_ID"
-            test "$image_candidate_run_attempt" = "$CANDIDATE_RUN_ATTEMPT"
-            test "$image_candidate_tag" = "$CANDIDATE_TAG"
-            test "$architecture" = "${platform#linux/}"
+          repository="${REGISTRY}/${IMAGE_NAME}"
+          for pack in world canada; do
+            if [ "$pack" = world ]; then candidate="$WORLD_CANDIDATE_IMAGE"; expected_tag="$WORLD_CANDIDATE_TAG"; else candidate="$CANADA_CANDIDATE_IMAGE"; expected_tag="$CANADA_CANDIDATE_TAG"; fi
+            index_json="$(docker buildx imagetools inspect --raw "$candidate")"
+            for architecture in amd64 arm64; do
+              child_digest="$(printf '%s' "$index_json" | jq -r --arg architecture "$architecture" '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == $architecture)] | if length == 1 then .[0].digest else empty end')"
+              [[ "$child_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+              image_json="$(docker buildx imagetools inspect "$repository@$child_digest" --format '{{json .Image}}')"
+              printf '%s' "$image_json" | jq -e \
+                --arg architecture "$architecture" --arg sha "$MERGE_SHA" --arg source "https://github.com/$GITHUB_REPOSITORY" \
+                --arg version "$VERSION" --arg created "$EXPECTED_BUILD_TIME" --arg runId "$CANDIDATE_RUN_ID" \
+                --arg runAttempt "$CANDIDATE_RUN_ATTEMPT" --arg candidateTag "$expected_tag" --arg pack "$pack" \
+                '.architecture == $architecture and .os == "linux" and
+                 .config.Labels["org.opencontainers.image.revision"] == $sha and
+                 .config.Labels["org.opencontainers.image.source"] == $source and
+                 .config.Labels["org.opencontainers.image.version"] == $version and
+                 .config.Labels["org.opencontainers.image.created"] == $created and
+                 .config.Labels["org.mc-cartolive.candidate.workflow-run-id"] == $runId and
+                 .config.Labels["org.mc-cartolive.candidate.workflow-run-attempt"] == $runAttempt and
+                 .config.Labels["org.mc-cartolive.candidate.tag"] == $candidateTag and
+                 .config.Labels["org.mc-cartolive.asset-pack"] == $pack' >/dev/null
+            done
           done
-      - name: Verify candidate provenance belongs to this repository
+      - name: Verify world candidate provenance belongs to this repository
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh attestation verify "oci://${{ steps.candidate.outputs.image }}" --repo "$GITHUB_REPOSITORY"
-      - name: Re-smoke exact candidate and compiled identity
+        run: gh attestation verify "oci://${{ steps.candidate.outputs.world_image }}" --repo "$GITHUB_REPOSITORY"
+      - name: Verify Canada candidate provenance belongs to this repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh attestation verify "oci://${{ steps.candidate.outputs.canada_image }}" --repo "$GITHUB_REPOSITORY"
+      - name: Re-smoke exact world candidate and compiled identity
         env:
           EXPECTED_BUILD_TIME: ${{ steps.evidence.outputs.build_time }}
           MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
@@ -243,52 +274,78 @@ jobs:
           cleanup() { docker rm -f mc-cartolive-package-smoke-synthetic mc-cartolive-package-smoke-world >/dev/null 2>&1 || true; }
           trap cleanup EXIT
           node scripts/package-smoke.mjs \
-            --image "${{ steps.candidate.outputs.image }}" \
-            --version "${{ steps.release.outputs.version }}" --pull --keep
+            --image "${{ steps.candidate.outputs.world_image }}" \
+            --version "${{ steps.release.outputs.version }}" --asset-pack world --pull --keep
           for port in 18082 18083; do
             curl -fsS --max-time 10 "http://127.0.0.1:$port/healthz" | jq -e \
               --arg buildTime "$EXPECTED_BUILD_TIME" --arg gitSha "$MERGE_SHA" \
               '.buildTime == $buildTime and .gitSha == $gitSha' >/dev/null
           done
-      - name: Re-scan exact candidate
+      - name: Re-smoke exact Canada candidate and compiled identity
+        env:
+          EXPECTED_BUILD_TIME: ${{ steps.evidence.outputs.build_time }}
+          MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
+        run: |
+          cleanup() { docker rm -f mc-cartolive-package-smoke-synthetic mc-cartolive-package-smoke-world >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          node scripts/package-smoke.mjs \
+            --image "${{ steps.candidate.outputs.canada_image }}" \
+            --version "${{ steps.release.outputs.version }}" --asset-pack canada --pull --keep
+          for port in 18082 18083; do
+            curl -fsS --max-time 10 "http://127.0.0.1:$port/healthz" | jq -e \
+              --arg buildTime "$EXPECTED_BUILD_TIME" --arg gitSha "$MERGE_SHA" \
+              '.buildTime == $buildTime and .gitSha == $gitSha' >/dev/null
+          done
+      - name: Re-scan exact world candidate
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ steps.candidate.outputs.image }}
+          image-ref: ${{ steps.candidate.outputs.world_image }}
           format: sarif
-          output: trivy-release.sarif
+          output: trivy-release-world.sarif
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
-      - name: Upload release scan
-        if: always() && hashFiles('trivy-release.sarif') != ''
+      - name: Re-scan exact Canada candidate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.candidate.outputs.canada_image }}
+          format: sarif
+          output: trivy-release-canada.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Upload world release scan
+        if: always() && hashFiles('trivy-release-world.sarif') != ''
         uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
         with:
-          sarif_file: trivy-release.sarif
-      - name: Promote the same manifest digest
-        run: |
-          image="${REGISTRY}/${IMAGE_NAME}"
-          source="${{ steps.candidate.outputs.image }}"
-          docker buildx imagetools create \
-            --tag "$image:${{ steps.release.outputs.version }}" \
-            --tag "$image:${{ steps.release.outputs.minor }}" \
-            --tag "$image:sha-${{ steps.release.outputs.merge_sha }}" \
-            --tag "$image:latest" \
-            "$source"
-          for tag in "${{ steps.release.outputs.version }}" "${{ steps.release.outputs.minor }}" "sha-${{ steps.release.outputs.merge_sha }}" latest; do
-            promoted="$(docker buildx imagetools inspect "$image:$tag" | awk '$1 == "Digest:" {print $2; exit}')"
-            test "$promoted" = "${{ steps.candidate.outputs.digest }}"
-          done
-      - name: Generate SPDX SBOM asset
+          sarif_file: trivy-release-world.sarif
+          category: trivy-release-world
+      - name: Upload Canada release scan
+        if: always() && hashFiles('trivy-release-canada.sarif') != ''
+        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          sarif_file: trivy-release-canada.sarif
+          category: trivy-release-canada
+      - name: Generate world SPDX SBOM asset
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
-          image: ${{ steps.candidate.outputs.image }}
+          image: ${{ steps.candidate.outputs.world_image }}
           format: spdx-json
-          output-file: /tmp/mc-cartolive-${{ steps.release.outputs.version }}.spdx.json
+          output-file: /tmp/mc-cartolive-${{ steps.release.outputs.version }}-world.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Generate Canada SPDX SBOM asset
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.candidate.outputs.canada_image }}
+          format: spdx-json
+          output-file: /tmp/mc-cartolive-${{ steps.release.outputs.version }}-canada.spdx.json
           upload-artifact: false
           upload-release-assets: false
       - name: Build deployment bundle and release manifest
         env:
-          RELEASE_IMAGE: ${{ steps.candidate.outputs.image }}
+          RELEASE_WORLD_IMAGE: ${{ steps.candidate.outputs.world_image }}
+          RELEASE_CANADA_IMAGE: ${{ steps.candidate.outputs.canada_image }}
           RELEASE_GIT_SHA: ${{ steps.release.outputs.merge_sha }}
           RELEASE_BUILD_TIME: ${{ steps.evidence.outputs.build_time }}
         run: |
@@ -298,16 +355,94 @@ jobs:
             "mc-cartolive-${{ steps.release.outputs.version }}"
           cp artifacts/release/release-manifest.json artifacts/release/assets/
           cp docs/public-api.openapi.json artifacts/release/assets/
-          cp docs/3.2.0/upgrade-and-rollback.md artifacts/release/assets/ROLLBACK.md
-          cp trivy-release.sarif artifacts/release/assets/
-          cp "/tmp/mc-cartolive-${{ steps.release.outputs.version }}.spdx.json" artifacts/release/assets/
+          cp "docs/${{ steps.release.outputs.version }}/upgrade-and-rollback.md" artifacts/release/assets/ROLLBACK.md
+          cp trivy-release-world.sarif trivy-release-canada.sarif artifacts/release/assets/
+          cp "/tmp/mc-cartolive-${{ steps.release.outputs.version }}-world.spdx.json" artifacts/release/assets/
+          cp "/tmp/mc-cartolive-${{ steps.release.outputs.version }}-canada.spdx.json" artifacts/release/assets/
       - name: Generate checksums
         working-directory: artifacts/release/assets
         run: sha256sum * > SHA256SUMS
+      - name: Verify complete release asset set before publication
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          MINOR: ${{ steps.release.outputs.minor }}
+          MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
+          WORLD_IMAGE: ${{ steps.candidate.outputs.world_image }}
+          CANADA_IMAGE: ${{ steps.candidate.outputs.canada_image }}
+        run: |
+          assets=artifacts/release/assets
+          test -s "$assets/mc-cartolive-$VERSION-deploy.tar.gz"
+          test -s "$assets/mc-cartolive-$VERSION-world.spdx.json"
+          test -s "$assets/mc-cartolive-$VERSION-canada.spdx.json"
+          test -s "$assets/trivy-release-world.sarif"
+          test -s "$assets/trivy-release-canada.sarif"
+          test -s "$assets/release-manifest.json"
+          test -s "$assets/public-api.openapi.json"
+          test -s "$assets/ROLLBACK.md"
+          test -s "$assets/SHA256SUMS"
+          (cd "$assets" && sha256sum -c SHA256SUMS)
+          tar -tzf "$assets/mc-cartolive-$VERSION-deploy.tar.gz" >/dev/null
+          jq -e '.spdxVersion | startswith("SPDX-")' "$assets/mc-cartolive-$VERSION-world.spdx.json" >/dev/null
+          jq -e '.spdxVersion | startswith("SPDX-")' "$assets/mc-cartolive-$VERSION-canada.spdx.json" >/dev/null
+          jq -e '.version == "2.1.0" and (.runs | length) > 0' "$assets/trivy-release-world.sarif" >/dev/null
+          jq -e '.version == "2.1.0" and (.runs | length) > 0' "$assets/trivy-release-canada.sarif" >/dev/null
+          jq -e --arg version "$VERSION" '.info.version == $version' "$assets/public-api.openapi.json" >/dev/null
+          jq -e \
+            --arg version "$VERSION" --arg minor "$MINOR" --arg sha "$MERGE_SHA" \
+            --arg worldImage "$WORLD_IMAGE" --arg canadaImage "$CANADA_IMAGE" \
+            '.version == $version and .gitSha == $sha and
+             .images.world.reference == $worldImage and .images.world.assetPack == "world" and
+             .images.world.tags == [$version,$minor,("sha-" + $sha),"latest"] and
+             .images.canada.reference == $canadaImage and .images.canada.assetPack == "canada" and
+             .images.canada.tags == [($version + "-canada"),($minor + "-canada"),("sha-" + $sha + "-canada"),"latest-canada"]' \
+            "$assets/release-manifest.json" >/dev/null
       - name: Attest release assets
         uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-path: artifacts/release/assets/*
+      - name: Preflight GitHub release creation
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          test -s "docs/$VERSION/release_notes.md"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME" --jq '.object.type')" = "tag"
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already exists; refusing to mutate public image aliases" >&2
+            exit 1
+          fi
+          # Prove the API/token is healthy so an absent release is not confused
+          # with a connectivity or authentication failure from the view above.
+          gh api "repos/$GITHUB_REPOSITORY" --jq '.full_name' | grep -Fx "$GITHUB_REPOSITORY"
+      - name: Promote exact world and Canada manifest digests
+        run: |
+          # This is deliberately the final step before creating the GitHub
+          # release: every build, smoke, scan, SBOM, bundle, checksum, and
+          # attestation prerequisite above must succeed before public aliases
+          # can change.
+          image="${REGISTRY}/${IMAGE_NAME}"
+          world_source="${{ steps.candidate.outputs.world_image }}"
+          canada_source="${{ steps.candidate.outputs.canada_image }}"
+          docker buildx imagetools create \
+            --tag "$image:${{ steps.release.outputs.version }}" \
+            --tag "$image:${{ steps.release.outputs.minor }}" \
+            --tag "$image:sha-${{ steps.release.outputs.merge_sha }}" \
+            --tag "$image:latest" \
+            "$world_source"
+          docker buildx imagetools create \
+            --tag "$image:${{ steps.release.outputs.version }}-canada" \
+            --tag "$image:${{ steps.release.outputs.minor }}-canada" \
+            --tag "$image:sha-${{ steps.release.outputs.merge_sha }}-canada" \
+            --tag "$image:latest-canada" \
+            "$canada_source"
+          for tag in "${{ steps.release.outputs.version }}" "${{ steps.release.outputs.minor }}" "sha-${{ steps.release.outputs.merge_sha }}" latest; do
+            promoted="$(docker buildx imagetools inspect "$image:$tag" | awk '$1 == "Digest:" {print $2; exit}')"
+            test "$promoted" = "${{ steps.candidate.outputs.world_digest }}"
+          done
+          for tag in "${{ steps.release.outputs.version }}-canada" "${{ steps.release.outputs.minor }}-canada" "sha-${{ steps.release.outputs.merge_sha }}-canada" latest-canada; do
+            promoted="$(docker buildx imagetools inspect "$image:$tag" | awk '$1 == "Digest:" {print $2; exit}')"
+            test "$promoted" = "${{ steps.candidate.outputs.canada_digest }}"
+          done
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -315,4 +450,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" artifacts/release/assets/* \
             --verify-tag \
             --title "MC-CartoLive ${{ steps.release.outputs.version }}" \
-            --notes-file docs/3.2.0/release_notes.md
+            --notes-file "docs/${{ steps.release.outputs.version }}/release_notes.md"

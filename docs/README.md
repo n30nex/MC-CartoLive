@@ -14,16 +14,25 @@ is preserved by version.
 | [Privacy model](privacy.md) | Private inputs, public outputs, route truth, and test expectations. |
 | [Roadmap](roadmap.md) | Current baseline and active 3.x direction. |
 
-## 3.2.0 Release Package
+## 3.2.1 Release Package
 
 | Document | Purpose |
 | --- | --- |
-| [Release notes](3.2.0/release_notes.md) | Product, compatibility, package, and hosted data-preservation summary. |
-| [Validation checklist](3.2.0/validation_checklist.md) | Fail-closed CI, candidate, load, cutover, and soak gates. |
-| [Upgrade and rollback](3.2.0/upgrade-and-rollback.md) | Digest cutover, transactional migration, and data-preserving rollback. |
-| [Storage and preservation](3.2.0/storage-and-fresh-start.md) | Backup boundary, optional destruction mode, retention, maintenance, and capacity. |
-| [Public API changes](3.2.0/public-api.md) | Bootstrap, cursor reset, clusters, and public health. |
-| [Security and operations](3.2.0/security-and-operations.md) | Firewall, proxy, metrics, alerts, supply chain, and secrets. |
+| [Release notes](3.2.1/release_notes.md) | Continuous live flow, backend stability, and world/Canada publication summary. |
+| [Validation checklist](3.2.1/validation_checklist.md) | Fail-closed source, browser, load, dual-image, cutover, soak, and publication gates. |
+| [Upgrade and rollback](3.2.1/upgrade-and-rollback.md) | Preserved Canada cutover, world image use, and digest rollback. |
+| [Storage and stability](3.2.1/storage-and-stability.md) | Writer priority, pressure behavior, retention, vacuum, and backfill controls. |
+| [Public API notes](3.2.1/public-api.md) | Sparse durable cursor and unsequenced live-fallback semantics. |
+| [Security and operations](3.2.1/security-and-operations.md) | Dual-image supply chain, host sandbox, metrics, alerts, and evidence. |
+| [Performance gate](3.2.1/performance-gate.md) | Exact load, queue, WebSocket, memory, API, and projection proof. |
+
+## 3.2.0 Release Archive And Errata
+
+| Document | Purpose |
+| --- | --- |
+| [Errata](3.2.0/errata.md) | Corrects hosted database mode, asset-pack publication, browser-gate, and source-identity claims. |
+| [Original release notes](3.2.0/release_notes.md) | Original tagged 3.2.0 record; superseded where the errata differs. |
+| [Original validation checklist](3.2.0/validation_checklist.md) | Preserved unchecked release checklist. |
 
 ## Unreleased 3.1 Candidate Archive
 

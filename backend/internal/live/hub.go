@@ -137,6 +137,19 @@ func (h *Hub) ServeHTTPWithClose(w http.ResponseWriter, r *http.Request, onClose
 
 func (h *Hub) Broadcast(event string, data any) {
 	env := h.eventEnvelope(event, data)
+	h.broadcastEnvelope(env)
+}
+
+// BroadcastUnsequenced sends a best-effort public event without inventing a
+// cursor in the durable public-events namespace. Internal callers should keep
+// using Broadcast, whose process-local sequence is part of the internal /ws
+// contract.
+func (h *Hub) BroadcastUnsequenced(event string, data any) {
+	env := h.unsequencedEventEnvelope(event, data)
+	h.broadcastEnvelope(env)
+}
+
+func (h *Hub) broadcastEnvelope(env Envelope) {
 	h.mu.Lock()
 	clients := make([]*client, 0, len(h.clients))
 	for c := range h.clients {
@@ -206,6 +219,23 @@ func (h *Hub) eventEnvelope(event string, data any) Envelope {
 		Type:       "event",
 		Event:      event,
 		Seq:        h.seq.Add(1),
+		Data:       data,
+		ServerTime: now,
+		ReceivedAt: now,
+		DisplayAt:  h.reserveDisplayAt(now),
+	}
+}
+
+func (h *Hub) unsequencedEventEnvelope(event string, data any) Envelope {
+	now := time.Now().UnixMilli()
+	return Envelope{
+		Version: 1,
+		Type:    "event",
+		Event:   event,
+		// Seq=0 is omitted on the wire. The durable latestSeq remains available
+		// for recovery without mislabeling this live-only fallback as retained.
+		Seq:        0,
+		LatestSeq:  h.LatestSeq(),
 		Data:       data,
 		ServerTime: now,
 		ReceivedAt: now,

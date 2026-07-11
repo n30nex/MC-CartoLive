@@ -1,5 +1,6 @@
 export interface PerfCounters {
   packetActiveComets: number;
+  packetActiveCometIDs: string[];
   packetActiveObserverBursts: number;
   packetFrameMs: number;
   packetSkippedFrames: number;
@@ -64,6 +65,7 @@ export function ensurePerfDiagnostics(): PerfCounters | null {
   if (existing) return existing;
   const counters: PerfCounters = {
     packetActiveComets: 0,
+    packetActiveCometIDs: [],
     packetActiveObserverBursts: 0,
     packetFrameMs: 0,
     packetSkippedFrames: 0,
@@ -140,10 +142,11 @@ export function recordRouteReducerDuration(ms: number): void {
   counters.routeReducerMs = Math.max(0, Math.round(ms * 10) / 10);
 }
 
-export function recordPacketFrame(activeComets: number, activeObserverBursts: number, frameMs: number): void {
+export function recordPacketFrame(activeComets: number, activeObserverBursts: number, frameMs: number, activeCometIDs: readonly string[] = []): void {
   const counters = ensurePerfDiagnostics();
   if (!counters) return;
   counters.packetActiveComets = activeComets;
+  counters.packetActiveCometIDs = [...new Set(activeCometIDs.filter(Boolean))].slice(-240);
   counters.packetActiveObserverBursts = activeObserverBursts;
   counters.packetFrameMs = Math.max(0, Math.round(frameMs * 10) / 10);
 }

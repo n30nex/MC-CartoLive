@@ -2,9 +2,10 @@
 
 ## Current baseline
 
-Version `3.2.0` is the supported reliability, fresh-storage, compact-bootstrap,
-accessible UI, and RF Replay Studio baseline. Unreleased 3.1 work was folded
-into 3.2; it is not an upgrade waypoint.
+Version `3.2.1` is the supported continuous-live-flow, bounded-storage,
+compact-bootstrap, accessible UI, RF Replay Studio, and dual world/Canada
+release baseline. Unreleased 3.1 work was folded into 3.2; it is not an upgrade
+waypoint.
 
 The supported shape remains one public-safe Go/React container with SQLite,
 high-confidence RF routes only, immutable release identity, and no raw/private
@@ -14,10 +15,12 @@ broker material in public HTTP or WebSocket data.
 
 - Keep the hosted Canada database inside its seven-day observation and 24-hour
   event windows.
+- Treat public event sequences as sparse monotonic cursors and keep the default
+  Watch view visibly live at low zoom.
 - Prove queue, WAL, cache, MQTT session, disk, and watchdog behavior through the
   24-hour and day-8/day-14 gates.
-- Keep production on the tested GHCR digest and prevent on-host builds or
-  branch-reset rollback.
+- Keep production on the tested Canada GHCR digest, generic tags on the world
+  digest, and prevent on-host builds or branch-reset rollback.
 - Keep RF Replay Studio/export lazy so the normal live map remains inside its
   initial-load and memory budgets.
 - Expand browser/accessibility coverage using synthetic public fixtures only.

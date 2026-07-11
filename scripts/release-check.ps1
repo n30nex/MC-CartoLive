@@ -136,7 +136,7 @@ try {
   } | Format-List
 
   if ($RunLiveSmoke) {
-    & (Join-Path $PSScriptRoot "live-smoke.ps1") -BaseUrl $LiveSmokeBaseUrl -MetricsUrl $MetricsUrl
+    & (Join-Path $PSScriptRoot "live-smoke.ps1") -BaseUrl $LiveSmokeBaseUrl
   }
 }
 finally {

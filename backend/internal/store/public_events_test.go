@@ -141,13 +141,16 @@ func TestPublicEventDedupeKeySuppressesAmbiguousRetry(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	event := live.PublicEvent{DedupeKey: "ingest:activity", Type: "activity", At: time.Now().UnixMilli(), Data: map[string]any{"id": "safe"}}
-	first, err := st.InsertPublicEvent(ctx, event)
+	first, firstInserted, err := st.InsertPublicEventOnce(ctx, event)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := st.InsertPublicEvent(ctx, event)
+	second, secondInserted, err := st.InsertPublicEventOnce(ctx, event)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !firstInserted || secondInserted {
+		t.Fatalf("inserted first/second=%v/%v want true/false", firstInserted, secondInserted)
 	}
 	if first.Seq != second.Seq {
 		t.Fatalf("event seq differs: %d != %d", first.Seq, second.Seq)

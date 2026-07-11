@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const releaseVersion = (await fs.readFile(path.join(repoRoot, 'VERSION'), 'utf8')).trim();
 const backendDir = path.join(repoRoot, 'backend');
 const artifactDir = path.join(repoRoot, 'artifacts', 'performance-gate');
 const profileName = argumentValue('--profile') ?? process.env.PERF_PROFILE ?? 'full';
@@ -17,7 +18,7 @@ if (!['full', 'smoke'].includes(profileName)) {
   throw new Error(`unsupported profile ${JSON.stringify(profileName)}; use full or smoke`);
 }
 if (process.env.GITHUB_ACTIONS !== 'true') {
-  throw new Error('the 3.2.0 performance gate is GitHub-Actions-only; dispatch the Release performance gate workflow');
+  throw new Error(`the ${releaseVersion} performance gate is GitHub-Actions-only; dispatch the Release performance gate workflow`);
 }
 
 const defaults = profileName === 'full'
@@ -102,7 +103,7 @@ const canonicalFullContext = {
   event: 'workflow_dispatch',
   workflow: 'Release performance gate',
 };
-const canonicalFullRefs = new Set(['refs/heads/main', 'refs/heads/codex/release-3.2.0']);
+const canonicalFullRefs = new Set(['refs/heads/main', `refs/heads/codex/release-${releaseVersion}`]);
 const fullContextDeviations = profileName === 'full'
   ? [
       ...Object.entries(canonicalFullContext)
@@ -116,7 +117,7 @@ const fullContextDeviations = profileName === 'full'
 const fullProofDeviations = [...fullConfigDeviations, ...fullContextDeviations];
 
 const report = {
-  version: '3.2.0',
+  version: releaseVersion,
   profile: profileName,
   canonicalReleaseProof: profileName === 'full' && fullProofDeviations.length === 0,
   startedAt: new Date().toISOString(),
@@ -235,9 +236,11 @@ async function runIngestPhase(label, rate, durationSeconds) {
       samples.push({ at, processRssBytes, ...metrics });
       const accepted = metric(metrics, 'meshcore_mqtt_messages_accepted_total');
       const processed = metric(metrics, 'meshcore_mqtt_messages_processed_total');
+      const derivedAccepted = metric(metrics, 'meshcore_derived_accepted_total');
+      const derivedProcessed = metric(metrics, 'meshcore_derived_processed_total');
       const derivedDepth = metric(metrics, 'meshcore_derived_queue_depth');
       if (accepted > 0 && firstAcceptedAt === 0) firstAcceptedAt = at;
-      if (accepted >= expected && processed >= expected && derivedDepth === 0) {
+      if (accepted >= expected && processed >= expected && derivedAccepted >= expected && derivedProcessed >= expected && derivedDepth === 0) {
         completedAt = at;
         finalMetrics = metrics;
         break;
@@ -278,8 +281,11 @@ async function runIngestPhase(label, rate, durationSeconds) {
     achievedRatePerSecond: achievedRate,
     acceptedMessages: metric(finalMetrics, 'meshcore_mqtt_messages_accepted_total'),
     processedMessages: metric(finalMetrics, 'meshcore_mqtt_messages_processed_total'),
+    derivedAccepted: metric(finalMetrics, 'meshcore_derived_accepted_total'),
+    derivedProcessed: metric(finalMetrics, 'meshcore_derived_processed_total'),
     primaryDrops: metric(finalMetrics, 'meshcore_mqtt_messages_dropped_total'),
     derivedDrops: metric(finalMetrics, 'meshcore_derived_dropped_total'),
+    derivedFailures: metric(finalMetrics, 'meshcore_derived_failures_total'),
     duplicateSuppressions: metric(finalMetrics, 'meshcore_ingest_duplicate_suppressions_total'),
     queueOldestP99Ms: percentile(oldest, 0.99),
     queueOccupancyMax: Math.max(0, ...occupancies),
@@ -300,12 +306,16 @@ async function runIngestPhase(label, rate, durationSeconds) {
   };
   check(result, result.acceptedMessages === expected, `accepted=${result.acceptedMessages}, want ${expected}`);
   check(result, result.processedMessages === expected, `processed=${result.processedMessages}, want ${expected}`);
+  check(result, result.derivedAccepted === expected, `derived accepted=${result.derivedAccepted}, want ${expected}`);
+  check(result, result.derivedProcessed === expected, `derived processed=${result.derivedProcessed}, want ${expected}`);
   check(result, result.primaryDrops === 0, `primary queue drops=${result.primaryDrops}`);
   check(result, result.derivedDrops === 0, `derived queue drops=${result.derivedDrops}`);
+  check(result, result.derivedFailures === 0, `derived projection failures=${result.derivedFailures}`);
   check(result, result.duplicateSuppressions === 0, `retry duplicate suppressions=${result.duplicateSuppressions}`);
   check(result, dbStats.observationRows === expected, `observation rows=${dbStats.observationRows}, want ${expected}`);
   check(result, dbStats.nonEmptyIngestIds === expected, `non-empty ingest IDs=${dbStats.nonEmptyIngestIds}, want ${expected}`);
   check(result, dbStats.uniqueIngestIds === expected, `unique ingest IDs=${dbStats.uniqueIngestIds}, want ${expected}`);
+  check(result, dbStats.publicEventRows >= expected, `public event rows=${dbStats.publicEventRows}, need at least ${expected}`);
   check(result, result.queueOldestP99Ms < 2000, `queue oldest p99=${result.queueOldestP99Ms}ms, must be <2000ms`);
   check(result, result.queueOccupancyMax < 0.75, `queue occupancy max=${result.queueOccupancyMax}, must be <0.75`);
   check(result, reportedPrimaryQueueCapacities.length === 1 && reportedPrimaryQueueCapacities[0] === config.mqttQueueCapacity, `reported primary queue capacities=${reportedPrimaryQueueCapacities.join(',')}, want ${config.mqttQueueCapacity}`);

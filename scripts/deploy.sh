@@ -21,6 +21,7 @@ EXPECTED_GIT_SHA=""
 CANDIDATE_RUN_ID=""
 CANDIDATE_RUN_ATTEMPT=""
 CANDIDATE_TAG=""
+CANDIDATE_ASSET_PACK=""
 FRESH_DATABASE=0
 CONFIRM_FRESH_DATABASE=""
 CONFIRM_TOKEN="DELETE-MC-CARTOLIVE-PRODUCTION-DATA"
@@ -101,6 +102,29 @@ esac
 [ -f "$COMPOSE_PATH" ] || die "Compose file does not exist: $COMPOSE_PATH"
 [ -f "$REPO/.env" ] || die "private runtime file is missing: $REPO/.env"
 [ -f "$REPO/VERSION" ] || die "VERSION is missing"
+release_version="$(tr -d '\r\n' < "$REPO/VERSION")"
+[[ "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "VERSION must contain a semantic release version"
+
+# Bind the staged source/package to the requested immutable image before any
+# data directory, deployment-state, container, or runtime mutation occurs.
+if command -v git >/dev/null 2>&1 && git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+	checkout_sha="$(git -C "$REPO" rev-parse HEAD)"
+	[ "$checkout_sha" = "$EXPECTED_GIT_SHA" ] || die "checkout HEAD $checkout_sha does not match expected release SHA $EXPECTED_GIT_SHA"
+	[ -z "$(git -C "$REPO" status --porcelain --untracked-files=normal)" ] || die "release checkout is not clean"
+else
+	manifest="$REPO/release-manifest.json"
+	[ -f "$manifest" ] || die "non-Git deployment package is missing release-manifest.json"
+	grep -Fq '"manifestVersion": 2' "$manifest" || die "deployment package manifest version is unsupported"
+	grep -Fq "\"version\": \"$release_version\"" "$manifest" || die "deployment package version does not match VERSION"
+	grep -Fq "\"gitSha\": \"$EXPECTED_GIT_SHA\"" "$manifest" || die "deployment package Git identity does not match expected release SHA"
+	awk -v image="$IMAGE" '
+		/^[[:space:]]+"canada":[[:space:]]*\{/ { in_canada=1; next }
+		in_canada && index($0, "\"reference\": \"" image "\"") { reference_matches=1 }
+		in_canada && /"assetPack":[[:space:]]*"canada"/ { asset_pack_matches=1 }
+		in_canada && /^    }[,]?$/ { exit }
+		END { exit !(reference_matches && asset_pack_matches) }
+	' "$manifest" || die "deployment package does not select the immutable Canada image"
+fi
 command -v docker >/dev/null 2>&1 || die "docker is required"
 docker compose version >/dev/null 2>&1 || die "docker compose v2 is required"
 command -v curl >/dev/null 2>&1 || die "curl is required"
@@ -237,7 +261,7 @@ delete_database() {
 sanitize_release_runtime_env() {
 	env_tmp="$REPO/.env.release.$$"
 	awk '
-		/^[[:space:]]*(export[[:space:]]+)?(APP_VERSION|GIT_SHA|BUILD_TIME|VITE_GIT_SHA|VITE_BUILD_TIME|DATA_RETENTION_DAYS|PUBLIC_EVENT_RETENTION_HOURS|ALLOW_UNBOUNDED_RETENTION)[[:space:]]*=/ { removed++; next }
+		/^[[:space:]]*(export[[:space:]]+)?(APP_VERSION|GIT_SHA|BUILD_TIME|VITE_GIT_SHA|VITE_BUILD_TIME|DATA_RETENTION_DAYS|PUBLIC_EVENT_RETENTION_HOURS|ALLOW_UNBOUNDED_RETENTION|SQLITE_BUSY_TIMEOUT_MS)[[:space:]]*=/ { removed++; next }
 		{ print }
 		END { if (removed > 0) printf "removed %d stale release/runtime override(s)\n", removed > "/dev/stderr" }
 	' "$REPO/.env" >"$env_tmp"
@@ -245,6 +269,7 @@ sanitize_release_runtime_env() {
 DATA_RETENTION_DAYS=7
 PUBLIC_EVENT_RETENTION_HOURS=24
 ALLOW_UNBOUNDED_RETENTION=false
+SQLITE_BUSY_TIMEOUT_MS=750
 EOF
 	chmod --reference="$REPO/.env" "$env_tmp" 2>/dev/null || chmod 0600 "$env_tmp"
 	mv -f "$env_tmp" "$REPO/.env"
@@ -378,12 +403,14 @@ verify_candidate_identity() {
 	CANDIDATE_RUN_ID="$(docker image inspect --format '{{ index .Config.Labels "org.mc-cartolive.candidate.workflow-run-id" }}' "$IMAGE")"
 	CANDIDATE_RUN_ATTEMPT="$(docker image inspect --format '{{ index .Config.Labels "org.mc-cartolive.candidate.workflow-run-attempt" }}' "$IMAGE")"
 	CANDIDATE_TAG="$(docker image inspect --format '{{ index .Config.Labels "org.mc-cartolive.candidate.tag" }}' "$IMAGE")"
+	CANDIDATE_ASSET_PACK="$(docker image inspect --format '{{ index .Config.Labels "org.mc-cartolive.asset-pack" }}' "$IMAGE")"
 	[ "$revision" = "$EXPECTED_GIT_SHA" ] || die "candidate OCI revision $revision does not match expected merge SHA $EXPECTED_GIT_SHA"
 	[ "$source" = "https://github.com/n30nex/MC-CartoLive" ] || die "candidate OCI source is not the release repository"
 	[ "$image_version" = "$version" ] || die "candidate OCI version $image_version does not match VERSION $version"
 	[[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || die "candidate OCI workflow run ID is missing or invalid"
 	[[ "$CANDIDATE_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || die "candidate OCI workflow run attempt is missing or invalid"
-	[ "$CANDIDATE_TAG" = "candidate-$EXPECTED_GIT_SHA-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT" ] || die "candidate OCI evidence tag does not match its merge SHA/run/attempt"
+	[ "$CANDIDATE_TAG" = "candidate-$EXPECTED_GIT_SHA-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT-canada" ] || die "candidate OCI evidence tag does not identify the hosted Canada build"
+	[ "$CANDIDATE_ASSET_PACK" = canada ] || die "candidate OCI asset pack is not Canada"
 }
 
 prepare_data_directory_for_image() {
@@ -508,6 +535,7 @@ MC_CARTOLIVE_DATABASE_MODE=$database_mode
 MC_CARTOLIVE_CANDIDATE_RUN_ID=$CANDIDATE_RUN_ID
 MC_CARTOLIVE_CANDIDATE_RUN_ATTEMPT=$CANDIDATE_RUN_ATTEMPT
 MC_CARTOLIVE_CANDIDATE_TAG=$CANDIDATE_TAG
+MC_CARTOLIVE_ASSET_PACK=$CANDIDATE_ASSET_PACK
 EOF
 chmod 0600 "$STATE_DIR/current.env"
 

@@ -28,8 +28,11 @@ docker compose -f docker-compose.production.yml pull
 docker compose -f docker-compose.production.yml up -d --no-build
 ```
 
-Tags `3.2.0`, `3.2`, and `latest` are convenience references. Deployment and
-rollback automation reject them because tags can move.
+Generic tags `3.2.1`, `3.2`, `sha-<main-sha>`, and `latest` identify the world
+asset pack. Canada tags are `3.2.1-canada`, `3.2-canada`,
+`sha-<main-sha>-canada`, and `latest-canada`. Deployment and rollback
+automation reject every tag and require the Canada image by full digest for
+`carto.canadaverse.org`.
 
 ## Private configuration
 
@@ -50,21 +53,26 @@ Do not add `APP_VERSION`, `GIT_SHA`, `BUILD_TIME`, `VITE_GIT_SHA`, or
 secret in a `VITE_*` variable because Vite variables are browser-visible.
 
 Production Compose fixes seven-day observations, 24-hour public events, and
-disables unbounded retention. It also uses a five-second SQLite busy deadline.
+disables unbounded retention. Each SQLite lock wait is 750 ms inside the single
+five-second primary-ingest budget.
 
-## First-party 3.2.0 cutover
+## First-party 3.2.1 upgrade
 
 The hosted release preserves and transactionally migrates the existing SQLite
 database. Before cutover, quiesce the writer and create a verified SQLite copy
 on separate block storage, snapshot it, and rehearse the migration against the
 volume copy. Follow
-[the exact upgrade/rollback procedure](3.2.0/upgrade-and-rollback.md) and
-[storage policy](3.2.0/storage-and-fresh-start.md).
+[the exact upgrade/rollback procedure](3.2.1/upgrade-and-rollback.md) and
+[storage policy](3.2.1/storage-and-stability.md).
 
 Deploy without `--fresh-database`; that flag and its deletion token remain an
-explicit recovery/operator tool, not the hosted 3.2.0 procedure. Migrations are
+explicit recovery/operator tool, not the hosted 3.2.1 procedure. Migrations are
 forward-only, additive, and transactional. Node.js 18 or newer is staged for
 the bundled credential-free privacy/WebSocket validation.
+
+The original hosted 3.2.0 cutover started a fresh schema-32000 database; later
+candidate deploys preserved it. The supported 3.2.1 upgrade preserves that
+running database. See the [3.2.0 erratum](3.2.0/errata.md).
 
 ## Readiness and dataset warming
 
@@ -93,7 +101,7 @@ checks. Forwarded headers are ignored unless both `TRUST_PROXY_HEADERS=true` and
 
 Install firewall/alerts before treating a deployment as complete. The required
 rules and thresholds are in
-[3.2.0 security and operations](3.2.0/security-and-operations.md). Keep SSH
+[3.2.1 security and operations](3.2.1/security-and-operations.md). Keep SSH
 key-only, verify a second session before restricting source ranges, and never
 publish port 39476.
 
@@ -107,6 +115,9 @@ curl -fsS http://127.0.0.1:39476/api/v1/public/bootstrap
 curl -fsS 'http://127.0.0.1:39476/api/v1/public/events?afterSeq=0&limit=25'
 node scripts/check-public-privacy.mjs http://127.0.0.1:39476 \
   --origin https://carto.canadaverse.org
+node scripts/websocket-flow-probe.mjs \
+  --url https://carto.canadaverse.org \
+  --origin https://carto.canadaverse.org --timeout-ms 60000 --require-event
 ```
 
 The event request must return HTTP 200 with `resetRequired=true`. Run

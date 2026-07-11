@@ -1,5 +1,5 @@
 // Command perfseed creates and inspects credential-free SQLite datasets for
-// the 3.2.0 release performance gate. It is not part of the production image.
+// the current release performance gate. It is not part of the production image.
 package main
 
 import (

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
+TEST_VERSION="$(tr -d '\r\n' < "$ROOT/VERSION")"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/app/data" "$tmp/deploy" "$tmp/state" "$tmp/results" "$tmp/watchdog"
@@ -20,7 +21,7 @@ while [ "$#" -gt 0 ]; do
 done
 case "$url" in
 	*/readyz)
-		printf '%s\n' '{"ready":true,"dbReady":true,"mqttSessionReady":true,"publicStateReady":true,"datasetState":"live","storagePressureState":"ok"}' >"$output"
+		printf '{"ready":true,"dbReady":true,"mqttSessionReady":true,"publicStateReady":true,"datasetState":"live","storagePressureState":"ok","version":"%s","gitSha":"%s"}\n' "$MOCK_READY_VERSION" "${MOCK_READY_GIT_SHA:-0123456789abcdef0123456789abcdef01234567}" >"$output"
 		;;
 	*/metrics)
 		cat >"$output" <<METRICS
@@ -39,6 +40,9 @@ meshcore_ingest_duplicate_suppressions_total 0
 meshcore_derived_queue_depth 0
 meshcore_derived_queue_oldest_item_age_ms 0
 meshcore_derived_dropped_total 0
+meshcore_derived_accepted_total 500
+meshcore_derived_processed_total 500
+meshcore_derived_failures_total 0
 meshcore_cache_refresh_failures_total 0
 meshcore_uptime_seconds 90000
 METRICS
@@ -96,7 +100,7 @@ cat >"$tmp/deploy/current.env" <<EOF
 MC_CARTOLIVE_IMAGE=ghcr.io/n30nex/mc-cartolive@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 MC_CARTOLIVE_PREVIOUS_IMAGE=ghcr.io/n30nex/mc-cartolive@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 MC_CARTOLIVE_DEPLOYED_AT=$deployed_at
-MC_CARTOLIVE_VERSION=3.2.0
+MC_CARTOLIVE_VERSION=$TEST_VERSION
 MC_CARTOLIVE_GIT_SHA=0123456789abcdef0123456789abcdef01234567
 MC_CARTOLIVE_DATABASE_MODE=preserved
 EOF
@@ -109,6 +113,7 @@ run_audit() {
 	MOCK_NOW_EPOCH="$now" \
 	MOCK_OBSERVATION_AGE_MS="$observation_age" \
 	MOCK_EVENT_AGE_MS="$event_age" \
+	MOCK_READY_VERSION="${MOCK_READY_VERSION:-$TEST_VERSION}" \
 	MC_CARTOLIVE_APP_DIR="$tmp/app" \
 	MC_CARTOLIVE_DEPLOY_CURRENT="$tmp/deploy/current.env" \
 	MC_CARTOLIVE_AUDIT_STATE_DIR="$tmp/state" \
@@ -119,10 +124,24 @@ run_audit() {
 	bash "$ROOT/scripts/post-release-audit.sh"
 }
 
+grep -qx 'CapabilityBoundingSet=CAP_DAC_READ_SEARCH' "$ROOT/deploy/systemd/mc-cartolive-release-audit.service"
+if grep -qx 'CapabilityBoundingSet=' "$ROOT/deploy/systemd/mc-cartolive-release-audit.service"; then
+	echo 'release audit service accidentally has an empty capability bounding set' >&2
+	exit 1
+fi
+
+# Readiness is not sufficient unless it identifies the deployed release.
+if MOCK_READY_VERSION=9.9.9 run_audit "$((deployed_epoch + 86460))" >/dev/null 2>&1; then
+	echo 'audit accepted a readiness response from a different release' >&2
+	exit 1
+fi
+identity_failure="$(find "$tmp/results" -name '*.24h.latest-failure.json' -print -quit)"
+jq -e '(.errors | index("ready_version_identity_mismatch") != null) and .readiness.versionMatchesDeployment == false' "$identity_failure" >/dev/null
+
 # The 24-hour evidence is written once and contains only aggregate fields.
 run_audit "$((deployed_epoch + 86460))"
 result_24h="$(find "$tmp/results" -name '*.24h.json' -print -quit)"
-jq -e '.passed == true and .phase == "24h" and .release.databaseMode == "preserved" and .filesystem.min24hFreeGiB == 9 and .filesystem.freeBytes >= 9 * 1024 * 1024 * 1024 and .filesystem.freeBytes < 25 * 1024 * 1024 * 1024' "$result_24h" >/dev/null
+jq -e '.passed == true and .phase == "24h" and .release.databaseMode == "preserved" and .readiness.versionMatchesDeployment == true and .readiness.gitShaMatchesDeployment == true and .filesystem.min24hFreeGiB == 9 and .filesystem.freeBytes >= 9 * 1024 * 1024 * 1024 and .filesystem.freeBytes < 25 * 1024 * 1024 * 1024' "$result_24h" >/dev/null
 
 # Day 8 rejects over-retention values and does not create a growth baseline.
 if run_audit "$((deployed_epoch + 691260))" 626400001 90000001 >/dev/null 2>&1; then
@@ -161,7 +180,7 @@ before="$(sha256sum "$result_day14")"
 run_audit "$((deployed_epoch + 1209660))"
 after="$(sha256sum "$result_day14")"
 [ "$before" = "$after" ]
-test "$(find "$tmp/results" -name '*.json' | wc -l)" -eq 3
+test "$(find "$tmp/results" -name '*.json' ! -name '*.latest-failure.json' | wc -l)" -eq 3
 if grep -R -q 'must-never-appear' "$tmp/results" "$tmp/state"; then
 	echo 'audit evidence contains a runtime secret' >&2
 	exit 1

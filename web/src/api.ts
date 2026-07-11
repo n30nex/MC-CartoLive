@@ -40,10 +40,10 @@ const PUBLIC_STATE_CACHE_WRITE_INTERVAL_MS = 60_000;
 let lastPublicStateCacheWriteAt = 0;
 let pendingPublicStateCacheWrite = false;
 
-async function getJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
+async function getJSON<T>(url: string, signal?: AbortSignal, cache?: RequestCache): Promise<T> {
   const request = withRequestTimeout(signal);
   try {
-    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: request.signal });
+    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: request.signal, cache });
     if (!res.ok) {
       throw new Error(`${res.status} ${res.statusText}`);
     }
@@ -75,7 +75,7 @@ export interface PublicStateFetchResult {
 }
 
 export function fetchPublicState(signal?: AbortSignal): Promise<PublicLiveState> {
-  return getJSON<PublicLiveState>('/api/v1/public/state', signal).then((response) => {
+  return getJSON<PublicLiveState>('/api/v1/public/state', signal, 'no-store').then((response) => {
     const state = sanitizePublicState(response);
     cachePublicStateSnapshot(state);
     return state;

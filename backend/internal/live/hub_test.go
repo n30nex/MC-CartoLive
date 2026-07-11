@@ -1,12 +1,45 @@
 package live
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http/httptest"
 	"testing"
 	"time"
 )
+
+func TestPublicFallbackEnvelopeIsExplicitlyUnsequenced(t *testing.T) {
+	hub := NewHub(slog.New(slog.NewTextHandler(io.Discard, nil)), 4)
+	hub.SetLatestSeq(12_345)
+	envelope := hub.unsequencedEventEnvelope("activity", map[string]any{"id": "live-fallback"})
+	if envelope.Seq != 0 || envelope.LatestSeq != 12_345 {
+		t.Fatalf("generic envelope seq/latest=%d/%d, want 0/12345", envelope.Seq, envelope.LatestSeq)
+	}
+	raw, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(raw, &document); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := document["seq"]; exists {
+		t.Fatalf("non-durable envelope exposed a sequence: %s", raw)
+	}
+	if document["latestSeq"] != float64(12_345) {
+		t.Fatalf("latest durable cursor missing from envelope: %s", raw)
+	}
+}
+
+func TestInternalBroadcastEnvelopeKeepsProcessLocalSequence(t *testing.T) {
+	hub := NewHub(slog.New(slog.NewTextHandler(io.Discard, nil)), 4)
+	first := hub.eventEnvelope("packetObservation", map[string]any{"id": "one"})
+	second := hub.eventEnvelope("edgeAnimation", map[string]any{"id": "two"})
+	if first.Seq <= 0 || second.Seq != first.Seq+1 {
+		t.Fatalf("internal envelope sequences=%d/%d, want positive consecutive values", first.Seq, second.Seq)
+	}
+}
 
 func TestWebsocketOriginAllowed(t *testing.T) {
 	allowedHosts := allowedOriginHosts([]string{"http://routes.canadaverse.org"})

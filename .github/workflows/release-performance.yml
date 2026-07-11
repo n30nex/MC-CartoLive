@@ -10,7 +10,7 @@ on:
       - "scripts/mc-cartolive-watchdog.sh"
       - "scripts/test-release-ops.sh"
       - ".github/workflows/release-performance.yml"
-      - "docs/3.2.0/performance-gate.md"
+      - "docs/**/performance-gate.md"
   workflow_dispatch:
     inputs:
       profile:
@@ -48,7 +48,7 @@ concurrency:
 
 jobs:
   performance:
-    name: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'smoke' }} load proof
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.profile == 'full' && 'Canonical full release performance proof' || 'Release performance smoke proof' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -74,8 +74,10 @@ jobs:
         if: env.PERF_PROFILE == 'full'
         run: |
           test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          release_version="$(tr -d '\r\n' < VERSION)"
+          release_ref="refs/heads/codex/release-$release_version"
           case "$GITHUB_REF" in
-            refs/heads/main|refs/heads/codex/release-3.2.0) ;;
+            refs/heads/main|"$release_ref") ;;
             *) echo "full proof refused for $GITHUB_REF" >&2; exit 1 ;;
           esac
           test "$GITHUB_REPOSITORY" = "n30nex/MC-CartoLive"

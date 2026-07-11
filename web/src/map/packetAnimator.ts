@@ -381,7 +381,7 @@ export class PacketAnimator {
         this.canvasHasContent = false;
       }
       this.forceNextFrame = false;
-      recordPacketFrame(0, 0, performance.now() - frameStart);
+      recordPacketFrame(0, 0, performance.now() - frameStart, []);
       return;
     }
 
@@ -413,7 +413,12 @@ export class PacketAnimator {
     } else if (hasResidue) {
       this.requestFrame(RESIDUE_IDLE_FRAME_INTERVAL_MS);
     }
-    recordPacketFrame(this.pulses.length, this.observerBursts.length, performance.now() - frameStart);
+    recordPacketFrame(
+      this.pulses.length,
+      this.observerBursts.length,
+      performance.now() - frameStart,
+      this.pulses.map(({ pulse }) => pulse.id)
+    );
   }
 
   private pruneResidue(now: number) {

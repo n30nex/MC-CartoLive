@@ -114,6 +114,10 @@ mqtt_session_ready=false
 db_ready=false
 cache_state=unknown
 public_state_ready=false
+ready_version=""
+ready_git_sha=""
+ready_version_matches=false
+ready_git_sha_matches=false
 if jq -e 'type == "object"' "$ready_file" >/dev/null 2>&1; then
 	ready="$(jq -r '.ready == true' "$ready_file")"
 	dataset_state="$(jq -r '.datasetState // "unknown" | tostring' "$ready_file")"
@@ -121,6 +125,10 @@ if jq -e 'type == "object"' "$ready_file" >/dev/null 2>&1; then
 	mqtt_session_ready="$(jq -r '.mqttSessionReady == true' "$ready_file")"
 	db_ready="$(jq -r '.dbReady == true' "$ready_file")"
 	public_state_ready="$(jq -r '.publicStateReady == true' "$ready_file")"
+	ready_version="$(jq -r '.version // "" | tostring' "$ready_file")"
+	ready_git_sha="$(jq -r '.gitSha // "" | tostring' "$ready_file")"
+	if [ "$ready_version" = "$version" ]; then ready_version_matches=true; fi
+	if [ "$ready_git_sha" = "$git_sha" ]; then ready_git_sha_matches=true; fi
 	if [ "$public_state_ready" = true ]; then cache_state=ready; else cache_state=unready; fi
 else
 	add_common_error ready_response_invalid
@@ -129,6 +137,8 @@ fi
 [ "$db_ready" = true ] || add_common_error database_not_ready
 [ "$mqtt_session_ready" = true ] || add_common_error mqtt_session_not_ready
 [ "$public_state_ready" = true ] || add_common_error public_state_not_ready
+[ "$ready_version_matches" = true ] || add_common_error ready_version_identity_mismatch
+[ "$ready_git_sha_matches" = true ] || add_common_error ready_git_identity_mismatch
 case "$storage_state" in ok) ;; warn|critical) add_common_error storage_pressure_not_ok ;; *) storage_state=unknown; add_common_error storage_pressure_invalid ;; esac
 case "$dataset_state" in fresh_start|warming|live) ;; *) dataset_state=unknown; add_common_error dataset_state_invalid ;; esac
 
@@ -155,6 +165,9 @@ duplicate_total="$(uint_metric meshcore_ingest_duplicate_suppressions_total)"
 derived_depth="$(uint_metric meshcore_derived_queue_depth)"
 derived_age_ms="$(uint_metric meshcore_derived_queue_oldest_item_age_ms)"
 derived_dropped_total="$(uint_metric meshcore_derived_dropped_total)"
+derived_accepted_total="$(uint_metric meshcore_derived_accepted_total)"
+derived_processed_total="$(uint_metric meshcore_derived_processed_total)"
+derived_failures_total="$(uint_metric meshcore_derived_failures_total)"
 cache_failures_total="$(uint_metric meshcore_cache_refresh_failures_total)"
 uptime_seconds="$(uint_metric meshcore_uptime_seconds)"
 [ "$mqtt_ready_metric" -eq 1 ] || add_common_error mqtt_session_metric_not_ready
@@ -162,10 +175,13 @@ uptime_seconds="$(uint_metric meshcore_uptime_seconds)"
 [ "$derived_age_ms" -le 2000 ] || add_common_error derived_queue_oldest_over_2s
 [ "$write_latency_ms" -le 5000 ] || add_common_error sqlite_write_latency_over_5s
 [ "$dropped_total" -eq 0 ] || add_common_error primary_queue_drops_detected
+[ "$processed_total" -le "$accepted_total" ] || add_common_error primary_processed_exceeds_accepted
 [ "$write_failures_total" -eq 0 ] || add_common_error sqlite_write_failures_detected
 [ "$full_errors_total" -eq 0 ] || add_common_error sqlite_full_errors_detected
 [ "$busy_errors_total" -eq 0 ] || add_common_error sqlite_busy_failures_detected
 [ "$derived_dropped_total" -eq 0 ] || add_common_error derived_queue_drops_detected
+[ "$derived_processed_total" -le "$derived_accepted_total" ] || add_common_error derived_processed_exceeds_accepted
+[ "$derived_failures_total" -eq 0 ] || add_common_error derived_projection_failures_detected
 [ "$cache_failures_total" -eq 0 ] || add_common_error cache_refresh_failures_detected
 
 quick_check=unavailable
@@ -316,6 +332,7 @@ write_phase_result() {
 		--arg containerStatus "$container_status" --arg quickCheck "$quick_check" --arg foreignKeyCheck "$foreign_key_check" \
 		--argjson passed "$passed" --argjson errors "$errors_json" --argjson deploymentAgeSeconds "$deployment_age" \
 		--argjson ready "$ready" --argjson dbReady "$db_ready" --argjson mqttSessionReady "$mqtt_session_ready" --argjson publicStateReady "$public_state_ready" \
+		--argjson versionMatches "$ready_version_matches" --argjson gitShaMatches "$ready_git_sha_matches" \
 		--argjson schemaVersion "$schema_version" --argjson observationAgeMs "$observation_age_json" \
 		--argjson publicEventAgeMs "$event_age_json" --argjson databaseBytes "$database_bytes" \
 		--argjson walBytes "$wal_bytes" --argjson databaseAndWalBytes "$database_and_wal_bytes" \
@@ -328,10 +345,11 @@ write_phase_result() {
 		--argjson writeLatencyMs "$write_latency_ms" --argjson duplicateSuppressions "$duplicate_total" \
 		--argjson derivedDepth "$derived_depth" --argjson derivedOldestAgeMs "$derived_age_ms" \
 		--argjson derivedDropped "$derived_dropped_total" --argjson cacheFailures "$cache_failures_total" \
+		--argjson derivedAccepted "$derived_accepted_total" --argjson derivedProcessed "$derived_processed_total" --argjson derivedFailures "$derived_failures_total" \
 		--argjson uptimeSeconds "$uptime_seconds" --argjson containerRestarts "$container_restarts" --argjson containerIdentityMatches "$container_identity_matches" \
 		--argjson containerOOM "$container_oom_json" --argjson watchdogTimerActive "$watchdog_timer_active" \
 		--argjson watchdogFailures "$watchdog_failures" --argjson watchdogRecentRestarts "$watchdog_recent_restarts" \
-		'{formatVersion:1,phase:$phase,completedAt:$completedAt,passed:$passed,errors:$errors,release:{version:$version,gitSha:$gitSha,imageDigest:$imageDigest,deployedAt:$deployedAt,deploymentAgeSeconds:$deploymentAgeSeconds,databaseMode:$databaseMode},readiness:{ready:$ready,dbReady:$dbReady,mqttSessionReady:$mqttSessionReady,publicStateReady:$publicStateReady,datasetState:$datasetState,storagePressureState:$storageState,publicCacheState:$cacheState},database:{schemaVersion:$schemaVersion,quickCheck:$quickCheck,foreignKeyCheck:$foreignKeyCheck,oldestObservationAgeMs:$observationAgeMs,oldestPublicEventAgeMs:$publicEventAgeMs,databaseBytes:$databaseBytes,walBytes:$walBytes,databaseAndWalBytes:$databaseAndWalBytes,day8BaselineBytes:$baselineBytes,growthBasisPoints:$growthBasisPoints},filesystem:{freeBytes:$freeBytes,freePercent:$freePercent,min24hFreeGiB:$min24hFreeGiB},ingest:{queueDepth:$queueDepth,queueOldestItemAgeMs:$queueOldestAgeMs,acceptedTotal:$accepted,processedTotal:$processed,droppedTotal:$dropped,writeRetriesTotal:$writeRetries,writeFailuresTotal:$writeFailures,fullErrorsTotal:$fullErrors,busyErrorsTotal:$busyErrors,lastWriteLatencyMs:$writeLatencyMs,duplicateSuppressionsTotal:$duplicateSuppressions,derivedQueueDepth:$derivedDepth,derivedQueueOldestItemAgeMs:$derivedOldestAgeMs,derivedDroppedTotal:$derivedDropped,cacheRefreshFailuresTotal:$cacheFailures},process:{uptimeSeconds:$uptimeSeconds,containerStatus:$containerStatus,containerRestartCount:$containerRestarts,containerIdentityMatches:$containerIdentityMatches,oomKilled:$containerOOM},watchdog:{timerActive:$watchdogTimerActive,pendingFailures:$watchdogFailures,restartsInLastSixHours:$watchdogRecentRestarts}}' >"$result_tmp"
+		'{formatVersion:1,phase:$phase,completedAt:$completedAt,passed:$passed,errors:$errors,release:{version:$version,gitSha:$gitSha,imageDigest:$imageDigest,deployedAt:$deployedAt,deploymentAgeSeconds:$deploymentAgeSeconds,databaseMode:$databaseMode},readiness:{ready:$ready,dbReady:$dbReady,mqttSessionReady:$mqttSessionReady,publicStateReady:$publicStateReady,versionMatchesDeployment:$versionMatches,gitShaMatchesDeployment:$gitShaMatches,datasetState:$datasetState,storagePressureState:$storageState,publicCacheState:$cacheState},database:{schemaVersion:$schemaVersion,quickCheck:$quickCheck,foreignKeyCheck:$foreignKeyCheck,oldestObservationAgeMs:$observationAgeMs,oldestPublicEventAgeMs:$publicEventAgeMs,databaseBytes:$databaseBytes,walBytes:$walBytes,databaseAndWalBytes:$databaseAndWalBytes,day8BaselineBytes:$baselineBytes,growthBasisPoints:$growthBasisPoints},filesystem:{freeBytes:$freeBytes,freePercent:$freePercent,min24hFreeGiB:$min24hFreeGiB},ingest:{queueDepth:$queueDepth,queueOldestItemAgeMs:$queueOldestAgeMs,acceptedTotal:$accepted,processedTotal:$processed,droppedTotal:$dropped,writeRetriesTotal:$writeRetries,writeFailuresTotal:$writeFailures,fullErrorsTotal:$fullErrors,busyErrorsTotal:$busyErrors,lastWriteLatencyMs:$writeLatencyMs,duplicateSuppressionsTotal:$duplicateSuppressions,derivedQueueDepth:$derivedDepth,derivedQueueOldestItemAgeMs:$derivedOldestAgeMs,derivedAcceptedTotal:$derivedAccepted,derivedProcessedTotal:$derivedProcessed,derivedDroppedTotal:$derivedDropped,derivedFailuresTotal:$derivedFailures,cacheRefreshFailuresTotal:$cacheFailures},process:{uptimeSeconds:$uptimeSeconds,containerStatus:$containerStatus,containerRestartCount:$containerRestarts,containerIdentityMatches:$containerIdentityMatches,oomKilled:$containerOOM},watchdog:{timerActive:$watchdogTimerActive,pendingFailures:$watchdogFailures,restartsInLastSixHours:$watchdogRecentRestarts}}' >"$result_tmp"
 	chmod 0600 "$result_tmp"
 	if [ "$passed" = true ]; then
 		mv -f "$result_tmp" "$(phase_result "$phase")"
