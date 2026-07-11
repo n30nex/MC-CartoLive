@@ -86,20 +86,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Promote exact manifest digest
-        run: |
-          source="$IMAGE@$RELEASE_DIGEST"
-          docker buildx imagetools create \
-            --tag "$IMAGE:$RELEASE_VERSION" \
-            --tag "$IMAGE:3.2" \
-            --tag "$IMAGE:sha-$RELEASE_SHA" \
-            --tag "$IMAGE:latest" \
-            "$source"
-          for tag in "$RELEASE_VERSION" 3.2 "sha-$RELEASE_SHA" latest; do
-            actual="$(docker buildx imagetools inspect "$IMAGE:$tag" | awk '$1 == "Digest:" {print $2; exit}')"
-            test "$actual" = "$RELEASE_DIGEST"
-          done
-
       - name: Re-scan exact candidate
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -139,6 +125,20 @@ jobs:
         uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-path: artifacts/release/assets/*
+
+      - name: Promote exact manifest digest
+        run: |
+          source="$IMAGE@$RELEASE_DIGEST"
+          docker buildx imagetools create \
+            --tag "$IMAGE:$RELEASE_VERSION" \
+            --tag "$IMAGE:3.2" \
+            --tag "$IMAGE:sha-$RELEASE_SHA" \
+            --tag "$IMAGE:latest" \
+            "$source"
+          for tag in "$RELEASE_VERSION" 3.2 "sha-$RELEASE_SHA" latest; do
+            actual="$(docker buildx imagetools inspect "$IMAGE:$tag" | awk '$1 == "Digest:" {print $2; exit}')"
+            test "$actual" = "$RELEASE_DIGEST"
+          done
 
       - name: Publish GitHub release
         env:
