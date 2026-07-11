@@ -169,6 +169,12 @@ func (a *Application) derivedWorkPaused() bool {
 	return derivedWorkPausedFor(mqttStatus, a.Store.StorageInfo().PressureState)
 }
 
-func derivedWorkPausedFor(status imqtt.Status, storagePressure string) bool {
-	return (status.QueueCapacity > 0 && status.QueueDepth*2 >= status.QueueCapacity) || storagePressure == "warn" || storagePressure == "critical"
+func derivedWorkPausedFor(_ imqtt.Status, storagePressure string) bool {
+	// The projection worker must keep making progress while primary ingest is
+	// busy. Pausing it based on primary queue depth lets accepted observations
+	// fill the derived queue and creates permanent public-map holes. Both paths
+	// already share the single SQLite writer and bounded write budgets; release
+	// gates assert zero drops and accepted==processed. Only critical filesystem
+	// pressure remains a fail-closed pause.
+	return storagePressure == "critical"
 }

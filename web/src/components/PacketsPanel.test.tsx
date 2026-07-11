@@ -13,7 +13,6 @@ describe('PacketsPanel', () => {
         onClose={() => undefined}
         onExpand={() => undefined}
         onPresentationChange={() => undefined}
-        onResumeLive={() => undefined}
         onSelectPacket={() => undefined}
         onReplayPacket={() => undefined}
       />
@@ -54,14 +53,13 @@ describe('PacketsPanel', () => {
         }}
         onClose={() => undefined}
         onExpand={() => undefined}
-        onResumeLive={() => undefined}
         onSelectPacket={() => undefined}
         onReplayPacket={() => undefined}
       />
     );
-    expect(html).toContain('Packet replay');
-    expect(html).toContain('Replay again');
-    expect(html).toContain('Resume live');
+    expect(html).toContain('Packet path');
+    expect(html).toContain('Animate again');
+    expect(html).not.toContain('Resume live');
   });
 
   it('explains bounded packet scans without private wording', () => {

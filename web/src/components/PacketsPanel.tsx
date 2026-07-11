@@ -22,7 +22,6 @@ interface PacketsPanelProps {
   onClose: () => void;
   onExpand: () => void;
   onPresentationChange?: (presentation: WorkspacePresentation) => void;
-  onResumeLive: () => void;
   onSelectPacket: (packet: PublicPacketPath) => void;
   onReplayPacket: (packet: PublicPacketPath) => void;
 }
@@ -42,7 +41,6 @@ export default function PacketsPanel({
   onClose,
   onExpand,
   onPresentationChange,
-  onResumeLive,
   onSelectPacket,
   onReplayPacket
 }: PacketsPanelProps) {
@@ -203,9 +201,9 @@ export default function PacketsPanel({
 
   if (mode === 'compactTray') {
     return (
-      <section className="packets-compact-tray" aria-label="Selected packet replay">
+      <section className="packets-compact-tray" aria-label="Selected packet animation">
         <div className="packets-tray-summary">
-          <span className="panel-eyebrow">Packet replay</span>
+          <span className="panel-eyebrow">Packet path</span>
           <strong>{activePacket ? packetEndpointSummary(activePacket) : 'No packet selected'}</strong>
           {activePacket && <small>{activePacket.hopCount} hops / {activePacket.distanceKm.toFixed(1)} km / {formatRelative(activePacket.at)}</small>}
         </div>
@@ -213,9 +211,8 @@ export default function PacketsPanel({
           <button type="button" onClick={onExpand}>Expand</button>
           <button type="button" disabled={!activePacket} onClick={() => activePacket && onReplayPacket(activePacket)}>
             <Play size={14} />
-            Replay again
+            Animate again
           </button>
-          <button type="button" onClick={onResumeLive}>Resume live</button>
           <button type="button" className="icon-button" title="Close packets" onClick={onClose}>
             <X size={16} />
           </button>

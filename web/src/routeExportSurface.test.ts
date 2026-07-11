@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { onceReplayExportCleanup } from './replayExportSurface';
+import { onceRouteExportCleanup } from './routeExportSurface';
 
-describe('temporary replay export surfaces', () => {
+describe('temporary route export surfaces', () => {
   it('removes temporary maps, canvases, and their listeners exactly once', () => {
     const removeMapAndListeners = vi.fn();
     const removeContainer = vi.fn();
-    const cleanup = onceReplayExportCleanup(() => {
+    const cleanup = onceRouteExportCleanup(() => {
       removeMapAndListeners();
       removeContainer();
     });

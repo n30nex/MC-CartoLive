@@ -48,7 +48,8 @@ func TestDedicatedMetricsUsesListenerBoundary(t *testing.T) {
 
 func TestDetailedMetricsReportConfiguredQueueCapacities(t *testing.T) {
 	runtimeStats := live.NewRuntimeStats()
-	runtimeStats.UpdateDerivedQueue(0, 1024, 0)
+	runtimeStats.RecordDerivedEnqueue(1, 1024, time.Now().UnixMilli())
+	runtimeStats.RecordDerivedProcessed(time.Millisecond, false, 0, 1024, 0)
 	server := &Server{
 		Runtime: runtimeStats,
 		MQTTStatus: func(time.Time) imqtt.Status {
@@ -62,6 +63,10 @@ func TestDetailedMetricsReportConfiguredQueueCapacities(t *testing.T) {
 	for _, metric := range []string{
 		"meshcore_mqtt_queue_capacity 4096",
 		"meshcore_derived_queue_capacity 1024",
+		"meshcore_derived_accepted_total 1",
+		"meshcore_derived_processed_total 1",
+		"meshcore_derived_dropped_total 0",
+		"meshcore_derived_failures_total 0",
 	} {
 		if !strings.Contains(body, metric) {
 			t.Fatalf("metrics missing %q: %s", metric, body)

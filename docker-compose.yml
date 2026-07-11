@@ -4,7 +4,7 @@ services:
     build:
       context: .
       args:
-        APP_VERSION: ${APP_VERSION:-3.2.0}
+        APP_VERSION: ${APP_VERSION:-3.2.1}
         VITE_OPENFREEMAP_STYLE_URL: ${VITE_OPENFREEMAP_STYLE_URL:-}
         VITE_OPENFREEMAP_TILEJSON_URL: ${VITE_OPENFREEMAP_TILEJSON_URL:-https://tiles.openfreemap.org/planet}
         VITE_TERRAIN_TILE_URL: ${VITE_TERRAIN_TILE_URL:-https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png}

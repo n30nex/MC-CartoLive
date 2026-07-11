@@ -4,6 +4,33 @@ This changelog records the public release history at a useful level of detail.
 Detailed patch-by-patch investigation notes and temporary planning material live
 in Git history, not in the active documentation set.
 
+## 3.2.1 - 2026-07-11
+
+- Restored continuous public traffic flow by accepting sparse monotonic event
+  cursors, preserving durable reconnect semantics, and rendering unsequenced
+  fallback events without corrupting the resume cursor.
+- Restored visible low-zoom Watch motion with live comets and cluster activity,
+  including a migration for unmodified saved map settings.
+- Kept derived projection moving through storage-warning and primary-queue
+  pressure, and serialized quiet-window-gated historical backfills so optional
+  recovery work cannot monopolize the single SQLite writer.
+- Hardened public cache reconciliation and live fallback behavior against
+  concurrent updates and persistence failures.
+- Bounded long-running map dedupe state, disposed queued map-source work on
+  teardown, and periodically refreshed route freshness without redraw churn.
+- Removed the Timeline/VCR and RF Replay Studio surfaces so historical playback
+  can no longer replace the current live stream. Direct packet-path map
+  animation remains available from sanitized packet records without pausing
+  current traffic.
+- Made desktop/mobile browser smoke and active-flow soak fail-closed release
+  evidence; made the privacy scanner honor bounded `Retry-After` responses after
+  browser load; repaired the sandboxed post-release audit and remote metrics path.
+- Replaced 3.2.0-specific/one-off release automation with version-derived,
+  immutable dual-image publication: generic world tags and separate Canada
+  tags/digest for the hosted droplet.
+- Added truthful 3.2.0 errata, 3.2.1 release/rollback/storage/security/API/load
+  documentation, and exact world/Canada release-manifest evidence.
+
 ## 3.2.0 - 2026-07-10
 
 - Added RF Replay Studio, compact/accessibility-focused controls, reduced-motion

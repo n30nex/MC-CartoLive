@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -81,6 +82,122 @@ func TestPublicCacheLiveUpdatesAdvanceSnapshotSequenceMonotonically(t *testing.T
 	}
 	if snapshot.Stats.LatestSeq != 13 {
 		t.Fatalf("latestSeq=%d want 13", snapshot.Stats.LatestSeq)
+	}
+}
+
+func TestPublicCacheReconcilePreservesConcurrentLiveMutations(t *testing.T) {
+	cache := NewPublicStateCache(NewPublicIATAFilter(nil))
+	cache.Replace(PublicLiveState{
+		ServerTime: 100,
+		Stats:      PublicStats{LatestSeq: 10, Packets: 10},
+		Nodes:      []PublicNode{{ID: "node-existing", LastSeen: 100}},
+	}, nil)
+	reconcileGeneration := cache.MutationGeneration()
+
+	cache.ApplyNode(PublicNode{ID: "node-live", Seq: 11, LastSeen: 200})
+	cache.ApplyActivity(PublicActivity{ID: "activity-live", Kind: "packet", Seq: 12, HeardAt: 200})
+	cache.ApplyRoutePulse(PublicRoutePulse{ID: "pulse-live", Seq: 13, HeardAt: 200})
+
+	preserved := cache.ReplacePreservingMutations(PublicLiveState{
+		ServerTime: 150,
+		Stats:      PublicStats{LatestSeq: 10, Packets: 10},
+		Nodes:      []PublicNode{{ID: "node-existing", LastSeen: 150}},
+		Routes:     []PublicRoute{{ID: "route-from-database"}},
+		RecentActivity: []PublicActivity{
+			{ID: "activity-from-database", Kind: "packet", HeardAt: 150},
+		},
+	}, nil, reconcileGeneration)
+	if !preserved {
+		t.Fatal("reconcile did not detect concurrent live mutations")
+	}
+	snapshot, ok := cache.Snapshot()
+	if !ok {
+		t.Fatal("cache should remain ready")
+	}
+	if snapshot.Stats.LatestSeq != 13 || snapshot.ServerTime != 200 {
+		t.Fatalf("latest/server=%d/%d, want 13/200", snapshot.Stats.LatestSeq, snapshot.ServerTime)
+	}
+	if len(snapshot.Nodes) != 2 || snapshot.Nodes[0].ID != "node-live" {
+		t.Fatalf("concurrent node was erased or misordered: %#v", snapshot.Nodes)
+	}
+	if len(snapshot.RecentActivity) != 2 || snapshot.RecentActivity[0].ID != "activity-live" {
+		t.Fatalf("concurrent activity was erased or misordered: %#v", snapshot.RecentActivity)
+	}
+	if len(snapshot.RecentPulses) != 1 || snapshot.RecentPulses[0].ID != "pulse-live" {
+		t.Fatalf("concurrent pulse was erased: %#v", snapshot.RecentPulses)
+	}
+	if len(snapshot.Routes) != 1 || snapshot.Routes[0].ID != "route-from-database" {
+		t.Fatalf("fresh database routes were not reconciled: %#v", snapshot.Routes)
+	}
+}
+
+func TestPublicCacheReconcileDoesNotResurrectUnrelatedStaleState(t *testing.T) {
+	cache := NewPublicStateCache(NewPublicIATAFilter(nil))
+	cache.Replace(PublicLiveState{
+		Stats:        PublicStats{LatestSeq: 20, Packets: 20},
+		Nodes:        []PublicNode{{ID: "node-expired", LastSeen: 100}},
+		RecentPulses: []PublicRoutePulse{{ID: "pulse-expired", HeardAt: 100}},
+	}, nil)
+	reconcileGeneration := cache.MutationGeneration()
+
+	cache.ApplyActivity(PublicActivity{ID: "activity-live", Kind: "packet", Seq: 21, HeardAt: 200})
+	cache.ReplacePreservingMutations(PublicLiveState{
+		Stats: PublicStats{LatestSeq: 20, Packets: 20},
+		Nodes: []PublicNode{{ID: "node-current", LastSeen: 150}},
+	}, nil, reconcileGeneration)
+
+	snapshot, ok := cache.Snapshot()
+	if !ok {
+		t.Fatal("cache should remain ready")
+	}
+	if len(snapshot.Nodes) != 1 || snapshot.Nodes[0].ID != "node-current" {
+		t.Fatalf("unrelated mutation resurrected an expired node: %#v", snapshot.Nodes)
+	}
+	if len(snapshot.RecentPulses) != 0 {
+		t.Fatalf("unrelated mutation resurrected expired pulses: %#v", snapshot.RecentPulses)
+	}
+	if len(snapshot.RecentActivity) != 1 || snapshot.RecentActivity[0].ID != "activity-live" {
+		t.Fatalf("racing activity was not preserved: %#v", snapshot.RecentActivity)
+	}
+}
+
+func TestPublicCacheReconcilePreservesAuthoritativePacketCountDecrease(t *testing.T) {
+	cache := NewPublicStateCache(NewPublicIATAFilter(nil))
+	cache.Replace(PublicLiveState{Stats: PublicStats{Packets: 120}}, nil)
+	reconcileGeneration := cache.MutationGeneration()
+
+	cache.SetPacketCount(80)
+	cache.ReplacePreservingMutations(PublicLiveState{Stats: PublicStats{Packets: 100}}, nil, reconcileGeneration)
+
+	snapshot, ok := cache.Snapshot()
+	if !ok {
+		t.Fatal("cache should remain ready")
+	}
+	if snapshot.Stats.Packets != 80 {
+		t.Fatalf("packet count=%d, want authoritative concurrent count 80", snapshot.Stats.Packets)
+	}
+}
+
+func TestPublicCacheMutationJournalStaysBoundedWithoutReconciliation(t *testing.T) {
+	cache := NewPublicStateCache(NewPublicIATAFilter(nil))
+	cache.Replace(PublicLiveState{}, nil)
+
+	for index := 0; index < publicCacheMaxNodes+100; index++ {
+		cache.ApplyNode(PublicNode{ID: fmt.Sprintf("node-%d", index), LastSeen: int64(index)})
+	}
+	for index := 0; index < publicCacheMaxActivity+100; index++ {
+		cache.ApplyActivity(PublicActivity{ID: fmt.Sprintf("activity-%d", index), HeardAt: int64(index)})
+	}
+	for index := 0; index < publicCacheMaxPulses+100; index++ {
+		cache.ApplyRoutePulse(PublicRoutePulse{ID: fmt.Sprintf("pulse-%d", index), HeardAt: int64(index)})
+	}
+
+	cache.mu.RLock()
+	defer cache.mu.RUnlock()
+	if len(cache.nodeMutations) > publicCacheMaxNodes ||
+		len(cache.activityMutations) > publicCacheMaxActivity ||
+		len(cache.pulseMutations) > publicCacheMaxPulses {
+		t.Fatalf("unbounded mutation journal sizes nodes/activity/pulses=%d/%d/%d", len(cache.nodeMutations), len(cache.activityMutations), len(cache.pulseMutations))
 	}
 }
 

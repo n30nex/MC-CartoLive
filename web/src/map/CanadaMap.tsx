@@ -67,7 +67,7 @@ import {
   drawRouteMapGifOverlay,
   type RouteMapGifExportRequest
 } from '../routeGifExport';
-import { setSourceData, type FeatureCollection } from './sourceDataQueue';
+import { disposeSourceDataQueue, setSourceData, type FeatureCollection } from './sourceDataQueue';
 import { DETAIL_MIN_ZOOM, NODE_CLUSTER_MAX_ZOOM, type MapVisualMode, isClusterZoom, isDetailZoom, visualModeForZoom } from './zoomMode';
 import {
   FOLLOW_TRAFFIC_POINT_ZOOM,
@@ -81,7 +81,8 @@ import { mapStyleProfileByID, type MapStyleProfileID } from './styles/styleRegis
 import { createBrowserGeoJSONClient } from '../workers/geojsonWorkerClient';
 import { transformGeoJSON } from '../workers/geojsonTransforms';
 import { recordGeoJSONWorkerError, recordGeoJSONWorkerFallback, recordGeoJSONWorkerTransform } from '../perfDiagnostics';
-import { onceReplayExportCleanup, type ReplayExportSurface, type ReplayExportSurfaceProvider } from '../replayExportSurface';
+import { onceRouteExportCleanup, type RouteExportSurface } from '../routeExportSurface';
+import { RecentIdentityTracker, rememberFreshLiveIdentity } from './recentIdentityTracker';
 
 export type MapAction =
   | { type: 'reset'; token: number }
@@ -116,7 +117,6 @@ interface Props {
   plotMode: 'off' | 'node' | 'area';
   mapAction: MapAction;
   routeGifExportRequest: RouteMapGifExportRequest | null;
-  onReplayExportProviderChange?: (provider: ReplayExportSurfaceProvider | null) => void;
   themeMode: MapThemeMode;
   initialView: SharedViewState | null;
   mapConfig?: PublicMapConfig | null;
@@ -215,6 +215,8 @@ const WEATHER_CLOUD_SOURCE = 'meshcore-weather-clouds';
 const WEATHER_CLOUD_LAYER = 'meshcore-weather-cloud-overlay';
 const NODE_ACTIVE_LABEL_VISIBLE_MS = 24_000;
 const MESSAGE_BUBBLE_LIFETIME_MS = 7_200;
+const MESSAGE_BUBBLE_DEDUPE_MS = 30_000;
+const MESSAGE_BUBBLE_IDENTITY_LIMIT = 512;
 const MESSAGE_BUBBLE_MAX_WIDTH_PX = 440;
 const MESSAGE_BUBBLE_EDGE_PADDING_PX = 16;
 const ROUTE_PAYLOAD_GLOW_MS = 5_200;
@@ -223,6 +225,9 @@ const ROUTE_VISUAL_CADENCE_MS = 125;
 const OBSERVER_VISUAL_CADENCE_MS = 95;
 const MAX_PENDING_ROUTE_VISUALS = 220;
 const MAX_PENDING_OBSERVER_VISUALS = 360;
+const LIVE_VISUAL_IDENTITY_TTL_MS = 30 * 60_000;
+const LIVE_VISUAL_IDENTITY_LIMIT = 2_048;
+const ROUTE_FRESHNESS_UPDATE_MS = 60_000;
 const DEFAULT_ORIGINAL_MAP_PITCH = 0;
 const DEFAULT_ORIGINAL_MAP_BEARING = 0;
 const DEFAULT_OPENFREEMAP_MAP_PITCH = 46;
@@ -1386,7 +1391,6 @@ function CanadaMap({
   plotMode,
   mapAction,
   routeGifExportRequest,
-  onReplayExportProviderChange,
   themeMode,
   initialView,
   mapConfig,
@@ -1405,6 +1409,7 @@ function CanadaMap({
   const [mapCenter, setMapCenter] = useState({ lat: initialDefaultView.lat, lng: initialDefaultView.lng });
   const [mapInitError, setMapInitError] = useState('');
   const [nodeLabelClock, setNodeLabelClock] = useState(() => Date.now());
+  const routeFreshnessClock = Math.floor(nodeLabelClock / ROUTE_FRESHNESS_UPDATE_MS) * ROUTE_FRESHNESS_UPDATE_MS;
   const nodeFocus = useMemo(
     () => nodeFocusFromRoutes(selectedNodeID, routes, highlightedPathRouteIDs, highlightedPathNodeIDs),
     [selectedNodeID, routes, highlightedPathRouteIDs, highlightedPathNodeIDs]
@@ -1421,8 +1426,8 @@ function CanadaMap({
   const initialViewAppliedRef = useRef(false);
   const fitInitialNodesRef = useRef(false);
   const positionedNodesReadyRef = useRef(false);
-  const seenPulseIDsRef = useRef<Set<string>>(new Set());
-  const seenObserverBurstIDsRef = useRef<Set<string>>(new Set());
+  const seenPulseIDsRef = useRef(new RecentIdentityTracker(LIVE_VISUAL_IDENTITY_LIMIT, LIVE_VISUAL_IDENTITY_TTL_MS));
+  const seenObserverBurstIDsRef = useRef(new RecentIdentityTracker(LIVE_VISUAL_IDENTITY_LIMIT, LIVE_VISUAL_IDENTITY_TTL_MS));
   const pendingPulsesRef = useRef<PublicRoutePulse[]>([]);
   const pendingObserverBurstsRef = useRef<PublicObserverBurst[]>([]);
   const followTrafficRef = useRef(followTraffic);
@@ -1442,7 +1447,7 @@ function CanadaMap({
   const mapVisualModeRef = useRef<MapVisualMode>(visualModeForZoom(initialView?.z ?? 3.35));
   const nodeLabelFrameRef = useRef<number | null>(null);
   const messageBubbleCleanupTimersRef = useRef<Map<string, number>>(new Map());
-  const shownBubbleTextsRef = useRef<Set<string>>(new Set());
+  const shownBubbleTextsRef = useRef(new RecentIdentityTracker(MESSAGE_BUBBLE_IDENTITY_LIMIT, MESSAGE_BUBBLE_DEDUPE_MS));
   const pageHiddenRef = useRef(typeof document !== 'undefined' ? document.hidden : false);
   const pausedRef = useRef(paused);
   const initialViewRef = useRef(initialView);
@@ -1470,7 +1475,6 @@ function CanadaMap({
   const routeColorSignatureRef = useRef('');
   const positionedNodesRenderedRef = useRef(onPositionedNodesRendered);
   const viewChangeRef = useRef(onViewChange);
-  const replayExportProviderChangeRef = useRef(onReplayExportProviderChange);
   const selectedNodeRef = useRef(onSelectNode);
   const plotModeRef = useRef(plotMode);
   const plotNodePickRef = useRef(onPlotNodePick);
@@ -1620,7 +1624,8 @@ function CanadaMap({
   const renderScheduledPulse = (pulse: PublicRoutePulse) => {
     const map = mapRef.current;
     if (pausedRef.current) return;
-    const shouldAnimate = shouldAnimateLiveEvent(visualReceivedAt(pulse), Date.now(), pageHiddenRef.current);
+    const now = Date.now();
+    const shouldAnimate = shouldAnimateLiveEvent(visualReceivedAt(pulse), now, pageHiddenRef.current);
     if (!map) return;
     if (shouldAnimate) followTrafficPulse(map, pulse, followTrafficRef.current, followTrafficStateRef);
     const renderComet = shouldAnimate
@@ -1630,8 +1635,7 @@ function CanadaMap({
       const text = publicSafeMessage(pulse);
       const anchorId = pulse.messageAnchor?.nodeId ?? pulse.segments[0]?.from.nodeId ?? '';
       const key = `pulse:${anchorId}:${hashBubbleText(text)}`;
-      if (!shownBubbleTextsRef.current.has(key)) {
-        shownBubbleTextsRef.current.add(key);
+      if (shownBubbleTextsRef.current.remember(key, performance.now())) {
         showMessageBubble(map, messageBubbleFromPulse(map, pulse));
       }
     }
@@ -1657,14 +1661,14 @@ function CanadaMap({
   const renderScheduledObserverBurst = (burst: PublicObserverBurst) => {
     const map = mapRef.current;
     if (pausedRef.current) return;
-    const shouldAnimate = shouldAnimateLiveEvent(visualReceivedAt(burst), Date.now(), pageHiddenRef.current);
+    const now = Date.now();
+    const shouldAnimate = shouldAnimateLiveEvent(visualReceivedAt(burst), now, pageHiddenRef.current);
     if (map && shouldAnimate) followTrafficObserverBurst(map, burst, followTrafficRef.current, followTrafficStateRef);
     if (map && shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(burst)) {
       const text = publicSafeMessage(burst);
       const anchorLabel = burst.messageAnchor?.label ?? burst.location.label ?? '';
       const key = `burst:${anchorLabel}:${hashBubbleText(text)}`;
-      if (!shownBubbleTextsRef.current.has(key)) {
-        shownBubbleTextsRef.current.add(key);
+      if (shownBubbleTextsRef.current.remember(key, performance.now())) {
         showMessageBubble(map, messageBubbleFromObserverBurst(map, burst));
       }
     }
@@ -1749,13 +1753,12 @@ function CanadaMap({
   useEffect(() => {
     positionedNodesRenderedRef.current = onPositionedNodesRendered;
     viewChangeRef.current = onViewChange;
-    replayExportProviderChangeRef.current = onReplayExportProviderChange;
     selectedNodeRef.current = onSelectNode;
     plotModeRef.current = plotMode;
     plotNodePickRef.current = onPlotNodePick;
     plotMapPointRef.current = onPlotMapPoint;
     clearSelectionRef.current = onClearSelection;
-  }, [onPositionedNodesRendered, onViewChange, onReplayExportProviderChange, onSelectNode, plotMode, onPlotNodePick, onPlotMapPoint, onClearSelection]);
+  }, [onPositionedNodesRendered, onViewChange, onSelectNode, plotMode, onPlotNodePick, onPlotMapPoint, onClearSelection]);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -1808,7 +1811,6 @@ function CanadaMap({
       layerSettings: layerSettingsRef.current,
       visualSettings: packetVisualSettingsRef.current
     });
-    replayExportProviderChangeRef.current?.((options) => createTemporaryReplayExportSurface(map, canvasRef.current!, options.width, options.height, options.segments));
 
     const resizeMap = () => {
       map.resize();
@@ -1956,7 +1958,6 @@ function CanadaMap({
     map.on('styledata', initializeMapLayers);
 
     return () => {
-      replayExportProviderChangeRef.current?.(null);
       if (initializeRetry !== null) window.clearTimeout(initializeRetry);
       window.removeEventListener('resize', resizeMap);
       map.off('resize', resizeOverlay);
@@ -1995,6 +1996,7 @@ function CanadaMap({
       destroyOpenFreeMap3D();
       animatorRef.current?.destroy();
       animatorRef.current = null;
+      disposeSourceDataQueue(map);
       map.remove();
       if ((window as any).__meshcoreMap === map) delete (window as any).__meshcoreMap;
       mapRef.current = null;
@@ -2137,6 +2139,23 @@ function CanadaMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
+    updateRouteRendering(
+      map,
+      routesRef.current,
+      selectedRouteIDRef.current,
+      nodeFocusRef.current,
+      routeSourceSignatureRef,
+      routeColorSignatureRef,
+      animatorRef,
+      themeModeRef.current,
+      false,
+      routeFreshnessClock
+    );
+  }, [routeFreshnessClock]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current) return;
     updatePropagationRendering(map, propagationEvents, propagationSourceSignatureRef);
   }, [propagationEvents]);
 
@@ -2197,9 +2216,16 @@ function CanadaMap({
   }, [clearToken]);
 
   useEffect(() => {
+    const epochNow = Date.now();
+    const monotonicNow = performance.now();
     for (const pulse of pulses.slice().reverse()) {
-      if (seenPulseIDsRef.current.has(pulse.id)) continue;
-      seenPulseIDsRef.current.add(pulse.id);
+      if (!rememberFreshLiveIdentity(
+        seenPulseIDsRef.current,
+        pulse.id,
+        visualReceivedAt(pulse),
+        epochNow,
+        monotonicNow
+      )) continue;
       pendingPulsesRef.current.push(pulse);
     }
     if (pendingPulsesRef.current.length > MAX_PENDING_ROUTE_VISUALS) {
@@ -2209,9 +2235,16 @@ function CanadaMap({
   }, [pulses]);
 
   useEffect(() => {
+    const epochNow = Date.now();
+    const monotonicNow = performance.now();
     for (const burst of observerBursts.slice().reverse()) {
-      if (seenObserverBurstIDsRef.current.has(burst.id)) continue;
-      seenObserverBurstIDsRef.current.add(burst.id);
+      if (!rememberFreshLiveIdentity(
+        seenObserverBurstIDsRef.current,
+        burst.id,
+        visualReceivedAt(burst),
+        epochNow,
+        monotonicNow
+      )) continue;
       pendingObserverBurstsRef.current.push(burst);
     }
     if (pendingObserverBurstsRef.current.length > MAX_PENDING_OBSERVER_VISUALS) {
@@ -2296,7 +2329,7 @@ function CanadaMap({
 
     routeGifExportCleanupRef.current?.();
     let cancelled = false;
-    let exportSurface: ReplayExportSurface | null = null;
+    let exportSurface: RouteExportSurface | null = null;
     const cleanup = () => {
       cancelled = true;
       exportSurface?.cleanup();
@@ -2329,7 +2362,7 @@ function CanadaMap({
         fitToSegmentsForRouteGif(map, request.pulse.segments, 900);
         await waitForMapIdleOrTimeout(map, 900 + request.settleMs + 700);
         if (cancelled) return;
-        exportSurface = await createTemporaryReplayExportSurface(map, overlayCanvas, ROUTE_GIF_WIDTH, ROUTE_GIF_HEIGHT, request.pulse.segments);
+        exportSurface = await createTemporaryRouteGifExportSurface(map, overlayCanvas, ROUTE_GIF_WIDTH, ROUTE_GIF_HEIGHT, request.pulse.segments);
         if (cancelled) return;
         request.onProgress(0.1);
 
@@ -4097,9 +4130,9 @@ function updateRouteRendering(
   colorSignatureRef: MutableRefObject<string>,
   animatorRef: MutableRefObject<PacketAnimator | null>,
   themeMode: MapThemeMode,
-  force = false
+  force = false,
+  now = Date.now()
 ) {
-  const now = Date.now();
   const nextRouteSignature = routeSourceSignature(routes, selectedRouteID, focus, now);
   if (force || nextRouteSignature !== routeSignatureRef.current) {
     const sourceSignature = `routes:${themeMode}:${nextRouteSignature}`;
@@ -4335,13 +4368,13 @@ function fitToSegmentsForRouteGif(map: maplibregl.Map, segments: PublicRoutePuls
   map.fitBounds(bounds, { padding, maxZoom, duration, easing: easeOutCubic });
 }
 
-async function createTemporaryReplayExportSurface(
+async function createTemporaryRouteGifExportSurface(
   sourceMap: maplibregl.Map,
   overlayCanvas: HTMLCanvasElement,
   width: number,
   height: number,
   segments: PublicRoutePulse['segments']
-): Promise<ReplayExportSurface> {
+): Promise<RouteExportSurface> {
   const container = document.createElement('div');
   container.setAttribute('aria-hidden', 'true');
   Object.assign(container.style, {
@@ -4356,7 +4389,7 @@ async function createTemporaryReplayExportSurface(
   });
   document.body.appendChild(container);
   let exportMap: maplibregl.Map | null = null;
-  const cleanup = onceReplayExportCleanup(() => {
+  const cleanup = onceRouteExportCleanup(() => {
     exportMap?.remove();
     exportMap = null;
     container.remove();

@@ -186,12 +186,12 @@ export function chromePanelVisible(state: ChromeVisibilityState, panel: ChromePa
 }
 
 export function useViewportBounds(): ViewportBounds {
-  const [bounds, setBounds] = useState<ViewportBounds>({ width: 0, height: 0, margin: 10, topInset: 92, bottomInset: 110 });
+  const [bounds, setBounds] = useState<ViewportBounds>({ width: 0, height: 0, margin: 10, topInset: 92, bottomInset: 18 });
   const shellRef = useRef<HTMLElement | null>(null);
 
   const measure = useCallback(() => {
     const shell = shellRef.current;
-    const vcrHeight = shell ? Number.parseFloat(getComputedStyle(shell).getPropertyValue('--vcr-bar-height')) || 92 : 92;
+    const bottomChromeHeight = shell ? Number.parseFloat(getComputedStyle(shell).getPropertyValue('--bottom-chrome-height')) || 0 : 0;
     const small = window.innerWidth <= 760;
     setBounds({
       width: window.innerWidth,
@@ -199,7 +199,7 @@ export function useViewportBounds(): ViewportBounds {
       margin: 10,
       topInset: small ? 48 : 92,
       topStackOffset: small ? 58 : 76,
-      bottomInset: vcrHeight + 18
+      bottomInset: bottomChromeHeight + 18
     });
   }, []);
 
@@ -214,7 +214,7 @@ export function useViewportBounds(): ViewportBounds {
     const observer = new ResizeObserver(measure);
     observer.observe(shell);
     const mutationObserver = new MutationObserver(measure);
-    mutationObserver.observe(shell, { attributes: true, attributeFilter: ['data-vcr-layout'] });
+    mutationObserver.observe(shell, { attributes: true, attributeFilter: ['data-packets-mode'] });
     window.addEventListener('resize', measure);
     return () => {
       observer.disconnect();

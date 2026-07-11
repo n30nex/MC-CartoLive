@@ -33,6 +33,10 @@ jobs:
       authorized: ${{ steps.premerge.outputs.authorized }}
       source_sha: ${{ steps.trust.outputs.source_sha }}
       source_tag: ${{ steps.trust.outputs.source_tag }}
+      release_version: ${{ steps.trust.outputs.release_version }}
+      release_branch: ${{ steps.trust.outputs.release_branch }}
+      release_ref: ${{ steps.trust.outputs.release_ref }}
+      source_ci_browser_smoke: ${{ steps.trust.outputs.source_ci_browser_smoke }}
       source_ci_run_id: ${{ steps.trust.outputs.source_ci_run_id }}
       source_ci_event: ${{ steps.trust.outputs.source_ci_event }}
       source_ci_head_branch: ${{ steps.trust.outputs.source_ci_head_branch }}
@@ -66,8 +70,19 @@ jobs:
           current_main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           [[ "$current_main_sha" =~ ^[0-9a-f]{40}$ ]]
           test "$SOURCE_SHA" = "$current_main_sha"
+          version="$(gh api "repos/$GITHUB_REPOSITORY/contents/VERSION?ref=$SOURCE_SHA" --jq '.content' | base64 --decode | tr -d '\r\n')"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          release_branch="codex/release-$version"
+          release_ref="refs/heads/$release_branch"
+          jobs_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_CI_RUN_ID/jobs?filter=latest&per_page=100")"
+          browser_jobs="$(printf '%s' "$jobs_json" | jq '[.jobs[] | select(.name == "Desktop and mobile browser smoke" and .conclusion == "success")] | length')"
+          test "$browser_jobs" -eq 1
           echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
           echo "source_tag=candidate-$SOURCE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          echo "release_version=$version" >> "$GITHUB_OUTPUT"
+          echo "release_branch=$release_branch" >> "$GITHUB_OUTPUT"
+          echo "release_ref=$release_ref" >> "$GITHUB_OUTPUT"
+          echo "source_ci_browser_smoke=success" >> "$GITHUB_OUTPUT"
           echo "source_ci_run_id=$SOURCE_CI_RUN_ID" >> "$GITHUB_OUTPUT"
           echo "source_ci_event=$SOURCE_CI_EVENT" >> "$GITHUB_OUTPUT"
           echo "source_ci_head_branch=$SOURCE_CI_HEAD_BRANCH" >> "$GITHUB_OUTPUT"
@@ -78,13 +93,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ steps.trust.outputs.source_sha }}
+          RELEASE_VERSION: ${{ steps.trust.outputs.release_version }}
+          RELEASE_BRANCH: ${{ steps.trust.outputs.release_branch }}
+          RELEASE_REF: ${{ steps.trust.outputs.release_ref }}
           FAST_TRACK_SHA: ${{ vars.MC_CARTOLIVE_RELEASE_FAST_TRACK_SHA }}
         run: |
           prs_json="$(gh api --method GET -H "Accept: application/vnd.github+json" \
             "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/pulls")"
           release_pr="$(printf '%s' "$prs_json" | jq -c \
             --arg sha "$SOURCE_SHA" --arg repository "$GITHUB_REPOSITORY" \
-            '[.[] | select(.merged_at != null and .merge_commit_sha == $sha and .base.ref == "main" and .head.ref == "codex/release-3.2.0" and .head.repo.full_name == $repository)]')"
+            --arg releaseBranch "$RELEASE_BRANCH" \
+            '[.[] | select(.merged_at != null and .merge_commit_sha == $sha and .base.ref == "main" and .head.ref == $releaseBranch and .head.repo.full_name == $repository)]')"
           release_pr_count="$(printf '%s' "$release_pr" | jq 'length')"
           if [ "$release_pr_count" -eq 0 ]; then
             echo "authorized=false" >> "$GITHUB_OUTPUT"
@@ -117,7 +136,8 @@ jobs:
             run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run_id")"
             if printf '%s' "$run_json" | jq -e \
               --arg sha "$head_sha" --arg repository "$GITHUB_REPOSITORY" \
-              '.name == "Release performance gate" and .path == ".github/workflows/release-performance.yml" and .conclusion == "success" and .event == "workflow_dispatch" and .head_branch == "codex/release-3.2.0" and .head_sha == $sha and .head_repository.full_name == $repository' >/dev/null; then
+              --arg releaseBranch "$RELEASE_BRANCH" \
+              '.name == "Release performance gate" and .path == ".github/workflows/release-performance.yml" and .conclusion == "success" and .event == "workflow_dispatch" and .head_branch == $releaseBranch and .head_sha == $sha and .head_repository.full_name == $repository' >/dev/null; then
               artifact_id="$candidate_id"
               run_id="$candidate_run_id"
               break
@@ -132,12 +152,12 @@ jobs:
           unzip -q /tmp/mc-cartolive-premerge-proof.zip -d /tmp/mc-cartolive-premerge-proof
           report=/tmp/mc-cartolive-premerge-proof/report.json
           test -f "$report"
-          workflow_ref="$GITHUB_REPOSITORY/.github/workflows/release-performance.yml@refs/heads/codex/release-3.2.0"
+          workflow_ref="$GITHUB_REPOSITORY/.github/workflows/release-performance.yml@$RELEASE_REF"
           jq -e \
             --arg sha "$head_sha" --arg repository "$GITHUB_REPOSITORY" \
-            --arg runId "$run_id" --arg workflowRef "$workflow_ref" \
+            --arg runId "$run_id" --arg workflowRef "$workflow_ref" --arg releaseRef "$RELEASE_REF" --arg version "$RELEASE_VERSION" \
             '.profile == "full" and .canonicalReleaseProof == true and .passed == true and (.failures | length) == 0 and
-             .github.sha == $sha and .github.ref == "refs/heads/codex/release-3.2.0" and .github.repository == $repository and .github.event == "workflow_dispatch" and .github.workflow == "Release performance gate" and .github.workflowRef == $workflowRef and .github.runId == $runId and
+             .version == $version and .github.sha == $sha and .github.ref == $releaseRef and .github.repository == $repository and .github.event == "workflow_dispatch" and .github.workflow == "Release performance gate" and .github.workflowRef == $workflowRef and .github.runId == $runId and
              .config.sustainedRate == 20 and .config.sustainedSeconds == 1800 and .config.burstRate == 100 and .config.burstSeconds == 60 and .config.apiRows == 5000000 and .config.wsClients == 250 and .config.wsSeconds == 1800 and .config.mqttQueueCapacity == 4096 and .config.derivedQueueCapacity == 1024 and .config.memoryLimitBytes == 629145600 and
              .phases.sustainedIngest.passed == true and .phases.burstIngest.passed == true and .phases.api.passed == true and .phases.websocket.passed == true' "$report" >/dev/null
           echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
@@ -150,7 +170,7 @@ jobs:
     needs: authorize
     if: needs.authorize.outputs.authorized == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     permissions:
       contents: read
       packages: write
@@ -164,15 +184,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ needs.authorize.outputs.source_sha }}
           VERIFIED_MAIN_SHA: ${{ needs.authorize.outputs.verified_main_sha }}
-          CANDIDATE_TAG: ${{ needs.authorize.outputs.source_tag }}
+          CANDIDATE_TAG_BASE: ${{ needs.authorize.outputs.source_tag }}
         run: |
           current_main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           test "$SOURCE_SHA" = "$VERIFIED_MAIN_SHA"
           test "$SOURCE_SHA" = "$current_main_sha"
-          [[ "$CANDIDATE_TAG" =~ ^candidate-$SOURCE_SHA-[0-9]+-[0-9]+$ ]]
+          [[ "$CANDIDATE_TAG_BASE" =~ ^candidate-$SOURCE_SHA-[0-9]+-[0-9]+$ ]]
           echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
-          echo "tag=$CANDIDATE_TAG" >> "$GITHUB_OUTPUT"
+          echo "tag_base=$CANDIDATE_TAG_BASE" >> "$GITHUB_OUTPUT"
+          echo "world_tag=$CANDIDATE_TAG_BASE-world" >> "$GITHUB_OUTPUT"
+          echo "canada_tag=$CANDIDATE_TAG_BASE-canada" >> "$GITHUB_OUTPUT"
           echo "current_main_sha=$current_main_sha" >> "$GITHUB_OUTPUT"
       - name: Checkout successful source
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -201,21 +223,21 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push candidate once
-        id: build
+      - name: Build and push world candidate
+        id: build_world
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.source.outputs.tag }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.source.outputs.world_tag }}
           provenance: mode=max
           sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=release-world
+          cache-to: type=gha,scope=release-world,mode=max
           labels: |
             org.opencontainers.image.title=MC-CartoLive
-            org.opencontainers.image.description=Public-safe MeshCore MQTT live map with RF Replay Studio
+            org.opencontainers.image.description=Public-safe MeshCore MQTT map with continuous live RF traffic
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
             org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
@@ -223,7 +245,39 @@ jobs:
             org.opencontainers.image.licenses=MIT
             org.mc-cartolive.candidate.workflow-run-id=${{ github.run_id }}
             org.mc-cartolive.candidate.workflow-run-attempt=${{ github.run_attempt }}
-            org.mc-cartolive.candidate.tag=${{ steps.source.outputs.tag }}
+            org.mc-cartolive.candidate.tag=${{ steps.source.outputs.world_tag }}
+            org.mc-cartolive.asset-pack=world
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
+            GIT_SHA=${{ steps.source.outputs.sha }}
+            BUILD_TIME=${{ steps.meta.outputs.build_time }}
+            VITE_BUILD_NUMBER=${{ steps.meta.outputs.build_number }}
+            VITE_APP_ASSET_PACK=world
+            VITE_ENABLE_SERVICE_WORKER=true
+      - name: Build and push Canada candidate
+        id: build_canada
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.source.outputs.canada_tag }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=release-canada
+          cache-to: type=gha,scope=release-canada,mode=max
+          labels: |
+            org.opencontainers.image.title=MC-CartoLive
+            org.opencontainers.image.description=Public-safe MeshCore MQTT map with continuous live RF traffic
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.build_time }}
+            org.opencontainers.image.licenses=MIT
+            org.mc-cartolive.candidate.workflow-run-id=${{ github.run_id }}
+            org.mc-cartolive.candidate.workflow-run-attempt=${{ github.run_attempt }}
+            org.mc-cartolive.candidate.tag=${{ steps.source.outputs.canada_tag }}
+            org.mc-cartolive.asset-pack=canada
           build-args: |
             APP_VERSION=${{ steps.meta.outputs.version }}
             GIT_SHA=${{ steps.source.outputs.sha }}
@@ -231,34 +285,62 @@ jobs:
             VITE_BUILD_NUMBER=${{ steps.meta.outputs.build_number }}
             VITE_APP_ASSET_PACK=canada
             VITE_ENABLE_SERVICE_WORKER=true
-      - name: Smoke exact candidate digest
+      - name: Smoke exact world candidate digest
         run: |
           node scripts/package-smoke.mjs \
-            --image "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}" \
-            --version "${{ steps.meta.outputs.version }}" --pull
-      - name: Scan exact candidate digest
+            --image "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build_world.outputs.digest }}" \
+            --version "${{ steps.meta.outputs.version }}" --asset-pack world --mode all --pull
+      - name: Smoke exact Canada candidate digest
+        run: |
+          node scripts/package-smoke.mjs \
+            --image "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build_canada.outputs.digest }}" \
+            --version "${{ steps.meta.outputs.version }}" --asset-pack canada --mode all --pull
+      - name: Scan exact world candidate digest
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build_world.outputs.digest }}
           format: sarif
-          output: trivy-candidate.sarif
+          output: trivy-candidate-world.sarif
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
-      - name: Upload scan results
-        if: always() && hashFiles('trivy-candidate.sarif') != ''
+      - name: Scan exact Canada candidate digest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build_canada.outputs.digest }}
+          format: sarif
+          output: trivy-candidate-canada.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Upload world scan results
+        if: always() && hashFiles('trivy-candidate-world.sarif') != ''
         uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
         with:
-          sarif_file: trivy-candidate.sarif
-      - name: Attest candidate digest
+          sarif_file: trivy-candidate-world.sarif
+          category: trivy-candidate-world
+      - name: Upload Canada scan results
+        if: always() && hashFiles('trivy-candidate-canada.sarif') != ''
+        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        with:
+          sarif_file: trivy-candidate-canada.sarif
+          category: trivy-candidate-canada
+      - name: Attest world candidate digest
         uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-digest: ${{ steps.build_world.outputs.digest }}
+          push-to-registry: true
+      - name: Attest Canada candidate digest
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build_canada.outputs.digest }}
           push-to-registry: true
       - name: Record candidate manifest
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          WORLD_DIGEST: ${{ steps.build_world.outputs.digest }}
+          CANADA_DIGEST: ${{ steps.build_canada.outputs.digest }}
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
           VERSION: ${{ steps.meta.outputs.version }}
           BUILD_TIME: ${{ steps.meta.outputs.build_time }}
@@ -272,24 +354,29 @@ jobs:
           VERIFIED_MAIN_SHA: ${{ steps.source.outputs.current_main_sha }}
           CANDIDATE_WORKFLOW_RUN_ID: ${{ github.run_id }}
           CANDIDATE_WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
-          CANDIDATE_TAG: ${{ steps.source.outputs.tag }}
+          WORLD_CANDIDATE_TAG: ${{ steps.source.outputs.world_tag }}
+          CANADA_CANDIDATE_TAG: ${{ steps.source.outputs.canada_tag }}
+          RELEASE_REF: ${{ needs.authorize.outputs.release_ref }}
+          SOURCE_CI_BROWSER_SMOKE: ${{ needs.authorize.outputs.source_ci_browser_smoke }}
           PREMERGE_HEAD_SHA: ${{ needs.authorize.outputs.premerge_head_sha }}
           PREMERGE_RUN_ID: ${{ needs.authorize.outputs.premerge_run_id }}
           PREMERGE_PROOF_DEFERRED: ${{ needs.authorize.outputs.premerge_proof_deferred }}
         run: |
           jq -n \
             --arg repository "${REGISTRY}/${IMAGE_NAME}" \
-            --arg image "${REGISTRY}/${IMAGE_NAME}@${DIGEST}" \
-            --arg digest "$DIGEST" --arg gitSha "$SOURCE_SHA" \
+            --arg worldImage "${REGISTRY}/${IMAGE_NAME}@${WORLD_DIGEST}" --arg worldDigest "$WORLD_DIGEST" --arg worldTag "$WORLD_CANDIDATE_TAG" \
+            --arg canadaImage "${REGISTRY}/${IMAGE_NAME}@${CANADA_DIGEST}" --arg canadaDigest "$CANADA_DIGEST" --arg canadaTag "$CANADA_CANDIDATE_TAG" \
+            --arg gitSha "$SOURCE_SHA" \
             --arg version "$VERSION" --arg buildTime "$BUILD_TIME" \
             --arg sourceCiRunId "$SOURCE_CI_RUN_ID" --arg sourceCiHeadSha "$SOURCE_CI_HEAD_SHA" \
             --arg sourceCiConclusion "$SOURCE_CI_CONCLUSION" --arg sourceCiWorkflow "$SOURCE_CI_WORKFLOW" \
             --arg sourceCiEvent "$SOURCE_CI_EVENT" --arg sourceCiHeadBranch "$SOURCE_CI_HEAD_BRANCH" \
             --arg sourceCiHeadRepository "$SOURCE_CI_HEAD_REPOSITORY" --arg verifiedMainSha "$VERIFIED_MAIN_SHA" \
+            --arg sourceCiBrowserSmokeConclusion "$SOURCE_CI_BROWSER_SMOKE" --arg releaseRef "$RELEASE_REF" \
             --arg candidateWorkflowRunId "$CANDIDATE_WORKFLOW_RUN_ID" --arg candidateWorkflowRunAttempt "$CANDIDATE_WORKFLOW_RUN_ATTEMPT" \
-            --arg candidateTag "$CANDIDATE_TAG" --arg premergeHeadSha "$PREMERGE_HEAD_SHA" --arg premergeRunId "$PREMERGE_RUN_ID" \
+            --arg premergeHeadSha "$PREMERGE_HEAD_SHA" --arg premergeRunId "$PREMERGE_RUN_ID" \
             --argjson premergeProofDeferred "$PREMERGE_PROOF_DEFERRED" \
-            '{repository:$repository,image:$image,digest:$digest,gitSha:$gitSha,version:$version,buildTime:$buildTime,platforms:["linux/amd64","linux/arm64"],sourceCiRunId:$sourceCiRunId,sourceCiHeadSha:$sourceCiHeadSha,sourceCiConclusion:$sourceCiConclusion,sourceCiWorkflow:$sourceCiWorkflow,sourceCiEvent:$sourceCiEvent,sourceCiHeadBranch:$sourceCiHeadBranch,sourceCiHeadRepository:$sourceCiHeadRepository,verifiedMainRef:"refs/heads/main",verifiedMainSha:$verifiedMainSha,candidateWorkflowRunId:$candidateWorkflowRunId,candidateWorkflowRunAttempt:$candidateWorkflowRunAttempt,candidateTag:$candidateTag,premergeHeadRef:"refs/heads/codex/release-3.2.0",premergeHeadSha:$premergeHeadSha,premergeRunId:$premergeRunId,premergeProofDeferred:$premergeProofDeferred}' \
+            '{repository:$repository,images:{world:{image:$worldImage,digest:$worldDigest,candidateTag:$worldTag,assetPack:"world"},canada:{image:$canadaImage,digest:$canadaDigest,candidateTag:$canadaTag,assetPack:"canada"}},gitSha:$gitSha,version:$version,buildTime:$buildTime,platforms:["linux/amd64","linux/arm64"],sourceCiRunId:$sourceCiRunId,sourceCiHeadSha:$sourceCiHeadSha,sourceCiConclusion:$sourceCiConclusion,sourceCiBrowserSmokeConclusion:$sourceCiBrowserSmokeConclusion,sourceCiWorkflow:$sourceCiWorkflow,sourceCiEvent:$sourceCiEvent,sourceCiHeadBranch:$sourceCiHeadBranch,sourceCiHeadRepository:$sourceCiHeadRepository,verifiedMainRef:"refs/heads/main",verifiedMainSha:$verifiedMainSha,candidateWorkflowRunId:$candidateWorkflowRunId,candidateWorkflowRunAttempt:$candidateWorkflowRunAttempt,premergeHeadRef:$releaseRef,premergeHeadSha:$premergeHeadSha,premergeRunId:$premergeRunId,premergeProofDeferred:$premergeProofDeferred}' \
             > candidate-manifest.json
       - name: Upload candidate evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -297,6 +384,7 @@ jobs:
           name: release-candidate-${{ steps.source.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             candidate-manifest.json
-            trivy-candidate.sarif
+            trivy-candidate-world.sarif
+            trivy-candidate-canada.sarif
           if-no-files-found: error
           retention-days: 30

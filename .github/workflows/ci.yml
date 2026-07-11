@@ -97,6 +97,9 @@ jobs:
         run: |
           bash scripts/test-release-ops.sh
           bash scripts/test-post-release-audit.sh
+          node scripts/test-websocket-flow-probe.mjs
+          node scripts/test-public-privacy-retry.mjs
+          node scripts/test-public-privacy-websocket.mjs
           node scripts/check-cloudflare-cidrs.mjs --online
       - name: Compose contracts
         run: |
@@ -105,6 +108,7 @@ jobs:
           MC_CARTOLIVE_IMAGE=ghcr.io/n30nex/mc-cartolive@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
             docker compose -f docker-compose.production.yml config --format json > /tmp/production-compose.json
           jq -e '.services["meshcore-live-map"] | has("build") | not' /tmp/production-compose.json
+          jq -e '.services["meshcore-live-map"].environment.SQLITE_BUSY_TIMEOUT_MS == "750"' /tmp/production-compose.json
           jq -e '
             .services["meshcore-live-map"].ports
             | any(
@@ -115,15 +119,24 @@ jobs:
           ' /tmp/production-compose.json
       - name: Package manifest dry run
         env:
-          RELEASE_IMAGE: ghcr.io/n30nex/mc-cartolive@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          RELEASE_WORLD_IMAGE: ghcr.io/n30nex/mc-cartolive@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          RELEASE_CANADA_IMAGE: ghcr.io/n30nex/mc-cartolive@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
           RELEASE_GIT_SHA: ${{ github.sha }}
           RELEASE_BUILD_TIME: "2026-07-10T00:00:00Z"
         run: |
           node scripts/build-release-bundle.mjs
           test -f artifacts/release/release-manifest.json
-          jq -e '.hostPrerequisites.destructiveFreshDatabase.nodeMinMajor == 18' artifacts/release/release-manifest.json
+          jq -e '.manifestVersion == 2 and .images.world.assetPack == "world" and .images.canada.assetPack == "canada" and .images.world.digest != .images.canada.digest and .hostPrerequisites.destructiveFreshDatabase.nodeMinMajor == 18' artifacts/release/release-manifest.json
+          version="$(tr -d '\r\n' < VERSION)"
+          minor="${version%.*}"
+          jq -e --arg version "$version" --arg minor "$minor" --arg sha "$GITHUB_SHA" \
+            '.images.world.tags == [$version,$minor,("sha-" + $sha),"latest"] and
+             .images.canada.tags == [($version + "-canada"),($minor + "-canada"),("sha-" + $sha + "-canada"),"latest-canada"]' \
+            artifacts/release/release-manifest.json
           test -f artifacts/release/stage/mc-cartolive-$(tr -d '\r\n' < VERSION)/docker-compose.production.yml
           test -f artifacts/release/stage/mc-cartolive-$(tr -d '\r\n' < VERSION)/scripts/check-public-privacy.mjs
+          test -f artifacts/release/stage/mc-cartolive-$(tr -d '\r\n' < VERSION)/scripts/public-privacy-retry.mjs
+          test -f artifacts/release/stage/mc-cartolive-$(tr -d '\r\n' < VERSION)/scripts/public-privacy-websocket.mjs
 
   docker:
     name: Container build, smoke, scan
@@ -159,7 +172,7 @@ jobs:
             VITE_APP_ASSET_PACK=canada
             VITE_ENABLE_SERVICE_WORKER=true
       - name: Smoke image
-        run: node scripts/package-smoke.mjs --image meshcore-canada-live-map:ci --version "${{ steps.release.outputs.version }}"
+        run: node scripts/package-smoke.mjs --image meshcore-canada-live-map:ci --version "${{ steps.release.outputs.version }}" --asset-pack canada
       - name: Trivy container scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -207,7 +220,7 @@ jobs:
     name: Desktop and mobile browser smoke
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.browser_smoke)
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.browser_smoke)
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3

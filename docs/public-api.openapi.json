@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MC-CartoLive Public API",
-    "version": "3.2.0",
+    "version": "3.2.1",
     "description": "Privacy-safe additive HTTP and WebSocket contract. Internal analyzer, metrics, and debug routes are intentionally excluded.",
     "license": {
       "name": "MIT",
@@ -4099,7 +4099,6 @@
           "v",
           "type",
           "event",
-          "seq",
           "serverTime",
           "displayAt",
           "data"
@@ -4120,7 +4119,8 @@
           "seq": {
             "type": "integer",
             "format": "int64",
-            "minimum": 1
+            "minimum": 1,
+            "description": "Sparse monotonic durable cursor when present. Omitted for live-only fallback events; consumers must not advance their durable cursor for an omitted value."
           },
           "latestSeq": {
             "type": "integer",
@@ -4154,7 +4154,6 @@
           "v",
           "type",
           "event",
-          "seq",
           "serverTime",
           "displayAt",
           "data"
@@ -4175,7 +4174,8 @@
           "seq": {
             "type": "integer",
             "format": "int64",
-            "minimum": 1
+            "minimum": 1,
+            "description": "Sparse monotonic durable cursor when present. Omitted for live-only fallback events; consumers must not advance their durable cursor for an omitted value."
           },
           "latestSeq": {
             "type": "integer",
@@ -4209,7 +4209,6 @@
           "v",
           "type",
           "event",
-          "seq",
           "serverTime",
           "displayAt",
           "data"
@@ -4230,7 +4229,8 @@
           "seq": {
             "type": "integer",
             "format": "int64",
-            "minimum": 1
+            "minimum": 1,
+            "description": "Sparse monotonic durable cursor when present. Omitted for live-only fallback events; consumers must not advance their durable cursor for an omitted value."
           },
           "latestSeq": {
             "type": "integer",

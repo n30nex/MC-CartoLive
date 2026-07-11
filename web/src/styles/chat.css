@@ -6,7 +6,7 @@
   display: grid;
   gap: 12px;
   width: min(520px, calc(100vw - 28px));
-  max-height: calc(100vh - var(--vcr-bar-height, 0px) - 116px);
+  max-height: calc(100vh - var(--bottom-chrome-height, 0px) - 116px);
   padding: 14px;
   color: var(--mc-text, #f8fafc);
   background:

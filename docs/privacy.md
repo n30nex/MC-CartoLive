@@ -15,7 +15,7 @@ Keep these out of git, logs, issues, screenshots, and public artifacts:
 ## Public Outputs
 
 Public endpoints should expose only sanitized live-map data needed for display,
-including the public retained-window VCR history feed, true-path packet records
+including the public retained-window history feed, true-path packet records
 derived from public routed edge events, and sanitized public chat messages
 derived from decoded public text fields.
 They must not expose:
@@ -85,7 +85,7 @@ location, the frontend can show observer-only live activity instead.
 
 ## Replay History And Packet Records
 
-The public VCR history endpoints replay only sanitized routed `routePulse`
+The public history endpoints return only sanitized routed `routePulse`
 shapes already used by the live map. The public packets endpoint exposes only
 records derived from those same mappable routed pulses. The public Chat endpoint
 exposes only sanitized decoded text, sender labels, safe channel labels, and

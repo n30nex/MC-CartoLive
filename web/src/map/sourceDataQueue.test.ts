@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { setSourceData } from './sourceDataQueue';
+import { disposeSourceDataQueue, setSourceData } from './sourceDataQueue';
 
 describe('sourceDataQueue', () => {
   afterEach(() => {
@@ -85,5 +85,27 @@ describe('sourceDataQueue', () => {
     callbacks.shift()?.(16);
 
     expect(setData).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels queued frames and ignores late work after map teardown', () => {
+    const setData = vi.fn();
+    const map = {
+      getSource: () => ({ setData })
+    };
+    const callbacks: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback: FrameRequestCallback) => {
+      callbacks.push(callback);
+      return 41;
+    });
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined);
+
+    setSourceData(map as any, 'routes', { type: 'FeatureCollection', features: [{ id: 'queued' }] });
+    disposeSourceDataQueue(map as any);
+
+    expect(cancel).toHaveBeenCalledWith(41);
+    callbacks[0](0);
+    setSourceData(map as any, 'routes', { type: 'FeatureCollection', features: [{ id: 'late' }] });
+    expect(setData).not.toHaveBeenCalled();
+    expect(callbacks).toHaveLength(1);
   });
 });

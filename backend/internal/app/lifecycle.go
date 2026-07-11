@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -171,9 +172,7 @@ func (a *Application) Start(ctx context.Context) error {
 	a.wg.Add(1)
 	go func() { defer a.wg.Done(); a.refreshPublicStateCacheLoop(ctx) }()
 	a.wg.Add(1)
-	go func() { defer a.wg.Done(); a.backfillPublicPacketPathsLoop(ctx) }()
-	a.wg.Add(1)
-	go func() { defer a.wg.Done(); a.backfillPublicRouteSummariesLoop(ctx) }()
+	go func() { defer a.wg.Done(); a.backfillPublicProjectionsLoop(ctx) }()
 	if a.Config.PropagationEnabled {
 		a.wg.Add(1)
 		go func() { defer a.wg.Done(); a.propagationLoop(ctx) }()
@@ -306,21 +305,30 @@ func (a *Application) processDerivedMQTT(ctx context.Context, msg imqtt.Normaliz
 			a.Hub.Broadcast("edgeAnimation", stored)
 			if publicAllowed {
 				if activity, ok := live.PublicActivityFromEdge(stored); ok {
-					activity = a.publishPublicEvent(ctx, "activity", activity, msg.IngestID+":edge-activity").(live.PublicActivity)
-					a.PublicCache.ApplyActivity(activity)
+					published, apply := a.publishPublicEvent(ctx, "activity", activity, msg.IngestID+":edge-activity")
+					activity = published.(live.PublicActivity)
+					if apply {
+						a.PublicCache.ApplyActivity(activity)
+					}
 					publicActivitySent = true
 				}
 				if pulse, ok := live.PublicRoutePulseFromEdge(stored); ok {
-					pulse = a.publishPublicEvent(ctx, "routePulse", pulse, msg.IngestID+":route-pulse").(live.PublicRoutePulse)
-					a.PublicCache.ApplyRoutePulse(pulse)
+					published, apply := a.publishPublicEvent(ctx, "routePulse", pulse, msg.IngestID+":route-pulse")
+					pulse = published.(live.PublicRoutePulse)
+					if apply {
+						a.PublicCache.ApplyRoutePulse(pulse)
+					}
 				}
 			}
 		}
 	}
 	if !publicActivitySent && observationOK && publicAllowed {
 		activity := a.publicActivityFromPacket(ctx, observation, nil)
-		activity = a.publishPublicEvent(ctx, "activity", activity, msg.IngestID+":packet-activity").(live.PublicActivity)
-		a.PublicCache.ApplyActivity(activity)
+		published, apply := a.publishPublicEvent(ctx, "activity", activity, msg.IngestID+":packet-activity")
+		activity = published.(live.PublicActivity)
+		if apply {
+			a.PublicCache.ApplyActivity(activity)
+		}
 	}
 }
 
@@ -336,39 +344,50 @@ func (a *Application) broadcastNodeUpdateForIATA(ctx context.Context, node live.
 			return
 		}
 		publicNode.IATAsHeardIn = filteredIATAs
-		publicNode = a.publishPublicEvent(ctx, "nodeUpdate", publicNode, dedupeKeys...).(live.PublicNode)
-		a.PublicCache.ApplyNode(publicNode)
+		published, apply := a.publishPublicEvent(ctx, "nodeUpdate", publicNode, dedupeKeys...)
+		publicNode = published.(live.PublicNode)
+		if apply {
+			a.PublicCache.ApplyNode(publicNode)
+		}
 	}
 }
 
-func (a *Application) publishPublicEvent(ctx context.Context, eventType string, data any, dedupeKeys ...string) any {
+// publishPublicEvent returns apply=false only when the dedupe key already
+// exists. Callers must then avoid applying the old event to the live cache.
+// Non-durable fallback broadcasts still return true because they are new live
+// observations even though they cannot advance the recovery cursor.
+func (a *Application) publishPublicEvent(ctx context.Context, eventType string, data any, dedupeKeys ...string) (published any, apply bool) {
 	if a == nil || a.PublicHub == nil {
-		return data
+		return data, true
 	}
 	if !a.Config.PublicEventsEnabled || a.Store == nil {
-		a.PublicHub.Broadcast(eventType, data)
-		return data
+		a.PublicHub.BroadcastUnsequenced(eventType, data)
+		return data, true
 	}
 	event := live.PublicEventFromData(eventType, data)
 	if len(dedupeKeys) > 0 {
 		event.DedupeKey = strings.TrimSpace(dedupeKeys[0])
 	}
 	var stored live.PublicEvent
+	inserted := false
 	err := a.retryStoreWrite(ctx, "public event insert", func(ctx context.Context) error {
 		var err error
-		stored, err = a.Store.InsertPublicEvent(ctx, event)
+		stored, inserted, err = a.Store.InsertPublicEventOnce(ctx, event)
 		return err
 	})
 	if err != nil {
 		a.Log.Warn("public event insert failed", "event", eventType, "error", err)
-		a.PublicHub.Broadcast(eventType, data)
-		return data
+		a.PublicHub.BroadcastUnsequenced(eventType, data)
+		return data, true
+	}
+	if !inserted {
+		return data, false
 	}
 	event = stored
 	data = live.PublicEventDataWithSeq(data, event.Seq)
 	event.Data = data
 	a.PublicHub.BroadcastPublicEvent(event)
-	return data
+	return data, true
 }
 
 func (a *Application) retryStoreWrite(ctx context.Context, label string, fn func(context.Context) error) error {
@@ -713,6 +732,7 @@ func (a *Application) RefreshPublicStateCache(ctx context.Context) error {
 	defer func() {
 		a.Runtime.RecordCacheRefresh(time.Since(start), failed)
 	}()
+	cacheGeneration := a.PublicCache.MutationGeneration()
 	state, err := a.Store.LiveState(ctx, a.Config.RecentPacketLimit, a.Config.RecentEdgeEventLimit)
 	if err != nil {
 		return err
@@ -737,7 +757,7 @@ func (a *Application) RefreshPublicStateCache(ctx context.Context) error {
 		DefaultZoom:   a.Config.DefaultZoom,
 		Bounds:        a.Config.MapBounds,
 	}
-	a.PublicCache.Replace(publicState, excluded)
+	a.PublicCache.ReplacePreservingMutations(publicState, excluded, cacheGeneration)
 	failed = false
 	return nil
 }
@@ -874,41 +894,173 @@ func (a *Application) solarFetchLoop(ctx context.Context) {
 	}
 }
 
-func (a *Application) backfillPublicPacketPathsLoop(ctx context.Context) {
+const (
+	publicBackfillStartupQuietDelay = 60 * time.Second
+	publicBackfillIdlePollInterval  = time.Second
+	publicBackfillBatchPause        = time.Second
+	publicBackfillErrorPause        = 30 * time.Second
+	publicBackfillBatchLimit        = 50
+	publicBackfillBatchTimeout      = 2 * time.Second
+	publicBackfillLiveQuietWindow   = 2 * time.Second
+)
+
+type publicBackfillStage struct {
+	name string
+	run  func(context.Context) (bool, error)
+}
+
+// backfillPublicProjectionsLoop owns both projection backfills so their write
+// transactions can never overlap. Packet-path projection also updates route
+// summaries, so draining it first avoids duplicate work in the legacy route
+// summary catch-up stage.
+func (a *Application) backfillPublicProjectionsLoop(ctx context.Context) {
 	if !a.Config.PublicPacketPathBackfillEnabled {
 		return
 	}
-	batch := a.Config.PublicPacketPathBackfillBatch
-	if batch <= 0 {
+	batch := boundedPublicBackfillBatch(a.Config.PublicPacketPathBackfillBatch)
+	if batch <= 0 || !waitForContext(ctx, publicBackfillStartupQuietDelay) {
 		return
 	}
-	window := time.Duration(a.Config.PublicPacketPathBackfillHours) * time.Hour
-	if window <= 0 {
-		window = 24 * time.Hour
+	packetWindow := time.Duration(a.Config.PublicPacketPathBackfillHours) * time.Hour
+	if packetWindow <= 0 {
+		packetWindow = 24 * time.Hour
 	}
-	delay := 2 * time.Second
+	packetBatch := batch
+	stages := []publicBackfillStage{{
+		name: "public packet path",
+		run: func(ctx context.Context) (bool, error) {
+			remaining, err := a.backfillPublicPacketPathsOnce(ctx, packetWindow, packetBatch)
+			packetBatch = reducedPublicBackfillBatch(packetBatch, err)
+			return remaining, err
+		},
+	}}
+	if retentionDays := a.effectiveDataRetentionDays(); retentionDays >= 0 {
+		routeWindow := time.Duration(retentionDays) * 24 * time.Hour
+		routeBatch := batch
+		stages = append(stages, publicBackfillStage{
+			name: "public route summary",
+			run: func(ctx context.Context) (bool, error) {
+				remaining, err := a.backfillPublicRouteSummariesOnce(ctx, routeWindow, routeBatch)
+				routeBatch = reducedPublicBackfillBatch(routeBatch, err)
+				return remaining, err
+			},
+		})
+	}
+	runPublicBackfillStages(ctx, stages, a.waitForPublicBackfillIdle, waitForContext, func(name string, err error) {
+		a.Log.Warn(name+" backfill failed", "error", err)
+	})
+}
+
+func boundedPublicBackfillBatch(configured int) int {
+	if configured <= 0 {
+		return 0
+	}
+	return min(configured, publicBackfillBatchLimit)
+}
+
+func reducedPublicBackfillBatch(current int, err error) int {
+	if current <= 1 || !errors.Is(err, context.DeadlineExceeded) {
+		return current
+	}
+	return max(current/2, 1)
+}
+
+func runPublicBackfillStages(
+	ctx context.Context,
+	stages []publicBackfillStage,
+	waitUntilIdle func(context.Context) bool,
+	wait func(context.Context, time.Duration) bool,
+	onError func(string, error),
+) {
+	for _, stage := range stages {
+		remaining := true
+		for remaining {
+			if !waitUntilIdle(ctx) {
+				return
+			}
+			var err error
+			remaining, err = stage.run(ctx)
+			if err != nil {
+				if onError != nil {
+					onError(stage.name, err)
+				}
+				remaining = true
+				if !wait(ctx, publicBackfillErrorPause) {
+					return
+				}
+				continue
+			}
+			if remaining && !wait(ctx, publicBackfillBatchPause) {
+				return
+			}
+		}
+	}
+}
+
+func (a *Application) waitForPublicBackfillIdle(ctx context.Context) bool {
 	for {
-		remaining, err := a.backfillPublicPacketPathsOnce(ctx, window, batch)
-		if err != nil {
-			a.Log.Warn("public packet path backfill failed", "error", err)
-			delay = 30 * time.Second
-		} else if !remaining {
-			return
-		} else {
-			delay = 2 * time.Second
+		now := time.Now()
+		mqttStatus := imqtt.Status{}
+		if a.MQTT != nil {
+			mqttStatus = a.MQTT.Status(now)
 		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(delay):
+		runtimeStatus := live.RuntimeStatsSnapshot{}
+		if a.Runtime != nil {
+			runtimeStatus = a.Runtime.Snapshot()
 		}
+		storageState := "ok"
+		if a.Store != nil {
+			storageState = a.Store.StorageInfo().PressureState
+		}
+		if allowed, _ := publicBackfillAllowed(mqttStatus, runtimeStatus, storageState, now.UnixMilli()); allowed {
+			return true
+		}
+		if !waitForContext(ctx, publicBackfillIdlePollInterval) {
+			return false
+		}
+	}
+}
+
+func publicBackfillAllowed(mqttStatus imqtt.Status, runtimeStatus live.RuntimeStatsSnapshot, storageState string, nowMs int64) (bool, string) {
+	if storageState == "warn" || storageState == "critical" {
+		return false, "storage_pressure"
+	}
+	primaryInFlight := mqttStatus.AcceptedMessages > mqttStatus.ProcessedMessages
+	if mqttStatus.QueueDepth > 0 || mqttStatus.OldestQueueItemAgeMs > 0 || primaryInFlight {
+		return false, "primary_ingest_active"
+	}
+	if mqttStatus.LastMessageAt > 0 && mqttStatus.LastMessageAgeMs < publicBackfillLiveQuietWindow.Milliseconds() {
+		return false, "primary_ingest_recent"
+	}
+	derivedOldestAge := int64(0)
+	if runtimeStatus.DerivedOldestAtMs > 0 {
+		derivedOldestAge = max(nowMs-runtimeStatus.DerivedOldestAtMs, 0)
+	}
+	derivedInFlight := runtimeStatus.DerivedAccepted > runtimeStatus.DerivedProcessed
+	if runtimeStatus.DerivedQueueDepth > 0 || derivedOldestAge > 0 || derivedInFlight {
+		return false, "derived_ingest_active"
+	}
+	return true, ""
+}
+
+func waitForContext(ctx context.Context, delay time.Duration) bool {
+	if delay <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
 func (a *Application) backfillPublicPacketPathsOnce(ctx context.Context, window time.Duration, batch int) (bool, error) {
 	now := time.Now()
 	start := time.Now()
-	backfillCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	backfillCtx, cancel := context.WithTimeout(ctx, publicBackfillBatchTimeout)
 	defer cancel()
 	result, err := a.Store.BackfillPublicPacketPaths(backfillCtx, now.Add(-window).UnixMilli(), now.UnixMilli(), batch)
 	if err != nil {
@@ -930,41 +1082,9 @@ func (a *Application) backfillPublicPacketPathsOnce(ctx context.Context, window 
 	return result.Remaining, nil
 }
 
-func (a *Application) backfillPublicRouteSummariesLoop(ctx context.Context) {
-	if !a.Config.PublicPacketPathBackfillEnabled {
-		return
-	}
-	retentionDays := a.effectiveDataRetentionDays()
-	if retentionDays < 0 {
-		return
-	}
-	batch := a.Config.PublicPacketPathBackfillBatch
-	if batch < 2000 {
-		batch = 2000
-	}
-	window := time.Duration(retentionDays) * 24 * time.Hour
-	delay := 500 * time.Millisecond
-	for {
-		remaining, err := a.backfillPublicRouteSummariesOnce(ctx, window, batch)
-		if err != nil {
-			a.Log.Warn("public route summary backfill failed", "error", err)
-			delay = 30 * time.Second
-		} else if !remaining {
-			return
-		} else {
-			delay = 500 * time.Millisecond
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(delay):
-		}
-	}
-}
-
 func (a *Application) backfillPublicRouteSummariesOnce(ctx context.Context, window time.Duration, batch int) (bool, error) {
 	now := time.Now()
-	backfillCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	backfillCtx, cancel := context.WithTimeout(ctx, publicBackfillBatchTimeout)
 	defer cancel()
 	result, err := a.Store.BackfillPublicRouteSummaries(backfillCtx, now.Add(-window).UnixMilli(), now.UnixMilli(), batch)
 	if err != nil {

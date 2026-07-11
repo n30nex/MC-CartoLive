@@ -195,6 +195,10 @@ describe('map settings', () => {
     expect(explore.packets.speed).toBe(2);
     expect(explore.packets.animationStyle).toBe('pulse');
 
+    const watch = applyMapMode(normalizeMapSettings({ packets: { showLiveCometsAtAllZooms: false } }), 'watch');
+    expect(watch.layers.clusters).toBe(true);
+    expect(watch.packets.showLiveCometsAtAllZooms).toBe(true);
+
     const terrain = applyMapMode(base, 'terrain');
     expect(terrain.style.profileID).toBe('topo-rf');
     expect(terrain.layers.routes).toBe(true);
@@ -220,7 +224,7 @@ describe('map settings', () => {
     expect(mapModeForSettings(style).id).toBe('studio');
   });
 
-  it('migrates legacy settings into the closest v7 mode', () => {
+  it('migrates legacy settings into the closest current mode', () => {
     window.localStorage.setItem(MAP_SETTINGS_STORAGE_KEY, JSON.stringify({
       schemaVersion: 6,
       style: { profileID: 'topo-rf' },
@@ -238,6 +242,53 @@ describe('map settings', () => {
     expect(explore.modeID).toBe('explore');
   });
 
+  it('upgrades unmodified v7 Watch settings to visible low-zoom traffic', () => {
+    window.localStorage.setItem(MAP_SETTINGS_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 7,
+      modeID: 'watch',
+      customized: false,
+      layers: { clusters: false, routes: false, liveComets: true },
+      packets: { speed: 1.5, showLiveCometsAtAllZooms: false }
+    }));
+
+    const settings = readStoredMapSettings();
+    expect(settings.modeID).toBe('watch');
+    expect(settings.customized).toBe(false);
+    expect(settings.layers.clusters).toBe(true);
+    expect(settings.packets.showLiveCometsAtAllZooms).toBe(true);
+    expect(settings.packets.speed).toBe(1.5);
+  });
+
+  it('preserves custom Watch settings inferred from pre-v7 storage', () => {
+    window.localStorage.setItem(MAP_SETTINGS_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 6,
+      style: { profileID: 'classic-dark' },
+      layers: { clusters: false, routes: false, liveComets: true },
+      packets: { showLiveCometsAtAllZooms: false }
+    }));
+
+    const settings = readStoredMapSettings();
+    expect(settings.modeID).toBe('watch');
+    expect(settings.customized).toBe(true);
+    expect(settings.layers.clusters).toBe(false);
+    expect(settings.packets.showLiveCometsAtAllZooms).toBe(false);
+  });
+
+  it('preserves customized v7 low-zoom and cluster choices', () => {
+    window.localStorage.setItem(MAP_SETTINGS_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 7,
+      modeID: 'watch',
+      customized: true,
+      layers: { clusters: false, liveComets: true },
+      packets: { showLiveCometsAtAllZooms: false }
+    }));
+
+    const settings = readStoredMapSettings();
+    expect(settings.customized).toBe(true);
+    expect(settings.layers.clusters).toBe(false);
+    expect(settings.packets.showLiveCometsAtAllZooms).toBe(false);
+  });
+
   it('keeps default layer preset route-quiet but motion rich', () => {
     const defaultLayers = applyMapLayerPreset(DEFAULT_MAP_SETTINGS, 'live').layers;
 
@@ -249,7 +300,7 @@ describe('map settings', () => {
       terrainHeightmap: false,
       buildingExtrusions: true,
       weatherClouds: true,
-      clusters: false,
+      clusters: true,
       nodes: true,
       packetResidue: true,
       observerBursts: true,
@@ -257,6 +308,7 @@ describe('map settings', () => {
       terrainLOS: false,
       propagationInsights: false
     });
+    expect(DEFAULT_MAP_SETTINGS.packets.showLiveCometsAtAllZooms).toBe(true);
   });
 
   it('applies map style profiles with workflow-safe defaults', () => {

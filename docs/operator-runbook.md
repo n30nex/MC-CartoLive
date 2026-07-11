@@ -1,4 +1,4 @@
-# MC-CartoLive 3.2 Operator Runbook
+# MC-CartoLive 3.2.1 Operator Runbook
 
 ## Capacity first
 
@@ -29,12 +29,13 @@ service untouched; remeasure instead of assuming that evidence is still fresh.
 ## Digest deployment
 
 The release candidate is identified by the complete tuple
-`<merge-sha>, <candidate-workflow-run-id>, <run-attempt>, <digest>`. Candidate
-workflow reruns publish distinct
-`candidate-<sha>-<run-id>-<attempt>` tags and
+`<merge-sha>, <candidate-workflow-run-id>, <run-attempt>, <world-digest>,
+<canada-digest>`. Candidate workflow reruns publish distinct
+`candidate-<sha>-<run-id>-<attempt>-world` and
+`candidate-<sha>-<run-id>-<attempt>-canada` tags and
 `release-candidate-<sha>-<run-id>-<attempt>` artifacts. Download the chosen
-artifact and deploy its `image` digest; do not choose the newest artifact and do
-not deploy a mutable `sha-*` alias. Candidate authorization itself fails unless
+artifact and deploy its Canada digest; do not choose the newest artifact and
+do not deploy a mutable `sha-*` alias. Candidate authorization itself fails unless
 the exact merged release-branch head already has canonical full performance
 proof.
 
@@ -47,9 +48,9 @@ MC_CARTOLIVE_REQUIRE_PRIVACY_SCAN=1 bash scripts/deploy.sh \
   --expected-git-sha <full-release-sha>
 ```
 
-The hosted 3.2.0 release uses this non-destructive path after a verified
+The hosted 3.2.1 release uses this non-destructive path after a verified
 off-root-disk backup and migration rehearsal. Do not pass the fresh-database
-flags; see [upgrade-and-rollback](3.2.0/upgrade-and-rollback.md).
+flags; see [upgrade-and-rollback](3.2.1/upgrade-and-rollback.md).
 
 From Windows:
 
@@ -57,7 +58,7 @@ From Windows:
 .\scripts\deploy-live.ps1 `
   -Image 'ghcr.io/n30nex/mc-cartolive@sha256:<candidate>' `
   -PreviousImage 'ghcr.io/n30nex/mc-cartolive@sha256:<previous>' `
-  -ExpectedVersion 3.2.0 -ExpectedGitSha <full-sha>
+  -ExpectedVersion 3.2.1 -ExpectedGitSha <full-sha>
 ```
 
 ## Smoke and release evidence
@@ -65,27 +66,31 @@ From Windows:
 ```bash
 scripts/release-check.sh
 node scripts/package-smoke.mjs \
-  --image ghcr.io/n30nex/mc-cartolive@sha256:<candidate> --version 3.2.0 --pull
+  --image ghcr.io/n30nex/mc-cartolive@sha256:<canada-candidate> \
+  --version 3.2.1 --asset-pack canada --pull
 ```
 
 ```powershell
 .\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org `
-  -ExpectedVersion 3.2.0 -ExpectedGitSha <full-sha> -DiagnoseRegion YTR
+  -ExpectedVersion 3.2.1 -ExpectedGitSha <full-sha> -DiagnoseRegion YTR `
+  -SshTarget root@134.122.45.228
 ```
 
 Always check event reset, bootstrap/state, WebSocket hello, privacy, compiled
 identity, Docker restart/OOM state, and disk space.
 
 After the 30-minute soak, create the annotated release tag with
-`Candidate-Run-Id`, `Candidate-Run-Attempt`, `Candidate-Digest`, and
+`Candidate-Run-Id`, `Candidate-Run-Attempt`, `Candidate-World-Digest`,
+`Candidate-Canada-Digest`, and
 `Candidate-Deployed-At` trailers as
-shown in [upgrade and rollback](3.2.0/upgrade-and-rollback.md). The digest must
+shown in [upgrade and rollback](3.2.1/upgrade-and-rollback.md). The Canada digest must
 come from `/var/lib/mc-cartolive-deploy/current.env` and match the running
 container; the same record captures the candidate run ID, run attempt, and
 run-specific tag from OCI labels verified before cutover. Promotion uses that
-exact run-specific artifact and digest, then
-publishes `3.2.0`, `3.2`, `sha-<merge-sha>`, and `latest` plus a standalone
-`ROLLBACK.md` asset.
+  exact run-specific artifact and both digests. It publishes world tags `3.2.1`,
+  `3.2`, `sha-<merge-sha>`, and `latest`, plus Canada tags `3.2.1-canada`,
+  `3.2-canada`, `sha-<merge-sha>-canada`, and `latest-canada`, and a standalone
+  `ROLLBACK.md` asset.
 
 ## Watchdog
 
@@ -121,7 +126,7 @@ cat /var/lib/mc-cartolive-watchdog/state.env
 df -h /opt/MC-CartoLive/data
 ```
 
-## Automated 3.2 release audits
+## Automated 3.2.1 release audits
 
 Install the post-release audit beside the watchdog before cutover. It is an
 hourly, persistent timer; each deployment is keyed by its
@@ -189,7 +194,7 @@ BASE_URL=https://carto.canadaverse.org \
 
 Normal quiet motion is not failure. Stop promotion for public 5xx, cache/session
 loss, OOM/restart, `SQLITE_FULL`, sustained busy/queue pressure, privacy output,
-or metadata mismatch. Complete day-8/day-14 checks from the 3.2 validation
+or metadata mismatch. Complete day-8/day-14 checks from the 3.2.1 validation
 checklist.
 
 ## Diagnose public inclusion

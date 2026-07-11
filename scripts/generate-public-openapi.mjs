@@ -509,8 +509,9 @@ if (check) {
 }
 
 function webSocketEventSchema(event, dataSchema) {
-  return object(['v', 'type', 'event', 'seq', 'serverTime', 'displayAt', 'data'], {
-    v: integer({ const: 1 }), type: string({ const: 'event' }), event: string({ const: event }), seq: int64({ minimum: 1 }),
+  return object(['v', 'type', 'event', 'serverTime', 'displayAt', 'data'], {
+    v: integer({ const: 1 }), type: string({ const: 'event' }), event: string({ const: event }),
+    seq: int64({ minimum: 1, description: 'Sparse monotonic durable cursor when present. Omitted for live-only fallback events; consumers must not advance their durable cursor for an omitted value.' }),
     latestSeq: int64({ minimum: 1 }), serverTime: timestamp(), receivedAt: timestamp(), displayAt: timestamp(), data: ref(dataSchema)
   });
 }

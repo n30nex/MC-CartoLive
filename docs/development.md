@@ -121,8 +121,8 @@ Use this checklist after map, playback, or styling changes:
   packet effects, and message bubbles appear together at detail zoom.
 - Follow, WebSocket reconnect, and burst pacing resume packet comets
   without duplicate stale bursts.
-- Packets replay compacts the panel, pauses live flow, fits the full true path,
-  waits briefly, and animates one selected packet path.
+- Packets animation compacts the panel, fits the full true path, waits briefly,
+  and animates one selected path without pausing current live flow.
 - NetGraph opens from the top bar, renders connected public route nodes, supports
   pan/zoom/drag/search, and shows live routed packet comets without exposing raw
   packet IDs or raw path data.
@@ -130,8 +130,8 @@ Use this checklist after map, playback, or styling changes:
   without revealing every idle route.
 - Map Settings layer toggles and packet visual sliders work without unnecessary
   source rebuilds.
-- Replay starts hidden, opens without overlap, scrubs the retained timeline, and
-  returns cleanly to live mode.
+- The retired Timeline/VCR and RF Replay Studio controls are absent. Direct
+  packet-path animation from Packets returns cleanly to live mode.
 - Search, compact Legend, panel restore, dark/light mode, and palette choices
   remain readable on desktop and mobile.
 - `mc-diagnose` explains missing nodes/observers by region, coordinate status,
@@ -189,7 +189,7 @@ Run a short local soak when validating release automation:
 
 ## Map Modes And Offline Tiles
 
-3.2.0 keeps the Map Studio style registry and optional PMTiles profiles. Leave
+3.2.1 keeps the Map Studio style registry and optional PMTiles profiles. Leave
 `VITE_PMTILES_BASEMAP_URL` blank for normal development; the Offline PMTiles and
 Field Offline profiles will fall back to a local low-detail map. To test a real
 archive, host it from the same origin or another CSP-allowed HTTPS endpoint and
@@ -213,14 +213,14 @@ Use overrides when testing a branch, alternate host, expected build, or another
 diagnostic region:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.2.0 -ExpectedGitSha <full-sha> -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.2.1 -ExpectedGitSha <full-sha> -DiagnoseRegion YTR -SshTarget root@134.122.45.228
 ```
 
 For the documented production droplet, `scripts/deploy-live.ps1` wraps the
 remote deploy script and then runs the same live smoke:
 
 ```powershell
-.\scripts\deploy-live.ps1 -Image 'ghcr.io/n30nex/mc-cartolive@sha256:<candidate>' -PreviousImage 'ghcr.io/n30nex/mc-cartolive@sha256:<previous>' -ExpectedVersion 3.2.0 -ExpectedGitSha <full-sha>
+.\scripts\deploy-live.ps1 -Image 'ghcr.io/n30nex/mc-cartolive@sha256:<canada-candidate>' -PreviousImage 'ghcr.io/n30nex/mc-cartolive@sha256:<previous>' -ExpectedVersion 3.2.1 -ExpectedGitSha <full-sha>
 ```
 
 Append `-SkipSmoke` only when workstation smoke automation is intentionally

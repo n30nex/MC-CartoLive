@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const version = read('VERSION').trim();
-const image = String(process.env.RELEASE_IMAGE ?? '').trim();
+const worldImage = String(process.env.RELEASE_WORLD_IMAGE ?? '').trim();
+const canadaImage = String(process.env.RELEASE_CANADA_IMAGE ?? '').trim();
 const gitSha = String(process.env.RELEASE_GIT_SHA ?? '').trim();
 const buildTime = String(process.env.RELEASE_BUILD_TIME ?? new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')).trim();
 const outputRoot = resolve(root, process.env.RELEASE_OUTPUT_DIR ?? 'artifacts/release');
@@ -13,8 +14,12 @@ const outputRoot = resolve(root, process.env.RELEASE_OUTPUT_DIR ?? 'artifacts/re
 assert(/^\d+\.\d+\.\d+$/.test(version), `invalid VERSION: ${version}`);
 assert(/^[0-9a-f]{40}$/.test(gitSha), `RELEASE_GIT_SHA must be a full Git SHA: ${gitSha}`);
 assert(!Number.isNaN(Date.parse(buildTime)), `RELEASE_BUILD_TIME must be RFC3339: ${buildTime}`);
-const imageMatch = /^([a-zA-Z0-9._:/-]+)@(sha256:[0-9a-f]{64})$/.exec(image);
-assert(imageMatch, 'RELEASE_IMAGE must be an immutable image@sha256:digest reference');
+const worldImageMatch = /^([a-zA-Z0-9._:/-]+)@(sha256:[0-9a-f]{64})$/.exec(worldImage);
+const canadaImageMatch = /^([a-zA-Z0-9._:/-]+)@(sha256:[0-9a-f]{64})$/.exec(canadaImage);
+assert(worldImageMatch, 'RELEASE_WORLD_IMAGE must be an immutable image@sha256:digest reference');
+assert(canadaImageMatch, 'RELEASE_CANADA_IMAGE must be an immutable image@sha256:digest reference');
+assert(worldImageMatch[1] === canadaImageMatch[1], 'world and Canada images must share a repository');
+assert(worldImageMatch[2] !== canadaImageMatch[2], 'world and Canada image digests must be distinct');
 
 const schemaSource = read('backend/internal/store/db.go');
 const schemaMatch = /(?:const\s+SchemaVersion|SchemaVersion\s*=)\s*(\d+)/.exec(schemaSource);
@@ -34,6 +39,9 @@ const files = [
   ['scripts/mc-cartolive-watchdog.sh', 'scripts/mc-cartolive-watchdog.sh'],
   ['scripts/post-release-audit.sh', 'scripts/post-release-audit.sh'],
   ['scripts/check-public-privacy.mjs', 'scripts/check-public-privacy.mjs'],
+  ['scripts/public-privacy-retry.mjs', 'scripts/public-privacy-retry.mjs'],
+  ['scripts/public-privacy-websocket.mjs', 'scripts/public-privacy-websocket.mjs'],
+  ['scripts/websocket-flow-probe.mjs', 'scripts/websocket-flow-probe.mjs'],
   ['scripts/live-smoke.ps1', 'scripts/live-smoke.ps1'],
   ['scripts/package-smoke.mjs', 'scripts/package-smoke.mjs'],
   ['scripts/soak-check.sh', 'scripts/soak-check.sh'],
@@ -45,11 +53,11 @@ const files = [
   ['deploy/systemd/mc-cartolive-release-audit.service', 'deploy/systemd/mc-cartolive-release-audit.service'],
   ['deploy/systemd/mc-cartolive-release-audit.timer', 'deploy/systemd/mc-cartolive-release-audit.timer'],
   ['deploy/cloudflare-cidrs.txt', 'deploy/cloudflare-cidrs.txt'],
-  ['docs/3.2.0/upgrade-and-rollback.md', 'docs/upgrade-and-rollback.md'],
-  ['docs/3.2.0/release_notes.md', 'docs/release-notes.md'],
-  ['docs/3.2.0/security-and-operations.md', 'docs/security-and-operations.md'],
-  ['docs/3.2.0/storage-and-fresh-start.md', 'docs/storage-and-fresh-start.md'],
-  ['docs/3.2.0/validation_checklist.md', 'docs/validation-checklist.md'],
+  [`docs/${version}/upgrade-and-rollback.md`, 'docs/upgrade-and-rollback.md'],
+  [`docs/${version}/release_notes.md`, 'docs/release-notes.md'],
+  [`docs/${version}/security-and-operations.md`, 'docs/security-and-operations.md'],
+  [`docs/${version}/storage-and-stability.md`, 'docs/storage-and-stability.md'],
+  [`docs/${version}/validation_checklist.md`, 'docs/validation-checklist.md'],
   ['docs/privacy.md', 'docs/privacy.md'],
   ['docs/public-api.openapi.json', 'docs/public-api.openapi.json']
 ];
@@ -60,21 +68,33 @@ for (const [source, target] of files) {
 }
 
 const manifest = {
-  manifestVersion: 1,
+  manifestVersion: 2,
   application: 'MC-CartoLive',
   version,
   tag: `v${version}`,
   gitSha,
   buildTime,
-  image: {
-    repository: imageMatch[1],
-    digest: imageMatch[2],
-    reference: image,
-    platforms: ['linux/amd64', 'linux/arm64']
+  images: {
+    world: {
+      repository: worldImageMatch[1],
+      digest: worldImageMatch[2],
+      reference: worldImage,
+      assetPack: 'world',
+      tags: [version, version.split('.').slice(0, 2).join('.'), `sha-${gitSha}`, 'latest'],
+      platforms: ['linux/amd64', 'linux/arm64']
+    },
+    canada: {
+      repository: canadaImageMatch[1],
+      digest: canadaImageMatch[2],
+      reference: canadaImage,
+      assetPack: 'canada',
+      tags: [`${version}-canada`, `${version.split('.').slice(0, 2).join('.')}-canada`, `sha-${gitSha}-canada`, 'latest-canada'],
+      platforms: ['linux/amd64', 'linux/arm64']
+    }
   },
   database: {
     schemaVersion,
-    productionCutover: 'preserve_database',
+    deploymentPolicy: 'preserve_database_default',
     retentionDays: 7,
     publicEventRetentionHours: 24,
     historicalDataRecovery: true,
@@ -97,7 +117,10 @@ const manifest = {
   },
   publicApi: 'docs/public-api.openapi.json',
   attestations: {
-    image: `oci://${image}`,
+    images: {
+      world: `oci://${worldImage}`,
+      canada: `oci://${canadaImage}`
+    },
     releaseAssets: `https://github.com/n30nex/MC-CartoLive/attestations`
   }
 };
@@ -109,25 +132,26 @@ writeFileSync(join(stage, 'README.txt'), `MC-CartoLive ${version} deployment bun
 This package deploys the prebuilt image by immutable digest. It does not build
 on the target host. Read docs/upgrade-and-rollback.md before running anything.
 
-The hosted 3.2.0 cutover preserves and transactionally migrates the existing
+The hosted ${version} cutover preserves and transactionally migrates the existing
 SQLite database. Take and verify an off-root-disk backup before deployment and
 omit all destructive fresh-database flags. The destructive mode remains an
-explicit operator tool but is not the hosted 3.2.0 procedure.
+explicit operator tool but is not the hosted ${version} procedure.
 
-Image: ${image}
+World image: ${worldImage}
+Canada hosted image: ${canadaImage}
 Git SHA: ${gitSha}
 Schema: ${schemaVersion}
 
 Before cutover, install and enable deploy/systemd/mc-cartolive-release-audit.timer.
 It records privacy-safe 24-hour, day-8, and day-14 evidence without exporting
-database rows or runtime secrets. See docs/storage-and-fresh-start.md.
+database rows or runtime secrets. See docs/storage-and-stability.md.
 
 Node.js 18 or newer is staged on the hosted system for the bundled
 credential-free public privacy and WebSocket-hello validation. The deploy does
 not install packages.
 `);
 
-console.log(JSON.stringify({ version, image, gitSha, schemaVersion, stage, manifest: join(outputRoot, 'release-manifest.json') }, null, 2));
+console.log(JSON.stringify({ version, images: { world: worldImage, canada: canadaImage }, gitSha, schemaVersion, stage, manifest: join(outputRoot, 'release-manifest.json') }, null, 2));
 
 function read(relativePath) {
   return readFileSync(join(root, relativePath), 'utf8');

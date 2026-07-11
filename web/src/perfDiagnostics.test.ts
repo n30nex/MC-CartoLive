@@ -13,7 +13,6 @@ import {
   recordSourceUpdate,
   recordSkippedSourceUpdate,
   recordSnapshotReplacement,
-  recordVcrReplayQueueSize,
   recordVisibilityPause,
   setPerfDiagnosticsEnabled
 } from './perfDiagnostics';
@@ -36,10 +35,9 @@ describe('perf diagnostics', () => {
     recordSnapshotReplacement(false);
     recordSnapshotReplacement(true);
     recordRouteReducerDuration(4.56);
-    recordPacketFrame(3, 2, 12.34);
+    recordPacketFrame(3, 2, 12.34, ['pulse-a', 'pulse-b', 'pulse-a']);
     recordPacketSkippedFrame();
     recordLivePendingQueueSize(87.1);
-    recordVcrReplayQueueSize(42.8);
     recordVisibilityPause();
     recordNetGraphWorkerTransform(true, 12.34, 5.67, 16);
     recordNetGraphWorkerTransform(false, 3.21, 0, 0);
@@ -57,11 +55,11 @@ describe('perf diagnostics', () => {
       snapshotSkips: 1,
       routeReducerMs: 4.6,
       packetActiveComets: 3,
+      packetActiveCometIDs: ['pulse-a', 'pulse-b'],
       packetActiveObserverBursts: 2,
       packetFrameMs: 12.3,
       packetSkippedFrames: 1,
       livePendingQueueSize: 87,
-      vcrReplayQueueSize: 42,
       visibilityPauses: 1,
       netGraphWorkerTransforms: 1,
       netGraphWorkerFallbacks: 1,

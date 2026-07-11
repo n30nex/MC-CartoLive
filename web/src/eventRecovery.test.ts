@@ -49,6 +49,24 @@ describe('recoverPublicEventPages', () => {
     });
     expect(result.status).toBe('empty');
   });
+
+  it('requires a reset when an old nonzero cursor meets a new empty dataset', async () => {
+    const result = await recoverPublicEventPages({
+      afterSeq: 1_000,
+      fetchPage: async () => ({ ...response(0, 0, []), resetRequired: true }),
+      applyPage: () => undefined
+    });
+    expect(result).toMatchObject({ status: 'reset-required', cursor: 1_000, latestSeq: 0 });
+  });
+
+  it('reports the server cursor instead of retaining an obsolete higher cursor on reset', async () => {
+    const result = await recoverPublicEventPages({
+      afterSeq: 1_000,
+      fetchPage: async () => ({ ...response(5, 10, []), resetRequired: true }),
+      applyPage: () => undefined
+    });
+    expect(result).toMatchObject({ status: 'reset-required', cursor: 1_000, latestSeq: 10 });
+  });
 });
 
 function response(oldestSeq: number, latestSeq: number, events: PublicEvent[], nextCursor?: string): PublicEventsResponse {

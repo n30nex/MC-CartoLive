@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { JSON_REQUEST_TIMEOUT_MS, PUBLIC_STATE_CACHE_MAX_AGE_MS, fetchPublicBootstrap, fetchPublicChat, fetchPublicEvents, fetchPublicPackets, fetchPublicPropagation, fetchPublicState, fetchPublicStateWithFallback, fetchReadyz, readCachedPublicStateSnapshot } from './api';
+import { JSON_REQUEST_TIMEOUT_MS, PUBLIC_HISTORY_REQUEST_TIMEOUT_MS, PUBLIC_STATE_CACHE_MAX_AGE_MS, fetchPublicBootstrap, fetchPublicChat, fetchPublicEvents, fetchPublicHistory, fetchPublicPackets, fetchPublicPropagation, fetchPublicState, fetchPublicStateWithFallback, fetchReadyz, readCachedPublicStateSnapshot } from './api';
 
 describe('public transport contracts', () => {
   afterEach(() => {
@@ -47,11 +47,47 @@ describe('public transport contracts', () => {
     await rejection;
   });
 
+  it('keeps history requests alive beyond the server history deadline', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise((resolve, reject) => {
+      const timer = window.setTimeout(() => resolve(new Response(JSON.stringify({
+        serverTime: 12_000,
+        events: [],
+        window: { from: 1_000, to: 12_000, count: 0 }
+      }), { status: 200 })), JSON_REQUEST_TIMEOUT_MS + 1_000);
+      init?.signal?.addEventListener('abort', () => {
+        window.clearTimeout(timer);
+        reject(init.signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+      }, { once: true });
+    })));
+
+    const request = fetchPublicHistory({ from: 1_000, to: 12_000 });
+    await vi.advanceTimersByTimeAsync(JSON_REQUEST_TIMEOUT_MS + 1_000);
+
+    await expect(request).resolves.toMatchObject({ events: [], window: { count: 0 } });
+    expect(PUBLIC_HISTORY_REQUEST_TIMEOUT_MS).toBeGreaterThan(JSON_REQUEST_TIMEOUT_MS + 1_000);
+  });
+
   it('never silently substitutes localStorage for the network state API', async () => {
     seedPublicStateCache(Date.now());
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('offline'); }));
     await expect(fetchPublicState()).rejects.toThrow('offline');
     await expect(fetchPublicStateWithFallback()).resolves.toMatchObject({ source: 'offline-cache', cachedAt: expect.any(Number), state: { stats: { latestSeq: 12 } } });
+  });
+
+  it('bypasses a stale browser HTTP cache for full public-state hydration', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      serverTime: 100,
+      stats: { latestSeq: 12 },
+      nodes: [],
+      routes: [],
+      recentActivity: []
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchPublicState();
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/public/state', expect.objectContaining({ cache: 'no-store' }));
   });
 
   it('rejects offline snapshots outside the bounded freshness window', () => {

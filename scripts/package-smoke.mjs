@@ -12,6 +12,7 @@ const args = parseArgs(process.argv.slice(2));
 const version = String(args.version ?? process.env.PACKAGE_SMOKE_VERSION ?? (await readVersion()));
 const image = String(args.image ?? process.env.PACKAGE_SMOKE_IMAGE ?? `ghcr.io/n30nex/mc-cartolive:${version}`);
 const mode = String(args.mode ?? process.env.PACKAGE_SMOKE_MODE ?? 'all');
+const assetPack = normalizeAssetPack(args['asset-pack'] ?? process.env.PACKAGE_SMOKE_ASSET_PACK ?? 'world');
 const containerRuntime = String(args.runtime ?? process.env.PACKAGE_SMOKE_RUNTIME ?? process.env.CONTAINER_RUNTIME ?? 'docker');
 const smokeHost = String(args.host ?? process.env.PACKAGE_SMOKE_HOST ?? '127.0.0.1');
 const shouldPull = args.pull !== undefined || process.env.PACKAGE_SMOKE_PULL === '1';
@@ -76,6 +77,7 @@ console.log(JSON.stringify({
   containerRuntime,
   version,
   mode,
+  assetPack,
   privacy,
   passed: true,
   results
@@ -113,6 +115,7 @@ async function runScenario(scenario) {
     assert(ready.ready === true, `${scenario.name}: /readyz ready was not true`);
     assert(String(health.version) === version, `${scenario.name}: version ${health.version} did not match ${version}`);
     assert(String(ready.version) === version, `${scenario.name}: ready version ${ready.version} did not match ${version}`);
+    const assetManifest = await verifyServedAssetPack(baseUrl, assetPack, scenario.name);
     const mainMetrics = await getResponse(`${baseUrl}/metrics`);
     assert(mainMetrics.statusCode === 404, `${scenario.name}: public application listener exposed /metrics with ${mainMetrics.statusCode}`);
     const metrics = await getResponse(metricsUrl);
@@ -153,7 +156,9 @@ async function runScenario(scenario) {
       packetPaths: packets.packets.length,
       historyEvents: history.events?.length ?? 0,
       chatMessages: chat.messages?.length ?? 0,
-      mapRegionPreset: state.map?.regionPreset
+      mapRegionPreset: state.map?.regionPreset,
+      assetPack,
+      assetManifest: assetManifest.path
     };
   } catch (error) {
     printContainerLogs(scenario.container);
@@ -161,6 +166,64 @@ async function runScenario(scenario) {
   } finally {
     if (!keepContainers) cleanup(scenario.container);
   }
+}
+
+async function verifyServedAssetPack(baseUrl, expectedPack, scenarioName) {
+  const expected = {
+    world: {
+      name: 'MC-CartoLive',
+      shortName: 'CartoLive',
+      description: 'MeshCore MQTT Live Map'
+    },
+    canada: {
+      name: 'Carto Live Canada',
+      shortName: 'CartoLive CA',
+      description: 'Canada MeshCore MQTT Live Map'
+    }
+  }[expectedPack];
+  const otherPack = expectedPack === 'world' ? 'canada' : 'world';
+  const manifestPath = `/brand/${expectedPack}/manifest.json`;
+  const htmlResponse = await getResponse(`${baseUrl}/`, { accept: 'text/html' });
+  assert(htmlResponse.statusCode === 200, `${scenarioName}: application HTML returned ${htmlResponse.statusCode}`);
+  const manifestLinks = [...htmlResponse.body.matchAll(/<link\b[^>]*>/gi)]
+    .map((match) => match[0])
+    .filter((tag) => String(readHTMLAttribute(tag, 'rel') ?? '').toLowerCase().split(/\s+/).includes('manifest'))
+    .map((tag) => readHTMLAttribute(tag, 'href'));
+  assert(manifestLinks.length === 1, `${scenarioName}: application HTML must contain exactly one manifest link, got ${manifestLinks.length}`);
+  assert(manifestLinks[0] === manifestPath, `${scenarioName}: frontend manifest link ${manifestLinks[0] ?? '<missing>'} did not match ${manifestPath}`);
+  assert(!htmlResponse.body.includes(`/brand/${otherPack}/manifest.json`), `${scenarioName}: application HTML also referenced the ${otherPack} manifest`);
+
+  const manifestResponse = await getResponse(`${baseUrl}${manifestPath}`, { accept: 'application/manifest+json, application/json' });
+  assert(manifestResponse.statusCode === 200, `${scenarioName}: ${manifestPath} returned ${manifestResponse.statusCode}`);
+  let manifest;
+  try {
+    manifest = JSON.parse(manifestResponse.body);
+  } catch (error) {
+    throw new Error(`${scenarioName}: ${manifestPath} returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  assert(manifest.name === expected.name, `${scenarioName}: ${manifestPath} name did not identify ${expectedPack}`);
+  assert(manifest.short_name === expected.shortName, `${scenarioName}: ${manifestPath} short_name did not identify ${expectedPack}`);
+  assert(manifest.description === expected.description, `${scenarioName}: ${manifestPath} description did not identify ${expectedPack}`);
+  assert(manifest.start_url === '/', `${scenarioName}: ${manifestPath} start_url must be /`);
+  assert(manifest.display === 'standalone', `${scenarioName}: ${manifestPath} display must be standalone`);
+  assert(Array.isArray(manifest.icons) && manifest.icons.length === 2, `${scenarioName}: ${manifestPath} must contain exactly two icons`);
+  const expectedIcons = new Map([
+    [`/brand/${expectedPack}/app-icon-192.png`, '192x192'],
+    [`/brand/${expectedPack}/app-icon-512.png`, '512x512']
+  ]);
+  for (const icon of manifest.icons ?? []) {
+    assert(expectedIcons.get(icon?.src) === icon?.sizes, `${scenarioName}: ${manifestPath} has unexpected icon ${String(icon?.src ?? '<missing>')}`);
+    assert(icon?.type === 'image/png', `${scenarioName}: ${manifestPath} icon ${String(icon?.src)} is not image/png`);
+    assert(!String(icon?.src ?? '').includes(`/brand/${otherPack}/`), `${scenarioName}: ${manifestPath} crosses into the ${otherPack} asset pack`);
+    expectedIcons.delete(icon.src);
+  }
+  assert(expectedIcons.size === 0, `${scenarioName}: ${manifestPath} is missing required ${expectedPack} icons`);
+  return { path: manifestPath, manifest };
+}
+
+function readHTMLAttribute(tag, attribute) {
+  const match = tag.match(new RegExp(`\\b${attribute}\\s*=\\s*(["'])(.*?)\\1`, 'i'));
+  return match?.[2];
 }
 
 async function waitForPublicState(baseUrl, scenario, timeout) {
@@ -306,4 +369,12 @@ function parseArgs(rawArgs) {
     }
   }
   return parsed;
+}
+
+function normalizeAssetPack(value) {
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized !== 'world' && normalized !== 'canada') {
+    throw new Error(`Unknown asset pack "${value}". Use world or canada.`);
+  }
+  return normalized;
 }

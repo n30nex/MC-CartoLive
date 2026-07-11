@@ -40,16 +40,17 @@ export async function recoverPublicEventPages({
   while (isActive()) {
     const response = await fetchPage(cursor, limit);
     pages += 1;
-    latestSeq = Math.max(latestSeq, finiteSequence(response.latestSeq));
+    const responseLatestSeq = finiteSequence(response.latestSeq);
 
     if (response.resetRequired) {
       return {
-        status: latestSeq === 0 ? 'empty' : 'reset-required',
+        status: responseLatestSeq === 0 && cursor === 0 ? 'empty' : 'reset-required',
         cursor,
-        latestSeq,
+        latestSeq: responseLatestSeq,
         pages
       };
     }
+    latestSeq = Math.max(latestSeq, responseLatestSeq);
 
     const events = [...response.events]
       .filter((event) => finiteSequence(event.seq) > cursor)

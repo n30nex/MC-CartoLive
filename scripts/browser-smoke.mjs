@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { probeCurrentPublicTopology } from './browser-smoke-topology.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -39,7 +40,6 @@ const scenarios = [
       { selector: '.link-bar', label: 'top project bar' },
       { selector: '.top-actions', label: 'top map actions', desktopOnly: true },
       { selector: '.mobile-tabbar', label: 'mobile app tabbar', mobileOnly: true },
-      { selector: '.vcr-mini-clock', label: 'mini live clock', desktopOnly: true },
       { selector: '.maplibregl-ctrl-bottom-right', label: 'map controls' }
     ],
     actions: [smokeLiveMapControls]
@@ -63,7 +63,7 @@ const scenarios = [
       { selector: '.packets-panel', label: 'Packets panel' },
       { selector: '.packets-summary-strip', label: 'Packets summary strip' }
     ],
-    actions: [smokePacketsReplay]
+    actions: [smokePacketsAnimation]
   },
   {
     name: 'chat',
@@ -124,6 +124,7 @@ const channel = args.channel ? String(args.channel) : (process.env.PLAYWRIGHT_CH
 
 await mkdir(outputDir, { recursive: true });
 
+const fixtureTopology = await waitForPublicTopology(baseUrl);
 const browser = await launchBrowser({ channel, headless });
 const startedAt = new Date().toISOString();
 const results = [];
@@ -160,6 +161,7 @@ const summary = {
   finishedAt: new Date().toISOString(),
   viewports: viewports.map(({ name, width, height }) => ({ name, width, height })),
   scenarios: scenarios.map(({ name, hash }) => ({ name, hash })),
+  fixtureTopology,
   releaseGates,
   passed: hardFailures === 0,
   failures: hardFailures,
@@ -209,6 +211,7 @@ async function runScenario(browser, viewport, scenario) {
 
   try {
     await page.addInitScript(() => {
+      localStorage.setItem('mc-cartolive-debug-perf', '1');
       for (const key of Object.keys(localStorage)) {
         if (key.startsWith('mc-cartolive-welcome-guide-dismissed-')) localStorage.setItem(key, '1');
       }
@@ -292,7 +295,8 @@ async function runReleaseGate(browser, viewport) {
   let serviceWorker = null;
   let eventReset = null;
   let visibilityRecovery = null;
-  let exportCleanup = null;
+  let commandPalette = null;
+  let liveFlow = null;
   let cdp = null;
 
   await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
@@ -336,13 +340,18 @@ async function runReleaseGate(browser, viewport) {
       await page.getByRole('region', { name: /First visit map guide/i }).waitFor({ state: 'hidden', timeout: 5_000 });
     }
 
-    await runGateStep(errors, checks, 'full node and route topology hydrates before interactive surfaces', () => waitForTopologyHydration(page));
+    const topologyReady = await runGateStep(errors, checks, 'full node and route topology hydrates before interactive surfaces', async () => {
+      await waitForTopologyHydration(page);
+      return true;
+    });
 
     eventReset = await runGateStep(errors, checks, 'public cursor reset semantics for zero and ahead cursors', () => smokePublicEventReset(page));
 
     serviceWorker = await runGateStep(errors, checks, 'service-worker registration/update, no-cache metadata, and bounded versioned caches', () => smokeServiceWorkerSafety(page, context));
 
-    exportCleanup = await runGateStep(errors, checks, 'Ctrl/Cmd+K, focus trap/restore, reduced-motion Replay Studio, and bounded export cleanup', () => smokeCommandReplayAndExport(page, viewport));
+    if (topologyReady) {
+      commandPalette = await runGateStep(errors, checks, 'Ctrl/Cmd+K command palette focus trap/restore and retired playback controls stay absent', () => smokeCommandPalette(page, viewport));
+    }
     await recoverReleaseGateUI(page);
 
     const styleDrawer = await runGateStep(errors, checks, 'style library opens as an accessible modal', () => openStyleChangeSurface(page));
@@ -379,6 +388,9 @@ async function runReleaseGate(browser, viewport) {
       const hiddenExportSurfaces = await countHiddenExportSurfaces(page);
       if (hiddenExportSurfaces !== 0) throw new Error(`temporary export surfaces leaked after release gate: ${hiddenExportSurfaces}`);
     });
+    if (topologyReady) {
+      liveFlow = await runGateStep(errors, checks, 'sparse durable and seq-less fallback events visibly update the live map', () => smokeSparseLiveFlow(page));
+    }
   } catch (error) {
     errors.push(error instanceof Error ? error.message : String(error));
   } finally {
@@ -406,7 +418,8 @@ async function runReleaseGate(browser, viewport) {
     eventReset,
     serviceWorker,
     visibilityRecovery,
-    exportCleanup,
+    commandPalette,
+    liveFlow,
     downloads,
     metrics: { baseline: baselineMetrics, postStyles: postStyleMetrics, final: finalMetrics, styleDeltas: metricDeltas, finalDeltas: finalMetricDeltas, thresholds: RELEASE_GATE_THRESHOLDS },
     errors
@@ -494,7 +507,7 @@ async function smokePublicEventReset(page) {
   };
 }
 
-async function smokeCommandReplayAndExport(page, viewport) {
+async function smokeCommandPalette(page, viewport) {
   const origin = viewport.isMobile
     ? page.locator('.mobile-tabbar').getByRole('button', { name: /^Map$/i })
     : page.locator('.command-palette-toggle').first();
@@ -510,6 +523,8 @@ async function smokeCommandReplayAndExport(page, viewport) {
   const options = command.getByRole('option');
   const optionCount = await options.count();
   if (optionCount < 2) throw new Error(`command palette exposed too few keyboard results: ${optionCount}`);
+  const retiredOptions = command.getByRole('option').filter({ hasText: /RF Replay Studio|Live timeline/i });
+  if (await retiredOptions.count()) throw new Error('command palette still exposes retired Timeline/VCR or RF Replay Studio actions');
   const firstSelected = await command.getByRole('option', { selected: true }).textContent();
   await input.press('ArrowDown');
   const secondSelected = await command.getByRole('option', { selected: true }).textContent();
@@ -523,57 +538,9 @@ async function smokeCommandReplayAndExport(page, viewport) {
   await command.waitFor({ state: 'visible', timeout: 10_000 });
   await page.locator('.command-palette-backdrop').dispatchEvent('mousedown', { button: 0 });
   await command.waitFor({ state: 'hidden', timeout: 5_000 });
-
-  await page.keyboard.press('Control+K');
-  await command.waitFor({ state: 'visible', timeout: 10_000 });
-  await input.fill('RF Replay Studio');
-  const replayOption = command.getByRole('option').filter({ hasText: 'RF Replay Studio' }).first();
-  await replayOption.waitFor({ state: 'visible', timeout: 8_000 });
-  await input.press('Enter');
-  await command.waitFor({ state: 'hidden', timeout: 5_000 });
-
-  const replay = page.getByRole('dialog', { name: /RF Replay Studio/i });
-  await replay.waitFor({ state: 'visible', timeout: 15_000 });
-  const reduced = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
-  if (!reduced) throw new Error('release context did not emulate reduced motion');
-  await replay.getByText(/Reduced motion is active: Replay Studio uses a static route story/i).waitFor({ state: 'visible', timeout: 8_000 });
-  await replay.getByRole('slider', { name: /Route replay position/i }).waitFor({ state: 'visible', timeout: 8_000 });
-  await assertAccessibleModal(page, replay, 'RF Replay Studio');
-  await replay.getByRole('button', { name: /^2D$/i }).click();
-  await page.locator('.toast-viewport[role="status"][aria-live="polite"]').waitFor({ state: 'visible', timeout: 5_000 });
-  const showStory = replay.getByRole('button', { name: /Show story/i });
-  await showStory.click();
-  await page.waitForTimeout(500);
-  if (await replay.getByRole('button', { name: /^Pause$/i }).isVisible().catch(() => false)) {
-    throw new Error('reduced-motion replay started continuous camera animation');
-  }
-  const runningAnimations = await replay.evaluate((element) => element.getAnimations({ subtree: true }).filter((animation) => animation.playState === 'running').length);
-  if (runningAnimations > 0) throw new Error(`reduced-motion Replay Studio has ${runningAnimations} running animations`);
-
-  const exportButton = replay.getByRole('button', { name: /^Export WebM$/i });
-  if (!await exportButton.isEnabled()) throw new Error('Chromium fixture gate did not expose local WebM export');
-  const beforeSurfaces = await countHiddenExportSurfaces(page);
-  await page.evaluate(() => { window.__mcBrowserSmoke.timeoutCapMs = 1_250; });
-  await exportButton.click();
-  const exportStarted = await replay.getByRole('button', { name: /Recording/i }).waitFor({ state: 'visible', timeout: 8_000 }).then(() => true, () => false);
-  if (!exportStarted) {
-    const toast = await page.locator('.toast, [role="status"]').filter({ hasText: /WebM|record|export/i }).last().textContent().catch(() => '');
-    throw new Error(`WebM export did not enter its bounded recording path: ${compactText(toast)}`);
-  }
-  await page.waitForFunction(() => {
-    const recording = [...document.querySelectorAll('button')].some((button) => /Recording/i.test(button.textContent ?? ''));
-    const exportSurface = [...document.body.children].some((element) => element instanceof HTMLElement && element.getAttribute('aria-hidden') === 'true' && element.style.left.startsWith('-100000'));
-    return !recording && !exportSurface;
-  }, null, { timeout: 12_000 });
-  await page.evaluate(() => { window.__mcBrowserSmoke.timeoutCapMs = null; });
-  const afterSurfaces = await countHiddenExportSurfaces(page);
-  if (afterSurfaces !== beforeSurfaces) throw new Error(`WebM export surface cleanup mismatch: before=${beforeSurfaces} after=${afterSurfaces}`);
-  if (await page.locator('a[download]').count()) throw new Error('temporary export download anchor remained in the document');
-
-  await page.keyboard.press('Escape');
-  await replay.waitFor({ state: 'hidden', timeout: 5_000 });
-  await assertNoHorizontalOverflow(page, viewport, 'after Replay Studio');
-  return { boundedTimeoutMs: 1_250, exportStarted, hiddenSurfacesBefore: beforeSurfaces, hiddenSurfacesAfter: afterSurfaces };
+  await assertRetiredPlaybackControlsAbsent(page);
+  await assertNoHorizontalOverflow(page, viewport, 'after command palette');
+  return { keyboardNavigation: true, focusRestored: true, backdropDismissed: true, retiredPlaybackControlsAbsent: true };
 }
 
 async function openStyleChangeSurface(page) {
@@ -855,12 +822,26 @@ async function waitForCondition(predicate, timeoutMs, pollMs) {
   return false;
 }
 
+async function waitForPublicTopology(publicBaseUrl, timeoutMs = 45_000) {
+  let diagnostic = 'no response';
+  const ready = await waitForCondition(async () => {
+    const proof = await probeCurrentPublicTopology(publicBaseUrl);
+    diagnostic = proof.diagnostic;
+    return proof.ready;
+  }, timeoutMs, 750);
+  if (!ready) throw new Error(`public fixture topology did not become current: ${diagnostic}`);
+  return diagnostic;
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function installBrowserSmokeInstrumentation() {
   if (window.__mcBrowserSmoke) return;
+  try { window.localStorage.setItem('mc-cartolive-debug-perf', '1'); } catch {}
+  const NativeWebSocket = window.WebSocket;
+  const liveSockets = new Set();
   const state = {
     listeners: 0,
     listenerTypes: Object.create(null),
@@ -945,6 +926,15 @@ function installBrowserSmokeInstrumentation() {
   };
   window.cancelAnimationFrame = (id) => { state.animationFrames.delete(id); return nativeCancelRAF(id); };
 
+  window.WebSocket = new Proxy(NativeWebSocket, {
+    construct(target, args) {
+      const socket = Reflect.construct(target, args, target);
+      liveSockets.add(socket);
+      socket.addEventListener('close', () => liveSockets.delete(socket), { once: true });
+      return socket;
+    }
+  });
+
   window.__mcBrowserSmoke = {
     get timeoutCapMs() { return state.timeoutCapMs; },
     set timeoutCapMs(value) { state.timeoutCapMs = Number.isFinite(value) ? Math.max(1, Number(value)) : null; },
@@ -954,19 +944,93 @@ function installBrowserSmokeInstrumentation() {
       timeouts: state.timeouts.size,
       intervals: state.intervals.size,
       animationFrames: state.animationFrames.size
-    })
+    }),
+    openSocketCount: () => [...liveSockets].filter((candidate) => candidate.readyState === NativeWebSocket.OPEN).length,
+    injectSocketMessages: (messages) => {
+      const socket = [...liveSockets].find((candidate) => candidate.readyState === NativeWebSocket.OPEN);
+      if (!socket) throw new Error('no open public WebSocket available for live-flow smoke');
+      for (const message of messages) {
+        socket.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(message) }));
+      }
+      return messages.length;
+    }
   };
+}
+
+async function smokeSparseLiveFlow(page) {
+  await page.waitForFunction(() => Number(window.__mcBrowserSmoke?.openSocketCount?.() ?? 0) > 0, null, { timeout: 15_000 });
+  const injected = await page.evaluate(async () => {
+    const response = await fetch(`/api/v1/public/state?browserSmokeLive=${Date.now()}`, { cache: 'no-store', headers: { accept: 'application/json' } });
+    if (!response.ok) throw new Error(`full state HTTP ${response.status}`);
+    const state = await response.json();
+    const route = state.routes?.[0];
+    const source = state.recentPulses?.find((pulse) => pulse?.segments?.length) ?? (route ? {
+      id: 'browser-smoke-route-source',
+      payloadTypeName: route.payloadTypeNames?.[0] ?? 'PLAIN_TEXT',
+      heardAt: Date.now(),
+      segments: [{ routeId: route.id, from: route.from, to: route.to, distanceKm: route.distanceKm }]
+    } : null);
+    if (!source?.segments?.length) throw new Error('fixture has no routed topology for live-flow injection');
+    const shell = document.querySelector('.app-shell');
+    if (!(shell instanceof HTMLElement)) throw new Error('app shell is unavailable');
+    const baselineSeq = Number(shell.dataset.liveSeq ?? 0);
+    const firstSeq = baselineSeq + 2;
+    const finalSeq = baselineSeq + 5;
+    const now = Date.now();
+    if (window.__mcCartoLivePerf) {
+      window.__mcCartoLivePerf.packetActiveComets = 0;
+      window.__mcCartoLivePerf.packetActiveCometIDs = [];
+    }
+    const pulse = (id, heardAt) => ({ ...source, id, seq: undefined, heardAt, receivedAt: heardAt, displayAt: heardAt });
+    const messages = [
+      { v: 1, type: 'event', event: 'routePulse', seq: firstSeq, latestSeq: firstSeq, serverTime: now, receivedAt: now, displayAt: now, data: pulse('browser-smoke-sparse-a', now) },
+      { v: 1, type: 'event', event: 'routePulse', seq: 0, latestSeq: firstSeq, serverTime: now + 40, receivedAt: now + 40, displayAt: now + 40, data: pulse('browser-smoke-fallback-zero', now + 40) },
+      { v: 1, type: 'event', event: 'routePulse', seq: finalSeq, latestSeq: finalSeq, serverTime: now + 80, receivedAt: now + 80, displayAt: now + 80, data: pulse('browser-smoke-sparse-b', now + 80) },
+      { v: 1, type: 'event', event: 'routePulse', latestSeq: finalSeq, serverTime: now + 120, receivedAt: now + 120, displayAt: now + 120, data: pulse('browser-smoke-fallback-omitted', now + 120) }
+    ];
+    const count = window.__mcBrowserSmoke.injectSocketMessages(messages);
+    return { baselineSeq, firstSeq, finalSeq, fallbackID: 'browser-smoke-fallback-omitted', count };
+  });
+
+  const applied = await page.waitForFunction(({ finalSeq, fallbackID }) => {
+    const shell = document.querySelector('.app-shell');
+    return shell instanceof HTMLElement && Number(shell.dataset.liveSeq) === finalSeq && shell.dataset.latestPulseId === fallbackID;
+  }, injected, { timeout: 10_000 }).then(() => true, () => false);
+  if (!applied) {
+    const state = await page.evaluate(() => {
+      const shell = document.querySelector('.app-shell');
+      return {
+        liveSeq: shell instanceof HTMLElement ? shell.dataset.liveSeq : null,
+        latestPulseID: shell instanceof HTMLElement ? shell.dataset.latestPulseId : null,
+        openSockets: Number(window.__mcBrowserSmoke?.openSocketCount?.() ?? 0),
+        activeComets: Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0)
+      };
+    });
+    throw new Error(`injected live events were not applied: expected seq=${injected.finalSeq} pulse=${injected.fallbackID}; observed ${JSON.stringify(state)}`);
+  }
+  const animated = await page.waitForFunction(({ fallbackID }) => {
+    return Array.isArray(window.__mcCartoLivePerf?.packetActiveCometIDs)
+      && window.__mcCartoLivePerf.packetActiveCometIDs.includes(fallbackID);
+  }, injected, { timeout: 10_000 }).then(() => true, () => false);
+  if (!animated) {
+    const active = await page.evaluate(() => ({
+      count: Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0),
+      ids: Array.isArray(window.__mcCartoLivePerf?.packetActiveCometIDs) ? window.__mcCartoLivePerf.packetActiveCometIDs : []
+    }));
+    throw new Error(`injected route pulse ${injected.fallbackID} did not start a visible comet: ${JSON.stringify(active)}`);
+  }
+  return injected;
 }
 
 async function smokeLiveMapControls(page, viewport) {
   await assertNoNocSummary(page);
+  await assertRetiredPlaybackControlsAbsent(page);
   if (viewport.isMobile) {
     await assertVisibleInViewport(page, '.mobile-control-dock', 'mobile control dock', viewport);
     return;
   }
   await smokeOpenFreeMapToggle(page, viewport);
   await smokePalettePicker(page, viewport);
-  if (!viewport.isMobile) await smokeVcr(page, viewport);
   await smokeTopInfoPanels(page, viewport);
 }
 
@@ -981,6 +1045,14 @@ async function waitForTopologyHydration(page, timeout = 15_000) {
 async function assertNoNocSummary(page) {
   const nocCount = await page.locator('.noc-summary').count();
   if (nocCount > 0) throw new Error(`NOC summary chrome should not render, found ${nocCount}`);
+}
+
+async function assertRetiredPlaybackControlsAbsent(page) {
+  const retiredSelectors = '.vcr-mini-clock, .vcr-bar, .vcr-open-button, .replay-studio-toggle, .rf-replay-studio, [data-vcr-layout], [aria-label="RF Replay Studio"]';
+  const retiredSurfaceCount = await page.locator(retiredSelectors).count();
+  if (retiredSurfaceCount > 0) throw new Error(`retired Timeline/VCR or RF Replay Studio surfaces still render: ${retiredSurfaceCount}`);
+  const retiredButtonCount = await page.locator('button').filter({ hasText: /RF Replay Studio|Live timeline|Export WebM/i }).count();
+  if (retiredButtonCount > 0) throw new Error(`retired playback/export controls still render: ${retiredButtonCount}`);
 }
 
 async function smokeOpenFreeMapToggle(page, viewport) {
@@ -1017,91 +1089,6 @@ async function smokePalettePicker(page, viewport) {
   await page.waitForSelector('.palette-picker', { state: 'hidden', timeout: 5_000 });
 }
 
-async function smokeVcr(page, viewport) {
-  await page.locator('.vcr-mini-clock').first().click();
-  await assertVisibleInViewport(page, '.vcr-bar', 'VCR controls', viewport);
-  await assertVisibleInViewport(page, '.vcr-timeline-shell', 'VCR timeline', viewport);
-
-  const timeline = page.locator('.vcr-timeline-shell').first();
-  const box = await timeline.boundingBox();
-  if (box) {
-    await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.5);
-    await page.waitForFunction(() => {
-      const element = document.querySelector('.vcr-hover-time');
-      if (!(element instanceof HTMLElement)) return false;
-      const rect = element.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== 'hidden';
-    }, null, { timeout: 5_000 });
-    await assertVisibleInViewport(page, '.vcr-hover-time', 'VCR hover timestamp', viewport);
-  }
-
-  await page.getByRole('button', { name: /Change replay speed/i }).click();
-  await smokeVcrScrubReplay(page);
-  await page.getByRole('button', { name: /Hide (?:VCR|replay) controls and return live/i }).click();
-  await page.waitForSelector('.vcr-bar', { state: 'hidden', timeout: 5_000 });
-  await assertVisibleInViewport(page, '.vcr-mini-clock', 'mini live clock after VCR close', viewport);
-}
-
-async function smokeVcrScrubReplay(page) {
-  const replayTarget = await findRecentRoutePulseReplayTarget(page);
-  if (!replayTarget?.timestamp) {
-    throw new Error(`VCR replay smoke could not find a recent routePulse history event. ${compactText(replayTarget?.diagnostic)}`);
-  }
-  if (replayTarget.scopeLabel !== '1h') {
-    await page.locator('.vcr-scope').getByRole('button', { name: new RegExp(`^${replayTarget.scopeLabel}$`, 'i') }).click();
-    await page.waitForTimeout(250);
-  }
-
-  await setRangeInputValue(page.locator('input.vcr-timeline').first(), replayTarget.timestamp);
-  await page.waitForSelector('.vcr-bar.paused', { state: 'visible', timeout: 8_000 });
-
-  // The target lookup and replay loader share the public history quota. Let
-  // the continuous token bucket refill before asking the UI for the same
-  // bounded window, then prove transient fixture contention is retryable.
-  await page.waitForTimeout(1_100);
-  const historyStatuses = [await triggerVcrReplay(page)];
-  const replayStarted = await page.waitForFunction(() => {
-    const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
-    const bar = document.querySelector('.vcr-bar');
-    const readoutText = readout.trim();
-    return readout.includes('REPLAY LOADING') ||
-      /^REPLAY (?!PAUSED)/i.test(readoutText) ||
-      bar?.classList.contains('replay') ||
-      Boolean(document.querySelector('.vcr-live-clock-icon.spinning')) ||
-      /NO REPLAY EVENTS|REPLAY EMPTY|REPLAY ERROR|REPLAY RETRY/i.test(readout);
-  }, null, { timeout: 15_000 }).then(() => true, () => false);
-  const readoutAfterStart = await page.locator('.vcr-readout').first().textContent().catch(() => '');
-  if (!replayStarted && /REPLAY PAUSED/i.test(readoutAfterStart ?? '')) {
-    throw new Error(`VCR replay did not leave paused state: ${compactText(readoutAfterStart)}`);
-  }
-  await page.waitForFunction(() => {
-    const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
-    return !readout.includes('REPLAY LOADING');
-  }, null, { timeout: 20_000 }).catch(() => {});
-  let readoutText = await page.locator('.vcr-readout').first().textContent();
-  for (let retry = 0; retry < 2 && /REPLAY ERROR|REPLAY RETRY/i.test(readoutText ?? ''); retry += 1) {
-    await page.waitForTimeout(1_500 * (retry + 1));
-    historyStatuses.push(await triggerVcrReplay(page));
-    await page.waitForFunction(() => {
-      const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
-      return !readout.includes('REPLAY LOADING');
-    }, null, { timeout: 20_000 });
-    readoutText = await page.locator('.vcr-readout').first().textContent();
-  }
-  if (/NO REPLAY EVENTS|REPLAY EMPTY|REPLAY ERROR|REPLAY RETRY/i.test(readoutText ?? '')) {
-    throw new Error(`VCR replay did not produce replayable route events: ${compactText(readoutText)}; history HTTP ${historyStatuses.join(',')}`);
-  }
-}
-
-async function triggerVcrReplay(page) {
-  const response = page.waitForResponse((candidate) => {
-    const url = new URL(candidate.url());
-    return url.pathname === '/api/v1/public/history';
-  }, { timeout: 20_000 });
-  await page.getByRole('button', { name: /Replay from selected time/i }).click();
-  return (await response).status();
-}
-
 async function smokeSetupPanel(page, viewport) {
   await assertVisibleInViewport(page, 'section.setup-panel[aria-label="First-run setup"]', 'first-run setup dialog', viewport);
   await activateSetupPreset(page, 'custom');
@@ -1129,12 +1116,12 @@ async function smokeSetupPanel(page, viewport) {
   }
 }
 
-async function smokePacketsReplay(page, viewport) {
+async function smokePacketsAnimation(page, viewport) {
   const row = await waitForPacketRow(page, false);
   if (!row) {
     const empty = await page.locator('.packets-empty').first().textContent({ timeout: 2_000 }).catch(() => 'No packets available');
     if (!empty || !empty.toLowerCase().includes('no true path packets')) {
-      throw new Error(`Packets replay smoke found no row and no clear empty state: ${compactText(empty)}`);
+      throw new Error(`Packets animation smoke found no row and no clear empty state: ${compactText(empty)}`);
     }
     return;
   }
@@ -1152,15 +1139,24 @@ async function smokePacketsReplay(page, viewport) {
   const before = await readMapViewData(page);
   await row.locator('.packet-replay-button').click();
   await page.waitForSelector('.app-shell[data-packets-mode="compactTray"]', { state: 'visible', timeout: 10_000 });
-  await assertVisibleInViewport(page, 'section.packets-compact-tray[aria-label="Selected packet replay"]', 'Packets compact replay tray', viewport);
-  await page.getByRole('button', { name: /Replay again/i }).waitFor({ state: 'visible', timeout: 8_000 });
-  await page.getByRole('button', { name: /Resume live/i }).waitFor({ state: 'visible', timeout: 8_000 });
+  await assertVisibleInViewport(page, 'section.packets-compact-tray[aria-label="Selected packet animation"]', 'Packets compact animation tray', viewport);
+  await page.getByRole('button', { name: /Animate again/i }).waitFor({ state: 'visible', timeout: 8_000 });
+  const liveFlow = await page.locator('.app-shell').getAttribute('data-live-flow');
+  if (liveFlow !== 'live') throw new Error(`PacketTV animation replaced the live stream: ${liveFlow}`);
+  const animated = await page.waitForFunction(() => Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0) > 0, null, { timeout: 8_000 }).then(() => true, () => false);
+  if (!animated) {
+    const active = await page.evaluate(() => ({
+      count: Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0),
+      ids: Array.isArray(window.__mcCartoLivePerf?.packetActiveCometIDs) ? window.__mcCartoLivePerf.packetActiveCometIDs : []
+    }));
+    throw new Error(`PacketTV direct animation did not start its map comet: ${JSON.stringify(active)}`);
+  }
 
   if (!viewport.isMobile) {
     await page.waitForTimeout(2600);
     const after = await readMapViewData(page);
     if (before && after && after.baseMode === 'openfreemap' && !mapViewChanged(before, after)) {
-      throw new Error(`OpenFreeMap packet replay did not move the map camera: before=${JSON.stringify(before)} after=${JSON.stringify(after)}`);
+      throw new Error(`OpenFreeMap packet animation did not move the map camera: before=${JSON.stringify(before)} after=${JSON.stringify(after)}`);
     }
   }
 }
@@ -1299,42 +1295,7 @@ async function waitForPacketRow(page, requireRow = true) {
   const error = await page.locator('.packets-error').first().textContent({ timeout: 1_000 }).catch(() => '');
   const empty = await page.locator('.packets-empty').first().textContent({ timeout: 1_000 }).catch(() => '');
   const panel = await page.locator('.packets-panel').first().textContent({ timeout: 1_000 }).catch(() => '');
-  throw new Error(`Packets replay smoke could not load a true path row. ${compactText(error || empty || panel)}`);
-}
-
-async function findRecentRoutePulseReplayTarget(page) {
-  return page.evaluate(async () => {
-    const now = Date.now();
-    const diagnostics = [];
-    const windows = [
-      { label: '1h', from: now - 60 * 60_000 },
-      { label: '6h', from: now - 6 * 60 * 60_000 },
-      { label: '24h', from: now - 24 * 60 * 60_000 }
-    ];
-    for (const item of windows) {
-      const params = new URLSearchParams({
-        from: String(Math.max(0, Math.round(item.from))),
-        to: String(Math.round(now)),
-        limit: '250'
-      });
-      try {
-        const response = await fetch(`/api/v1/public/history?${params.toString()}`, { headers: { accept: 'application/json' } });
-        if (!response.ok) {
-          diagnostics.push(`${item.label}: HTTP ${response.status}`);
-          continue;
-        }
-        const body = await response.json();
-        const events = Array.isArray(body.events) ? body.events : [];
-        const routePulses = events.filter((event) => event?.type === 'routePulse' && Number.isFinite(event.at));
-        const routePulse = routePulses[0];
-        diagnostics.push(`${item.label}: ${routePulses.length} routed pulses / ${events.length} events`);
-        if (routePulse) return { timestamp: Math.max(0, routePulse.at - 1), scopeLabel: item.label };
-      } catch (error) {
-        diagnostics.push(`${item.label}: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-    return { diagnostic: diagnostics.join('; ') };
-  });
+  throw new Error(`Packets animation smoke could not load a true path row. ${compactText(error || empty || panel)}`);
 }
 
 async function activateSetupPreset(page, preset) {

@@ -32,8 +32,16 @@ type PublicEventFilter struct {
 const publicEventByDedupeKeySQL = `SELECT seq FROM public_events WHERE dedupe_key = ? AND dedupe_key != ''`
 
 func (s *Store) InsertPublicEvent(ctx context.Context, event live.PublicEvent) (live.PublicEvent, error) {
+	event, _, err := s.InsertPublicEventOnce(ctx, event)
+	return event, err
+}
+
+// InsertPublicEventOnce reports whether this call created the durable event.
+// A false inserted result means the dedupe key already existed, which lets the
+// live publisher suppress a retry instead of rebroadcasting an older sequence.
+func (s *Store) InsertPublicEventOnce(ctx context.Context, event live.PublicEvent) (live.PublicEvent, bool, error) {
 	if s == nil || s.db == nil {
-		return event, fmt.Errorf("store unavailable")
+		return event, false, fmt.Errorf("store unavailable")
 	}
 	now := time.Now().UnixMilli()
 	if event.At <= 0 {
@@ -57,7 +65,7 @@ func (s *Store) InsertPublicEvent(ctx context.Context, event live.PublicEvent) (
 
 	publicJSON, err := json.Marshal(event.Data)
 	if err != nil {
-		return event, err
+		return event, false, err
 	}
 	routeIDsJSON, _ := json.Marshal(event.RouteIDs)
 	nodeIDsJSON, _ := json.Marshal(event.NodeIDs)
@@ -80,18 +88,22 @@ ON CONFLICT(dedupe_key) WHERE dedupe_key != '' DO NOTHING`,
 		string(publicJSON),
 	)
 	if err != nil {
-		return event, err
+		return event, false, err
 	}
-	if affected, err := result.RowsAffected(); err == nil && affected == 0 && event.DedupeKey != "" {
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return event, false, err
+	}
+	if affected == 0 && event.DedupeKey != "" {
 		if err := s.db.QueryRowContext(ctx, publicEventByDedupeKeySQL, event.DedupeKey).Scan(&event.Seq); err != nil {
-			return event, err
+			return event, false, err
 		}
-		return event, nil
+		return event, false, nil
 	}
 	if seq, err := result.LastInsertId(); err == nil {
 		event.Seq = seq
 	}
-	return event, nil
+	return event, true, nil
 }
 
 func (s *Store) LatestPublicSeq(ctx context.Context) (int64, error) {

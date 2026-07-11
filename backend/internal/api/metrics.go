@@ -119,9 +119,18 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "# HELP meshcore_derived_queue_oldest_item_age_ms Age of the oldest queued lower-priority projection\n")
 		fmt.Fprintf(w, "# TYPE meshcore_derived_queue_oldest_item_age_ms gauge\n")
 		fmt.Fprintf(w, "meshcore_derived_queue_oldest_item_age_ms %d\n\n", derivedOldestAge)
+		fmt.Fprintf(w, "# HELP meshcore_derived_accepted_total Projection jobs accepted since process start\n")
+		fmt.Fprintf(w, "# TYPE meshcore_derived_accepted_total counter\n")
+		fmt.Fprintf(w, "meshcore_derived_accepted_total %d\n\n", snap.DerivedAccepted)
+		fmt.Fprintf(w, "# HELP meshcore_derived_processed_total Projection jobs completed since process start\n")
+		fmt.Fprintf(w, "# TYPE meshcore_derived_processed_total counter\n")
+		fmt.Fprintf(w, "meshcore_derived_processed_total %d\n\n", snap.DerivedProcessed)
 		fmt.Fprintf(w, "# HELP meshcore_derived_dropped_total Lower-priority projection drops since process start\n")
 		fmt.Fprintf(w, "# TYPE meshcore_derived_dropped_total counter\n")
 		fmt.Fprintf(w, "meshcore_derived_dropped_total %d\n\n", snap.DerivedDropped)
+		fmt.Fprintf(w, "# HELP meshcore_derived_failures_total Projection jobs that exceeded their budget or observed a store failure\n")
+		fmt.Fprintf(w, "# TYPE meshcore_derived_failures_total counter\n")
+		fmt.Fprintf(w, "meshcore_derived_failures_total %d\n\n", snap.DerivedFailures)
 	}
 	if s.Store != nil {
 		storage := s.Store.StorageInfo()

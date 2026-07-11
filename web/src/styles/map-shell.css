@@ -260,5 +260,5 @@
 
 .maplibregl-ctrl-bottom-right {
   right: 10px;
-  bottom: calc(var(--vcr-bar-height, 0px) + var(--ui-edge-gap, 10px) + var(--ui-safe-bottom, 0px));
+  bottom: calc(var(--bottom-chrome-height, 0px) + var(--ui-edge-gap, 10px) + var(--ui-safe-bottom, 0px));
 }

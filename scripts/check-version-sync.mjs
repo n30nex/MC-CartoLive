@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -59,6 +59,9 @@ if (!productionCompose.includes('MQTT_INGEST_QUEUE_SIZE: "4096"')) {
 if (!productionCompose.includes('DERIVED_INGEST_QUEUE_SIZE: "1024"')) {
   errors.push('production Compose must pin the derived ingest queue to 1024');
 }
+if (!productionCompose.includes('SQLITE_BUSY_TIMEOUT_MS: "750"')) {
+  errors.push('production Compose must pin the release-proven SQLite busy timeout to 750 ms');
+}
 for (const identity of ['APP_VERSION:', 'GIT_SHA:', 'BUILD_TIME:', 'VITE_GIT_SHA:', 'VITE_BUILD_TIME:']) {
   if (productionCompose.includes(identity)) errors.push(`production Compose must not override compiled ${identity.slice(0, -1)}`);
 }
@@ -66,7 +69,7 @@ for (const identity of ['APP_VERSION:', 'GIT_SHA:', 'BUILD_TIME:', 'VITE_GIT_SHA
 const publishWorkflow = read('.github/workflows/docker-publish.yml');
 if (publishWorkflow.includes('docker/build-push-action@')) errors.push('tag workflow must promote a candidate, never rebuild');
 if (!publishWorkflow.includes('imagetools create')) errors.push('tag workflow must promote by manifest digest');
-if (!publishWorkflow.includes('candidate-manifest.json') || !publishWorkflow.includes('test "$digest" = "$CANDIDATE_DIGEST"')) {
+if (!publishWorkflow.includes('candidate-manifest.json') || !publishWorkflow.includes('test "$world_digest" = "$CANDIDATE_WORLD_DIGEST"') || !publishWorkflow.includes('test "$canada_digest" = "$CANDIDATE_CANADA_DIGEST"')) {
   errors.push('tag workflow must bind exact run-specific candidate evidence to the annotated digest');
 }
 if (!publishWorkflow.includes('git cat-file -t') || !publishWorkflow.includes('org.opencontainers.image.revision')) {
@@ -80,22 +83,36 @@ for (const proof of [
   'test "$current_main_sha" = "$MERGE_SHA"',
   'Candidate-Run-Id:',
   'Candidate-Run-Attempt:',
-  'Candidate-Digest:',
+  'Candidate-World-Digest:',
+  'Candidate-Canada-Digest:',
   'Candidate-Deployed-At:',
   'release-candidate-$MERGE_SHA-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT',
   '.run_attempt == $attempt',
-  'candidate="$image:$CANDIDATE_TAG"',
+  'candidate="$image:$tag"',
   '--tag "$image:sha-${{ steps.release.outputs.merge_sha }}"',
+  '--tag "$image:sha-${{ steps.release.outputs.merge_sha }}-canada"',
   'RELEASE_BUILD_TIME: ${{ steps.evidence.outputs.build_time }}',
-  'test "$image_created" = "$EXPECTED_BUILD_TIME"',
-  'test "$image_candidate_run_id" = "$CANDIDATE_RUN_ID"',
-  'test "$image_candidate_run_attempt" = "$CANDIDATE_RUN_ATTEMPT"',
-  'test "$image_candidate_tag" = "$CANDIDATE_TAG"',
+  "imagetools inspect --raw",
+  "--format '{{json .Image}}'",
+  'org.mc-cartolive.asset-pack',
+  '--tag "$image:${{ steps.release.outputs.version }}-canada"',
+  'RELEASE_WORLD_IMAGE: ${{ steps.candidate.outputs.world_image }}',
+  'RELEASE_CANADA_IMAGE: ${{ steps.candidate.outputs.canada_image }}',
   '.buildTime == $buildTime and .gitSha == $gitSha',
+  '--asset-pack world',
+  '--asset-pack canada',
   'test "$tagger_epoch" -ge $((deployed_epoch + 1800))',
-  'upgrade-and-rollback.md artifacts/release/assets/ROLLBACK.md',
+  'upgrade-and-rollback.md" artifacts/release/assets/ROLLBACK.md',
 ]) {
   if (!publishWorkflow.includes(proof)) errors.push(`tag workflow does not reverify candidate trust proof: ${proof}`);
+}
+const preparedAssetsIndex = publishWorkflow.indexOf('- name: Verify complete release asset set before publication');
+const assetAttestationIndex = publishWorkflow.indexOf('- name: Attest release assets');
+const releasePreflightIndex = publishWorkflow.indexOf('- name: Preflight GitHub release creation');
+const promotionIndex = publishWorkflow.indexOf('- name: Promote exact world and Canada manifest digests');
+const githubReleaseIndex = publishWorkflow.indexOf('- name: Create GitHub release');
+if (!(preparedAssetsIndex >= 0 && preparedAssetsIndex < assetAttestationIndex && assetAttestationIndex < releasePreflightIndex && releasePreflightIndex < promotionIndex && promotionIndex < githubReleaseIndex)) {
+  errors.push('public image aliases must be promoted only after the complete release asset set and its attestation succeed');
 }
 for (const gate of [
   'for workflow in ci.yml codeql.yml',
@@ -123,14 +140,43 @@ for (const boundary of [
   'candidate-$SOURCE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT',
   'release-candidate-${{ steps.source.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}',
   'Authorize canonical proof or exact-SHA fast track',
-  'refs/heads/codex/release-3.2.0',
+  'release_branch="codex/release-$version"',
+  'sourceCiBrowserSmokeConclusion:$sourceCiBrowserSmokeConclusion',
   '.canonicalReleaseProof == true',
   'candidateWorkflowRunAttempt:$candidateWorkflowRunAttempt',
   'org.mc-cartolive.candidate.workflow-run-id=${{ github.run_id }}',
   'org.mc-cartolive.candidate.workflow-run-attempt=${{ github.run_attempt }}',
-  'org.mc-cartolive.candidate.tag=${{ steps.source.outputs.tag }}',
+  'org.mc-cartolive.candidate.tag=${{ steps.source.outputs.world_tag }}',
+  'org.mc-cartolive.candidate.tag=${{ steps.source.outputs.canada_tag }}',
+  'org.mc-cartolive.asset-pack=world',
+  'org.mc-cartolive.asset-pack=canada',
+  '--asset-pack world',
+  '--asset-pack canada',
 ]) {
   if (!candidateWorkflow.includes(boundary)) errors.push(`candidate workflow trust boundary is missing: ${boundary}`);
+}
+
+const releaseBundle = read('scripts/build-release-bundle.mjs');
+for (const alias of ['`sha-${gitSha}`', '`sha-${gitSha}-canada`']) {
+  if (!releaseBundle.includes(alias)) errors.push(`release manifest is missing promoted alias ${alias}`);
+}
+const currentChecklist = read(`docs/${version}/validation_checklist.md`);
+if (!currentChecklist.includes('`sha-<main-sha>-canada`')) {
+  errors.push('release validation checklist is missing the Canada full-SHA alias');
+}
+
+const packageSmoke = read('scripts/package-smoke.mjs');
+for (const contract of [
+  "args['asset-pack']",
+  '/brand/${expectedPack}/manifest.json',
+  'application HTML must contain exactly one manifest link',
+  'frontend manifest link',
+  'manifest.name === expected.name',
+  'manifest.short_name === expected.shortName',
+  'manifest.description === expected.description',
+  'manifest.icons.length === 2',
+]) {
+  if (!packageSmoke.includes(contract)) errors.push(`package smoke asset-pack contract is missing: ${contract}`);
 }
 
 const performanceGate = read('scripts/performance-gate.mjs');
@@ -141,11 +187,41 @@ for (const contract of [
   "fs.readFile(`/proc/${pid}/status`, 'utf8')",
   'reportedPrimaryQueueCapacities',
   'reportedDerivedQueueCapacities',
-  "const canonicalFullRefs = new Set(['refs/heads/main', 'refs/heads/codex/release-3.2.0'])",
+  'const canonicalFullRefs = new Set([\'refs/heads/main\', `refs/heads/codex/release-${releaseVersion}`])',
   'canonicalFullRefs.has(githubContext.ref)',
   "event: 'workflow_dispatch'",
 ]) {
   if (!performanceGate.includes(contract)) errors.push(`canonical performance contract is missing: ${contract}`);
+}
+
+const ciWorkflow = read('.github/workflows/ci.yml');
+if (!ciWorkflow.includes("github.event_name == 'push' && github.ref == 'refs/heads/main'")) {
+  errors.push('browser smoke must run on protected main pushes');
+}
+
+const liveSmoke = read('scripts/live-smoke.ps1');
+for (const contract of ['http://127.0.0.1:39090/metrics', 'metricsDerivedAccepted=', 'metricsDerivedProcessed=', 'metricsDerivedFailures=', 'docker exec "$cid"']) {
+  if (!liveSmoke.includes(contract)) errors.push(`live smoke must verify remote loopback runtime evidence: ${contract}`);
+}
+for (const soakScript of ['scripts/soak-check.sh', 'scripts/soak-check.ps1']) {
+  const source = read(soakScript);
+  for (const contract of ['websocket-flow-probe.mjs', 'derived_accepted_total', 'derived_processed_total', 'derived_failures_total']) {
+    if (!source.toLowerCase().includes(contract.toLowerCase())) errors.push(`${soakScript} active-flow contract is missing: ${contract}`);
+  }
+}
+if (existsSync(join(root, '.github', 'workflows', 'complete-v3.2.0-release.yml'))) {
+  errors.push('retired one-off 3.2.0 completion workflow must be removed');
+}
+for (const genericReleaseFile of [
+  '.github/workflows/image-candidate.yml',
+  '.github/workflows/docker-publish.yml',
+  '.github/workflows/release-performance.yml',
+  'scripts/build-release-bundle.mjs',
+  'scripts/performance-gate.mjs',
+]) {
+  if (read(genericReleaseFile).includes('3.2.0')) {
+    errors.push(`${genericReleaseFile} must derive release paths and branches from VERSION`);
+  }
 }
 
 const deployScript = read('scripts/deploy.sh');
@@ -160,7 +236,11 @@ for (const deployGate of [
   '[ "$actual_root_usage" -gt "$MAX_ROOT_USAGE_PERCENT" ]',
   'MC_CARTOLIVE_CANDIDATE_RUN_ID=$CANDIDATE_RUN_ID',
   'MC_CARTOLIVE_CANDIDATE_RUN_ATTEMPT=$CANDIDATE_RUN_ATTEMPT',
+  'MC_CARTOLIVE_ASSET_PACK=$CANDIDATE_ASSET_PACK',
   'MC_CARTOLIVE_DATABASE_MODE=$database_mode',
+  'status --porcelain --untracked-files=normal',
+  'deployment package does not select the immutable Canada image',
+  'SQLITE_BUSY_TIMEOUT_MS=750',
 ]) {
   if (!deployScript.includes(deployGate)) errors.push(`deploy release safety gate is missing: ${deployGate}`);
 }

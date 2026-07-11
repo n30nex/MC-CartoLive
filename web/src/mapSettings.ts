@@ -75,10 +75,10 @@ export interface MapModeDefinition {
 }
 
 export const MAP_SETTINGS_STORAGE_KEY = 'mc-cartolive-map-settings';
-export const MAP_SETTINGS_SCHEMA_VERSION = 7;
+export const MAP_SETTINGS_SCHEMA_VERSION = 8;
 
 export const DEFAULT_MAP_LAYER_SETTINGS: MapLayerSettings = {
-  clusters: false,
+  clusters: true,
   activityHeatmap: true,
   nodes: true,
   nodeLabels: true,
@@ -103,7 +103,7 @@ export const DEFAULT_PACKET_VISUAL_SETTINGS: PacketVisualSettings = {
   brightness: 1,
   trail: 1,
   animationStyle: 'comet',
-  showLiveCometsAtAllZooms: false,
+  showLiveCometsAtAllZooms: true,
   renderQuality: 'balanced'
 };
 
@@ -131,7 +131,7 @@ export const MAP_LAYER_PRESETS: readonly MapLayerPreset[] = [
   {
     id: 'live',
     label: 'Default',
-    hint: 'First-view traffic: comets, trails, nodes, and quiet route lines.',
+    hint: 'First-view traffic at every zoom: comets, clustered activity, trails, nodes, and quiet route lines.',
     layers: { ...DEFAULT_MAP_LAYER_SETTINGS }
   },
   {
@@ -186,9 +186,10 @@ export const MAP_MODES: readonly MapModeDefinition[] = [
     id: 'watch',
     label: 'Watch',
     shortLabel: 'Watch',
-    hint: 'Recent traffic first: comets, activity glow, nodes, and quiet routes.',
+    hint: 'Recent traffic at every zoom: comets, clustered activity glow, nodes, and quiet routes.',
     profileID: 'classic-dark',
-    layers: { ...DEFAULT_MAP_LAYER_SETTINGS }
+    layers: { ...DEFAULT_MAP_LAYER_SETTINGS },
+    packetVisuals: { showLiveCometsAtAllZooms: true }
   },
   {
     id: 'explore',
@@ -502,6 +503,12 @@ function normalizeStoredMapSettings(input: unknown): MapSettings {
     const inferred = inferMapMode(settings);
     settings.modeID = inferred.id;
     settings.customized = mapModeExactIDForSettings(settings) !== inferred.id;
+  }
+  if (schemaVersion < 8 && settings.modeID === 'watch' && !settings.customized) {
+    const watch = mapModeByID('watch');
+    settings.layers = { ...watch.layers };
+    settings.packets = { ...settings.packets, ...(watch.packetVisuals ?? {}) };
+    settings.customized = false;
   }
   return settings;
 }

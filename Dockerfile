@@ -17,7 +17,7 @@ ARG VITE_APP_BRAND_LOGO=
 ARG VITE_APP_ASSET_PACK=world
 ARG VITE_ENABLE_SERVICE_WORKER=false
 ARG VITE_PUBLIC_WS_SUBSCRIPTIONS_ENABLED=false
-ARG APP_VERSION=3.2.0
+ARG APP_VERSION=3.2.1
 ENV VITE_OPENFREEMAP_STYLE_URL=$VITE_OPENFREEMAP_STYLE_URL
 ENV VITE_OPENFREEMAP_TILEJSON_URL=$VITE_OPENFREEMAP_TILEJSON_URL
 ENV VITE_TERRAIN_TILE_URL=$VITE_TERRAIN_TILE_URL
@@ -41,7 +41,7 @@ RUN npm run build
 # backend build
 FROM golang:1.25.12-alpine@sha256:56961d79ea8129efddcc0b8643fd8a5416b4e6228cfd477e3fd61deb2672c587 AS gobuild
 WORKDIR /src
-ARG APP_VERSION=3.2.0
+ARG APP_VERSION=3.2.1
 ARG GIT_SHA=dev
 ARG BUILD_TIME=1970-01-01T00:00:00Z
 RUN apk add --no-cache ca-certificates
@@ -59,11 +59,11 @@ RUN build_flags="-s -w \
 
 # runtime
 FROM alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
-ARG APP_VERSION=3.2.0
+ARG APP_VERSION=3.2.1
 ARG GIT_SHA=dev
 ARG BUILD_TIME=1970-01-01T00:00:00Z
 LABEL org.opencontainers.image.title="MC-CartoLive" \
-  org.opencontainers.image.description="Public-safe MeshCore MQTT live map with routed packet replay" \
+  org.opencontainers.image.description="Public-safe MeshCore MQTT map with continuous live RF traffic" \
   org.opencontainers.image.source="https://github.com/n30nex/MC-CartoLive" \
   org.opencontainers.image.url="https://github.com/n30nex/MC-CartoLive" \
   org.opencontainers.image.licenses="MIT" \

@@ -53,14 +53,19 @@ describe('share view URLs', () => {
     expect(url).toBe('https://routes.canadaverse.org/?lat=43.6532&lng=-79.3832&z=15.5&pitch=46.4&bearing=-11.2');
   });
 
-  it('round-trips a privacy-safe Replay Studio deep link', () => {
-    const url = buildSharedViewURL('https://routes.canadaverse.org/', { lat: 43, lng: -79, z: 8 }, {
-      route: 'route:abc', studio: true, replayPacket: 'packet-123', replayRoute: 'route:abc'
+  it('drops retired replay parameters from shared map links', () => {
+    const url = buildSharedViewURL('https://routes.canadaverse.org/?studio=1&replayPacket=packet-123&replayRoute=route%3Aabc', { lat: 43, lng: -79, z: 8 }, {
+      route: 'route:abc'
     });
-    expect(parseSharedView(new URL(url).search)).toMatchObject({ studio: true, replayPacket: 'packet-123', replayRoute: 'route:abc', route: 'route:abc' });
-    expect(buildSharedViewURL('https://routes.canadaverse.org/', { lat: 43, lng: -79, z: 8 }, {
-      studio: true, replayPacket: 'secret / raw payload'
-    })).not.toContain('secret');
+    expect(url).toBe('https://routes.canadaverse.org/?lat=43&lng=-79&z=8&route=route%3Aabc');
+    expect(parseSharedView('?lat=43&lng=-79&z=8&studio=1&replayPacket=packet-123')).toEqual({
+      lat: 43,
+      lng: -79,
+      z: 8,
+      route: undefined,
+      node: undefined,
+      q: undefined
+    });
   });
 
   it('drops free-form queries and malformed selection identifiers', () => {
