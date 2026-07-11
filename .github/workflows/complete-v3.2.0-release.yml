@@ -2,6 +2,11 @@ name: Complete v3.2.0 release
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/complete-v3.2.0-release.yml
 
 permissions:
   actions: read
@@ -25,8 +30,24 @@ env:
   IMAGE: ghcr.io/n30nex/mc-cartolive
 
 jobs:
+  proof:
+    name: smoke load proof
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Reuse exact release SHA proof
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PERFORMANCE_RUN_ID" |
+            jq -e --arg sha "$RELEASE_SHA" '.conclusion == "success" and .head_sha == $sha and .event == "workflow_dispatch"' >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/compare/${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" |
+            jq -e '.files | length == 1 and .[0].filename == ".github/workflows/complete-v3.2.0-release.yml"' >/dev/null
+
   complete:
     name: Promote digest and publish assets
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
