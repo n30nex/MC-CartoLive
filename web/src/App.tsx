@@ -682,9 +682,11 @@ function PublicDashboardApp() {
         // Bootstrap and WebSocket activity can advance beyond the cached full
         // snapshot before it arrives. Hydrate its complete topology without
         // rolling the live sequence or newer node/route updates backward.
-        const hydrated = hydrateSnapshotTopology(stateRef.current, liveState);
-        stateRef.current = hydrated;
-        setState(hydrated);
+        setState((current) => {
+          const hydrated = hydrateSnapshotTopology(current, liveState);
+          stateRef.current = hydrated;
+          return hydrated;
+        });
       }
       setPublicMapConfig(liveState.map ?? null);
       setInitialNodesReceived((liveState.nodes?.length ?? 0) > 0);

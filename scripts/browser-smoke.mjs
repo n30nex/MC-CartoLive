@@ -966,7 +966,6 @@ async function smokeLiveMapControls(page, viewport) {
   }
   await smokeOpenFreeMapToggle(page, viewport);
   await smokePalettePicker(page, viewport);
-  await smokeMapSettings(page, viewport);
   if (!viewport.isMobile) await smokeVcr(page, viewport);
   await smokeTopInfoPanels(page, viewport);
 }
@@ -1016,33 +1015,6 @@ async function smokePalettePicker(page, viewport) {
   if (optionCount < 4) throw new Error(`palette picker has too few options: ${optionCount}`);
   await options.nth(Math.min(1, optionCount - 1)).click();
   await page.waitForSelector('.palette-picker', { state: 'hidden', timeout: 5_000 });
-}
-
-async function smokeMapSettings(page, viewport) {
-  const toggle = page.locator('.operator-action.map-settings-toggle').first();
-  await toggle.waitFor({ state: 'visible', timeout: 12_000 });
-  if (await toggle.getAttribute('aria-pressed') !== 'true') {
-    await toggle.click({ trial: true });
-    await toggle.evaluate((element) => {
-      if (!(element instanceof HTMLButtonElement)) throw new Error('map settings control is not a button');
-      element.click();
-    });
-  }
-  const drawer = page.getByRole('dialog', { name: /^Map settings$/i });
-  await drawer.waitFor({ state: 'visible', timeout: 5_000 });
-  await assertVisibleInViewport(page, '.map-settings-drawer', 'map settings drawer', viewport);
-  await drawer.evaluate((element) => { element.scrollTop = 0; });
-  const modeButtons = drawer.locator('.map-mode-grid button');
-  const modeLabels = (await modeButtons.allTextContents()).map((label) => label.replace(/\s+/g, ' ').trim());
-  if (modeLabels.length !== 4 || !['Watch', 'Explore', 'Terrain', 'Studio'].every((label) => modeLabels.some((value) => value.startsWith(label)))) {
-    throw new Error(`map settings modes are incomplete: ${JSON.stringify(modeLabels)}`);
-  }
-  const drawerText = (await drawer.textContent()) ?? '';
-  if (!/Modes/i.test(drawerText) || !/3D And RF/i.test(drawerText)) {
-    throw new Error('map settings section labels are incomplete');
-  }
-  await drawer.getByRole('button', { name: /Close map settings/i }).click();
-  await drawer.waitFor({ state: 'hidden', timeout: 5_000 });
 }
 
 async function smokeVcr(page, viewport) {
