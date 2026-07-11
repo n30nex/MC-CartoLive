@@ -1,6 +1,6 @@
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Check, CloudSun, Columns3, Eye, EyeOff, History, List, MessageSquareText, Monitor, Moon, MoreHorizontal, Palette, Pause, Play, RadioTower, RotateCcw, Route, Search, Share2, SlidersHorizontal, Sparkles, Sun, X } from 'lucide-react';
-import { fetchPublicBootstrap, fetchPublicEvents, fetchPublicHistory, fetchPublicHistorySummary, fetchPublicPackets, fetchPublicPropagation, fetchPublicState, fetchPublicStateWithFallback, type PublicStateFetchResult } from './api';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Check, CloudSun, Columns3, Eye, EyeOff, List, MessageSquareText, Monitor, Moon, MoreHorizontal, Palette, Pause, Play, RadioTower, RotateCcw, Route, Search, Share2, SlidersHorizontal, Sun, X } from 'lucide-react';
+import { fetchPublicBootstrap, fetchPublicEvents, fetchPublicPropagation, fetchPublicState, fetchPublicStateWithFallback, type PublicStateFetchResult } from './api';
 import { recoverPublicEventPages } from './eventRecovery';
 import { connectPublicSocket } from './ws';
 import {
@@ -28,7 +28,6 @@ import SelectionDrawer from './components/SelectionDrawer';
 import StatusBar from './components/StatusBar';
 import PropagationPanel from './components/PropagationPanel';
 import VisitorGuide from './components/VisitorGuide';
-import VcrBar, { MiniLiveClock } from './components/VcrBar';
 import ChromePanel from './components/ChromePanel';
 import { lazyWithReload } from './lazyWithReload';
 const PacketsPanel = lazyWithReload(() => import('./components/PacketsPanel'), 'PacketsPanel');
@@ -37,7 +36,6 @@ const ChatPanel = lazyWithReload(() => import('./components/ChatPanel'), 'ChatPa
 const LabPanel = lazyWithReload(() => import('./components/LabPanel'), 'LabPanel');
 const SetupPanel = lazyWithReload(() => import('./components/SetupPanel'), 'SetupPanel');
 const CommandPalette = lazyWithReload(() => import('./components/CommandPalette'), 'CommandPalette');
-const RFReplayStudio = lazyWithReload(() => import('./components/RFReplayStudio'), 'RFReplayStudio');
 import type { CommandPaletteRegionFocus } from './components/CommandPalette';
 import MapSettingsDrawer from './components/MapSettingsDrawer';
 import RouteGifExportButton, { type RouteGifExportStatus } from './components/RouteGifExportButton';
@@ -55,36 +53,22 @@ import {
   type ChromeVisibilityState,
   type ViewportBounds
 } from './components/panelChrome';
-import { capLiveEnvelopeQueue, liveEnvelopeDisplayAt, nextLiveEnvelopeDelayMs, sortLiveEnvelopes, takeDueLiveEnvelopes } from './livePacing';
+import { capLiveEnvelopeQueue, nextLiveEnvelopeDelayMs, takeDueLiveEnvelopes } from './livePacing';
 import { classifyLiveEnvelopeSequence, helloRequiresCursorResetProbe, liveCursorResetTarget, retainLiveEnvelopesAfterCursor, shouldQueueDurableLiveSequence, takeIncreasingLiveEnvelopes } from './liveCursor';
-import {
-  historyEventsToLiveEnvelopes,
-  historyFetchWindowFromScrub,
-  nextVcrSpeed,
-  playbackDelayMs,
-  shouldApplyPlaybackGeneration,
-  VCR_SCOPE_OPTIONS,
-  type VcrMode,
-  type VcrSpeed
-} from './vcr';
 import { shortestPathBetween } from './connectivity';
 import { boundsFromPoints, meshcorePathCopyText, routesInBounds, type MapPoint } from './routeTools';
-import { dedupePackets } from './lib/dedupePackets';
 import { packetToPulse } from './packets';
 import { downloadRouteGifBlob, routeGifAnimationDurationMs, type RouteMapGifExportRequest } from './routeGifExport';
 import { buildSharedViewURL, parseSharedView, type MapViewState } from './shareView';
-import { resolveReplayDeepLink, routeToReplayPacket } from './replayStudio';
-import { beginReplayPauseSession, markReplayPauseUserOverride, pausedAfterReplayExit, type ReplayPauseSession } from './replayPause';
 import type { DashboardAction } from './uiActions';
 import { SERVICE_WORKER_UPDATE_EVENT, activateWaitingServiceWorker, waitingServiceWorkerUpdateAvailable } from './serviceWorker';
 import { useAccessibleDialog } from './lib/useAccessibleDialog';
 import { bootstrapToLiveState, publicStateSnapshotIsCurrent, startBootstrapFirstHydration } from './bootstrapHydration';
-import type { ReplayExportSurfaceProvider } from './replayExportSurface';
 import { installResumeRecovery } from './resumeRecovery';
-import { recordLivePendingQueueSize, recordSnapshotReplacement, recordVcrReplayQueueSize, recordVisibilityPause } from './perfDiagnostics';
-import { appendBufferedRoutePulses, routePulseMessages } from './playbackController';
+import { recordLivePendingQueueSize, recordSnapshotReplacement, recordVisibilityPause } from './perfDiagnostics';
 import { useMapSelection } from './hooks/useMapSelection';
 import { useWorkspaceNavigation } from './hooks/useWorkspaceNavigation';
+import { beginOwnedPause, markOwnedPauseUserOverride, pausedAfterOwnedPause, type OwnedPauseSession } from './pauseOwnership';
 import { applyMapMode, MAP_MODES, mapModeForSettings, normalizeMapSettings, readStoredMapSettings, writeStoredMapSettings, type MapModeID, type MapSettings } from './mapSettings';
 import { mapStyleProfileByID, type MapStyleProfileID } from './map/styles/styleRegistry';
 import {
@@ -99,21 +83,10 @@ import {
   type ThemeMode,
   type ThemePalette
 } from './theme';
-import type { PublicActivity, PublicHistorySummaryBucket, PublicLiveEnvelope, PublicLiveState, PublicMapCluster, PublicMapConfig, PublicPacketPath, PublicPropagationConditions, PublicPropagationEvent, PublicRoute, PublicRoutePulse } from './types';
+import type { PublicActivity, PublicLiveEnvelope, PublicLiveState, PublicMapCluster, PublicMapConfig, PublicPacketPath, PublicPropagationConditions, PublicPropagationEvent, PublicRoute, PublicRoutePulse } from './types';
 
 const NodeListPanel = lazyWithReload(() => import('./components/NodeListPanel'), 'NodeListPanel');
 const ShortcutHelp = lazyWithReload(() => import('./components/ShortcutHelp'), 'ShortcutHelp');
-
-interface VcrUiState {
-  mode: VcrMode;
-  speed: VcrSpeed;
-  scopeMs: number;
-  missedCount: number;
-  scrubAt: number | null;
-  clock: number | null;
-  status: 'idle' | 'loading' | 'empty' | 'error' | 'lagged';
-  summary: PublicHistorySummaryBucket[];
-}
 
 const PANEL_MENU_ITEMS: readonly { id: ChromePanelID; label: string }[] = [
   { id: 'search', label: 'Search' },
@@ -121,13 +94,7 @@ const PANEL_MENU_ITEMS: readonly { id: ChromePanelID; label: string }[] = [
   { id: 'hotRoutes', label: 'Busy Pathways' }
 ] as const;
 
-const VCR_MAX_BUFFERED_COMETS = 4000;
-const VCR_MAX_REPLAY_EVENTS = 2000;
-const VCR_LASER_MAX_PACKETS = 1600;
-const VCR_LASER_PAGE_LIMIT = 1000;
-const VCR_LASER_MAX_PAGES = 3;
 const PUBLIC_STATE_FALLBACK_POLL_MS = 5_000;
-const LIVE_CLOCK_ACTIVE_MS = 1_000;
 const LIVE_CLOCK_IDLE_MS = 5_000;
 const DERIVED_ACTIVITY_BUCKET_MS = 5_000;
 const EMPTY_ROUTE_ACTIVITY = new Map<string, RouteActivitySummary>();
@@ -153,9 +120,7 @@ function PublicDashboardApp() {
   const [bootstrapClusters, setBootstrapClusters] = useState<PublicMapCluster[]>([]);
   const [socketStatus, setSocketStatus] = useState('starting');
   const [paused, setPaused] = useState(false);
-  const replayPauseSessionRef = useRef<ReplayPauseSession | null>(
-    sharedViewRef.current?.studio ? beginReplayPauseSession(false) : null
-  );
+  const gifExportPauseSessionRef = useRef<OwnedPauseSession | null>(null);
   const [followTraffic, setFollowTraffic] = useState(false);
   const [query, setQuery] = useState(() => sharedViewRef.current?.q ?? '');
   const [clearToken, setClearToken] = useState(0);
@@ -177,8 +142,6 @@ function PublicDashboardApp() {
   const [mapSettingsOpen, setMapSettingsOpen] = useState(false);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [replayStudioOpen, setReplayStudioOpen] = useState(() => sharedViewRef.current?.studio === true);
-  const [replayDeepLinkStatus, setReplayDeepLinkStatus] = useState<'pending' | 'resolved' | 'fallback' | 'unavailable' | null>(() => sharedViewRef.current?.studio ? 'pending' : null);
   const [fullStateHydrated, setFullStateHydrated] = useState(false);
   const [serviceWorkerUpdateReady, setServiceWorkerUpdateReady] = useState(false);
   const [serviceWorkerActivating, setServiceWorkerActivating] = useState(false);
@@ -191,14 +154,11 @@ function PublicDashboardApp() {
   const [initialLoadGateOpen, setInitialLoadGateOpen] = useState(true);
   const [isOffline, setIsOffline] = useState(() => !navigator.onLine);
   const [routeGifExport, setRouteGifExport] = useState<{ status: RouteGifExportStatus; progress: number; remainingExports: number; cooldownUntil: number }>({ status: 'idle', progress: 0, remainingExports: 5, cooldownUntil: 0 });
-  const [routeWebmExport, setRouteWebmExport] = useState<{ status: 'idle' | 'recording'; progress: number }>({ status: 'idle', progress: 0 });
   const [routeGifExportRequest, setRouteGifExportRequest] = useState<RouteMapGifExportRequest | null>(null);
   const [liveClock, setLiveClock] = useState(() => Date.now());
   const [initialNodesReceived, setInitialNodesReceived] = useState(false);
   const [positionedNodesRendered, setPositionedNodesRendered] = useState(false);
   const [nodeLoadFailed, setNodeLoadFailed] = useState(false);
-  const [vcrOpen, setVcrOpen] = useState(false);
-  const [laserShowActive, setLaserShowActive] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [chromeVisibility, setChromeVisibility] = useState<ChromeVisibilityState>({
     chromeHidden: false,
@@ -206,38 +166,28 @@ function PublicDashboardApp() {
   });
   const viewportBounds = useViewportBounds();
   const [panelAnchors, setPanelAnchors] = useState<Record<ChromePanelID, ChromePanelAnchor>>({ ...DEFAULT_CHROME_PANEL_ANCHORS });
-  const [vcr, setVcr] = useState<VcrUiState>({
-    mode: 'live',
-    speed: 1,
-    scopeMs: VCR_SCOPE_OPTIONS[0].value,
-    missedCount: 0,
-    scrubAt: null,
-    clock: null,
-    status: 'idle',
-    summary: []
-  });
   const closeWorkspaceMenus = useCallback(() => {
     setPaletteMenuOpen(false);
     setPanelsMenuOpen(false);
     setMapSettingsOpen(false);
     setMobileControlsOpen(false);
   }, []);
-  const finishReplayPauseSession = useCallback(() => {
-    const session = replayPauseSessionRef.current;
-    replayPauseSessionRef.current = null;
-    setPaused((current) => pausedAfterReplayExit(session, current));
+  const markPauseUserOverride = useCallback(() => {
+    gifExportPauseSessionRef.current = markOwnedPauseUserOverride(gifExportPauseSessionRef.current);
   }, []);
-  const markUserPauseOverride = useCallback(() => {
-    replayPauseSessionRef.current = markReplayPauseUserOverride(replayPauseSessionRef.current);
+  const finishGifExportPause = useCallback(() => {
+    const session = gifExportPauseSessionRef.current;
+    gifExportPauseSessionRef.current = null;
+    setPaused((current) => pausedAfterOwnedPause(session, current));
   }, []);
   const togglePausedByUser = useCallback(() => {
-    markUserPauseOverride();
+    markPauseUserOverride();
     setPaused((value) => !value);
-  }, [markUserPauseOverride]);
+  }, [markPauseUserOverride]);
   const resumeFromClosedPacketTray = useCallback(() => {
-    markUserPauseOverride();
+    markPauseUserOverride();
     setPaused(false);
-  }, [markUserPauseOverride]);
+  }, [markPauseUserOverride]);
   const {
     packetsOpen,
     setPacketsOpen,
@@ -287,19 +237,17 @@ function PublicDashboardApp() {
     selectNode,
     selectRoute: selectRouteSelectionOnly,
     selectPhonebookPath,
-    selectPacket,
-    clearReplayDeepLinkSelection
+    selectPacket
   } = useMapSelection({
     state,
     query,
     initialNodeID: sharedViewRef.current?.node ?? null,
-    initialRouteID: sharedViewRef.current?.route ?? sharedViewRef.current?.replayRoute ?? null,
+    initialRouteID: sharedViewRef.current?.route ?? null,
     plotResult
   });
   const closeMobileControls = useCallback(() => setMobileControlsOpen(false), []);
   const mobileControlsRef = useAccessibleDialog<HTMLElement>(mobileControlsOpen, closeMobileControls);
   const actionTokenRef = useRef(0);
-  const replayExportProviderRef = useRef<ReplayExportSurfaceProvider | null>(null);
   const gifExportTimestampsRef = useRef<number[]>([]);
   const gifCooldownUntilRef = useRef(0);
   const GIF_EXPORT_MAX_PER_WINDOW = 5;
@@ -315,11 +263,6 @@ function PublicDashboardApp() {
   const eventRecoveryRef = useRef<((latestSeq?: number) => void) | null>(null);
   const lastSnapshotSignatureRef = useRef('');
   const pendingMessagesRef = useRef<PublicLiveEnvelope[]>([]);
-  const vcrBufferedMessagesRef = useRef<PublicLiveEnvelope[]>([]);
-  const vcrModeRef = useRef<VcrMode>('live');
-  const vcrSpeedRef = useRef<VcrSpeed>(1);
-  const vcrGenerationRef = useRef(0);
-  const vcrReplayTimerRef = useRef<number | null>(null);
   const flushMessagesTimerRef = useRef<number | null>(null);
   const selectedThemePalette = useMemo(() => themePaletteByID(themePaletteID), [themePaletteID]);
   const resolvedThemeMode = useMemo(() => resolveThemeMode(themeMode), [themeMode]);
@@ -369,83 +312,23 @@ function PublicDashboardApp() {
   const openMapHome = useCallback(() => {
     closeAllWorkspaceSurfaces();
     setPropagationOpen(false);
-    setVcrOpen(false);
     setShortcutHelpOpen(false);
     setMapSettingsOpen(false);
     setMobileControlsOpen(false);
     setCommandPaletteOpen(false);
-    setReplayStudioOpen(false);
-    finishReplayPauseSession();
-  }, [closeAllWorkspaceSurfaces, finishReplayPauseSession]);
+  }, [closeAllWorkspaceSurfaces]);
 
   useEffect(() => {
     writeStoredMapSettings(mapSettings);
   }, [mapSettings]);
 
-  useLayoutEffect(() => {
-    vcrModeRef.current = vcr.mode;
-    vcrSpeedRef.current = vcr.speed;
-  }, [vcr.mode, vcr.speed]);
-
   useEffect(() => {
     setRouteGifExport((current) => (current.status === 'rendering' ? current : { ...current, status: 'idle', progress: 0 }));
   }, [selectedPacket?.id]);
 
-  const clearPendingLiveFlush = useCallback(() => {
-    if (flushMessagesTimerRef.current !== null) {
-      window.clearTimeout(flushMessagesTimerRef.current);
-      flushMessagesTimerRef.current = null;
-    }
-  }, []);
-
-  const bufferVcrMessage = useCallback((message: PublicLiveEnvelope) => {
-    const next = appendBufferedRoutePulses(vcrBufferedMessagesRef.current, message, VCR_MAX_BUFFERED_COMETS);
-    if (next === vcrBufferedMessagesRef.current) return;
-    vcrBufferedMessagesRef.current = next;
-    recordVcrReplayQueueSize(vcrBufferedMessagesRef.current.length);
-    setVcr((current) => ({
-      ...current,
-      missedCount: vcrBufferedMessagesRef.current.length,
-      clock: current.clock ?? liveEnvelopeDisplayAt(message)
-    }));
-  }, []);
-
-  const movePendingLiveToVcrBuffer = useCallback(() => {
-    clearPendingLiveFlush();
-    if (pendingMessagesRef.current.length === 0) return;
-    const routedPending = routePulseMessages(pendingMessagesRef.current);
-    if (routedPending.length === 0) {
-      pendingMessagesRef.current = [];
-      recordLivePendingQueueSize(0);
-      return;
-    }
-    vcrBufferedMessagesRef.current = appendBufferedRoutePulses(vcrBufferedMessagesRef.current, routedPending, VCR_MAX_BUFFERED_COMETS);
-    recordVcrReplayQueueSize(vcrBufferedMessagesRef.current.length);
-    pendingMessagesRef.current = [];
-    recordLivePendingQueueSize(0);
-    setVcr((current) => ({
-      ...current,
-      missedCount: vcrBufferedMessagesRef.current.length,
-      clock: current.clock ?? liveEnvelopeDisplayAt(vcrBufferedMessagesRef.current[0])
-    }));
-  }, [clearPendingLiveFlush]);
-
-  const stopReplay = useCallback(() => {
-    vcrGenerationRef.current += 1;
-    setLaserShowActive(false);
-    if (vcrReplayTimerRef.current !== null) {
-      window.clearTimeout(vcrReplayTimerRef.current);
-      vcrReplayTimerRef.current = null;
-    }
-    pendingMessagesRef.current = [];
-    vcrBufferedMessagesRef.current = [];
-    recordVcrReplayQueueSize(0);
-  }, []);
-
   const refreshLiveSnapshot = useCallback(() => {
     return fetchPublicState()
       .then((liveState) => {
-        if (vcrModeRef.current !== 'live') return;
         setFullStateHydrated(true);
         if (!applyPublicSnapshot(liveState)) return;
         setPublicMapConfig(liveState.map ?? null);
@@ -459,208 +342,6 @@ function PublicDashboardApp() {
         if (!initialNodesReceived) setNodeLoadFailed(true);
       });
   }, [applyPublicSnapshot, initialNodesReceived]);
-
-  const returnToLive = useCallback(() => {
-    stopReplay();
-    clearPendingLiveFlush();
-    setVcr((current) => ({ ...current, mode: 'live', missedCount: 0, scrubAt: null, clock: null, status: 'idle' }));
-    refreshLiveSnapshot();
-  }, [clearPendingLiveFlush, refreshLiveSnapshot, stopReplay]);
-
-  const pausePlayback = useCallback(() => {
-    const now = Date.now();
-    if (vcrModeRef.current === 'live') {
-      movePendingLiveToVcrBuffer();
-    }
-    stopReplay();
-    setVcr((current) => ({
-      ...current,
-      mode: 'paused',
-      scrubAt: current.scrubAt ?? current.clock ?? now,
-      clock: current.clock ?? now,
-      status: 'idle'
-    }));
-  }, [movePendingLiveToVcrBuffer, stopReplay]);
-
-  const playReplayEnvelopes = useCallback((inputMessages: PublicLiveEnvelope[], generation: number, doneMode: 'live' | 'paused', onDone?: () => void) => {
-    const messages = inputMessages.slice(0, VCR_MAX_REPLAY_EVENTS);
-    recordVcrReplayQueueSize(messages.length);
-    let index = 0;
-    const runNext = () => {
-      if (!shouldApplyPlaybackGeneration(vcrGenerationRef.current, generation)) return;
-      const message = messages[index];
-      if (!message) {
-        vcrReplayTimerRef.current = null;
-        if (doneMode === 'live') {
-          recordVcrReplayQueueSize(0);
-          onDone?.();
-          returnToLive();
-        } else {
-          recordVcrReplayQueueSize(vcrBufferedMessagesRef.current.length);
-          setVcr((current) => ({
-            ...current,
-            mode: 'paused',
-            missedCount: vcrBufferedMessagesRef.current.length,
-            status: current.status === 'loading' ? 'idle' : current.status
-          }));
-          onDone?.();
-        }
-        return;
-      }
-      setState((current) => applyPublicEnvelope(current, message));
-      const currentAt = replayEnvelopeClockAt(message);
-      setVcr((current) => ({ ...current, mode: 'replay', clock: currentAt, scrubAt: currentAt, status: 'idle' }));
-      index += 1;
-      recordVcrReplayQueueSize(Math.max(0, messages.length - index));
-      const nextMessage = messages[index];
-      if (!nextMessage) {
-        vcrReplayTimerRef.current = window.setTimeout(runNext, 260);
-        return;
-      }
-      vcrReplayTimerRef.current = window.setTimeout(runNext, playbackDelayMs(currentAt, replayEnvelopeClockAt(nextMessage), vcrSpeedRef.current));
-    };
-    runNext();
-  }, [returnToLive]);
-
-  const replayMissed = useCallback(() => {
-    const messages = sortLiveEnvelopes(vcrBufferedMessagesRef.current);
-    if (messages.length === 0) {
-      setVcr((current) => ({ ...current, mode: 'paused', status: 'empty' }));
-      return;
-    }
-    stopReplay();
-    setPaused(false);
-    setClearToken((value) => value + 1);
-    vcrBufferedMessagesRef.current = [];
-    recordVcrReplayQueueSize(0);
-    const generation = vcrGenerationRef.current + 1;
-    vcrGenerationRef.current = generation;
-    setVcr((current) => ({
-      ...current,
-      mode: 'replay',
-      missedCount: 0,
-      status: 'idle',
-      clock: liveEnvelopeDisplayAt(messages[0]),
-      scrubAt: liveEnvelopeDisplayAt(messages[0])
-    }));
-    playReplayEnvelopes(messages, generation, 'live');
-  }, [playReplayEnvelopes, stopReplay]);
-
-  const replayFromScrub = useCallback(() => {
-    const selected = vcr.scrubAt ?? vcr.clock ?? Math.max(liveClock, state.serverTime, Date.now());
-    const { from, to } = historyFetchWindowFromScrub(selected, Date.now());
-    stopReplay();
-    setPaused(false);
-    setClearToken((value) => value + 1);
-    const generation = vcrGenerationRef.current + 1;
-    vcrGenerationRef.current = generation;
-    setVcr((current) => ({ ...current, mode: 'replay', status: 'loading', clock: selected, scrubAt: selected }));
-    fetchPublicHistory({ from, to, limit: VCR_MAX_REPLAY_EVENTS })
-      .then((history) => {
-        if (!shouldApplyPlaybackGeneration(vcrGenerationRef.current, generation)) return;
-        const routedEvents = history.events.filter((event) => event.type === 'routePulse');
-        if (routedEvents.length === 0) {
-          setVcr((current) => ({ ...current, mode: 'paused', status: 'empty', clock: selected, scrubAt: selected }));
-          return;
-        }
-        playReplayEnvelopes(historyEventsToLiveEnvelopes(routedEvents, Date.now()), generation, 'paused');
-      })
-      .catch(() => {
-        if (!shouldApplyPlaybackGeneration(vcrGenerationRef.current, generation)) return;
-        setVcr((current) => ({ ...current, mode: 'paused', status: 'error', clock: selected, scrubAt: selected }));
-      });
-  }, [liveClock, playReplayEnvelopes, state.serverTime, stopReplay, vcr.clock, vcr.scrubAt]);
-
-  const startLaserShow = useCallback(() => {
-    stopReplay();
-    clearPendingLiveFlush();
-    setPaused(false);
-    setClearToken((value) => value + 1);
-    const generation = vcrGenerationRef.current + 1;
-    vcrGenerationRef.current = generation;
-    const now = Date.now();
-    const from = new Date(now);
-    from.setHours(0, 0, 0, 0);
-    setLaserShowActive(true);
-    setVcr((current) => ({ ...current, mode: 'replay', status: 'loading', clock: from.getTime(), scrubAt: from.getTime(), missedCount: 0 }));
-
-    const load = async () => {
-      let cursor: string | undefined;
-      let page = 0;
-      const packets: PublicPacketPath[] = [];
-      while (page < VCR_LASER_MAX_PAGES && packets.length < VCR_LASER_MAX_PACKETS) {
-        const response = await fetchPublicPackets({
-          from: from.getTime(),
-          to: now,
-          limit: VCR_LASER_PAGE_LIMIT,
-          cursor
-        });
-        packets.push(...response.packets);
-        cursor = response.nextCursor;
-        page += 1;
-        if (!cursor) break;
-      }
-      if (!shouldApplyPlaybackGeneration(vcrGenerationRef.current, generation)) return;
-      const unique = dedupePackets(packets)
-        .sort((a, b) => a.at - b.at)
-        .slice(-VCR_LASER_MAX_PACKETS);
-      if (unique.length === 0) {
-        setLaserShowActive(false);
-        setVcr((current) => ({ ...current, mode: 'paused', status: 'empty', clock: from.getTime(), scrubAt: from.getTime() }));
-        return;
-      }
-      const startedAt = Date.now();
-      const spacing = Math.max(24, Math.round(54 / Math.max(0.5, vcrSpeedRef.current)));
-      const envelopes = unique.map((packet, index) => {
-        const pulse = packetToPulse(packet, startedAt + index * spacing, {
-          force: true,
-          travelDurationMs: Math.max(900, Math.round(1800 / Math.max(0.5, vcrSpeedRef.current))),
-          brightness: Math.min(1.75, mapSettings.packets.brightness * 1.2),
-          trailScale: Math.min(2.2, mapSettings.packets.trail * 1.15),
-          animationStyle: mapSettings.packets.animationStyle
-        });
-        return {
-          v: 1,
-          type: 'event',
-          event: 'routePulse',
-          seq: index + 1,
-          serverTime: packet.at,
-          receivedAt: packet.at,
-          displayAt: startedAt + index * spacing,
-          data: pulse
-        } satisfies PublicLiveEnvelope;
-      });
-      playReplayEnvelopes(envelopes, generation, 'paused', () => setLaserShowActive(false));
-    };
-
-    load().catch(() => {
-      if (!shouldApplyPlaybackGeneration(vcrGenerationRef.current, generation)) return;
-      setLaserShowActive(false);
-      setVcr((current) => ({ ...current, mode: 'paused', status: 'error', clock: from.getTime(), scrubAt: from.getTime() }));
-    });
-  }, [clearPendingLiveFlush, mapSettings.packets, playReplayEnvelopes, stopReplay]);
-
-  const scrubTimeline = useCallback((timestamp: number) => {
-    stopReplay();
-    if (vcrModeRef.current === 'live') {
-      movePendingLiveToVcrBuffer();
-    }
-    setPaused(false);
-    setVcr((current) => ({ ...current, mode: 'paused', scrubAt: timestamp, clock: timestamp, status: 'idle' }));
-  }, [movePendingLiveToVcrBuffer, stopReplay]);
-
-  const rewindFifteenMinutes = useCallback(() => {
-    const now = Math.max(liveClock, state.serverTime, Date.now());
-    scrubTimeline(Math.max(0, (vcr.scrubAt ?? vcr.clock ?? now) - 15 * 60_000));
-  }, [liveClock, scrubTimeline, state.serverTime, vcr.clock, vcr.scrubAt]);
-
-  const cycleVcrSpeed = useCallback(() => {
-    setVcr((current) => ({ ...current, speed: nextVcrSpeed(current.speed) }));
-  }, []);
-
-  const setVcrScope = useCallback((scopeMs: number) => {
-    setVcr((current) => ({ ...current, scopeMs }));
-  }, []);
 
   const toggleChromeVisibility = useCallback(() => {
     setChromeVisibility((current) => reduceChromeVisibility(current, { type: current.chromeHidden ? 'show-all' : 'hide-all' }));
@@ -796,7 +477,7 @@ function PublicDashboardApp() {
     };
     const flushMessages = () => {
       flushMessagesTimerRef.current = null;
-      if (!active || vcrModeRef.current !== 'live' || pendingMessagesRef.current.length === 0) return;
+      if (!active || pendingMessagesRef.current.length === 0) return;
       const { due, pending } = takeDueLiveEnvelopes(pendingMessagesRef.current, Date.now());
       const batch = takeIncreasingLiveEnvelopes(due, lastAppliedEventSeqRef.current);
       if (batch.invalid) {
@@ -821,10 +502,6 @@ function PublicDashboardApp() {
     };
     const enqueueMessage = (message: PublicLiveEnvelope) => {
       if (message.type !== 'event') return;
-      if (vcrModeRef.current !== 'live') {
-        bufferVcrMessage(message);
-        return;
-      }
       const sequence = classifyLiveEnvelopeSequence(message);
       const recoveryTarget = Math.max(
         sequence.kind === 'durable' ? sequence.seq : 0,
@@ -866,7 +543,6 @@ function PublicDashboardApp() {
       }, delayMs);
     };
     const refreshState = (minimumSeq = 0, resetCursorEpoch = false) => {
-      if (vcrModeRef.current !== 'live') return;
       if (resetCursorEpoch) {
         stateRefreshFloor = Math.max(0, minimumSeq);
         stateRefreshIsCursorReset = true;
@@ -884,7 +560,6 @@ function PublicDashboardApp() {
       stateRefreshInFlight = true;
       fetchPublicState().then((liveState) => {
         if (!active) return;
-        if (vcrModeRef.current !== 'live') return;
         const snapshotSeq = publicSequence(liveState.stats?.latestSeq);
         if (snapshotSeq < stateRefreshFloor) {
           scheduleStateRefresh(1_000);
@@ -916,7 +591,6 @@ function PublicDashboardApp() {
       });
     };
     const backfillOrRefresh = (latestSeq?: number) => {
-      if (vcrModeRef.current !== 'live') return;
       const recoveryTarget = publicSequence(latestSeq);
       if (recoveryTarget > 0) {
         queuedRecoveryTarget = Math.max(queuedRecoveryTarget, recoveryTarget);
@@ -931,7 +605,7 @@ function PublicDashboardApp() {
       recoveryInFlight = true;
 
       const recover = async () => {
-        while (active && vcrModeRef.current === 'live' && (queuedRecoveryPoll || queuedRecoveryTarget > lastAppliedEventSeqRef.current)) {
+        while (active && (queuedRecoveryPoll || queuedRecoveryTarget > lastAppliedEventSeqRef.current)) {
           const requestedTarget = queuedRecoveryTarget > 0 ? queuedRecoveryTarget : undefined;
           queuedRecoveryTarget = 0;
           queuedRecoveryPoll = false;
@@ -943,7 +617,7 @@ function PublicDashboardApp() {
               targetSeq: requestedTarget,
               fetchPage: (afterSeq, limit) => fetchPublicEvents({ afterSeq, limit }),
               applyPage: (events) => {
-                if (!active || vcrModeRef.current !== 'live' || recoveryGeneration !== eventCursorGenerationRef.current) return;
+                if (!active || recoveryGeneration !== eventCursorGenerationRef.current) return;
                 const unapplied = events
                   .filter((event) => publicSequence(event.seq) > lastAppliedEventSeqRef.current)
                   .sort((left, right) => left.seq - right.seq);
@@ -958,7 +632,7 @@ function PublicDashboardApp() {
                 recordLivePendingQueueSize(pendingMessagesRef.current.length);
                 setState((current) => unapplied.reduce((next, event) => applyPublicEvent(next, event), current));
               },
-              isActive: () => active && vcrModeRef.current === 'live'
+              isActive: () => active
             });
           } catch (error) {
             if (requestedTarget !== undefined) queuedRecoveryTarget = Math.max(queuedRecoveryTarget, requestedTarget);
@@ -1062,10 +736,6 @@ function PublicDashboardApp() {
           window.clearTimeout(flushMessagesTimerRef.current);
           flushMessagesTimerRef.current = null;
         }
-        if (vcrModeRef.current !== 'live') {
-          setVcr((current) => ({ ...current, status: 'lagged' }));
-          return;
-        }
         setState((current) => applyPublicEnvelope(current, message));
         const laggedTarget = Math.max(observedSeq, publicSequence(message.toSeq));
         backfillOrRefresh(laggedTarget > 0 ? laggedTarget : undefined);
@@ -1085,13 +755,13 @@ function PublicDashboardApp() {
       recordLivePendingQueueSize(0);
       socket.close();
     };
-  }, [applyPublicSnapshot, bufferVcrMessage, initialNodesReceived]);
+  }, [applyPublicSnapshot, initialNodesReceived]);
 
   useEffect(() => {
     return installResumeRecovery({
       document,
       window,
-      shouldRehydrate: () => vcrModeRef.current === 'live',
+      shouldRehydrate: () => true,
       rehydrate: refreshLiveSnapshot,
       onSuspend: recordVisibilityPause
     });
@@ -1102,7 +772,7 @@ function PublicDashboardApp() {
     let active = true;
     let interval: number | null = null;
     const recover = () => {
-      if (!active || vcrModeRef.current !== 'live') return;
+      if (!active) return;
       eventRecoveryRef.current?.();
     };
     const startPolling = () => {
@@ -1134,35 +804,9 @@ function PublicDashboardApp() {
   }, [positionedNodesRendered]);
 
   useEffect(() => {
-    const intervalMs = vcrOpen || vcr.mode !== 'live' ? LIVE_CLOCK_ACTIVE_MS : LIVE_CLOCK_IDLE_MS;
-    const interval = window.setInterval(() => setLiveClock(Date.now()), intervalMs);
+    const interval = window.setInterval(() => setLiveClock(Date.now()), LIVE_CLOCK_IDLE_MS);
     return () => window.clearInterval(interval);
-  }, [vcr.mode, vcrOpen]);
-
-  useEffect(() => {
-    if (!vcrOpen) return;
-    let active = true;
-    const loadSummary = () => {
-      const to = Date.now();
-      const from = Math.max(0, to - vcr.scopeMs);
-      const bucketMs = Math.max(60_000, Math.ceil(vcr.scopeMs / 96));
-      fetchPublicHistorySummary({ from, to, bucketMs })
-        .then((summary) => {
-          if (!active) return;
-          setVcr((current) => ({ ...current, summary: summary.buckets }));
-        })
-        .catch(() => {
-          if (!active) return;
-          setVcr((current) => ({ ...current, summary: [] }));
-        });
-    };
-    loadSummary();
-    const interval = window.setInterval(loadSummary, 30_000);
-    return () => {
-      active = false;
-      window.clearInterval(interval);
-    };
-  }, [vcr.scopeMs, vcrOpen]);
+  }, []);
 
   useEffect(() => {
     const shouldLoadPropagation = propagationOpen || mapSettings.layers.propagationInsights;
@@ -1209,7 +853,7 @@ function PublicDashboardApp() {
   const activityClock = Math.max(liveClock, state.serverTime, state.activity[0]?.heardAt ?? 0, state.routeTraces.at(-1)?.heardAt ?? 0);
   const activityClockBucket = Math.floor(activityClock / DERIVED_ACTIVITY_BUCKET_MS) * DERIVED_ACTIVITY_BUCKET_MS;
   const chromeHidden = chromeVisibility.chromeHidden;
-  const chromePanelsMounted = !vcrOpen && !packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen;
+  const chromePanelsMounted = !packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen;
   const hotRoutesPanelActive = chromePanelsMounted && !chromeHidden && chromeVisibility.panels.hotRoutes;
   const routeActivityByID = useMemo(
     () => hotRoutesPanelActive ? summarizeRouteActivity(state.routeTraces, activityClockBucket) : EMPTY_ROUTE_ACTIVITY,
@@ -1217,8 +861,6 @@ function PublicDashboardApp() {
   );
   const coverage = useMemo(() => liveCoverageStats(state.activity, activityClockBucket), [state.activity, activityClockBucket]);
   const latestPacketActivity = useMemo(() => state.activity.find(isPacketActivity) ?? null, [state.activity]);
-  const vcrPlaybackActive = vcr.mode !== 'live';
-  const vcrTimelineNow = Math.max(liveClock, state.serverTime, vcr.clock ?? 0);
   const loadingPositionedNodes = initialLoadGateOpen && (!initialNodesReceived || !positionedNodesRendered);
   const handlePositionedNodesRendered = useCallback(() => setPositionedNodesRendered(true), []);
   const handleViewChange = useCallback((view: MapViewState) => setMapView(view), []);
@@ -1279,14 +921,6 @@ function PublicDashboardApp() {
   }, [selectPacket, setPacketsOpen, setPacketsPanelMode]);
 
   const replayPacketPath = useCallback((packet: PublicPacketPath, speedOverride?: number, forceCanvas = false) => {
-    if (vcrModeRef.current !== 'live') {
-      stopReplay();
-      clearPendingLiveFlush();
-      pendingMessagesRef.current = [];
-      vcrBufferedMessagesRef.current = [];
-      recordVcrReplayQueueSize(0);
-      setVcr((current) => ({ ...current, mode: 'live', missedCount: 0, scrubAt: null, clock: null, status: 'idle' }));
-    }
     setPlotMode('off');
     setPlotFirstNodeID(null);
     setPlotAreaFirstPoint(null);
@@ -1317,7 +951,7 @@ function PublicDashboardApp() {
       travelDurationMs,
       forceCanvas
     });
-  }, [clearPendingLiveFlush, mapSettings.packets, selectPacket, setPacketsOpen, setPacketsPanelMode, stopReplay]);
+  }, [mapSettings.packets, selectPacket, setPacketsOpen, setPacketsPanelMode]);
 
   const focusPropagationEvent = useCallback((event: PublicPropagationEvent) => {
     setPropagationOpen(true);
@@ -1330,14 +964,6 @@ function PublicDashboardApp() {
   }, [clearResolvedSelection, setPacketsOpen, setPacketsPanelMode]);
 
   const replayPropagationEvent = useCallback((event: PublicPropagationEvent) => {
-    if (vcrModeRef.current !== 'live') {
-      stopReplay();
-      clearPendingLiveFlush();
-      pendingMessagesRef.current = [];
-      vcrBufferedMessagesRef.current = [];
-      recordVcrReplayQueueSize(0);
-      setVcr((current) => ({ ...current, mode: 'live', missedCount: 0, scrubAt: null, clock: null, status: 'idle' }));
-    }
     setPlotMode('off');
     setPlotFirstNodeID(null);
     setPlotAreaFirstPoint(null);
@@ -1374,14 +1000,12 @@ function PublicDashboardApp() {
       settleMs: 650,
       travelDurationMs
     });
-  }, [clearPendingLiveFlush, clearResolvedSelection, mapSettings.packets, setPacketsOpen, setPacketsPanelMode, stopReplay]);
+  }, [clearResolvedSelection, mapSettings.packets, setPacketsOpen, setPacketsPanelMode]);
 
   const resumeLiveFromPacketTray = useCallback(() => {
-    returnToLive();
-    markUserPauseOverride();
     setPaused(false);
     setPacketsPanelMode('expanded');
-  }, [markUserPauseOverride, returnToLive, setPacketsPanelMode]);
+  }, [setPacketsPanelMode]);
 
   const startNodePlot = useCallback(() => {
     setPlotMode('node');
@@ -1403,17 +1027,6 @@ function PublicDashboardApp() {
     setPlotAreaFirstPoint(null);
     setPlotResult(null);
   }, []);
-
-  const openVcr = useCallback(() => {
-    clearPlotRoutes();
-    setVcrOpen(true);
-  }, [clearPlotRoutes]);
-
-  const closeVcr = useCallback(() => {
-    clearPlotRoutes();
-    returnToLive();
-    setVcrOpen(false);
-  }, [clearPlotRoutes, returnToLive]);
 
   const handlePlotNodePick = useCallback((nodeID: string) => {
     if (plotMode !== 'node') return;
@@ -1557,6 +1170,7 @@ function PublicDashboardApp() {
     gifCooldownUntilRef.current = now + GIF_EXPORT_COOLDOWN_MS;
     const remaining = GIF_EXPORT_MAX_PER_WINDOW - gifExportTimestampsRef.current.filter(t => t > now - GIF_EXPORT_WINDOW_MS).length;
     setFollowTraffic(false);
+    gifExportPauseSessionRef.current = beginOwnedPause(paused);
     setPaused(true);
     setRouteGifExport({ status: 'rendering', progress: 0.02, remainingExports: remaining, cooldownUntil: gifCooldownUntilRef.current });
     const token = actionTokenRef.current + 1;
@@ -1579,6 +1193,7 @@ function PublicDashboardApp() {
       onComplete: (blob) => {
         downloadRouteGifBlob(packet, blob);
         setRouteGifExportRequest(null);
+        finishGifExportPause();
         setRouteGifExport(s => ({ ...s, status: 'done', progress: 1 }));
         showToast({ tone: 'success', title: 'Route GIF exported' });
         window.setTimeout(() => {
@@ -1589,6 +1204,7 @@ function PublicDashboardApp() {
         gifExportTimestampsRef.current.pop();
         const rem = GIF_EXPORT_MAX_PER_WINDOW - gifExportTimestampsRef.current.filter(t => t > Date.now() - GIF_EXPORT_WINDOW_MS).length;
         setRouteGifExportRequest(null);
+        finishGifExportPause();
         setRouteGifExport(s => ({ ...s, status: 'error', progress: 0, remainingExports: rem }));
         showToast({ tone: 'error', title: 'GIF export failed', message: 'The map was busy. Try again after it settles.' });
         window.setTimeout(() => {
@@ -1596,39 +1212,9 @@ function PublicDashboardApp() {
         }, 3600);
       }
     });
-  }, [mapSettings.packets, routeGifExport.status, selectedPacket, showToast]);
+  }, [finishGifExportPause, mapSettings.packets, paused, routeGifExport.status, selectedPacket, showToast]);
 
-  const exportReplayWebM = useCallback(async (packet: PublicPacketPath, speed: number) => {
-    if (routeWebmExport.status === 'recording') return;
-    const provider = replayExportProviderRef.current;
-    if (!provider) {
-      showToast({ tone: 'warning', title: 'Map not ready', message: 'Wait for the map canvas to finish loading, then record again.' });
-      return;
-    }
-    setRouteWebmExport({ status: 'recording', progress: 0 });
-    let surface: Awaited<ReturnType<ReplayExportSurfaceProvider>> | null = null;
-    try {
-      surface = await provider({ width: 1280, height: 720, segments: packet.segments });
-      const { downloadRouteWebM, recordCanvasLayersWebM } = await import('./routeWebmExport');
-      const durationMs = Math.min(30_000, cinematicPacketReplayDuration(packet.segmentCount, speed) + 2_000);
-      const blob = await recordCanvasLayersWebM(surface.canvases, {
-        durationMs,
-        frameRate: 30,
-        onStarted: () => replayPacketPath(packet, speed, true),
-        onProgress: (progress) => setRouteWebmExport({ status: 'recording', progress })
-      });
-      downloadRouteWebM(packet.id, blob);
-      showToast({ tone: 'success', title: 'Route WebM exported', message: 'Recorded locally at up to 720p.' });
-    } catch (error) {
-      showToast({ tone: 'error', title: 'WebM export unavailable', message: error instanceof Error ? error.message : 'Use GIF export in this browser.' });
-    } finally {
-      surface?.cleanup();
-      setRouteWebmExport({ status: 'idle', progress: 0 });
-    }
-  }, [replayPacketPath, routeWebmExport.status, showToast]);
-
-  const showRouteGifExport = Boolean(selectedPacket && !replayStudioOpen && !packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen && !vcrOpen);
-  const routeWebmSupported = typeof MediaRecorder !== 'undefined' && typeof HTMLCanvasElement !== 'undefined' && typeof HTMLCanvasElement.prototype.captureStream === 'function';
+  const showRouteGifExport = Boolean(selectedPacket && !packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen);
   const activeMapMode = mapModeForSettings(mapSettings);
   const selectMapMode = useCallback((modeID: MapModeID) => {
     setMapSettings((current) => applyMapMode(current, modeID));
@@ -1637,9 +1223,8 @@ function PublicDashboardApp() {
     setPanelsMenuOpen(false);
     setMobileControlsOpen(false);
   }, [showToast]);
-  const followRecentActive = followTraffic && !vcrPlaybackActive;
+  const followRecentActive = followTraffic;
   const toggleFollowRecent = useCallback(() => {
-    if (vcrPlaybackActive) return;
     if (followRecentActive) {
       setFollowTraffic(false);
       showToast({ tone: 'info', title: 'Follow off', message: 'The map will stay where you leave it.', durationMs: 1600 });
@@ -1648,90 +1233,11 @@ function PublicDashboardApp() {
     setFollowTraffic(true);
     dispatchMapAction('latest-route');
     showToast({ tone: 'success', title: 'Following recent activity', message: 'The camera will ease toward fresh routed traffic.', durationMs: 1800 });
-  }, [dispatchMapAction, followRecentActive, showToast, vcrPlaybackActive]);
-  const replayStudioPacket = useMemo(
-    () => selectedPacket ?? (selectedRoute ? routeToReplayPacket(selectedRoute) : null),
-    [selectedPacket, selectedRoute]
-  );
-  useEffect(() => {
-    const shared = sharedViewRef.current;
-    if (!shared?.studio || replayDeepLinkStatus !== 'pending' || !fullStateHydrated) return;
-    const resolution = resolveReplayDeepLink(shared, state.pulses, state.routes);
-    setReplayDeepLinkStatus(resolution.status);
-    if (resolution.packet) {
-      focusPacketPath(resolution.packet);
-      return;
-    }
-    if (resolution.route) {
-      selectRoute(resolution.route.id);
-      return;
-    }
-    clearReplayDeepLinkSelection();
-  }, [clearReplayDeepLinkSelection, focusPacketPath, fullStateHydrated, replayDeepLinkStatus, selectRoute, state.pulses, state.routes]);
-  const openReplayStudio = useCallback(() => {
-    replayPauseSessionRef.current = beginReplayPauseSession(paused);
-    setReplayDeepLinkStatus(null);
-    if (!selectedPacket && !selectedRoute) {
-      const latest = [...visibleRoutes].sort((a, b) => b.lastHeard - a.lastHeard)[0];
-      if (latest) selectRoute(latest.id);
-    }
-    setReplayStudioOpen(true);
-    setPanelsMenuOpen(false);
-    setMobileControlsOpen(false);
-  }, [paused, selectRoute, selectedPacket, selectedRoute, visibleRoutes]);
-  const playReplayStudio = useCallback((packet: PublicPacketPath, speed: number, staticStory: boolean) => {
-    if (staticStory) {
-      focusPacketPath(packet);
-      setPaused(true);
-      return;
-    }
-    replayPacketPath(packet, speed);
-  }, [focusPacketPath, replayPacketPath]);
-  const pauseReplayStudio = useCallback(() => {
-    setPaused(true);
-    if (!replayStudioPacket?.segments.length) return;
-    const token = actionTokenRef.current + 1;
-    actionTokenRef.current = token;
-    setMapAction({ type: 'packet', token, segments: replayStudioPacket.segments });
-  }, [replayStudioPacket]);
-  const seekReplayStudio = useCallback((segment: PublicRoutePulse['segments'][number]) => {
-    const token = actionTokenRef.current + 1;
-    actionTokenRef.current = token;
-    setMapAction({ type: 'packet', token, segments: [segment] });
-  }, []);
-  const closeReplayStudio = useCallback(() => {
-    setReplayStudioOpen(false);
-    finishReplayPauseSession();
-  }, [finishReplayPauseSession]);
-  const shareReplayStudio = useCallback(async (packet: PublicPacketPath) => {
-    const view = mapView ?? (sharedViewRef.current ? { lat: sharedViewRef.current.lat, lng: sharedViewRef.current.lng, z: sharedViewRef.current.z } : null);
-    if (!view) {
-      showToast({ tone: 'warning', title: 'Map view not ready', message: 'Wait for the camera to settle, then share again.' });
-      return;
-    }
-    const routeID = packet.routeIds[0] ?? selectedRouteID;
-    const url = buildSharedViewURL(window.location.href, view, {
-      route: routeID,
-      q: query,
-      studio: true,
-      replayPacket: packet.id,
-      replayRoute: routeID
-    });
-    try {
-      await copyTextToClipboard(url);
-      showToast({ tone: 'success', title: 'Replay story link copied', message: 'The link contains sanitized public identifiers only.' });
-    } catch {
-      showToast({ tone: 'error', title: 'Copy failed', message: 'Clipboard access was blocked by the browser.' });
-    }
-  }, [mapView, query, selectedRouteID, showToast]);
+  }, [dispatchMapAction, followRecentActive, showToast]);
   const openReplayWaterfall = useCallback(() => {
-    setReplayStudioOpen(false);
-    finishReplayPauseSession();
     window.location.hash = labExperimentPath(DEFAULT_LAB_EXPERIMENT_ID);
-  }, [finishReplayPauseSession]);
+  }, []);
   const dashboardActions = useMemo<DashboardAction[]>(() => [
-    { id: 'replay-studio', label: 'RF Replay Studio', description: replayStudioPacket ? 'Play the selected public pathway' : 'Play the latest public pathway', group: 'Playback', keywords: ['cinematic', 'route', '3d', 'terrain'], run: openReplayStudio },
-    { id: 'timeline', label: 'Live timeline', description: 'Rewind or replay recent public traffic', group: 'Playback', keywords: ['vcr', 'history'], run: openVcr },
     { id: 'packets', label: 'PacketTV', description: 'Browse routed public packets', group: 'Explore', keywords: ['packet', 'traffic'], run: openPackets },
     { id: 'nodes', label: 'Browse nodes', description: 'Search the public node phonebook', group: 'Explore', keywords: ['radio', 'repeater'], run: openNodeList },
     { id: 'waterfall', label: 'Waterfall Labs', description: 'Open the audiovisual public traffic lab', group: 'Explore', keywords: ['lab', 'audio'], run: openReplayWaterfall },
@@ -1740,10 +1246,10 @@ function PublicDashboardApp() {
     { id: 'share', label: 'Share current view', description: 'Copy a privacy-safe map link', group: 'Utility', keywords: ['link', 'copy'], run: shareView },
     { id: 'pause', label: paused ? 'Resume feed' : 'Pause feed', description: paused ? 'Resume live visual updates' : 'Pause live visual updates', group: 'Playback', run: togglePausedByUser },
     { id: 'toggle-ui', label: chromeHidden ? 'Show map UI' : 'Hide map UI', description: 'Toggle map panels and status chrome', group: 'View', run: toggleChromeVisibility }
-  ], [chromeHidden, openNodeList, openPackets, openReplayStudio, openReplayWaterfall, openVcr, paused, replayStudioPacket, shareView, toggleChromeVisibility, togglePausedByUser]);
+  ], [chromeHidden, openNodeList, openPackets, openReplayWaterfall, paused, shareView, toggleChromeVisibility, togglePausedByUser]);
   const knownPathwaysOn = mapSettings.layers.routes;
   const workspaceSurfaceOpen = packetsOpen || netGraphOpen || chatOpen || labOpen || nodeListOpen;
-  const visitorGuideSuppressed = chromeHidden || packetsOpen || netGraphOpen || chatOpen || labOpen || setupOpen || propagationOpen || vcrOpen || nodeListOpen || shortcutHelpOpen || mapSettingsOpen || mobileControlsOpen || commandPaletteOpen || replayStudioOpen || Boolean(selectedNode || selectedRoute || selectedPacket);
+  const visitorGuideSuppressed = chromeHidden || packetsOpen || netGraphOpen || chatOpen || labOpen || setupOpen || propagationOpen || nodeListOpen || shortcutHelpOpen || mapSettingsOpen || mobileControlsOpen || commandPaletteOpen || Boolean(selectedNode || selectedRoute || selectedPacket);
 
   return (
     <div
@@ -1755,7 +1261,6 @@ function PublicDashboardApp() {
       data-latest-pulse-id={state.pulses[0]?.id ?? ''}
       data-theme-mode={themeMode}
       data-theme-palette={selectedThemePalette.id}
-      data-vcr-layout={vcrOpen ? 'open' : 'closed'}
       data-packets-mode={packetsOpen ? packetsPanelMode : 'closed'}
       style={appThemeStyle}
     >
@@ -1778,8 +1283,8 @@ function PublicDashboardApp() {
         pulses={state.pulses}
         observerBursts={state.observerBursts}
         propagationEvents={propagationEvents}
-        paused={paused || vcr.mode === 'paused'}
-        followTraffic={followTraffic && !vcrPlaybackActive}
+        paused={paused}
+        followTraffic={followTraffic}
         clearToken={clearToken}
         selectedNodeID={selectedNodeID}
         selectedRouteID={selectedRouteID}
@@ -1793,7 +1298,6 @@ function PublicDashboardApp() {
         plotMode={plotMode}
         mapAction={mapAction}
         routeGifExportRequest={routeGifExportRequest}
-        onReplayExportProviderChange={(provider) => { replayExportProviderRef.current = provider; }}
         themeMode={mapThemeMode}
         initialView={sharedViewRef.current}
         mapConfig={publicMapConfig}
@@ -1846,8 +1350,7 @@ function PublicDashboardApp() {
           className={`operator-action follow-recent-toggle ${followRecentActive ? 'active' : ''}`}
           type="button"
           aria-pressed={followRecentActive}
-          disabled={vcrPlaybackActive}
-          title={vcrPlaybackActive ? 'Follow resumes after replay' : followRecentActive ? 'Stop following recent traffic' : 'Follow recent traffic'}
+          title={followRecentActive ? 'Stop following recent traffic' : 'Follow recent traffic'}
           onClick={toggleFollowRecent}
         >
           <RadioTower size={16} />
@@ -1870,10 +1373,6 @@ function PublicDashboardApp() {
         >
           <SlidersHorizontal size={16} />
           <span>Map</span>
-        </button>
-        <button className={`operator-action replay-studio-toggle ${replayStudioOpen ? 'active' : ''}`} type="button" aria-pressed={replayStudioOpen} title="Open RF Replay Studio" onClick={openReplayStudio}>
-          <Sparkles size={16} />
-          <span>Studio</span>
         </button>
         <button className="operator-action command-palette-toggle" type="button" aria-keyshortcuts="Control+K Meta+K" title="Search commands, regions, nodes, and routes (Ctrl/Command K)" onClick={() => setCommandPaletteOpen(true)}>
           <Search size={16} />
@@ -1898,7 +1397,7 @@ function PublicDashboardApp() {
             <div className="top-popover operator-more-menu" role="menu" aria-label="More map actions">
               <div className="operator-menu-section">
                 <span>Tools</span>
-                {dashboardActions.filter((action) => ['replay-studio', 'timeline', 'nodes', 'propagation', 'share'].includes(action.id)).map((action) => (
+                {dashboardActions.filter((action) => ['nodes', 'propagation', 'share'].includes(action.id)).map((action) => (
                   <button key={action.id} type="button" disabled={action.disabled} onClick={() => { void action.run(); setPanelsMenuOpen(false); }}>
                     {dashboardActionIcon(action.id, 14)}
                     <span>{action.label}</span>
@@ -1984,9 +1483,9 @@ function PublicDashboardApp() {
       />
       <nav className="mobile-control-dock mobile-tabbar" aria-label="Mobile app tabs">
         <button
-          className={`mobile-control-button ${!workspaceSurfaceOpen && !setupOpen && !propagationOpen && !vcrOpen ? 'active' : ''}`}
+          className={`mobile-control-button ${!workspaceSurfaceOpen && !setupOpen && !propagationOpen ? 'active' : ''}`}
           type="button"
-          aria-current={!workspaceSurfaceOpen && !setupOpen && !propagationOpen && !vcrOpen ? 'page' : undefined}
+          aria-current={!workspaceSurfaceOpen && !setupOpen && !propagationOpen ? 'page' : undefined}
           title="Map"
           onClick={openMapHome}
         >
@@ -2075,7 +1574,6 @@ function PublicDashboardApp() {
             <button
               type="button"
               aria-pressed={followRecentActive}
-              disabled={vcrPlaybackActive}
               onClick={toggleFollowRecent}
             >
               <RadioTower size={18} />
@@ -2089,7 +1587,7 @@ function PublicDashboardApp() {
               <Route size={18} />
               <span>{knownPathwaysOn ? 'Routes on' : 'Routes off'}</span>
             </button>
-            {dashboardActions.filter((action) => ['replay-studio', 'timeline', 'map-settings', 'propagation', 'pause', 'share', 'nodes'].includes(action.id)).map((action) => (
+            {dashboardActions.filter((action) => ['map-settings', 'propagation', 'pause', 'share', 'nodes'].includes(action.id)).map((action) => (
               <button key={action.id} type="button" disabled={action.disabled} onClick={() => { void action.run(); setMobileControlsOpen(false); }}>
                 {dashboardActionIcon(action.id, 18)}
                 <span>{action.label}</span>
@@ -2167,29 +1665,6 @@ function PublicDashboardApp() {
           </Suspense>
         </ErrorBoundary>
       )}
-      {replayStudioOpen && (
-        <ErrorBoundary fallback={<div className="panel-error">Replay Studio failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}>
-          <Suspense fallback={<LoadingSpinner label="Opening RF Replay Studio" />}>
-            <RFReplayStudio
-              packet={replayStudioPacket}
-              deepLinkStatus={replayDeepLinkStatus}
-              mode={activeMapMode.id}
-              exportBusy={routeGifExport.status === 'rendering'}
-              webmSupported={routeWebmSupported}
-              webmBusy={routeWebmExport.status === 'recording'}
-              onModeChange={selectMapMode}
-              onReplay={playReplayStudio}
-              onPause={pauseReplayStudio}
-              onSeek={seekReplayStudio}
-              onShare={shareReplayStudio}
-              onExportGif={replayStudioPacket ? () => { void exportSelectedPacketGif(replayStudioPacket); } : undefined}
-              onExportWebM={replayStudioPacket ? (speed) => { void exportReplayWebM(replayStudioPacket, speed); } : undefined}
-              onOpenWaterfall={openReplayWaterfall}
-              onClose={closeReplayStudio}
-            />
-          </Suspense>
-        </ErrorBoundary>
-      )}
       {showRouteGifExport && (
         <RouteGifExportButton
           packet={selectedPacket}
@@ -2260,50 +1735,21 @@ function PublicDashboardApp() {
       {nodeListOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton title="Loading nodes" message="Preparing the public node workspace." />}><NodeListPanel nodes={visibleNodes} selectedNodeID={selectedNodeID} presentation={workspacePresentation} onPresentationChange={setWorkspacePresentation} onSelectNode={selectNodeFromList} onClose={closeNodeList} /></Suspense></ErrorBoundary>}
       {shortcutHelpOpen && <ErrorBoundary fallback={<div className="panel-error">Panel failed to load. <button onClick={() => window.location.reload()}>Reload</button></div>}><Suspense fallback={<PanelSkeleton title="Loading help" message="Opening map shortcuts." rows={3} />}><ShortcutHelp onClose={() => setShortcutHelpOpen(false)} /></Suspense></ErrorBoundary>}
 
-      {!vcrOpen && !packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen && (
-        <>
-          {!chromeHidden && (
-            <div className="bottom-action-dock" aria-label="Map playback and route controls">
-              <PlotRoutesPanel
-                mode={plotMode}
-                firstNode={plotFirstNode}
-                areaPointCount={plotAreaFirstPoint ? 1 : 0}
-                result={plotResult}
-                copyStatus={pathCopyToast}
-                onStartNodePlot={startNodePlot}
-                onStartAreaPlot={startAreaPlot}
-                onCancel={clearPlotRoutes}
-                onCopyPath={copyMeshcorePath}
-                onSelectRoute={selectRoute}
-              />
-            </div>
-          )}
-          <MiniLiveClock timestamp={liveClock} onOpen={openVcr} />
-        </>
-      )}
-      {vcrOpen && (
-        <VcrBar
-          mode={vcr.mode}
-          speed={vcr.speed}
-          scopeMs={vcr.scopeMs}
-          missedCount={vcr.missedCount}
-          timelineNow={vcrTimelineNow}
-          clock={vcr.clock}
-          scrubAt={vcr.scrubAt}
-          status={vcr.status}
-          summary={vcr.summary}
-          onLive={returnToLive}
-          onPause={pausePlayback}
-          onReplayMissed={replayMissed}
-          onRewind={rewindFifteenMinutes}
-          onSpeed={cycleVcrSpeed}
-          onScope={setVcrScope}
-          onScrub={scrubTimeline}
-          onPlayFromScrub={replayFromScrub}
-          onLaserShow={startLaserShow}
-          onClose={closeVcr}
-          laserShowActive={laserShowActive}
-        />
+      {!packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen && !chromeHidden && (
+        <div className="bottom-action-dock" aria-label="Map playback and route controls">
+          <PlotRoutesPanel
+            mode={plotMode}
+            firstNode={plotFirstNode}
+            areaPointCount={plotAreaFirstPoint ? 1 : 0}
+            result={plotResult}
+            copyStatus={pathCopyToast}
+            onStartNodePlot={startNodePlot}
+            onStartAreaPlot={startAreaPlot}
+            onCancel={clearPlotRoutes}
+            onCopyPath={copyMeshcorePath}
+            onSelectRoute={selectRoute}
+          />
+        </div>
       )}
 
       {!chromeHidden && !workspaceSurfaceOpen && (
@@ -2372,8 +1818,6 @@ function PublicDashboardApp() {
 }
 
 function dashboardActionIcon(actionID: string, size: number) {
-  if (actionID === 'replay-studio') return <Sparkles size={size} />;
-  if (actionID === 'timeline') return <History size={size} />;
   if (actionID === 'packets') return <List size={size} />;
   if (actionID === 'nodes') return <RadioTower size={size} />;
   if (actionID === 'waterfall' || actionID === 'propagation') return <CloudSun size={size} />;
@@ -2443,13 +1887,6 @@ async function copyTextToClipboard(text: string): Promise<void> {
       selection.addRange(selectedRange);
     }
   }
-}
-
-function replayEnvelopeClockAt(message: PublicLiveEnvelope): number {
-  if (message.type === 'event' && (message.event === 'routePulse' || message.event === 'activity')) {
-    return message.data.heardAt;
-  }
-  return liveEnvelopeDisplayAt(message);
 }
 
 function cinematicPacketReplayDuration(segmentCount: number, speed: number): number {

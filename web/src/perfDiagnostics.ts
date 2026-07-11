@@ -14,7 +14,6 @@ export interface PerfCounters {
   snapshotSkips: number;
   routeReducerMs: number;
   livePendingQueueSize: number;
-  vcrReplayQueueSize: number;
   visibilityPauses: number;
   geoJSONWorkerTransforms: number;
   geoJSONWorkerFallbacks: number;
@@ -79,7 +78,6 @@ export function ensurePerfDiagnostics(): PerfCounters | null {
     snapshotSkips: 0,
     routeReducerMs: 0,
     livePendingQueueSize: 0,
-    vcrReplayQueueSize: 0,
     visibilityPauses: 0,
     geoJSONWorkerTransforms: 0,
     geoJSONWorkerFallbacks: 0,
@@ -155,12 +153,6 @@ export function recordPacketSkippedFrame(): void {
   const counters = ensurePerfDiagnostics();
   if (!counters) return;
   counters.packetSkippedFrames += 1;
-}
-
-export function recordVcrReplayQueueSize(size: number): void {
-  const counters = ensurePerfDiagnostics();
-  if (!counters) return;
-  counters.vcrReplayQueueSize = Math.max(0, Math.floor(size));
 }
 
 export function recordLivePendingQueueSize(size: number): void {

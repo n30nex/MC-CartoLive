@@ -13,7 +13,6 @@ import {
   recordSourceUpdate,
   recordSkippedSourceUpdate,
   recordSnapshotReplacement,
-  recordVcrReplayQueueSize,
   recordVisibilityPause,
   setPerfDiagnosticsEnabled
 } from './perfDiagnostics';
@@ -39,7 +38,6 @@ describe('perf diagnostics', () => {
     recordPacketFrame(3, 2, 12.34, ['pulse-a', 'pulse-b', 'pulse-a']);
     recordPacketSkippedFrame();
     recordLivePendingQueueSize(87.1);
-    recordVcrReplayQueueSize(42.8);
     recordVisibilityPause();
     recordNetGraphWorkerTransform(true, 12.34, 5.67, 16);
     recordNetGraphWorkerTransform(false, 3.21, 0, 0);
@@ -62,7 +60,6 @@ describe('perf diagnostics', () => {
       packetFrameMs: 12.3,
       packetSkippedFrames: 1,
       livePendingQueueSize: 87,
-      vcrReplayQueueSize: 42,
       visibilityPauses: 1,
       netGraphWorkerTransforms: 1,
       netGraphWorkerFallbacks: 1,

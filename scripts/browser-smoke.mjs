@@ -40,7 +40,6 @@ const scenarios = [
       { selector: '.link-bar', label: 'top project bar' },
       { selector: '.top-actions', label: 'top map actions', desktopOnly: true },
       { selector: '.mobile-tabbar', label: 'mobile app tabbar', mobileOnly: true },
-      { selector: '.vcr-mini-clock', label: 'mini live clock', desktopOnly: true },
       { selector: '.maplibregl-ctrl-bottom-right', label: 'map controls' }
     ],
     actions: [smokeLiveMapControls]
@@ -295,7 +294,7 @@ async function runReleaseGate(browser, viewport) {
   let serviceWorker = null;
   let eventReset = null;
   let visibilityRecovery = null;
-  let exportCleanup = null;
+  let commandPalette = null;
   let liveFlow = null;
   let cdp = null;
 
@@ -350,7 +349,7 @@ async function runReleaseGate(browser, viewport) {
     serviceWorker = await runGateStep(errors, checks, 'service-worker registration/update, no-cache metadata, and bounded versioned caches', () => smokeServiceWorkerSafety(page, context));
 
     if (topologyReady) {
-      exportCleanup = await runGateStep(errors, checks, 'Ctrl/Cmd+K, focus trap/restore, reduced-motion Replay Studio, and bounded export cleanup', () => smokeCommandReplayAndExport(page, viewport));
+      commandPalette = await runGateStep(errors, checks, 'Ctrl/Cmd+K command palette focus trap/restore and retired playback controls stay absent', () => smokeCommandPalette(page, viewport));
     }
     await recoverReleaseGateUI(page);
 
@@ -418,7 +417,7 @@ async function runReleaseGate(browser, viewport) {
     eventReset,
     serviceWorker,
     visibilityRecovery,
-    exportCleanup,
+    commandPalette,
     liveFlow,
     downloads,
     metrics: { baseline: baselineMetrics, postStyles: postStyleMetrics, final: finalMetrics, styleDeltas: metricDeltas, finalDeltas: finalMetricDeltas, thresholds: RELEASE_GATE_THRESHOLDS },
@@ -507,7 +506,7 @@ async function smokePublicEventReset(page) {
   };
 }
 
-async function smokeCommandReplayAndExport(page, viewport) {
+async function smokeCommandPalette(page, viewport) {
   const origin = viewport.isMobile
     ? page.locator('.mobile-tabbar').getByRole('button', { name: /^Map$/i })
     : page.locator('.command-palette-toggle').first();
@@ -523,6 +522,8 @@ async function smokeCommandReplayAndExport(page, viewport) {
   const options = command.getByRole('option');
   const optionCount = await options.count();
   if (optionCount < 2) throw new Error(`command palette exposed too few keyboard results: ${optionCount}`);
+  const retiredOptions = command.getByRole('option').filter({ hasText: /RF Replay Studio|Live timeline/i });
+  if (await retiredOptions.count()) throw new Error('command palette still exposes retired Timeline/VCR or RF Replay Studio actions');
   const firstSelected = await command.getByRole('option', { selected: true }).textContent();
   await input.press('ArrowDown');
   const secondSelected = await command.getByRole('option', { selected: true }).textContent();
@@ -536,57 +537,9 @@ async function smokeCommandReplayAndExport(page, viewport) {
   await command.waitFor({ state: 'visible', timeout: 10_000 });
   await page.locator('.command-palette-backdrop').dispatchEvent('mousedown', { button: 0 });
   await command.waitFor({ state: 'hidden', timeout: 5_000 });
-
-  await page.keyboard.press('Control+K');
-  await command.waitFor({ state: 'visible', timeout: 10_000 });
-  await input.fill('RF Replay Studio');
-  const replayOption = command.getByRole('option').filter({ hasText: 'RF Replay Studio' }).first();
-  await replayOption.waitFor({ state: 'visible', timeout: 8_000 });
-  await input.press('Enter');
-  await command.waitFor({ state: 'hidden', timeout: 5_000 });
-
-  const replay = page.getByRole('dialog', { name: /RF Replay Studio/i });
-  await replay.waitFor({ state: 'visible', timeout: 15_000 });
-  const reduced = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
-  if (!reduced) throw new Error('release context did not emulate reduced motion');
-  await replay.getByText(/Reduced motion is active: Replay Studio uses a static route story/i).waitFor({ state: 'visible', timeout: 8_000 });
-  await replay.getByRole('slider', { name: /Route replay position/i }).waitFor({ state: 'visible', timeout: 8_000 });
-  await assertAccessibleModal(page, replay, 'RF Replay Studio');
-  await replay.getByRole('button', { name: /^2D$/i }).click();
-  await page.locator('.toast-viewport[role="status"][aria-live="polite"]').waitFor({ state: 'visible', timeout: 5_000 });
-  const showStory = replay.getByRole('button', { name: /Show story/i });
-  await showStory.click();
-  await page.waitForTimeout(500);
-  if (await replay.getByRole('button', { name: /^Pause$/i }).isVisible().catch(() => false)) {
-    throw new Error('reduced-motion replay started continuous camera animation');
-  }
-  const runningAnimations = await replay.evaluate((element) => element.getAnimations({ subtree: true }).filter((animation) => animation.playState === 'running').length);
-  if (runningAnimations > 0) throw new Error(`reduced-motion Replay Studio has ${runningAnimations} running animations`);
-
-  const exportButton = replay.getByRole('button', { name: /^Export WebM$/i });
-  if (!await exportButton.isEnabled()) throw new Error('Chromium fixture gate did not expose local WebM export');
-  const beforeSurfaces = await countHiddenExportSurfaces(page);
-  await page.evaluate(() => { window.__mcBrowserSmoke.timeoutCapMs = 1_250; });
-  await exportButton.click();
-  const exportStarted = await replay.getByRole('button', { name: /Recording/i }).waitFor({ state: 'visible', timeout: 8_000 }).then(() => true, () => false);
-  if (!exportStarted) {
-    const toast = await page.locator('.toast, [role="status"]').filter({ hasText: /WebM|record|export/i }).last().textContent().catch(() => '');
-    throw new Error(`WebM export did not enter its bounded recording path: ${compactText(toast)}`);
-  }
-  await page.waitForFunction(() => {
-    const recording = [...document.querySelectorAll('button')].some((button) => /Recording/i.test(button.textContent ?? ''));
-    const exportSurface = [...document.body.children].some((element) => element instanceof HTMLElement && element.getAttribute('aria-hidden') === 'true' && element.style.left.startsWith('-100000'));
-    return !recording && !exportSurface;
-  }, null, { timeout: 12_000 });
-  await page.evaluate(() => { window.__mcBrowserSmoke.timeoutCapMs = null; });
-  const afterSurfaces = await countHiddenExportSurfaces(page);
-  if (afterSurfaces !== beforeSurfaces) throw new Error(`WebM export surface cleanup mismatch: before=${beforeSurfaces} after=${afterSurfaces}`);
-  if (await page.locator('a[download]').count()) throw new Error('temporary export download anchor remained in the document');
-
-  await page.keyboard.press('Escape');
-  await replay.waitFor({ state: 'hidden', timeout: 5_000 });
-  await assertNoHorizontalOverflow(page, viewport, 'after Replay Studio');
-  return { boundedTimeoutMs: 1_250, exportStarted, hiddenSurfacesBefore: beforeSurfaces, hiddenSurfacesAfter: afterSurfaces };
+  await assertRetiredPlaybackControlsAbsent(page);
+  await assertNoHorizontalOverflow(page, viewport, 'after command palette');
+  return { keyboardNavigation: true, focusRestored: true, backdropDismissed: true, retiredPlaybackControlsAbsent: true };
 }
 
 async function openStyleChangeSurface(page) {
@@ -1048,7 +1001,6 @@ async function smokeSparseLiveFlow(page) {
       return {
         liveSeq: shell instanceof HTMLElement ? shell.dataset.liveSeq : null,
         latestPulseID: shell instanceof HTMLElement ? shell.dataset.latestPulseId : null,
-        vcrLayout: shell instanceof HTMLElement ? shell.dataset.vcrLayout : null,
         openSockets: Number(window.__mcBrowserSmoke?.openSocketCount?.() ?? 0),
         activeComets: Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0)
       };
@@ -1071,13 +1023,13 @@ async function smokeSparseLiveFlow(page) {
 
 async function smokeLiveMapControls(page, viewport) {
   await assertNoNocSummary(page);
+  await assertRetiredPlaybackControlsAbsent(page);
   if (viewport.isMobile) {
     await assertVisibleInViewport(page, '.mobile-control-dock', 'mobile control dock', viewport);
     return;
   }
   await smokeOpenFreeMapToggle(page, viewport);
   await smokePalettePicker(page, viewport);
-  if (!viewport.isMobile) await smokeVcr(page, viewport);
   await smokeTopInfoPanels(page, viewport);
 }
 
@@ -1092,6 +1044,14 @@ async function waitForTopologyHydration(page, timeout = 15_000) {
 async function assertNoNocSummary(page) {
   const nocCount = await page.locator('.noc-summary').count();
   if (nocCount > 0) throw new Error(`NOC summary chrome should not render, found ${nocCount}`);
+}
+
+async function assertRetiredPlaybackControlsAbsent(page) {
+  const retiredSelectors = '.vcr-mini-clock, .vcr-bar, .vcr-open-button, .replay-studio-toggle, .rf-replay-studio, [data-vcr-layout], [aria-label="RF Replay Studio"]';
+  const retiredSurfaceCount = await page.locator(retiredSelectors).count();
+  if (retiredSurfaceCount > 0) throw new Error(`retired Timeline/VCR or RF Replay Studio surfaces still render: ${retiredSurfaceCount}`);
+  const retiredButtonCount = await page.locator('button').filter({ hasText: /RF Replay Studio|Live timeline|Export WebM/i }).count();
+  if (retiredButtonCount > 0) throw new Error(`retired playback/export controls still render: ${retiredButtonCount}`);
 }
 
 async function smokeOpenFreeMapToggle(page, viewport) {
@@ -1126,146 +1086,6 @@ async function smokePalettePicker(page, viewport) {
   if (optionCount < 4) throw new Error(`palette picker has too few options: ${optionCount}`);
   await options.nth(Math.min(1, optionCount - 1)).click();
   await page.waitForSelector('.palette-picker', { state: 'hidden', timeout: 5_000 });
-}
-
-async function smokeVcr(page, viewport) {
-  await page.locator('.vcr-mini-clock').first().click();
-  await assertVisibleInViewport(page, '.vcr-bar', 'VCR controls', viewport);
-  await assertVisibleInViewport(page, '.vcr-timeline-shell', 'VCR timeline', viewport);
-
-  const timeline = page.locator('.vcr-timeline-shell').first();
-  const box = await page.evaluate(() => {
-    const element = document.querySelector('.vcr-timeline-shell');
-    if (!(element instanceof HTMLElement)) return null;
-    const rect = element.getBoundingClientRect();
-    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-  });
-  if (box) {
-    await timeline.dispatchEvent('pointermove', {
-      bubbles: true,
-      pointerType: 'mouse',
-      clientX: box.x + box.width * 0.55,
-      clientY: box.y + box.height * 0.5
-    });
-    const syntheticHoverVisible = await page.waitForFunction(() => {
-      const element = document.querySelector('.vcr-hover-time');
-      if (!(element instanceof HTMLElement)) return false;
-      const rect = element.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== 'hidden';
-    }, null, { timeout: 2_000 }).then(() => true, () => false);
-    if (!syntheticHoverVisible) {
-      await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.5);
-    }
-    await page.waitForFunction(() => {
-      const element = document.querySelector('.vcr-hover-time');
-      if (!(element instanceof HTMLElement)) return false;
-      const rect = element.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== 'hidden';
-    }, null, { timeout: 5_000 });
-    await assertVisibleInViewport(page, '.vcr-hover-time', 'VCR hover timestamp', viewport);
-  }
-
-  await page.getByRole('button', { name: /Change replay speed/i }).click();
-  await smokeVcrScrubReplay(page);
-  await page.getByRole('button', { name: /Hide (?:VCR|replay) controls and return live/i }).click();
-  const closed = await page.waitForSelector('.vcr-bar', { state: 'hidden', timeout: 5_000 }).then(() => true, () => false);
-  if (!closed) {
-    const closeState = await page.evaluate(() => {
-      const bar = document.querySelector('.vcr-bar');
-      const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
-      const close = document.querySelector('.vcr-close');
-      return {
-        barClass: bar?.className ?? null,
-        readout: readout.replace(/\s+/g, ' ').trim(),
-        closeConnected: close?.isConnected ?? false,
-        closeDisabled: close instanceof HTMLButtonElement ? close.disabled : null
-      };
-    });
-    throw new Error(`VCR close did not return to the mini live clock: ${JSON.stringify(closeState)}`);
-  }
-  await assertVisibleInViewport(page, '.vcr-mini-clock', 'mini live clock after VCR close', viewport);
-}
-
-async function smokeVcrScrubReplay(page) {
-  const replayTarget = await findRecentRoutePulseReplayTarget(page);
-  if (!replayTarget?.timestamp) {
-    throw new Error(`VCR replay smoke could not find a recent routePulse history event. ${compactText(replayTarget?.diagnostic)}`);
-  }
-  if (replayTarget.scopeLabel !== '1h') {
-    await page.locator('.vcr-scope').getByRole('button', { name: new RegExp(`^${replayTarget.scopeLabel}$`, 'i') }).click();
-    await page.waitForTimeout(250);
-  }
-
-  // The target lookup and replay loader share the public history quota. Let
-  // the continuous token bucket refill before asking the UI for the same
-  // bounded window, then prove transient fixture contention is retryable.
-  await page.waitForTimeout(1_100);
-  const attempts = [];
-  let readoutText = '';
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (attempt > 0) await page.waitForTimeout(1_500 * attempt);
-    await setRangeInputValue(page.locator('input.vcr-timeline').first(), replayTarget.timestamp);
-    await page.waitForFunction(() => {
-      const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
-      return document.querySelector('.vcr-bar')?.classList.contains('paused') && /REPLAY PAUSED/i.test(readout);
-    }, null, { timeout: 8_000 });
-
-    const result = await triggerVcrReplay(page);
-    attempts.push(result);
-    readoutText = result.ui.readout;
-    if (!/NO REPLAY EVENTS|REPLAY EMPTY|REPLAY ERROR|REPLAY RETRY/i.test(readoutText)) break;
-  }
-  if (/NO REPLAY EVENTS|REPLAY EMPTY|REPLAY ERROR|REPLAY RETRY/i.test(readoutText ?? '')) {
-    throw new Error(`VCR replay did not produce replayable route events: ${compactText(readoutText)}; attempts ${JSON.stringify(attempts)}`);
-  }
-}
-
-async function triggerVcrReplay(page) {
-  const startedAt = Date.now();
-  const responsePromise = page.waitForResponse((candidate) => {
-    const url = new URL(candidate.url());
-    return url.pathname === '/api/v1/public/history';
-  }, { timeout: 25_000 });
-  await page.getByRole('button', { name: /Replay from selected time/i }).click();
-  const response = await responsePromise;
-  const finishedError = await response.finished();
-  let body = null;
-  let bodyError = '';
-  try {
-    body = await response.json();
-  } catch (error) {
-    bodyError = error instanceof Error ? error.message : String(error);
-  }
-  const events = Array.isArray(body?.events) ? body.events : [];
-  const routePulseAts = events
-    .filter((event) => event?.type === 'routePulse' && Number.isFinite(event.at))
-    .map((event) => Number(event.at));
-  const firstRoutePulseAt = routePulseAts.length > 0 ? Math.min(...routePulseAts) : null;
-  const lastRoutePulseAt = routePulseAts.length > 0 ? Math.max(...routePulseAts) : null;
-
-  const ui = await page.waitForFunction((expectedAt) => {
-    const bar = document.querySelector('.vcr-bar');
-    const readout = (document.querySelector('.vcr-readout')?.textContent ?? '').replace(/\s+/g, ' ').trim();
-    const clockValue = document.querySelector('.vcr-live-clock-time')?.getAttribute('datetime') ?? '';
-    const clockAt = Date.parse(clockValue);
-    const terminalError = /NO REPLAY EVENTS|REPLAY EMPTY|REPLAY ERROR|REPLAY RETRY/i.test(readout);
-    const appliedRoutePulse = Number.isFinite(expectedAt) && Number.isFinite(clockAt) && clockAt >= expectedAt;
-    const replayComplete = bar?.classList.contains('paused') && /REPLAY PAUSED/i.test(readout) && appliedRoutePulse;
-    if (!terminalError && !replayComplete) return false;
-    return { readout, barClass: bar?.className ?? null, clockAt: Number.isFinite(clockAt) ? clockAt : null };
-  }, lastRoutePulseAt, { timeout: 25_000 }).then((handle) => handle.jsonValue());
-
-  return {
-    status: response.status(),
-    elapsedMs: Date.now() - startedAt,
-    responseFinishedError: finishedError instanceof Error ? finishedError.message : null,
-    bodyError,
-    eventCount: events.length,
-    routePulseCount: routePulseAts.length,
-    firstRoutePulseAt,
-    lastRoutePulseAt,
-    ui
-  };
 }
 
 async function smokeSetupPanel(page, viewport) {
@@ -1321,6 +1141,14 @@ async function smokePacketsReplay(page, viewport) {
   await assertVisibleInViewport(page, 'section.packets-compact-tray[aria-label="Selected packet replay"]', 'Packets compact replay tray', viewport);
   await page.getByRole('button', { name: /Replay again/i }).waitFor({ state: 'visible', timeout: 8_000 });
   await page.getByRole('button', { name: /Resume live/i }).waitFor({ state: 'visible', timeout: 8_000 });
+  const animated = await page.waitForFunction(() => Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0) > 0, null, { timeout: 8_000 }).then(() => true, () => false);
+  if (!animated) {
+    const active = await page.evaluate(() => ({
+      count: Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0),
+      ids: Array.isArray(window.__mcCartoLivePerf?.packetActiveCometIDs) ? window.__mcCartoLivePerf.packetActiveCometIDs : []
+    }));
+    throw new Error(`PacketTV direct replay did not start its map animation: ${JSON.stringify(active)}`);
+  }
 
   if (!viewport.isMobile) {
     await page.waitForTimeout(2600);
@@ -1466,41 +1294,6 @@ async function waitForPacketRow(page, requireRow = true) {
   const empty = await page.locator('.packets-empty').first().textContent({ timeout: 1_000 }).catch(() => '');
   const panel = await page.locator('.packets-panel').first().textContent({ timeout: 1_000 }).catch(() => '');
   throw new Error(`Packets replay smoke could not load a true path row. ${compactText(error || empty || panel)}`);
-}
-
-async function findRecentRoutePulseReplayTarget(page) {
-  return page.evaluate(async () => {
-    const now = Date.now();
-    const diagnostics = [];
-    const windows = [
-      { label: '1h', from: now - 60 * 60_000 },
-      { label: '6h', from: now - 6 * 60 * 60_000 },
-      { label: '24h', from: now - 24 * 60 * 60_000 }
-    ];
-    for (const item of windows) {
-      const params = new URLSearchParams({
-        from: String(Math.max(0, Math.round(item.from))),
-        to: String(Math.round(now)),
-        limit: '250'
-      });
-      try {
-        const response = await fetch(`/api/v1/public/history?${params.toString()}`, { headers: { accept: 'application/json' } });
-        if (!response.ok) {
-          diagnostics.push(`${item.label}: HTTP ${response.status}`);
-          continue;
-        }
-        const body = await response.json();
-        const events = Array.isArray(body.events) ? body.events : [];
-        const routePulses = events.filter((event) => event?.type === 'routePulse' && Number.isFinite(event.at));
-        const routePulse = routePulses[0];
-        diagnostics.push(`${item.label}: ${routePulses.length} routed pulses / ${events.length} events`);
-        if (routePulse) return { timestamp: Math.max(0, routePulse.at - 1), scopeLabel: item.label };
-      } catch (error) {
-        diagnostics.push(`${item.label}: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-    return { diagnostic: diagnostics.join('; ') };
-  });
 }
 
 async function activateSetupPreset(page, preset) {

@@ -81,7 +81,7 @@ import { mapStyleProfileByID, type MapStyleProfileID } from './styles/styleRegis
 import { createBrowserGeoJSONClient } from '../workers/geojsonWorkerClient';
 import { transformGeoJSON } from '../workers/geojsonTransforms';
 import { recordGeoJSONWorkerError, recordGeoJSONWorkerFallback, recordGeoJSONWorkerTransform } from '../perfDiagnostics';
-import { onceReplayExportCleanup, type ReplayExportSurface, type ReplayExportSurfaceProvider } from '../replayExportSurface';
+import { onceRouteExportCleanup, type RouteExportSurface } from '../routeExportSurface';
 import { RecentIdentityTracker, rememberFreshLiveIdentity } from './recentIdentityTracker';
 
 export type MapAction =
@@ -117,7 +117,6 @@ interface Props {
   plotMode: 'off' | 'node' | 'area';
   mapAction: MapAction;
   routeGifExportRequest: RouteMapGifExportRequest | null;
-  onReplayExportProviderChange?: (provider: ReplayExportSurfaceProvider | null) => void;
   themeMode: MapThemeMode;
   initialView: SharedViewState | null;
   mapConfig?: PublicMapConfig | null;
@@ -1392,7 +1391,6 @@ function CanadaMap({
   plotMode,
   mapAction,
   routeGifExportRequest,
-  onReplayExportProviderChange,
   themeMode,
   initialView,
   mapConfig,
@@ -1477,7 +1475,6 @@ function CanadaMap({
   const routeColorSignatureRef = useRef('');
   const positionedNodesRenderedRef = useRef(onPositionedNodesRendered);
   const viewChangeRef = useRef(onViewChange);
-  const replayExportProviderChangeRef = useRef(onReplayExportProviderChange);
   const selectedNodeRef = useRef(onSelectNode);
   const plotModeRef = useRef(plotMode);
   const plotNodePickRef = useRef(onPlotNodePick);
@@ -1756,13 +1753,12 @@ function CanadaMap({
   useEffect(() => {
     positionedNodesRenderedRef.current = onPositionedNodesRendered;
     viewChangeRef.current = onViewChange;
-    replayExportProviderChangeRef.current = onReplayExportProviderChange;
     selectedNodeRef.current = onSelectNode;
     plotModeRef.current = plotMode;
     plotNodePickRef.current = onPlotNodePick;
     plotMapPointRef.current = onPlotMapPoint;
     clearSelectionRef.current = onClearSelection;
-  }, [onPositionedNodesRendered, onViewChange, onReplayExportProviderChange, onSelectNode, plotMode, onPlotNodePick, onPlotMapPoint, onClearSelection]);
+  }, [onPositionedNodesRendered, onViewChange, onSelectNode, plotMode, onPlotNodePick, onPlotMapPoint, onClearSelection]);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -1815,7 +1811,6 @@ function CanadaMap({
       layerSettings: layerSettingsRef.current,
       visualSettings: packetVisualSettingsRef.current
     });
-    replayExportProviderChangeRef.current?.((options) => createTemporaryReplayExportSurface(map, canvasRef.current!, options.width, options.height, options.segments));
 
     const resizeMap = () => {
       map.resize();
@@ -1963,7 +1958,6 @@ function CanadaMap({
     map.on('styledata', initializeMapLayers);
 
     return () => {
-      replayExportProviderChangeRef.current?.(null);
       if (initializeRetry !== null) window.clearTimeout(initializeRetry);
       window.removeEventListener('resize', resizeMap);
       map.off('resize', resizeOverlay);
@@ -2335,7 +2329,7 @@ function CanadaMap({
 
     routeGifExportCleanupRef.current?.();
     let cancelled = false;
-    let exportSurface: ReplayExportSurface | null = null;
+    let exportSurface: RouteExportSurface | null = null;
     const cleanup = () => {
       cancelled = true;
       exportSurface?.cleanup();
@@ -2368,7 +2362,7 @@ function CanadaMap({
         fitToSegmentsForRouteGif(map, request.pulse.segments, 900);
         await waitForMapIdleOrTimeout(map, 900 + request.settleMs + 700);
         if (cancelled) return;
-        exportSurface = await createTemporaryReplayExportSurface(map, overlayCanvas, ROUTE_GIF_WIDTH, ROUTE_GIF_HEIGHT, request.pulse.segments);
+        exportSurface = await createTemporaryRouteGifExportSurface(map, overlayCanvas, ROUTE_GIF_WIDTH, ROUTE_GIF_HEIGHT, request.pulse.segments);
         if (cancelled) return;
         request.onProgress(0.1);
 
@@ -4374,13 +4368,13 @@ function fitToSegmentsForRouteGif(map: maplibregl.Map, segments: PublicRoutePuls
   map.fitBounds(bounds, { padding, maxZoom, duration, easing: easeOutCubic });
 }
 
-async function createTemporaryReplayExportSurface(
+async function createTemporaryRouteGifExportSurface(
   sourceMap: maplibregl.Map,
   overlayCanvas: HTMLCanvasElement,
   width: number,
   height: number,
   segments: PublicRoutePulse['segments']
-): Promise<ReplayExportSurface> {
+): Promise<RouteExportSurface> {
   const container = document.createElement('div');
   container.setAttribute('aria-hidden', 'true');
   Object.assign(container.style, {
@@ -4395,7 +4389,7 @@ async function createTemporaryReplayExportSurface(
   });
   document.body.appendChild(container);
   let exportMap: maplibregl.Map | null = null;
-  const cleanup = onceReplayExportCleanup(() => {
+  const cleanup = onceRouteExportCleanup(() => {
     exportMap?.remove();
     exportMap = null;
     container.remove();

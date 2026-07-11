@@ -36,7 +36,7 @@ export default function VisitorGuide({
       </button>
       <span className="panel-eyebrow">Live map</span>
       <h2>Watch RF traffic move</h2>
-      <p>Comets show current public traffic. Select a node or pathway for details, then open Replay Studio for a guided route story.</p>
+      <p>Comets show current public traffic. Select a node or pathway for details, or open Packets to replay a sanitized routed path on the map.</p>
       <div className="visitor-guide-actions">
         <button type="button" onClick={onOpenSettings}>
           <SlidersHorizontal size={14} />

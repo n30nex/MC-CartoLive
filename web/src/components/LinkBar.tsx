@@ -22,8 +22,8 @@ export const LATEST_RELEASE_HIGHLIGHTS = [
   },
   {
     label: '3.2.0',
-    title: 'RF Replay Studio',
-    body: 'Privacy-safe route stories, cinematic 2D/terrain/3D playback, command search, and resilient live transport make the map faster and easier to explore.'
+    title: 'Compact Live Platform',
+    body: 'Compact bootstrap, reset-safe event cursors, bounded retention, immutable deployment identity, and expanded privacy and supply-chain gates strengthened the public map.'
   },
   {
     label: '3.0.1',

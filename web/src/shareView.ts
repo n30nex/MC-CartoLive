@@ -7,9 +7,6 @@ export interface SharedViewState {
   route?: string;
   node?: string;
   q?: string;
-  studio?: boolean;
-  replayPacket?: string;
-  replayRoute?: string;
 }
 
 export interface MapViewState {
@@ -35,13 +32,10 @@ export function parseSharedView(search: string): SharedViewState | null {
   const route = safePublicIdentifier(params.get('route'));
   const node = route ? undefined : safePublicIdentifier(params.get('node'));
   const q = undefined;
-  const studio = params.get('studio') === '1';
-  const replayPacket = safePublicIdentifier(params.get('replayPacket'));
-  const replayRoute = safePublicIdentifier(params.get('replayRoute'));
-  return { lat, lng, z, ...(pitch !== undefined ? { pitch } : {}), ...(bearing !== undefined ? { bearing } : {}), route, node, q, ...(studio ? { studio, replayPacket, replayRoute } : {}) };
+  return { lat, lng, z, ...(pitch !== undefined ? { pitch } : {}), ...(bearing !== undefined ? { bearing } : {}), route, node, q };
 }
 
-export function buildSharedViewURL(baseHref: string, view: MapViewState, options: { route?: string | null; node?: string | null; q?: string; studio?: boolean; replayPacket?: string; replayRoute?: string }): string {
+export function buildSharedViewURL(baseHref: string, view: MapViewState, options: { route?: string | null; node?: string | null; q?: string }): string {
   const url = new URL(baseHref);
   url.searchParams.set('lat', fixedCoordinate(view.lat));
   url.searchParams.set('lng', fixedCoordinate(view.lng));
@@ -59,13 +53,6 @@ export function buildSharedViewURL(baseHref: string, view: MapViewState, options
   }
   url.searchParams.delete('q');
   for (const key of ['studio', 'replayPacket', 'replayRoute']) url.searchParams.delete(key);
-  if (options.studio) {
-    url.searchParams.set('studio', '1');
-    const packetID = safePublicIdentifier(options.replayPacket);
-    const routeID = safePublicIdentifier(options.replayRoute);
-    if (packetID) url.searchParams.set('replayPacket', packetID);
-    if (routeID) url.searchParams.set('replayRoute', routeID);
-  }
   return url.toString();
 }
 

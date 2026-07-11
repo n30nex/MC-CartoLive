@@ -9,7 +9,7 @@ const GUIDE_SECTIONS = [
   },
   {
     title: 'Map Controls',
-    body: 'Use Map for modes and layers, Routes for route lines, and Replay for traffic you missed.'
+    body: 'Use Map for modes and layers, Routes for route lines, and Packets to animate a retained sanitized path.'
   },
   {
     title: 'Panels',

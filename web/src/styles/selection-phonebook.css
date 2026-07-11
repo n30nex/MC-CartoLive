@@ -1,6 +1,6 @@
 .selection-panels {
   right: 10px;
-  bottom: calc(var(--vcr-bar-height, 0px) + 10px);
+  bottom: calc(var(--bottom-chrome-height, 0px) + 10px);
   display: grid;
   gap: 10px;
   align-items: end;
@@ -461,7 +461,7 @@
 
 .selection-drawer {
   right: 10px;
-  bottom: calc(var(--vcr-bar-height, 0px) + 10px);
+  bottom: calc(var(--bottom-chrome-height, 0px) + 10px);
   width: min(330px, calc(100vw - 20px));
   max-height: min(40vh, 380px);
   overflow: auto;

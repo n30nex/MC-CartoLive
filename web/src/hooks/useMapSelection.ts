@@ -109,11 +109,6 @@ export function useMapSelection({
     setSelectedPacket(packet);
     clearResolvedSelection();
   }, [clearResolvedSelection]);
-  const clearReplayDeepLinkSelection = useCallback(() => {
-    setSelectedPacket(null);
-    setSelectedRouteID(null);
-  }, []);
-
   return {
     visibleNodes,
     visibleRoutes,
@@ -135,7 +130,6 @@ export function useMapSelection({
     selectNode,
     selectRoute,
     selectPhonebookPath,
-    selectPacket,
-    clearReplayDeepLinkSelection
+    selectPacket
   };
 }

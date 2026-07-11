@@ -17,8 +17,10 @@ in Git history, not in the active documentation set.
 - Hardened public cache reconciliation and live fallback behavior against
   concurrent updates and persistence failures.
 - Bounded long-running map dedupe state, disposed queued map-source work on
-  teardown, periodically refreshed route freshness without redraw churn, and
-  resumed the live feed when Replay Studio closes.
+  teardown, and periodically refreshed route freshness without redraw churn.
+- Removed the Timeline/VCR and RF Replay Studio surfaces so historical playback
+  can no longer replace the current live stream. Direct packet-path map
+  animation remains available from sanitized packet records.
 - Made desktop/mobile browser smoke and active-flow soak fail-closed release
   evidence; repaired the sandboxed post-release audit and remote metrics path.
 - Replaced 3.2.0-specific/one-off release automation with version-derived,

@@ -3,7 +3,7 @@
 **MC-CartoLive** is a single-container public live map for MeshCore MQTT
 observations. It ingests broker traffic, stores normalized observations in
 SQLite, resolves only high-confidence RF routes, and serves a privacy-safe
-MapLibre dashboard for live packet motion, public chat, replay, Packets,
+MapLibre dashboard for live packet motion, public chat, Packets,
 NetGraph, Node List, Labs, and optional propagation/terrain context.
 
 Public instance: [carto.canadaverse.org](https://carto.canadaverse.org/).
@@ -24,8 +24,8 @@ the 3.2 public API and schema while fixing:
   topology
 - unbounded long-session map dedupe state, stale route-freshness styling, and
   queued map-source work surviving teardown
-- Replay Studio stories leaving the global live feed paused after the studio
-  closed
+- Timeline/VCR and RF Replay Studio surfaces that could pause, compete with, or
+  distract from the always-live public map; both are removed in 3.2.1
 - browser smoke, release-audit, immutable candidate, and active-flow soak gates
   that did not fail closed
 - generic GHCR tags incorrectly carrying the Canada asset pack; 3.2.1 publishes
@@ -68,7 +68,8 @@ These are public UI captures from the 3.0 Canada surface.
   summaries retained so the live route graph survives database pruning.
 - Conservative public route resolution; ambiguous or unsafe paths are not drawn.
 - Public MapLibre dashboard with clusters, nodes, labels, live packet comets,
-  fading trails, message bubbles, route plotting, replay, and optional 3D.
+  fading trails, message bubbles, route plotting, on-demand packet-path motion,
+  and optional 3D.
 - Packets, Chat, NetGraph, Node List, Labs, and propagation history workspaces
   built from sanitized public data.
 - Public-safe health/readiness endpoints and release smoke scripts.

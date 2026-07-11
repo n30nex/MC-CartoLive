@@ -237,7 +237,7 @@ jobs:
           cache-to: type=gha,scope=release-world,mode=max
           labels: |
             org.opencontainers.image.title=MC-CartoLive
-            org.opencontainers.image.description=Public-safe MeshCore MQTT live map with RF Replay Studio
+            org.opencontainers.image.description=Public-safe MeshCore MQTT map with continuous live RF traffic
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
             org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
@@ -268,7 +268,7 @@ jobs:
           cache-to: type=gha,scope=release-canada,mode=max
           labels: |
             org.opencontainers.image.title=MC-CartoLive
-            org.opencontainers.image.description=Public-safe MeshCore MQTT live map with RF Replay Studio
+            org.opencontainers.image.description=Public-safe MeshCore MQTT map with continuous live RF traffic
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
             org.opencontainers.image.revision=${{ steps.source.outputs.sha }}

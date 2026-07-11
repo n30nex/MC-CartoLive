@@ -4,7 +4,6 @@
 .bottom-action-dock,
 .follow-traffic-button,
 .plot-routes-panel,
-.vcr-mini-clock,
 .search-panel,
 .legend-panel,
 .hot-routes,
@@ -22,15 +21,14 @@
 .packets-compact-tray,
 .map-settings-drawer,
 .route-gif-export,
-.visitor-guide,
-.vcr-bar {
+.visitor-guide {
   position: absolute;
   z-index: 6;
 }
 
 .node-loading-toast {
   right: 64px;
-  bottom: calc(var(--vcr-bar-height, 0px) + 18px);
+  bottom: calc(var(--bottom-chrome-height, 0px) + 18px);
   z-index: var(--z-map-chrome, 8);
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
@@ -54,7 +52,7 @@
 .toast-viewport {
   position: fixed;
   right: calc(14px + var(--ui-safe-right, 0px));
-  bottom: calc(18px + var(--vcr-bar-height, 0px) + var(--ui-safe-bottom, 0px));
+  bottom: calc(18px + var(--bottom-chrome-height, 0px) + var(--ui-safe-bottom, 0px));
   z-index: var(--z-toast, 24);
   display: grid;
   gap: 8px;
@@ -1043,7 +1041,7 @@ button.status-pill {
 
 .route-gif-export {
   left: 10px;
-  bottom: calc(96px + var(--vcr-bar-height, 0px) + env(safe-area-inset-bottom, 0px));
+  bottom: calc(96px + var(--bottom-chrome-height, 0px) + env(safe-area-inset-bottom, 0px));
   z-index: var(--z-map-chrome, 9);
   display: grid;
   gap: 5px;
@@ -1204,10 +1202,6 @@ button.status-pill {
   box-shadow: 0 14px 30px var(--mc-shadow, rgba(0, 0, 0, 0.38)), 0 0 18px color-mix(in srgb, var(--mc-accent, #38bdf8) 18%, transparent);
   transform: translateY(-1px);
   outline: none;
-}
-
-.vcr-open-button {
-  color: color-mix(in srgb, var(--mc-secondary, #a78bfa) 72%, var(--mc-text, #ffffff));
 }
 
 .follow-traffic-button svg {
@@ -1404,12 +1398,12 @@ button.status-pill {
 
 .chrome-panel-frame.anchor-bottom-left {
   left: 10px;
-  bottom: calc(var(--vcr-bar-height, 0px) + 18px);
+  bottom: calc(var(--bottom-chrome-height, 0px) + 18px);
 }
 
 .chrome-panel-frame.anchor-bottom-right {
   right: 10px;
-  bottom: calc(var(--vcr-bar-height, 0px) + 18px);
+  bottom: calc(var(--bottom-chrome-height, 0px) + 18px);
 }
 
 .chrome-panel-frame.dragging {

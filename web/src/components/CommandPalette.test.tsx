@@ -6,7 +6,7 @@ describe('CommandPalette', () => {
   it('renders shared dashboard actions in an accessible command dialog', () => {
     const html = renderToStaticMarkup(
       <CommandPalette
-        actions={[{ id: 'studio', label: 'RF Replay Studio', description: 'Play route', group: 'Playback', run: vi.fn() }]}
+        actions={[{ id: 'packets', label: 'Packet history', description: 'Inspect routed packets', group: 'Explore', run: vi.fn() }]}
         nodes={[]}
         routes={[]}
         clusters={[]}
@@ -17,7 +17,7 @@ describe('CommandPalette', () => {
       />
     );
     expect(html).toContain('Search commands, regions, nodes, and routes');
-    expect(html).toContain('RF Replay Studio');
+    expect(html).toContain('Packet history');
     expect(html).toContain('aria-modal="true"');
   });
 

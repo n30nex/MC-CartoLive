@@ -23,8 +23,9 @@ unchanged.
 - Long-running map dedupe trackers are capacity/TTL bounded, queued GeoJSON
   source work is disposed with its map, and route freshness is re-evaluated
   without forcing high-frequency redraws.
-- Closing Replay Studio now clears the story pause so ordinary live packet
-  motion resumes immediately.
+- Timeline/VCR and RF Replay Studio are removed, so historical playback can no
+  longer replace the current live stream. Direct sanitized packet-path
+  animation remains available from the Packets surface.
 
 ## Backend stability
 
