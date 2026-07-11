@@ -7,6 +7,7 @@ import {
   applyPublicEnvelope,
   applyPublicEvent,
   emptyState,
+  hydrateSnapshotTopology,
   initialAppState,
   isPacketActivity,
   liveCoverageStats,
@@ -677,7 +678,16 @@ function PublicDashboardApp() {
       if (cancelled) return;
       setFullStateHydrated(true);
       const liveState = result.state;
-      if (!applyPublicSnapshot(liveState)) return;
+      if (!applyPublicSnapshot(liveState)) {
+        // Bootstrap and WebSocket activity can advance beyond the cached full
+        // snapshot before it arrives. Hydrate its complete topology without
+        // rolling the live sequence or newer node/route updates backward.
+        setState((current) => {
+          const hydrated = hydrateSnapshotTopology(current, liveState);
+          stateRef.current = hydrated;
+          return hydrated;
+        });
+      }
       setPublicMapConfig(liveState.map ?? null);
       setInitialNodesReceived((liveState.nodes?.length ?? 0) > 0);
       setNodeLoadFailed(false);
@@ -1646,6 +1656,9 @@ function PublicDashboardApp() {
   return (
     <div
       className="app-shell public-dashboard"
+      data-topology-hydrated={fullStateHydrated ? 'true' : 'false'}
+      data-topology-node-count={visibleNodes.length}
+      data-topology-route-count={visibleRoutes.length}
       data-theme-mode={themeMode}
       data-theme-palette={selectedThemePalette.id}
       data-vcr-layout={vcrOpen ? 'open' : 'closed'}

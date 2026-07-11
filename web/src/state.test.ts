@@ -12,6 +12,7 @@ import {
   currentPacketRatePerMinute,
   filterNodes,
   filterRoutes,
+  hydrateSnapshotTopology,
   hydrateSnapshotObserverBursts,
   hydrateSnapshotPulses,
   initialAppState,
@@ -96,6 +97,24 @@ describe('public app state', () => {
     expect(state.activity[0].id).toBe('activity-1');
     expect(state.stats?.activeRoutes).toBe(1);
     expect(state.latestSeq).toBe(5);
+  });
+
+  it('hydrates a one-sequence-behind topology without rolling live state backward', () => {
+    const current = initialAppState({
+      ...publicState,
+      stats: { ...publicState.stats, latestSeq: 6 },
+      nodes: [{ ...publicState.nodes[0], label: 'Newest live label' }],
+      routes: [{ ...publicState.routes[0], packetCount: 99 }]
+    });
+
+    const hydrated = hydrateSnapshotTopology(current, publicState);
+
+    expect(hydrated.latestSeq).toBe(6);
+    expect(hydrated.nodes).toHaveLength(2);
+    expect(hydrated.nodes.find((node) => node.id === 'node-a')?.label).toBe('Newest live label');
+    expect(hydrated.routes).toHaveLength(1);
+    expect(hydrated.routes[0].packetCount).toBe(99);
+    expect(hydrated.activity).toBe(current.activity);
   });
 
   it('hydrates recent public pulses from state snapshots for polling fallback', () => {

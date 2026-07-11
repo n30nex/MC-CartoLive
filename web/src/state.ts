@@ -92,6 +92,17 @@ export function initialAppState(state: PublicLiveState): AppState {
   };
 }
 
+export function hydrateSnapshotTopology(current: AppState, snapshot: PublicLiveState): AppState {
+  return {
+    ...current,
+    nodes: mergeCurrentEntities(current.nodes, snapshot.nodes ?? []),
+    routes: mergeCurrentEntities(current.routes, normalizeRouteBuckets(snapshot.routes ?? [])),
+    stats: current.stats ?? snapshot.stats ?? null,
+    serverTime: Math.max(current.serverTime, snapshot.serverTime),
+    latestSeq: Math.max(current.latestSeq, snapshot.stats?.latestSeq ?? 0)
+  };
+}
+
 export function publicLiveStateSignature(state: PublicLiveState): string {
   const nodes = state.nodes ?? [];
   const routes = state.routes ?? [];
@@ -299,6 +310,17 @@ function upsertPulseRoutes(routes: PublicRoute[], pulse: PublicRoutePulse): Publ
   if (!changed) return routes;
   if (maxAfter <= maxBefore * ROUTE_BUCKET_REBALANCE_FACTOR) return next;
   return normalizeRouteBuckets(next);
+}
+
+function mergeCurrentEntities<T extends { id: string }>(current: T[], snapshot: T[]): T[] {
+  const seen = new Set<string>();
+  const merged: T[] = [];
+  for (const item of [...current, ...snapshot]) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    merged.push(item);
+  }
+  return merged;
 }
 
 function normalizeRouteBuckets(routes: PublicRoute[]): PublicRoute[] {

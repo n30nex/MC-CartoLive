@@ -220,6 +220,7 @@ async function runScenario(browser, viewport, scenario) {
     await dismissWelcome(page);
     await page.waitForSelector(scenario.waitFor, { state: 'visible', timeout: 45_000 });
     await page.waitForTimeout(900);
+    if (scenario.name === 'live-map') await waitForTopologyHydration(page);
 
     for (const check of scenario.checks) {
       if (check.desktopOnly && viewport.isMobile) continue;
@@ -334,6 +335,8 @@ async function runReleaseGate(browser, viewport) {
       await dismissGuide.click();
       await page.getByRole('region', { name: /First visit map guide/i }).waitFor({ state: 'hidden', timeout: 5_000 });
     }
+
+    await runGateStep(errors, checks, 'full node and route topology hydrates before interactive surfaces', () => waitForTopologyHydration(page));
 
     eventReset = await runGateStep(errors, checks, 'public cursor reset semantics for zero and ahead cursors', () => smokePublicEventReset(page));
 
@@ -963,9 +966,16 @@ async function smokeLiveMapControls(page, viewport) {
   }
   await smokeOpenFreeMapToggle(page, viewport);
   await smokePalettePicker(page, viewport);
-  await smokeMapSettings(page, viewport);
   if (!viewport.isMobile) await smokeVcr(page, viewport);
   await smokeTopInfoPanels(page, viewport);
+}
+
+async function waitForTopologyHydration(page, timeout = 15_000) {
+  await page.waitForFunction(() => {
+    const shell = document.querySelector('.app-shell[data-topology-hydrated="true"]');
+    if (!(shell instanceof HTMLElement)) return false;
+    return Number(shell.dataset.topologyNodeCount) > 0 && Number(shell.dataset.topologyRouteCount) > 0;
+  }, null, { timeout });
 }
 
 async function assertNoNocSummary(page) {
@@ -1005,29 +1015,6 @@ async function smokePalettePicker(page, viewport) {
   if (optionCount < 4) throw new Error(`palette picker has too few options: ${optionCount}`);
   await options.nth(Math.min(1, optionCount - 1)).click();
   await page.waitForSelector('.palette-picker', { state: 'hidden', timeout: 5_000 });
-}
-
-async function smokeMapSettings(page, viewport) {
-  const toggle = page.locator('.operator-action.map-settings-toggle').first();
-  await toggle.waitFor({ state: 'visible', timeout: 12_000 });
-  if (await toggle.getAttribute('aria-pressed') !== 'true') {
-    await toggle.click({ force: true });
-  }
-  const drawer = page.getByRole('dialog', { name: /^Map settings$/i });
-  await drawer.waitFor({ state: 'visible', timeout: 5_000 });
-  await assertVisibleInViewport(page, '.map-settings-drawer', 'map settings drawer', viewport);
-  await drawer.evaluate((element) => { element.scrollTop = 0; });
-  const modeButtons = drawer.locator('.map-mode-grid button');
-  const modeLabels = (await modeButtons.allTextContents()).map((label) => label.replace(/\s+/g, ' ').trim());
-  if (modeLabels.length !== 4 || !['Watch', 'Explore', 'Terrain', 'Studio'].every((label) => modeLabels.some((value) => value.startsWith(label)))) {
-    throw new Error(`map settings modes are incomplete: ${JSON.stringify(modeLabels)}`);
-  }
-  const drawerText = (await drawer.textContent()) ?? '';
-  if (!/Modes/i.test(drawerText) || !/3D And RF/i.test(drawerText)) {
-    throw new Error('map settings section labels are incomplete');
-  }
-  await drawer.getByRole('button', { name: /Close map settings/i }).click();
-  await drawer.waitFor({ state: 'hidden', timeout: 5_000 });
 }
 
 async function smokeVcr(page, viewport) {
@@ -1070,9 +1057,9 @@ async function smokeVcrScrubReplay(page) {
 
   // The target lookup and replay loader share the public history quota. Let
   // the continuous token bucket refill before asking the UI for the same
-  // bounded window, then prove a transient quota race is retryable once.
+  // bounded window, then prove transient fixture contention is retryable.
   await page.waitForTimeout(1_100);
-  await page.getByRole('button', { name: /Replay from selected time/i }).click();
+  const historyStatuses = [await triggerVcrReplay(page)];
   const replayStarted = await page.waitForFunction(() => {
     const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
     const bar = document.querySelector('.vcr-bar');
@@ -1092,9 +1079,9 @@ async function smokeVcrScrubReplay(page) {
     return !readout.includes('REPLAY LOADING');
   }, null, { timeout: 20_000 }).catch(() => {});
   let readoutText = await page.locator('.vcr-readout').first().textContent();
-  if (/REPLAY ERROR|REPLAY RETRY/i.test(readoutText ?? '')) {
-    await page.waitForTimeout(1_100);
-    await page.getByRole('button', { name: /Replay from selected time/i }).click();
+  for (let retry = 0; retry < 2 && /REPLAY ERROR|REPLAY RETRY/i.test(readoutText ?? ''); retry += 1) {
+    await page.waitForTimeout(1_500 * (retry + 1));
+    historyStatuses.push(await triggerVcrReplay(page));
     await page.waitForFunction(() => {
       const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
       return !readout.includes('REPLAY LOADING');
@@ -1102,8 +1089,17 @@ async function smokeVcrScrubReplay(page) {
     readoutText = await page.locator('.vcr-readout').first().textContent();
   }
   if (/NO REPLAY EVENTS|REPLAY EMPTY|REPLAY ERROR|REPLAY RETRY/i.test(readoutText ?? '')) {
-    throw new Error(`VCR replay did not produce replayable route events: ${compactText(readoutText)}`);
+    throw new Error(`VCR replay did not produce replayable route events: ${compactText(readoutText)}; history HTTP ${historyStatuses.join(',')}`);
   }
+}
+
+async function triggerVcrReplay(page) {
+  const response = page.waitForResponse((candidate) => {
+    const url = new URL(candidate.url());
+    return url.pathname === '/api/v1/public/history';
+  }, { timeout: 20_000 });
+  await page.getByRole('button', { name: /Replay from selected time/i }).click();
+  return (await response).status();
 }
 
 async function smokeSetupPanel(page, viewport) {

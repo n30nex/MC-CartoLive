@@ -3,7 +3,9 @@ name: Release performance gate
 on:
   pull_request:
     paths:
+      - "web/**"
       - "backend/**"
+      - "scripts/browser-smoke.mjs"
       - "scripts/performance-gate.mjs"
       - "scripts/mc-cartolive-watchdog.sh"
       - "scripts/test-release-ops.sh"
