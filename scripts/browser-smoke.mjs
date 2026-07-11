@@ -1085,9 +1085,9 @@ async function smokeVcrScrubReplay(page) {
 
   // The target lookup and replay loader share the public history quota. Let
   // the continuous token bucket refill before asking the UI for the same
-  // bounded window, then prove a transient quota race is retryable once.
+  // bounded window, then prove transient fixture contention is retryable.
   await page.waitForTimeout(1_100);
-  await page.getByRole('button', { name: /Replay from selected time/i }).click();
+  const historyStatuses = [await triggerVcrReplay(page)];
   const replayStarted = await page.waitForFunction(() => {
     const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
     const bar = document.querySelector('.vcr-bar');
@@ -1107,9 +1107,9 @@ async function smokeVcrScrubReplay(page) {
     return !readout.includes('REPLAY LOADING');
   }, null, { timeout: 20_000 }).catch(() => {});
   let readoutText = await page.locator('.vcr-readout').first().textContent();
-  if (/REPLAY ERROR|REPLAY RETRY/i.test(readoutText ?? '')) {
-    await page.waitForTimeout(1_100);
-    await page.getByRole('button', { name: /Replay from selected time/i }).click();
+  for (let retry = 0; retry < 2 && /REPLAY ERROR|REPLAY RETRY/i.test(readoutText ?? ''); retry += 1) {
+    await page.waitForTimeout(1_500 * (retry + 1));
+    historyStatuses.push(await triggerVcrReplay(page));
     await page.waitForFunction(() => {
       const readout = document.querySelector('.vcr-readout')?.textContent ?? '';
       return !readout.includes('REPLAY LOADING');
@@ -1117,8 +1117,17 @@ async function smokeVcrScrubReplay(page) {
     readoutText = await page.locator('.vcr-readout').first().textContent();
   }
   if (/NO REPLAY EVENTS|REPLAY EMPTY|REPLAY ERROR|REPLAY RETRY/i.test(readoutText ?? '')) {
-    throw new Error(`VCR replay did not produce replayable route events: ${compactText(readoutText)}`);
+    throw new Error(`VCR replay did not produce replayable route events: ${compactText(readoutText)}; history HTTP ${historyStatuses.join(',')}`);
   }
+}
+
+async function triggerVcrReplay(page) {
+  const response = page.waitForResponse((candidate) => {
+    const url = new URL(candidate.url());
+    return url.pathname === '/api/v1/public/history';
+  }, { timeout: 20_000 });
+  await page.getByRole('button', { name: /Replay from selected time/i }).click();
+  return (await response).status();
 }
 
 async function smokeSetupPanel(page, viewport) {
