@@ -148,6 +148,12 @@ type LiveMapVisual = SchedulableLiveVisual & (
   | { kind: 'observer'; burst: PublicObserverBurst }
 );
 
+type PendingLivePulseEffect = {
+  pulse: PublicRoutePulse;
+  pressure: LiveAnimationPressure;
+  shouldAnimate: boolean;
+};
+
 type HoveredNodeToast = {
   node: PublicNode;
   x: number;
@@ -1437,6 +1443,8 @@ function CanadaMap({
   const seenPulseIDsRef = useRef(new RecentIdentityTracker(LIVE_VISUAL_IDENTITY_LIMIT, LIVE_VISUAL_IDENTITY_TTL_MS));
   const seenObserverBurstIDsRef = useRef(new RecentIdentityTracker(LIVE_VISUAL_IDENTITY_LIMIT, LIVE_VISUAL_IDENTITY_TTL_MS));
   const liveVisualSchedulerRef = useRef<LiveVisualScheduler<LiveMapVisual> | null>(null);
+  const pendingLivePulseEffectsRef = useRef<PendingLivePulseEffect[]>([]);
+  const livePulseEffectsFrameRef = useRef<number | null>(null);
   const followTrafficRef = useRef(followTraffic);
   const followTrafficStateRef = useRef<FollowTrafficState>({ lastAt: 0, lastID: '' });
   const themeModeRef = useRef<MapThemeMode>(themeMode);
@@ -1626,6 +1634,69 @@ function CanadaMap({
     messageBubbleCleanupTimersRef.current.set(bubble.id, timer);
   };
 
+  const flushLivePulseEffects = () => {
+    livePulseEffectsFrameRef.current = null;
+    const pending = pendingLivePulseEffectsRef.current.splice(0);
+    const map = mapRef.current;
+    if (!map || pending.length === 0) return;
+
+    const pulses = pending.map((effect) => effect.pulse);
+    const normalPulses = pending
+      .filter((effect) => effect.pressure === 'normal' && effect.shouldAnimate)
+      .map((effect) => effect.pulse);
+    followTrafficPulse(map, pulses[pulses.length - 1], followTrafficRef.current, followTrafficStateRef);
+
+    let bubblePulse: PublicRoutePulse | undefined;
+    for (let index = normalPulses.length - 1; index >= 0; index -= 1) {
+      if (!shouldShowMessageBubble(normalPulses[index])) continue;
+      bubblePulse = normalPulses[index];
+      break;
+    }
+    if (bubblePulse && layerSettingsRef.current.messageBubbles) {
+      const text = publicSafeMessage(bubblePulse);
+      const anchorId = bubblePulse.messageAnchor?.nodeId ?? bubblePulse.segments[0]?.from.nodeId ?? '';
+      const key = `pulse:${anchorId}:${hashBubbleText(text)}`;
+      if (shownBubbleTextsRef.current.remember(key, performance.now())) {
+        showMessageBubble(map, messageBubbleFromPulse(map, bubblePulse));
+      }
+    }
+
+    addPulseNodeActivityBatch(map, nodeActivityRef.current, pulses);
+    for (const pulse of pulses) addPulseNodeMeshActivity(nodeMeshActivityAtRef.current, pulse);
+    if (normalPulses.length > 0 && layerSettingsRef.current.activityHeatmap) {
+      setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current);
+    }
+    if (isClusterMode(map)) {
+      if (
+        normalPulses.length > 0
+        && layerSettingsRef.current.observerBursts
+        && addPulseClusterActivityGlowBatch(map, clusterActivityGlowRef.current, normalPulses)
+      ) {
+        startClusterActivityGlowTimer(map, clusterActivityGlowRef, clusterActivityGlowTimerRef);
+      }
+      return;
+    }
+    if (normalPulses.length > 0 && layerSettingsRef.current.analysisPaths) {
+      for (const pulse of normalPulses) addPulseRoutePayloadGlow(routePayloadGlowRef.current, pulse);
+      setRoutePayloadGlowSource(map, routesRef.current, routePayloadGlowRef.current, selectedRouteIDRef.current, nodeFocusRef.current);
+      startRoutePayloadGlowTimer(map, routesRef, routePayloadGlowRef, selectedRouteIDRef, nodeFocusRef, routePayloadGlowTimerRef);
+    }
+    startNodeActivityTimer(map, nodeActivityRef, nodeActivityTimerRef, nodesRef, nodeMeshActivityAtRef);
+  };
+
+  const queueLivePulseEffects = (pulse: PublicRoutePulse, pressure: LiveAnimationPressure, shouldAnimate: boolean) => {
+    pendingLivePulseEffectsRef.current.push({ pulse, pressure, shouldAnimate });
+    if (livePulseEffectsFrameRef.current !== null) return;
+    livePulseEffectsFrameRef.current = window.requestAnimationFrame(flushLivePulseEffects);
+  };
+
+  const clearQueuedLivePulseEffects = () => {
+    pendingLivePulseEffectsRef.current = [];
+    if (livePulseEffectsFrameRef.current === null) return;
+    window.cancelAnimationFrame(livePulseEffectsFrameRef.current);
+    livePulseEffectsFrameRef.current = null;
+  };
+
   const renderScheduledPulse = (pulse: PublicRoutePulse, pressure: LiveAnimationPressure = 'normal'): LiveVisualStartResult => {
     const map = mapRef.current;
     if (pausedRef.current || pageHiddenRef.current) return 'ineligible';
@@ -1644,31 +1715,7 @@ function CanadaMap({
       admitted = animator.add(pulse, livePulseAnimationOptions(pressure));
     }
     if (!admitted) return 'ineligible';
-
-    followTrafficPulse(map, pulse, followTrafficRef.current, followTrafficStateRef);
-    if (!overloaded && shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(pulse)) {
-      const text = publicSafeMessage(pulse);
-      const anchorId = pulse.messageAnchor?.nodeId ?? pulse.segments[0]?.from.nodeId ?? '';
-      const key = `pulse:${anchorId}:${hashBubbleText(text)}`;
-      if (shownBubbleTextsRef.current.remember(key, performance.now())) {
-        showMessageBubble(map, messageBubbleFromPulse(map, pulse));
-      }
-    }
-    addPulseNodeActivity(map, nodeActivityRef.current, pulse);
-    addPulseNodeMeshActivity(nodeMeshActivityAtRef.current, pulse);
-    if (!overloaded && layerSettingsRef.current.activityHeatmap) setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current);
-    if (isClusterMode(map)) {
-      if (!overloaded && shouldAnimate && layerSettingsRef.current.observerBursts && addPulseClusterActivityGlow(map, clusterActivityGlowRef.current, pulse)) {
-        startClusterActivityGlowTimer(map, clusterActivityGlowRef, clusterActivityGlowTimerRef);
-      }
-      return 'started';
-    }
-    if (!overloaded && shouldAnimate && layerSettingsRef.current.analysisPaths) {
-      addPulseRoutePayloadGlow(routePayloadGlowRef.current, pulse);
-      setRoutePayloadGlowSource(map, routesRef.current, routePayloadGlowRef.current, selectedRouteIDRef.current, nodeFocusRef.current);
-      startRoutePayloadGlowTimer(map, routesRef, routePayloadGlowRef, selectedRouteIDRef, nodeFocusRef, routePayloadGlowTimerRef);
-    }
-    startNodeActivityTimer(map, nodeActivityRef, nodeActivityTimerRef, nodesRef, nodeMeshActivityAtRef);
+    queueLivePulseEffects(pulse, pressure, shouldAnimate);
     return 'started';
   };
 
@@ -1981,6 +2028,7 @@ function CanadaMap({
       if (nodeLabelFrameRef.current !== null) window.cancelAnimationFrame(nodeLabelFrameRef.current);
       nodeLabelFrameRef.current = null;
       liveVisualSchedulerRef.current?.clear();
+      clearQueuedLivePulseEffects();
       if (replayActionTimerRef.current !== null) window.clearTimeout(replayActionTimerRef.current);
       routeGifExportCleanupRef.current?.();
       routeGifExportCleanupRef.current = null;
@@ -2038,6 +2086,7 @@ function CanadaMap({
     setMapInitError('');
     setMessageBubbles([]);
     animatorRef.current?.clear();
+    clearQueuedLivePulseEffects();
 
     clearNodeActivityStates(map, nodeActivityRef.current);
     stopNodeActivityTimer(nodeActivityTimerRef);
@@ -2211,6 +2260,7 @@ function CanadaMap({
     seenObserverBurstIDsRef.current.clear();
     shownBubbleTextsRef.current.clear();
     liveVisualSchedulerRef.current?.clear();
+    clearQueuedLivePulseEffects();
     if (replayActionTimerRef.current !== null) window.clearTimeout(replayActionTimerRef.current);
     replayActionTimerRef.current = null;
     updateOpenFreeMap3D();
@@ -3582,21 +3632,24 @@ function clearDetailVisualState(
   stopRoutePayloadGlowTimer(routeGlowTimerRef);
 }
 
-function addPulseClusterActivityGlow(map: maplibregl.Map, glows: Map<string, ClusterActivityGlow>, pulse: PublicRoutePulse): boolean {
+function addPulseClusterActivityGlowBatch(map: maplibregl.Map, glows: Map<string, ClusterActivityGlow>, pulses: readonly PublicRoutePulse[]): boolean {
   const now = performance.now();
   let changed = false;
-  const seenAnchors = new Set<string>();
-  for (const segment of pulse.segments) {
-    for (const endpoint of [segment.from, segment.to]) {
-      if (!Number.isFinite(endpoint.lat) || !Number.isFinite(endpoint.lng)) continue;
-      const anchorKey = `${endpoint.lat.toFixed(4)}|${endpoint.lng.toFixed(4)}`;
-      if (seenAnchors.has(anchorKey)) continue;
-      seenAnchors.add(anchorKey);
-      const target = resolveRenderedClusterTarget(map, endpoint.lng, endpoint.lat);
-      if (!target) continue;
-      upsertClusterActivityGlow(glows, target, pulse.payloadTypeName, now, CLUSTER_ACTIVITY_GLOW_MS);
-      changed = true;
+  const anchors = new Map<string, { lat: number; lng: number; payloadTypeName: string }>();
+  for (const pulse of pulses) {
+    for (const segment of pulse.segments) {
+      for (const endpoint of [segment.from, segment.to]) {
+        if (!Number.isFinite(endpoint.lat) || !Number.isFinite(endpoint.lng)) continue;
+        const anchorKey = `${endpoint.lat.toFixed(4)}|${endpoint.lng.toFixed(4)}`;
+        anchors.set(anchorKey, { lat: endpoint.lat, lng: endpoint.lng, payloadTypeName: pulse.payloadTypeName });
+      }
     }
+  }
+  for (const anchor of anchors.values()) {
+    const target = resolveRenderedClusterTarget(map, anchor.lng, anchor.lat);
+    if (!target) continue;
+    upsertClusterActivityGlow(glows, target, anchor.payloadTypeName, now, CLUSTER_ACTIVITY_GLOW_MS);
+    changed = true;
   }
   if (changed) setClusterActivityGlowSource(map, glows, now);
   return changed;
@@ -3729,18 +3782,22 @@ function clearRoutePayloadGlowStates(map: maplibregl.Map, glows: Map<string, Rou
   setSourceData(map, ROUTE_PAYLOAD_GLOW_SOURCE, emptyCollection());
 }
 
-function addPulseNodeActivity(map: maplibregl.Map, activities: Map<string, NodeActivity>, pulse: PublicRoutePulse) {
+function addPulseNodeActivityBatch(map: maplibregl.Map, activities: Map<string, NodeActivity>, pulses: readonly PublicRoutePulse[]) {
   const now = performance.now();
   const cutoff = now - NODE_ACTIVITY_WINDOW_MS;
-  const nodeIDs = new Set<string>();
-  for (const segment of pulse.segments) {
-    if (segment.from.nodeId) nodeIDs.add(segment.from.nodeId);
-    if (segment.to.nodeId) nodeIDs.add(segment.to.nodeId);
+  const touchedNodeIDs = new Set<string>();
+  for (const pulse of pulses) {
+    const pulseNodeIDs = new Set<string>();
+    for (const segment of pulse.segments) {
+      if (segment.from.nodeId) pulseNodeIDs.add(segment.from.nodeId);
+      if (segment.to.nodeId) pulseNodeIDs.add(segment.to.nodeId);
+    }
+    for (const nodeID of pulseNodeIDs) {
+      addNodeActivityHit(activities, nodeID, now, cutoff);
+      touchedNodeIDs.add(nodeID);
+    }
   }
-  for (const nodeID of nodeIDs) {
-    addNodeActivityHit(activities, nodeID, now, cutoff);
-  }
-  updateNodeActivityFeatureStates(map, activities, now, nodeIDs);
+  updateNodeActivityFeatureStates(map, activities, now, touchedNodeIDs);
 }
 
 function addPulseNodeMeshActivity(meshActivityAtByNodeID: Map<string, number>, pulse: PublicRoutePulse) {
