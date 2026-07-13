@@ -33,6 +33,9 @@ func TestRetentionPruneCycleCanClearCanonicalExpiredFixture(t *testing.T) {
 	if retentionPruneCycleBudget >= retentionPruneInterval {
 		t.Fatalf("retention cycle budget=%s must remain below interval=%s", retentionPruneCycleBudget, retentionPruneInterval)
 	}
+	if retentionPruneRetryDelay <= 0 || retentionPruneRetryDelay >= retentionPruneInterval {
+		t.Fatalf("retention retry delay=%s must be positive and below interval=%s", retentionPruneRetryDelay, retentionPruneInterval)
+	}
 }
 
 func TestRetentionPrunePressurePolicyPrioritizesCriticalCleanup(t *testing.T) {

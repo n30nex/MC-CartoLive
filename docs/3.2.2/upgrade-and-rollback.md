@@ -37,6 +37,21 @@ canonical `release-verification.json` trailer. The tag workflow validates this
 evidence against trusted Actions artifacts before promoting the already-built
 manifests to `3.2.2`, `3.2`, and `latest` aliases.
 
+### Git-only publication option
+
+If the operator explicitly chooses not to cut over a live system, do not run
+the deployment, backup, canary, or live-audit steps above. Dispatch `Publish
+Git-only release` on exact current `main` with the successful candidate run ID
+and attempt. It verifies the same source CI, browser, canonical performance,
+candidate, digest, and asset-pack identities before promoting both world and
+Canada aliases and creating the annotated tag and GitHub release.
+
+The attached `release-verification-source-only.json` deliberately excludes any
+live deployment, canary, or database-audit claim. Publishing the Canada image
+does not assert that any existing Canada host is running it. A later operator
+cutover must independently perform the backup, deployment, readiness, and
+rollback checks appropriate to that host.
+
 ## Rollback
 
 On any privacy, integrity, write/deadline/drop, animation-loss, emergency-mode,

@@ -26,7 +26,7 @@ digests being promoted.
   candidates with successful smoke, scan, provenance, SBOM, compiled identity,
   and asset-pack checks.
 
-## Hosted Canada canary
+## Hosted Canada canary (hosted publication mode only)
 
 - [ ] The 17 GB root backup and off-host/block-volume copy have equal size and
   checksum on different filesystems. Any root-copy removal happened only after
@@ -44,13 +44,23 @@ digests being promoted.
 
 ## Publication
 
-- [ ] Canonical `release-verification.json` passes bound validation and matches
-  the tag trailers, Actions run IDs, SHA, digests, browser numbers, canary
-  counters, and five-minute audit.
-- [ ] Annotated `v3.2.2` is created only after at least 300 seconds of green canary evidence.
+- [ ] The operator selects exactly one publication mode: hosted Canada canary
+  or Git-only. Git-only publication is never described as a deployment,
+  canary, or live database audit.
+- [ ] In hosted mode, canonical `release-verification.json` passes bound
+  validation and matches the tag trailers, Actions run IDs, SHA, digests,
+  browser numbers, canary counters, and five-minute audit. The annotated tag is
+  created only after at least 300 seconds of green canary evidence.
+- [ ] In Git-only mode, `Publish Git-only release` is dispatched from exact
+  current `main` with the selected candidate run/attempt. It fail-closed checks
+  main browser CI, release-branch and main canonical proofs, candidate identity,
+  distinct digests, and writes only source-scoped verification evidence.
 - [ ] World aliases `3.2.2`, `3.2`, `sha-<main-sha>`, and `latest` resolve to
   the world digest; Canada aliases `3.2.2-canada`, `3.2-canada`,
-  `sha-<main-sha>-canada`, and `latest-canada` resolve to the soaked Canada
-  digest.
-- [ ] Release assets, verification JSON, checksums, OpenAPI, bundle, manifest,
-  SBOMs, SARIF, and attestations verify and contain no live/private data.
+  `sha-<main-sha>-canada`, and `latest-canada` resolve to the exact tested
+  Canada candidate digest.
+- [ ] Hosted assets include the aggregate verification, bundle, manifest,
+  SBOMs, SARIF, and attestations. Git-only assets include the unchanged
+  candidate manifest, source-only verification, OpenAPI, release/rollback
+  notes, and checksums. The selected asset set verifies and contains no
+  live/private data.

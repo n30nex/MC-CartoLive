@@ -32,16 +32,13 @@ and digest rollback compatibility with 3.2.1.
 
 - The release-performance fast-track is removed. Canonical full proof is
   required on the exact release-branch head and again on merged `main`.
-- Publication waits for the exact Canada candidate digest to complete one
-  five-minute checkpoint with at least 1,000 accepted messages.
-- Minute-level monitoring uses cheap readiness, metrics, and container checks.
-  The five-minute gate creates a consistent SQLite backup on a separate mounted
-  filesystem and runs full integrity and foreign-key checks against that copy.
-- `release-verification.json` binds source/workflow identities, both image
-  digests, browser latency and loss counters, canary counters, snapshot
-  integrity, and the five-minute audit. It is validated, checksummed, attested, and
-  attached to the GitHub release.
+- This GitHub release uses the explicit Git-only publication path. It verifies
+  main browser CI, both canonical proofs, and the successful immutable
+  candidate manifest before promoting world and Canada aliases.
+- `release-verification-source-only.json` binds source/workflow identities and
+  both image digests. It makes no live deployment, canary, or database-audit
+  claim.
 
 Generic `3.2.2`, `3.2`, `sha-<main-sha>`, and `latest` tags serve the world
 asset pack. Matching `*-canada` aliases identify the separately built Canada
-manifest deployed at `carto.canadaverse.org`.
+manifest; no existing Canada host is changed by this release workflow.
