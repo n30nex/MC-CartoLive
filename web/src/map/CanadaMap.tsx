@@ -1702,19 +1702,12 @@ function CanadaMap({
     if (pausedRef.current || pageHiddenRef.current) return 'ineligible';
     const now = Date.now();
     const shouldAnimate = shouldAnimateLiveEvent(visualReceivedAt(pulse), now, pageHiddenRef.current);
-    const overloaded = pressure !== 'normal';
     if (!shouldAnimate || !layerSettingsRef.current.liveComets) return 'ineligible';
-    if (!map) return 'retry';
-    const renderComet = shouldAnimate
-      && layerSettingsRef.current.liveComets;
-    let admitted = false;
-    if (renderComet && !overloaded) admitted = addPulseTo3D(map, pulse);
-    if (!admitted) {
-      const animator = animatorRef.current;
-      if (!animator) return 'retry';
-      admitted = animator.add(pulse, livePulseAnimationOptions(pressure));
-    }
-    if (!admitted) return 'ineligible';
+    const animator = animatorRef.current;
+    if (!map || !animator) return 'retry';
+    // Connected-live motion stays on the lossless canvas path. Manual replay
+    // may still use 3D, but allocating a 3D object per live packet stalls RAF.
+    if (!animator.add(pulse, livePulseAnimationOptions(pressure))) return 'ineligible';
     queueLivePulseEffects(pulse, pressure, shouldAnimate);
     return 'started';
   };
