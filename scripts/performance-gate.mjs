@@ -24,15 +24,17 @@ if (process.env.GITHUB_ACTIONS !== 'true') {
 const defaults = profileName === 'full'
   ? {
       sustainedRate: 20,
-      sustainedSeconds: 30 * 60,
+      sustainedSeconds: 5 * 60,
       burstRate: 100,
       burstSeconds: 60,
       apiRows: 5_000_000,
+      apiExpiredRows: 500_000,
+      apiExpiredAgeHours: 720,
       apiPathRows: 10_000,
       apiEvents: 20_000,
       apiSamples: 200,
       wsClients: 250,
-      wsSeconds: 30 * 60,
+      wsSeconds: 5 * 60,
       wsQuietSeconds: 70,
       wsIsolationEvents: 1000,
       wsIsolationRate: 100,
@@ -44,6 +46,8 @@ const defaults = profileName === 'full'
       burstRate: 100,
       burstSeconds: 3,
       apiRows: 50_000,
+      apiExpiredRows: 5_000,
+      apiExpiredAgeHours: 720,
       apiPathRows: 1000,
       apiEvents: 2000,
       apiSamples: 20,
@@ -61,6 +65,8 @@ const config = {
   burstRate: envNumber('PERF_BURST_RATE', defaults.burstRate),
   burstSeconds: envNumber('PERF_BURST_SECONDS', defaults.burstSeconds),
   apiRows: envNumber('PERF_API_ROWS', defaults.apiRows),
+  apiExpiredRows: envNumber('PERF_API_EXPIRED_ROWS', defaults.apiExpiredRows),
+  apiExpiredAgeHours: envNumber('PERF_API_EXPIRED_AGE_HOURS', defaults.apiExpiredAgeHours),
   apiPathRows: envNumber('PERF_API_PATH_ROWS', defaults.apiPathRows),
   apiEvents: envNumber('PERF_API_EVENTS', defaults.apiEvents),
   apiSamples: envNumber('PERF_API_SAMPLES', defaults.apiSamples),
@@ -125,7 +131,11 @@ const report = {
   github: githubContext,
   config,
   thresholds: {
-    queueOldestP99Ms: '< 2000',
+    sustainedQueueOldestP99Ms: '< 500',
+    burstQueueOldestP99Ms: '< 2000',
+    sustainedBroadcastLatencyP95Ms: '< 1000',
+    burstBroadcastLatencyP95Ms: '< 2000',
+    broadcastLatencyMaxMs: '<= 5000',
     queueOccupancyMax: '< 0.75',
     processRssP95Bytes: `< ${config.memoryLimitBytes}`,
     goroutineGrowth: '<= 0',
@@ -239,8 +249,10 @@ async function runIngestPhase(label, rate, durationSeconds) {
       const derivedAccepted = metric(metrics, 'meshcore_derived_accepted_total');
       const derivedProcessed = metric(metrics, 'meshcore_derived_processed_total');
       const derivedDepth = metric(metrics, 'meshcore_derived_queue_depth');
+      const projectionDepth = metric(metrics, 'meshcore_derived_projection_queue_depth');
+      const projectionFailures = metric(metrics, 'meshcore_derived_projection_failures_total');
       if (accepted > 0 && firstAcceptedAt === 0) firstAcceptedAt = at;
-      if (accepted >= expected && processed >= expected && derivedAccepted >= expected && derivedProcessed >= expected && derivedDepth === 0) {
+      if (accepted >= expected && processed >= expected && derivedAccepted >= expected && derivedProcessed >= expected && derivedDepth === 0 && projectionDepth === 0 && projectionFailures === 0) {
         completedAt = at;
         finalMetrics = metrics;
         break;
@@ -258,6 +270,7 @@ async function runIngestPhase(label, rate, durationSeconds) {
     '-mode', 'count', '-db', dbPath,
   ]);
   const oldest = samples.map((sample) => metric(sample, 'meshcore_mqtt_queue_oldest_item_age_ms'));
+  const broadcastLatencies = samples.map((sample) => metric(sample, 'meshcore_observation_to_broadcast_latency_ms'));
   const occupancies = samples.map((sample) => metric(sample, 'meshcore_mqtt_queue_depth') / config.mqttQueueCapacity);
   const processRSS = samples.map((sample) => Number(sample.processRssBytes));
   const goRuntimeSys = samples.map((sample) => metric(sample, 'meshcore_memory_sys_bytes'));
@@ -286,8 +299,18 @@ async function runIngestPhase(label, rate, durationSeconds) {
     primaryDrops: metric(finalMetrics, 'meshcore_mqtt_messages_dropped_total'),
     derivedDrops: metric(finalMetrics, 'meshcore_derived_dropped_total'),
     derivedFailures: metric(finalMetrics, 'meshcore_derived_failures_total'),
+    handlerFailures: metric(finalMetrics, 'meshcore_mqtt_handler_failures_total'),
+    primaryDeadlineFailures: metric(finalMetrics, 'meshcore_primary_deadline_failures_total'),
+    primaryPersisted: metric(finalMetrics, 'meshcore_primary_persisted_total'),
+    permanentRejects: metric(finalMetrics, 'meshcore_permanent_rejects_total'),
+    derivedProjectionFailures: metric(finalMetrics, 'meshcore_derived_projection_failures_total'),
+    derivedProjectionQueueDepth: metric(finalMetrics, 'meshcore_derived_projection_queue_depth'),
+    derivedProjectionQueueOldestAgeMs: metric(finalMetrics, 'meshcore_derived_projection_queue_oldest_age_ms'),
+    derivedProjectionLagMs: metric(finalMetrics, 'meshcore_derived_projection_lag_ms'),
     duplicateSuppressions: metric(finalMetrics, 'meshcore_ingest_duplicate_suppressions_total'),
     queueOldestP99Ms: percentile(oldest, 0.99),
+    observationToBroadcastP95Ms: percentile(broadcastLatencies, 0.95),
+    observationToBroadcastMaxMs: metric(finalMetrics, 'meshcore_observation_to_broadcast_max_latency_ms'),
     queueOccupancyMax: Math.max(0, ...occupancies),
     processRssSource: 'linux-proc-status-vmrss',
     processRssP95Bytes: percentile(processRSS, 0.95),
@@ -311,12 +334,22 @@ async function runIngestPhase(label, rate, durationSeconds) {
   check(result, result.primaryDrops === 0, `primary queue drops=${result.primaryDrops}`);
   check(result, result.derivedDrops === 0, `derived queue drops=${result.derivedDrops}`);
   check(result, result.derivedFailures === 0, `derived projection failures=${result.derivedFailures}`);
+  check(result, result.handlerFailures === 0, `MQTT handler failures=${result.handlerFailures}`);
+  check(result, result.primaryDeadlineFailures === 0, `primary deadline failures=${result.primaryDeadlineFailures}`);
+  check(result, result.primaryPersisted === expected, `primary persisted=${result.primaryPersisted}, want ${expected}`);
+  check(result, result.permanentRejects === 0, `permanent rejects=${result.permanentRejects}`);
+  check(result, result.derivedProjectionFailures === 0, `derived projection retries exhausted=${result.derivedProjectionFailures}`);
+  check(result, result.derivedProjectionQueueDepth === 0, `derived projection queue depth=${result.derivedProjectionQueueDepth}`);
   check(result, result.duplicateSuppressions === 0, `retry duplicate suppressions=${result.duplicateSuppressions}`);
   check(result, dbStats.observationRows === expected, `observation rows=${dbStats.observationRows}, want ${expected}`);
   check(result, dbStats.nonEmptyIngestIds === expected, `non-empty ingest IDs=${dbStats.nonEmptyIngestIds}, want ${expected}`);
   check(result, dbStats.uniqueIngestIds === expected, `unique ingest IDs=${dbStats.uniqueIngestIds}, want ${expected}`);
   check(result, dbStats.publicEventRows >= expected, `public event rows=${dbStats.publicEventRows}, need at least ${expected}`);
-  check(result, result.queueOldestP99Ms < 2000, `queue oldest p99=${result.queueOldestP99Ms}ms, must be <2000ms`);
+  const queueAgeLimitMs = label === 'sustained' ? 500 : 2000;
+  const broadcastP95LimitMs = label === 'sustained' ? 1000 : 2000;
+  check(result, result.queueOldestP99Ms < queueAgeLimitMs, `queue oldest p99=${result.queueOldestP99Ms}ms, must be <${queueAgeLimitMs}ms`);
+  check(result, result.observationToBroadcastP95Ms < broadcastP95LimitMs, `observation-to-broadcast p95=${result.observationToBroadcastP95Ms}ms, must be <${broadcastP95LimitMs}ms`);
+  check(result, result.observationToBroadcastMaxMs <= 5000, `observation-to-broadcast max=${result.observationToBroadcastMaxMs}ms, must be <=5000ms`);
   check(result, result.queueOccupancyMax < 0.75, `queue occupancy max=${result.queueOccupancyMax}, must be <0.75`);
   check(result, reportedPrimaryQueueCapacities.length === 1 && reportedPrimaryQueueCapacities[0] === config.mqttQueueCapacity, `reported primary queue capacities=${reportedPrimaryQueueCapacities.join(',')}, want ${config.mqttQueueCapacity}`);
   check(result, reportedDerivedQueueCapacities.length === 1 && reportedDerivedQueueCapacities[0] === config.derivedQueueCapacity, `reported derived queue capacities=${reportedDerivedQueueCapacities.join(',')}, want ${config.derivedQueueCapacity}`);
@@ -339,6 +372,9 @@ async function runAPIPhase() {
     '-fresh',
     '-db', dbPath,
     '-observations', String(config.apiRows),
+    '-expired-observations', String(config.apiExpiredRows),
+    '-expired-age', `${config.apiExpiredAgeHours}h`,
+    '-topology=true',
     '-paths', String(config.apiPathRows),
     '-events', String(config.apiEvents),
   ], 90 * 60_000);
@@ -371,6 +407,7 @@ async function runAPIPhase() {
     const oldestSeq = Number(resetJSON.oldestSeq ?? 0);
     const latestSeq = Number(resetJSON.latestSeq ?? 0);
     const now = Date.now();
+    const browserProofPromise = profileName === 'full' ? runBrowserProof(baseURL) : null;
     const routes = {
       cachedState: '/api/v1/public/state',
       publicPath: `/api/v1/public/packets?from=${now - 3_600_000}&to=${now}&limit=100`,
@@ -390,6 +427,15 @@ async function runAPIPhase() {
     }
     const bootstrap = await request(`${baseURL}/api/v1/public/bootstrap`, apiHeaders(ipSequence++));
     const state = await request(`${baseURL}/api/v1/public/state`, apiHeaders(ipSequence++));
+    const browser = browserProofPromise ? await browserProofPromise : null;
+    let postRetention = null;
+    if (profileName === 'full') {
+      await waitUntil(async () => {
+        ensureRunning(app);
+        postRetention = await runJSONTool(binaries.perfseed, ['-mode', 'count', '-db', dbPath]);
+        return postRetention.expiredObservationRows === 0;
+      }, 4 * 60_000, 5_000);
+    }
     allResponses.push(bootstrap, state);
     const bootstrapGzipBytes = gzipSize(bootstrap);
     const stateGzipBytes = gzipSize(state);
@@ -408,9 +454,16 @@ async function runAPIPhase() {
       stateGzipBytes,
       responseCount: allResponses.length,
       serverErrors: allResponses.filter((response) => response.status >= 500).length,
+      browser,
+      postRetention,
       failures: [],
     };
     check(result, seed.observationRows >= config.apiRows, `seeded observations=${seed.observationRows}, need >=${config.apiRows}`);
+    check(result, seed.expiredObservationRows === config.apiExpiredRows, `seeded expired observations=${seed.expiredObservationRows}, want ${config.apiExpiredRows}`);
+    check(result, seed.edgeRows > 0 && seed.multiHopEdgeRows > 0, `resolved topology edges=${seed.edgeRows}, multi-hop=${seed.multiHopEdgeRows}`);
+    check(result, seed.nodeRows >= 6 && seed.observerStatusRows >= 2 && seed.publicRouteRows >= 4, `realistic topology nodes=${seed.nodeRows}, observer statuses=${seed.observerStatusRows}, routes=${seed.publicRouteRows}`);
+    check(result, seed.publicPathFtsRows >= seed.edgeRows, `packet-path FTS rows=${seed.publicPathFtsRows}, edges=${seed.edgeRows}`);
+    if (profileName === 'full') check(result, postRetention?.expiredObservationRows === 0, `expired rows after concurrent retention=${postRetention?.expiredObservationRows ?? 'missing'}`);
     check(result, resetProbe.status === 200 && result.resetRequired, `afterSeq=0 reset contract failed: HTTP ${resetProbe.status}`);
     check(result, oldestSeq > 0 && latestSeq >= oldestSeq, `invalid retained event bounds ${oldestSeq}..${latestSeq}`);
     check(result, result.cachedStateOriginP95Ms < 50, `cached state p95=${result.cachedStateOriginP95Ms}ms, must be <50ms`);
@@ -418,6 +471,21 @@ async function runAPIPhase() {
     check(result, result.retainedResumeP95Ms < 100, `retained resume p95=${result.retainedResumeP95Ms}ms, must be <100ms`);
     check(result, result.cursorResetP95Ms < 50, `cursor reset p95=${result.cursorResetP95Ms}ms, must be <50ms`);
     check(result, result.serverErrors === 0, `HTTP 5xx responses=${result.serverErrors}`);
+    if (profileName === 'full') {
+      check(result, browser?.passed === true, `real-browser preserved-database gate failed: ${browser?.failures ?? 'missing proof'}`);
+      check(result, Array.isArray(browser?.releaseGates) && browser.releaseGates.length === 2, `browser release gates=${browser?.releaseGates?.length ?? 0}, want 2`);
+      for (const gate of browser?.releaseGates ?? []) {
+        const metrics = gate.liveFlow?.metrics;
+        check(result, gate.errors?.length === 0, `${gate.viewport} browser errors=${(gate.errors ?? []).join('; ')}`);
+        check(result, gate.liveFlow?.count === 200 && metrics?.animationStarts === 200, `${gate.viewport} lossless visual starts=${metrics?.animationStarts ?? 0}/200`);
+        check(result, metrics?.emergencyActivations === 0, `${gate.viewport} emergency visual starts=${metrics?.emergencyActivations ?? 'missing'}`);
+        check(result, metrics?.receiveToStateP95Ms < 1000, `${gate.viewport} receive-to-state p95=${metrics?.receiveToStateP95Ms ?? 'missing'}ms`);
+        check(result, metrics?.receiveToAnimationP95Ms < 2000, `${gate.viewport} receive-to-animation p95=${metrics?.receiveToAnimationP95Ms ?? 'missing'}ms`);
+        check(result, metrics?.maxVisualAgeMs <= 5000, `${gate.viewport} visual age max=${metrics?.maxVisualAgeMs ?? 'missing'}ms`);
+        check(result, metrics?.frameP95Ms <= 34, `${gate.viewport} frame p95=${metrics?.frameP95Ms ?? 'missing'}ms`);
+        check(result, metrics?.repeatedLongTasks === 0, `${gate.viewport} repeated long tasks=${metrics?.repeatedLongTasks ?? 'missing'}`);
+      }
+    }
     check(result, bootstrap.status === 200 && bootstrapGzipBytes <= 150 * 1024, `bootstrap gzip=${bootstrapGzipBytes} bytes, limit=${150 * 1024}`);
     check(result, state.status === 200 && stateGzipBytes <= 400 * 1024, `state gzip=${stateGzipBytes} bytes, limit=${400 * 1024}`);
     result.passed = result.failures.length === 0;
@@ -445,6 +513,29 @@ async function runWebSocketPhase() {
   }
   value.passed = exitCode === 0 && value.failures.length === 0;
   return value;
+}
+
+async function runBrowserProof(baseURL) {
+  const outputDir = path.join(artifactDir, 'browser');
+  const result = await runProcess(process.execPath, [
+    path.join(repoRoot, 'scripts', 'browser-smoke.mjs'),
+    '--base-url', baseURL,
+    '--output-dir', outputDir,
+    '--release-gate-only',
+    '--skip-screenshots',
+  ], { cwd: repoRoot, timeoutMs: 20 * 60_000 });
+  const summaryPath = path.join(outputDir, 'browser-smoke-summary.json');
+  let summary;
+  try {
+    summary = JSON.parse(await fs.readFile(summaryPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`browser proof did not write a valid summary (exit ${result.exitCode}): ${result.stderr || result.stdout || errorMessage(error)}`);
+  }
+  summary.exitCode = result.exitCode;
+  if (result.exitCode !== 0) {
+    throw new Error(`browser proof exited ${result.exitCode}: ${result.stderr || summary.releaseGates?.flatMap((gate) => gate.errors ?? []).join('; ')}`);
+  }
+  return summary;
 }
 
 function appEnvironment({ dbPath, publicPort, metricsPort, fixturePath = '', fixtureRate = 0, fixtureStartDelayMs = 0 }) {

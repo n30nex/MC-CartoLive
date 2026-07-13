@@ -50,6 +50,8 @@ func TestDetailedMetricsReportConfiguredQueueCapacities(t *testing.T) {
 	runtimeStats := live.NewRuntimeStats()
 	runtimeStats.RecordDerivedEnqueue(1, 1024, time.Now().UnixMilli())
 	runtimeStats.RecordDerivedProcessed(time.Millisecond, false, 0, 1024, 0)
+	runtimeStats.RecordBroadcastLatency(137 * time.Millisecond)
+	runtimeStats.RecordBroadcastLatency(4 * time.Millisecond)
 	server := &Server{
 		Runtime: runtimeStats,
 		MQTTStatus: func(time.Time) imqtt.Status {
@@ -67,6 +69,8 @@ func TestDetailedMetricsReportConfiguredQueueCapacities(t *testing.T) {
 		"meshcore_derived_processed_total 1",
 		"meshcore_derived_dropped_total 0",
 		"meshcore_derived_failures_total 0",
+		"meshcore_observation_to_broadcast_latency_ms 4",
+		"meshcore_observation_to_broadcast_max_latency_ms 137",
 	} {
 		if !strings.Contains(body, metric) {
 			t.Fatalf("metrics missing %q: %s", metric, body)

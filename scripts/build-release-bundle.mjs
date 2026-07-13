@@ -38,6 +38,9 @@ const files = [
   ['scripts/deploy.sh', 'scripts/deploy.sh'],
   ['scripts/mc-cartolive-watchdog.sh', 'scripts/mc-cartolive-watchdog.sh'],
   ['scripts/post-release-audit.sh', 'scripts/post-release-audit.sh'],
+  ['scripts/runtime-health-check.sh', 'scripts/runtime-health-check.sh'],
+  ['scripts/release-verification.mjs', 'scripts/release-verification.mjs'],
+  ['scripts/verify-backup-copy.sh', 'scripts/verify-backup-copy.sh'],
   ['scripts/check-public-privacy.mjs', 'scripts/check-public-privacy.mjs'],
   ['scripts/public-privacy-retry.mjs', 'scripts/public-privacy-retry.mjs'],
   ['scripts/public-privacy-websocket.mjs', 'scripts/public-privacy-websocket.mjs'],
@@ -58,6 +61,7 @@ const files = [
   [`docs/${version}/security-and-operations.md`, 'docs/security-and-operations.md'],
   [`docs/${version}/storage-and-stability.md`, 'docs/storage-and-stability.md'],
   [`docs/${version}/validation_checklist.md`, 'docs/validation-checklist.md'],
+  [`docs/${version}/release-verification.md`, 'docs/release-verification.md'],
   ['docs/privacy.md', 'docs/privacy.md'],
   ['docs/public-api.openapi.json', 'docs/public-api.openapi.json']
 ];
@@ -103,13 +107,24 @@ const manifest = {
   releaseIdentity: 'compiled_immutable',
   operations: {
     postReleaseAudit: {
-      phases: ['24h', 'day8', 'day14'],
+      phases: ['5m'],
       systemdTimer: 'mc-cartolive-release-audit.timer',
-      privacySafeAggregateEvidence: true
+      privacySafeAggregateEvidence: true,
+      integritySource: 'consistent_sqlite_backup'
+    },
+    publication: {
+      minimumCanarySeconds: 300,
+      minimumAcceptedMessages: 1000,
+      releaseVerificationRequired: true
     }
   },
   hostPrerequisites: {
-    standardDigestDeploy: [],
+    standardDigestDeploy: [
+      'verified_offhost_backup_copy',
+      'redundant_local_backup_removed',
+      'minimum_9_gib_and_20_percent_free',
+      'separate_audit_snapshot_filesystem'
+    ],
     destructiveFreshDatabase: {
       nodeMinMajor: 18,
       purpose: 'credential_free_public_privacy_and_websocket_hello_gate'
@@ -142,8 +157,11 @@ Canada hosted image: ${canadaImage}
 Git SHA: ${gitSha}
 Schema: ${schemaVersion}
 
-Before cutover, install and enable deploy/systemd/mc-cartolive-release-audit.timer.
-It records privacy-safe 24-hour, day-8, and day-14 evidence without exporting
+Before cutover, mount a separate filesystem at
+/mnt/mc-cartolive-audit-snapshots, then install and enable
+deploy/systemd/mc-cartolive-release-audit.timer. Hourly checks avoid SQLite;
+the five-minute gate runs integrity against a consistent temporary backup. It
+records privacy-safe final evidence without exporting
 database rows or runtime secrets. See docs/storage-and-stability.md.
 
 Node.js 18 or newer is staged on the hosted system for the bundled

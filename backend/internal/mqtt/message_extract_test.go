@@ -27,6 +27,9 @@ func TestNormalizeRawRSSISNRAndTimestamp(t *testing.T) {
 	if msg.HeardAtMs == 0 {
 		t.Fatal("expected parsed timestamp")
 	}
+	if msg.ReceivedAtMs != receivedAt.UnixMilli() {
+		t.Fatalf("receivedAt = %d, want %d", msg.ReceivedAtMs, receivedAt.UnixMilli())
+	}
 }
 
 func TestNormalizeFallsBackToReceiveTimeForFutureTimestamp(t *testing.T) {

@@ -4,6 +4,25 @@ This changelog records the public release history at a useful level of detail.
 Detailed patch-by-patch investigation notes and temporary planning material live
 in Git history, not in the active documentation set.
 
+## 3.2.2 - 2026-07-12
+
+- Coordinated SQLite writes across primary, live-core, and background lanes;
+  retained ingest identity across transient retry and shortened ordered live
+  transactions before broadcast while keeping schema 32000.
+- Removed global live display pacing and separated immediate semantic state
+  from connected-live-only animation.
+- Added adaptive lossless packet visuals, indexed batch route updates,
+  immediate PacketTV activity, cursor recovery without stale replay, and
+  browser latency/loss/frame observability.
+- Added privacy-safe ingest/projection queue and broadcast readiness fields and
+  metrics for retry, persistence, projection, and latency health.
+- Removed the release performance fast-track; required canonical full proof on
+  release-branch and merged-main SHAs, a five-minute immutable Canada canary with at
+  least 1,000 accepted messages, and bound `release-verification.json` evidence.
+- Replaced active-database integrity scans with cheap runtime checks and a full
+  five-minute integrity/foreign-key check against a consistent SQLite backup
+  on a separate mounted filesystem.
+
 ## 3.2.1 - 2026-07-11
 
 - Restored continuous public traffic flow by accepting sparse monotonic event

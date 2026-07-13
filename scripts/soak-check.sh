@@ -3,7 +3,7 @@ set -eu
 
 BASE_URL="${BASE_URL:-https://carto.canadaverse.org}"
 METRICS_URL="${METRICS_URL:-http://127.0.0.1:39090/metrics}"
-DURATION_MINUTES="${DURATION_MINUTES:-60}"
+DURATION_MINUTES="${DURATION_MINUTES:-5}"
 INTERVAL_SECONDS="${INTERVAL_SECONDS:-60}"
 MAX_BAD_SAMPLES="${MAX_BAD_SAMPLES:-3}"
 OUT_FILE="${OUT_FILE:-mc-cartolive-soak-$(date -u +%Y%m%d-%H%M%S).ndjson}"

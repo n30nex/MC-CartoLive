@@ -34,19 +34,28 @@ type Application struct {
 	PublicCache   *live.PublicStateCache
 	Runtime       *live.RuntimeStats
 	MQTT          *imqtt.Client
-	Resolver      *resolve.Resolver
+	Resolver      packetResolver
 	Solar         *solar.Fetcher
 	Propagation   *propagation.WeatherFetcher
 	solarSnapshot atomic.Pointer[solar.Conditions]
 
 	apiServer *api.Server
 
-	cacheRefreshMu    sync.Mutex
-	packetCount       atomic.Int64
-	derivedQueue      chan derivedIngestJob
-	derivedQueueMu    sync.Mutex
-	derivedQueueTimes []int64
-	wg                sync.WaitGroup
+	cacheRefreshMu      sync.Mutex
+	packetCount         atomic.Int64
+	derivedQueue        chan derivedIngestJob
+	derivedQueueMu      sync.Mutex
+	derivedQueueTimes   []int64
+	edgeProjectionQueue chan edgeProjectionJob
+	edgeProjectionMu    sync.Mutex
+	edgeProjectionTimes []int64
+	writeCoordinator    *writeCoordinator
+	wg                  sync.WaitGroup
+}
+
+type packetResolver interface {
+	Resolve(context.Context, string, meshcore.ParsedPacket) (resolve.Result, error)
+	InvalidateCandidates()
 }
 
 type runtimeCounterLogSnapshot struct {
@@ -71,6 +80,16 @@ type runtimeCounterLogSnapshot struct {
 	CacheRefreshLatencyMs        int64
 	PacketCountRefreshFailures   int64
 	PacketCountRefreshLatencyMs  int64
+	PrimaryQueueOldestAgeMs      int64
+	LiveProjectionOldestAgeMs    int64
+	WriterPrimaryWaitMs          int64
+	WriterLiveCoreWaitMs         int64
+	WriterBackgroundWaitMs       int64
+	PrimaryDeadlineFailures      int64
+	StoreWriteFailures           int64
+	DerivedProjectionFailures    int64
+	LastBroadcastLatencyMs       int64
+	MaxBroadcastLatencyMs        int64
 }
 
 type yamlConfig struct {
@@ -115,13 +134,15 @@ func NewApplication(ctx context.Context, cfg Config, log *slog.Logger) (*Applica
 	if derivedQueueSize < 1 {
 		derivedQueueSize = 1024
 	}
-	app := &Application{Config: cfg, Log: log, Store: st, Hub: hub, PublicHub: publicHub, PublicCache: publicCache, Runtime: live.NewRuntimeStats(), Resolver: resolver, Solar: solar.NewFetcher(log), Propagation: propagation.NewWeatherFetcher(log), derivedQueue: make(chan derivedIngestJob, derivedQueueSize)}
+	runtimeStats := live.NewRuntimeStats()
+	app := &Application{Config: cfg, Log: log, Store: st, Hub: hub, PublicHub: publicHub, PublicCache: publicCache, Runtime: runtimeStats, Resolver: resolver, Solar: solar.NewFetcher(log), Propagation: propagation.NewWeatherFetcher(log), derivedQueue: make(chan derivedIngestJob, derivedQueueSize), edgeProjectionQueue: make(chan edgeProjectionJob, derivedQueueSize)}
+	app.writeCoordinator = newWriteCoordinator(runtimeStats)
 	if latestSeq, err := st.LatestPublicSeq(ctx); err == nil {
 		publicHub.SetLatestSeq(latestSeq)
 	} else {
 		log.Warn("public event sequence seed failed", "error", err)
 	}
-	app.MQTT = imqtt.NewClient(imqtt.ClientConfig{
+	app.MQTT = imqtt.NewClientWithOutcome(imqtt.ClientConfig{
 		Enabled:   cfg.MQTTEnabled,
 		BrokerURL: cfg.MQTTBrokerURL,
 		Topic:     cfg.MQTTTopic,
@@ -134,7 +155,7 @@ func NewApplication(ctx context.Context, cfg Config, log *slog.Logger) (*Applica
 			PublicKey: cfg.MeshcorePublicKey,
 			Token:     "",
 		},
-	}, log, app.HandleMQTT)
+	}, log, app.handleMQTTOutcome)
 	return app, nil
 }
 
@@ -179,6 +200,8 @@ func (a *Application) Start(ctx context.Context) error {
 	}
 	a.wg.Add(1)
 	go func() { defer a.wg.Done(); a.derivedIngestLoop(ctx) }()
+	a.wg.Add(1)
+	go func() { defer a.wg.Done(); a.edgeProjectionLoop(ctx) }()
 	if err := a.MQTT.Start(ctx); err != nil {
 		a.Log.Error("mqtt start failed", "error", err)
 	}
@@ -211,6 +234,9 @@ func (a *Application) Close() error {
 	case <-time.After(10 * time.Second):
 		a.Log.Warn("shutdown: goroutines did not exit within 10s timeout")
 	}
+	if a.writeCoordinator != nil {
+		a.writeCoordinator.Close()
+	}
 	return a.Store.Close()
 }
 
@@ -232,11 +258,6 @@ func (a *Application) processDerivedMQTT(ctx context.Context, msg imqtt.Normaliz
 	if msg.TopicInfo.Subtopic != "packets" {
 		return
 	}
-	if err := a.retryStoreWrite(ctx, "observer packet update", func(ctx context.Context) error {
-		return a.Store.IncrementObserverPacket(ctx, msg)
-	}); err != nil {
-		a.Log.Warn("observer packet update failed", "error", err)
-	}
 	parsed := job.parsed
 	advert := job.advert
 	decodedMessage := job.decodedMessage
@@ -245,7 +266,7 @@ func (a *Application) processDerivedMQTT(ctx context.Context, msg imqtt.Normaliz
 	var advertNode *live.Node
 	if advert != nil {
 		var node live.Node
-		err := a.retryStoreWrite(ctx, "advert node upsert", func(ctx context.Context) error {
+		err := a.retryStoreWriteLane(ctx, writeLaneLiveCore, "advert node upsert", func(ctx context.Context) error {
 			var err error
 			node, err = a.Store.UpsertAdvertNode(ctx, msg.TopicInfo.IATA, *advert, msg.HeardAtMs)
 			return err
@@ -262,73 +283,136 @@ func (a *Application) processDerivedMQTT(ctx context.Context, msg imqtt.Normaliz
 	resolution, err := a.Resolver.Resolve(ctx, msg.TopicInfo.IATA, parsed)
 	if err != nil {
 		a.Log.Warn("resolver failed", "error", err)
-		if updateErr := a.retryStoreWrite(ctx, "observation resolution update", func(ctx context.Context) error {
-			return a.Store.UpdateObservationResolution(ctx, observationID, resolve.StatusUnresolved, fmt.Sprintf("resolver_error: %v", err))
-		}); updateErr != nil {
-			a.Log.Warn("observation resolution update on resolver error failed", "error", updateErr)
-		}
+		a.commitNonEdgeActivity(ctx, job, resolve.StatusUnresolved, fmt.Sprintf("resolver_error: %v", err))
 		return
 	}
 	status, reason := a.edgeDecision(ctx, msg, parsed, resolution, advertNode)
 	if status != resolve.StatusHigh {
-		if err := a.retryStoreWrite(ctx, "observation resolution update", func(ctx context.Context) error {
-			return a.Store.UpdateObservationResolution(ctx, observationID, status, reason)
-		}); err != nil {
-			a.Log.Warn("observation resolution update failed", "error", err)
-		}
+		a.commitNonEdgeActivity(ctx, job, status, reason)
+		return
 	}
 	observation, obsErr := a.Store.ObservationByID(ctx, observationID)
-	observationOK := obsErr == nil
-	if observationOK {
+	if obsErr == nil {
 		observation.MessageSender = decodedMessage.Sender
 		observation.MessageText = decodedMessage.Text
-		a.Hub.Broadcast("packetObservation", observation)
+		observation.ResolutionStatus = status
+		observation.ResolutionReason = reason
 	}
 
-	edge, ok := a.buildEdgeEvent(ctx, msg, parsed, observationID, resolution, advertNode, decodedMessage)
+	edge, ok, status, reason := a.buildEdgeEvent(ctx, msg, parsed, observationID, resolution, advertNode, decodedMessage)
+	if !ok {
+		a.commitNonEdgeActivity(ctx, job, status, reason)
+		return
+	}
 	edge.IngestID = msg.IngestID + ":edge"
-	publicActivitySent := false
 	publicAllowed := a.PublicCache.AllowsIATA(msg.TopicInfo.IATA)
 	if !publicAllowed {
 		a.PublicCache.RecordExcludedIATA(msg.TopicInfo.IATA)
 	}
-	if ok {
-		var stored live.EdgeEvent
-		insertErr := a.retryStoreWrite(ctx, "edge insert", func(ctx context.Context) error {
-			var err error
-			stored, err = a.Store.InsertEdgeEvent(ctx, edge, status, reason)
-			return err
+	var commit store.LiveEdgeCommitResult
+	attempts := 0
+	insertErr := a.retryStoreWriteLane(ctx, writeLaneLiveCore, "live edge and public events", func(ctx context.Context) error {
+		attempts++
+		var err error
+		commit, err = a.Store.CommitLiveEdge(ctx, store.LiveEdgeCommitRequest{
+			Edge: edge, ResolutionStatus: status, ResolutionReason: reason,
+			PublishPublicEvents: publicAllowed && a.Config.PublicEventsEnabled,
+			ActivityDedupeKey:   msg.IngestID + ":edge-activity",
+			RoutePulseDedupeKey: msg.IngestID + ":route-pulse",
+			ReceivedAtMs:        msg.ReceivedAtMs,
 		})
-		if insertErr != nil {
-			a.Log.Warn("edge insert failed", "error", insertErr)
-		} else {
-			a.Hub.Broadcast("edgeAnimation", stored)
-			if publicAllowed {
-				if activity, ok := live.PublicActivityFromEdge(stored); ok {
-					published, apply := a.publishPublicEvent(ctx, "activity", activity, msg.IngestID+":edge-activity")
-					activity = published.(live.PublicActivity)
-					if apply {
-						a.PublicCache.ApplyActivity(activity)
-					}
-					publicActivitySent = true
-				}
-				if pulse, ok := live.PublicRoutePulseFromEdge(stored); ok {
-					published, apply := a.publishPublicEvent(ctx, "routePulse", pulse, msg.IngestID+":route-pulse")
-					pulse = published.(live.PublicRoutePulse)
-					if apply {
-						a.PublicCache.ApplyRoutePulse(pulse)
-					}
-				}
-			}
-		}
+		return err
+	})
+	if insertErr != nil {
+		a.Log.Warn("edge insert failed", "error", insertErr)
+		return
 	}
-	if !publicActivitySent && observationOK && publicAllowed {
-		activity := a.publicActivityFromPacket(ctx, observation, nil)
-		published, apply := a.publishPublicEvent(ctx, "activity", activity, msg.IngestID+":packet-activity")
-		activity = published.(live.PublicActivity)
-		if apply {
+	if obsErr == nil && (commit.EdgeInserted || attempts > 1) {
+		a.Hub.Broadcast("packetObservation", observation)
+	}
+	if commit.EdgeInserted || attempts > 1 {
+		a.Hub.Broadcast("edgeAnimation", commit.Edge)
+	}
+	for i, event := range commit.PublicEvents {
+		if !commit.EventInserted[i] && attempts == 1 {
+			continue
+		}
+		a.broadcastCommittedPublicEvent(event)
+	}
+	if publicAllowed && !a.Config.PublicEventsEnabled && (commit.EdgeInserted || attempts > 1) {
+		if activity, ok := live.PublicActivityFromEdge(commit.Edge); ok {
+			a.PublicHub.BroadcastUnsequenced("activity", activity)
 			a.PublicCache.ApplyActivity(activity)
 		}
+		if pulse, ok := live.PublicRoutePulseFromEdge(commit.Edge); ok {
+			a.PublicHub.BroadcastUnsequenced("routePulse", pulse)
+			a.PublicCache.ApplyRoutePulse(pulse)
+		}
+	}
+	a.enqueueEdgeProjection(ctx, commit.Edge)
+}
+
+func (a *Application) commitNonEdgeActivity(ctx context.Context, job derivedIngestJob, status, reason string) {
+	observation, obsErr := a.Store.ObservationByID(ctx, job.observationID)
+	if obsErr == nil {
+		observation.MessageSender = job.decodedMessage.Sender
+		observation.MessageText = job.decodedMessage.Text
+		observation.ResolutionStatus = status
+		observation.ResolutionReason = reason
+	} else {
+		a.Log.Warn("non-edge observation lookup failed", "observationID", job.observationID, "error", obsErr)
+	}
+	publicAllowed := a.PublicCache.AllowsIATA(job.msg.TopicInfo.IATA)
+	if !publicAllowed {
+		a.PublicCache.RecordExcludedIATA(job.msg.TopicInfo.IATA)
+	}
+	activity := live.PublicActivity{}
+	if obsErr == nil && publicAllowed {
+		activity = a.publicActivityFromPacket(ctx, observation, nil)
+	}
+	var commit store.NonEdgeActivityCommitResult
+	attempts := 0
+	err := a.retryStoreWriteLane(ctx, writeLaneLiveCore, "non-edge resolution and activity", func(writeCtx context.Context) error {
+		attempts++
+		var err error
+		commit, err = a.Store.CommitNonEdgeActivity(writeCtx, store.NonEdgeActivityCommitRequest{
+			ObservationID: job.observationID, ResolutionStatus: status, ResolutionReason: reason,
+			PublishPublicEvent: obsErr == nil && publicAllowed && a.Config.PublicEventsEnabled,
+			Activity:           activity, DedupeKey: job.msg.IngestID + ":packet-activity",
+			ReceivedAtMs: job.msg.ReceivedAtMs,
+		})
+		return err
+	})
+	if err != nil {
+		a.Log.Warn("non-edge resolution/activity commit failed", "observationID", job.observationID, "error", err)
+		return
+	}
+	if obsErr == nil && (commit.EventInserted || attempts > 1 || !a.Config.PublicEventsEnabled || !publicAllowed) {
+		a.Hub.Broadcast("packetObservation", observation)
+	}
+	if commit.EventPresent && (commit.EventInserted || attempts > 1) {
+		a.broadcastCommittedPublicEvent(commit.PublicEvent)
+	}
+	if obsErr == nil && publicAllowed && !a.Config.PublicEventsEnabled {
+		a.PublicCache.ApplyActivity(activity)
+		a.PublicHub.BroadcastUnsequenced("activity", activity)
+	}
+}
+
+func (a *Application) broadcastCommittedPublicEvent(event live.PublicEvent) {
+	data := live.PublicEventDataWithSeq(event.Data, event.Seq)
+	event.Data = data
+	switch item := data.(type) {
+	case live.PublicActivity:
+		a.PublicCache.ApplyActivity(item)
+	case live.PublicRoutePulse:
+		a.PublicCache.ApplyRoutePulse(item)
+	case live.PublicNode:
+		a.PublicCache.ApplyNode(item)
+	}
+	a.PublicHub.BroadcastPublicEvent(event)
+	if event.ReceivedAt > 0 {
+		a.Runtime.RecordBroadcastLatency(time.Since(time.UnixMilli(event.ReceivedAt)))
 	}
 }
 
@@ -352,57 +436,98 @@ func (a *Application) broadcastNodeUpdateForIATA(ctx context.Context, node live.
 	}
 }
 
+type publicEventPublication struct {
+	eventType  string
+	data       any
+	dedupeKey  string
+	receivedAt int64
+}
+
+type publicEventPublicationResult struct {
+	data  any
+	apply bool
+}
+
 // publishPublicEvent returns apply=false only when the dedupe key already
 // exists. Callers must then avoid applying the old event to the live cache.
-// Non-durable fallback broadcasts still return true because they are new live
-// observations even though they cannot advance the recovery cursor.
+// Explicitly non-durable configurations still return true. When durable events
+// are enabled, an insert failure is never broadcast or applied ahead of its
+// recovery cursor.
 func (a *Application) publishPublicEvent(ctx context.Context, eventType string, data any, dedupeKeys ...string) (published any, apply bool) {
+	dedupeKey := ""
+	if len(dedupeKeys) > 0 {
+		dedupeKey = dedupeKeys[0]
+	}
+	results := a.publishPublicEventBatch(ctx, []publicEventPublication{{eventType: eventType, data: data, dedupeKey: dedupeKey}})
+	if len(results) == 0 {
+		return data, false
+	}
+	return results[0].data, results[0].apply
+}
+
+func (a *Application) publishPublicEventBatch(ctx context.Context, publications []publicEventPublication) []publicEventPublicationResult {
+	results := make([]publicEventPublicationResult, len(publications))
+	for i := range publications {
+		results[i] = publicEventPublicationResult{data: publications[i].data, apply: true}
+	}
+	if len(publications) == 0 {
+		return results
+	}
 	if a == nil || a.PublicHub == nil {
-		return data, true
+		return results
 	}
 	if !a.Config.PublicEventsEnabled || a.Store == nil {
-		a.PublicHub.BroadcastUnsequenced(eventType, data)
-		return data, true
+		for _, publication := range publications {
+			a.PublicHub.BroadcastUnsequenced(publication.eventType, publication.data)
+		}
+		return results
 	}
-	event := live.PublicEventFromData(eventType, data)
-	if len(dedupeKeys) > 0 {
-		event.DedupeKey = strings.TrimSpace(dedupeKeys[0])
+	events := make([]live.PublicEvent, len(publications))
+	for i, publication := range publications {
+		events[i] = live.PublicEventFromData(publication.eventType, publication.data)
+		events[i].DedupeKey = strings.TrimSpace(publication.dedupeKey)
+		events[i].ReceivedAt = publication.receivedAt
 	}
-	var stored live.PublicEvent
-	inserted := false
-	err := a.retryStoreWrite(ctx, "public event insert", func(ctx context.Context) error {
+	var stored []live.PublicEvent
+	var inserted []bool
+	err := a.retryStoreWriteLane(ctx, writeLaneLiveCore, "public event batch insert", func(ctx context.Context) error {
 		var err error
-		stored, inserted, err = a.Store.InsertPublicEventOnce(ctx, event)
+		stored, inserted, err = a.Store.InsertPublicEventsOnce(ctx, events)
 		return err
 	})
 	if err != nil {
-		a.Log.Warn("public event insert failed", "event", eventType, "error", err)
-		a.PublicHub.BroadcastUnsequenced(eventType, data)
-		return data, true
+		a.Log.Warn("public event batch insert failed", "count", len(events), "error", err)
+		for i := range results {
+			results[i].apply = false
+		}
+		return results
 	}
-	if !inserted {
-		return data, false
+	for i, event := range stored {
+		if !inserted[i] {
+			results[i].apply = false
+			continue
+		}
+		data := live.PublicEventDataWithSeq(publications[i].data, event.Seq)
+		event.Data = data
+		results[i].data = data
+		a.PublicHub.BroadcastPublicEvent(event)
+		if a.Runtime != nil && event.ReceivedAt > 0 {
+			a.Runtime.RecordBroadcastLatency(time.Since(time.UnixMilli(event.ReceivedAt)))
+		}
 	}
-	event = stored
-	data = live.PublicEventDataWithSeq(data, event.Seq)
-	event.Data = data
-	a.PublicHub.BroadcastPublicEvent(event)
-	return data, true
+	return results
 }
 
 func (a *Application) retryStoreWrite(ctx context.Context, label string, fn func(context.Context) error) error {
+	return a.retryStoreWriteLane(ctx, writeLaneLiveCore, label, fn)
+}
+
+func (a *Application) retryStoreWriteLane(ctx context.Context, lane writeLane, label string, fn func(context.Context) error) error {
 	started := time.Now()
-	delays := []time.Duration{
-		0,
-		50 * time.Millisecond,
-		100 * time.Millisecond,
-		200 * time.Millisecond,
-		400 * time.Millisecond,
-		800 * time.Millisecond,
-	}
 	var err error
 	retries := 0
-	for attempt, delay := range delays {
+	delay := time.Duration(0)
+	for attempt := 0; ; attempt++ {
 		if delay > 0 {
 			select {
 			case <-ctx.Done():
@@ -416,7 +541,7 @@ func (a *Application) retryStoreWrite(ctx context.Context, label string, fn func
 			case <-time.After(delay):
 			}
 		}
-		err = fn(ctx)
+		err = a.coordinateStoreWrite(ctx, lane, fn)
 		if err == nil {
 			if attempt > 0 && a != nil && a.Log != nil {
 				a.Log.Debug("sqlite write recovered after retry", "operation", label, "attempt", attempt+1)
@@ -424,14 +549,38 @@ func (a *Application) retryStoreWrite(ctx context.Context, label string, fn func
 			a.Runtime.RecordStoreWrite(time.Since(started), retries, false, false, false)
 			return nil
 		}
-		if !isSQLiteBusy(err) {
+		if ctx.Err() != nil {
+			if errors.Is(err, context.DeadlineExceeded) && lane == writeLanePrimary {
+				a.Runtime.RecordPrimaryDeadlineFailure()
+			}
+			a.Runtime.RecordStoreWrite(time.Since(started), retries, true, isSQLiteBusy(err), isSQLiteFull(err))
+			return err
+		}
+		if !isTransientStoreWrite(err) {
 			a.Runtime.RecordStoreWrite(time.Since(started), retries, true, false, isSQLiteFull(err))
 			return err
 		}
+		if errors.Is(err, context.DeadlineExceeded) && lane == writeLanePrimary {
+			a.Runtime.RecordPrimaryDeadlineFailure()
+		}
 		retries++
+		if delay == 0 {
+			delay = 50 * time.Millisecond
+		} else {
+			delay = min(delay*2, storeRetryMaxBackoff)
+		}
 	}
-	a.Runtime.RecordStoreWrite(time.Since(started), retries, true, isSQLiteBusy(err), isSQLiteFull(err))
-	return err
+}
+
+func (a *Application) coordinateStoreWrite(ctx context.Context, lane writeLane, fn func(context.Context) error) error {
+	if a != nil && a.writeCoordinator != nil {
+		return a.writeCoordinator.Do(ctx, lane, fn)
+	}
+	return fn(ctx)
+}
+
+func isTransientStoreWrite(err error) bool {
+	return isSQLiteBusy(err) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func isSQLiteBusy(err error) bool {
@@ -483,13 +632,13 @@ func (a *Application) edgeDecision(ctx context.Context, msg imqtt.NormalizedMess
 	return resolve.StatusHigh, "resolved_path_high_confidence"
 }
 
-func (a *Application) buildEdgeEvent(ctx context.Context, msg imqtt.NormalizedMessage, parsed meshcore.ParsedPacket, observationID int64, resolution resolve.Result, advertNode *live.Node, decodedMessage meshcore.DecodedPublicMessage) (live.EdgeEvent, bool) {
+func (a *Application) buildEdgeEvent(ctx context.Context, msg imqtt.NormalizedMessage, parsed meshcore.ParsedPacket, observationID int64, resolution resolve.Result, advertNode *live.Node, decodedMessage meshcore.DecodedPublicMessage) (live.EdgeEvent, bool, string, string) {
 	if a.Config.RequireRSSIOrSNRForEdge && msg.RSSI == nil && msg.SNR == nil {
-		return live.EdgeEvent{}, false
+		return live.EdgeEvent{}, false, resolve.StatusMissingRF, "strict mode requires RSSI or SNR"
 	}
-	endpoints, status, _ := a.routeEndpoints(ctx, msg, parsed, resolution, advertNode)
+	endpoints, status, reason := a.routeEndpoints(ctx, msg, parsed, resolution, advertNode)
 	if status != resolve.StatusHigh {
-		return live.EdgeEvent{}, false
+		return live.EdgeEvent{}, false, status, reason
 	}
 	segments := make([]live.EdgeSegment, 0, len(endpoints)-1)
 	for i := 0; i+1 < len(endpoints); i++ {
@@ -497,8 +646,7 @@ func (a *Application) buildEdgeEvent(ctx context.Context, msg imqtt.NormalizedMe
 		to := endpoints[i+1]
 		dist := live.HaversineKM(from.Lat, from.Lng, to.Lat, to.Lng)
 		if resolve.ShouldRejectDistance(dist, a.Config.MaxUnverifiedEdgeKM, parsed.PayloadType == meshcore.PayloadTrace, a.Config.AllowLongTraceEdges, false) {
-			_ = a.Store.UpdateObservationResolution(ctx, observationID, resolve.StatusDistanceGate, "segment exceeds MAX_UNVERIFIED_EDGE_KM")
-			return live.EdgeEvent{}, false
+			return live.EdgeEvent{}, false, resolve.StatusDistanceGate, "segment exceeds MAX_UNVERIFIED_EDGE_KM"
 		}
 		segments = append(segments, live.EdgeSegment{From: from, To: to, DistanceKM: dist, SNR: msg.SNR, RSSI: msg.RSSI})
 	}
@@ -514,7 +662,7 @@ func (a *Application) buildEdgeEvent(ctx context.Context, msg imqtt.NormalizedMe
 		HeardAt:         msg.HeardAtMs,
 		Segments:        segments,
 		RenderReason:    "resolved_path_high_confidence",
-	}, true
+	}, true, resolve.StatusHigh, "resolved_path_high_confidence"
 }
 
 func (a *Application) messageAnchorEndpoint(ctx context.Context, msg imqtt.NormalizedMessage, parsed meshcore.ParsedPacket, advertNode *live.Node, decodedMessage meshcore.DecodedPublicMessage) *live.MessageAnchor {
@@ -670,6 +818,16 @@ func (a *Application) logCounters(ctx context.Context) {
 				"cache_refresh_latency_ms", snapshot.CacheRefreshLatencyMs,
 				"packet_count_refresh_failures", snapshot.PacketCountRefreshFailures,
 				"packet_count_refresh_latency_ms", snapshot.PacketCountRefreshLatencyMs,
+				"primary_queue_oldest_age_ms", snapshot.PrimaryQueueOldestAgeMs,
+				"live_projection_oldest_age_ms", snapshot.LiveProjectionOldestAgeMs,
+				"writer_primary_wait_ms", snapshot.WriterPrimaryWaitMs,
+				"writer_live_core_wait_ms", snapshot.WriterLiveCoreWaitMs,
+				"writer_background_wait_ms", snapshot.WriterBackgroundWaitMs,
+				"primary_deadline_failures", snapshot.PrimaryDeadlineFailures,
+				"store_write_failures", snapshot.StoreWriteFailures,
+				"derived_projection_failures", snapshot.DerivedProjectionFailures,
+				"last_broadcast_latency_ms", snapshot.LastBroadcastLatencyMs,
+				"max_broadcast_latency_ms", snapshot.MaxBroadcastLatencyMs,
 			)
 		}
 	}
@@ -689,6 +847,7 @@ func (a *Application) runtimeCounterLogSnapshot(now time.Time) runtimeCounterLog
 		out.MQTTMessagesTotal = mqtt.TotalMessages
 		out.MQTTMessagesDropped = mqtt.DroppedMessages
 		out.MQTTLastMessageAgeMs = mqtt.LastMessageAgeMs
+		out.PrimaryQueueOldestAgeMs = mqtt.OldestQueueItemAgeMs
 	}
 	if a.Hub != nil {
 		out.WSClients = a.Hub.Stats().Clients
@@ -722,8 +881,25 @@ func (a *Application) runtimeCounterLogSnapshot(now time.Time) runtimeCounterLog
 		out.CacheRefreshLatencyMs = runtime.CacheRefreshLastLatencyMs
 		out.PacketCountRefreshFailures = runtime.PacketCountRefreshFailures
 		out.PacketCountRefreshLatencyMs = runtime.PacketCountRefreshLastLatencyMs
+		out.PrimaryQueueOldestAgeMs = max(out.PrimaryQueueOldestAgeMs, currentRuntimeQueueAgeMs(now.UnixMilli(), runtime.WriterPrimaryOldestAtMs))
+		out.LiveProjectionOldestAgeMs = max(currentRuntimeQueueAgeMs(now.UnixMilli(), runtime.DerivedOldestAtMs), currentRuntimeQueueAgeMs(now.UnixMilli(), runtime.WriterLiveCoreOldestAtMs), currentRuntimeQueueAgeMs(now.UnixMilli(), runtime.DerivedProjectionOldestAtMs))
+		out.WriterPrimaryWaitMs = runtime.WriterPrimaryLastWaitMs
+		out.WriterLiveCoreWaitMs = runtime.WriterLiveCoreLastWaitMs
+		out.WriterBackgroundWaitMs = runtime.WriterBackgroundLastWaitMs
+		out.PrimaryDeadlineFailures = runtime.PrimaryDeadlineFailures
+		out.StoreWriteFailures = runtime.StoreWriteFailures
+		out.DerivedProjectionFailures = runtime.DerivedProjectionFailures
+		out.LastBroadcastLatencyMs = runtime.LastBroadcastLatencyMs
+		out.MaxBroadcastLatencyMs = runtime.MaxBroadcastLatencyMs
 	}
 	return out
+}
+
+func currentRuntimeQueueAgeMs(nowMs, queuedAtMs int64) int64 {
+	if queuedAtMs <= 0 {
+		return 0
+	}
+	return max(nowMs-queuedAtMs, 0)
 }
 
 func (a *Application) RefreshPublicStateCache(ctx context.Context) error {
@@ -872,12 +1048,17 @@ func (a *Application) solarFetchLoop(ctx context.Context) {
 				continue
 			}
 			a.solarSnapshot.Store(&cond)
-			if _, err := a.Store.InsertSolarSnapshot(ctx, store.SolarSnapshot{
-				FetchedAtMs: cond.FetchedAt, KpIndex: cond.KpIndex, SolarFluxSfu: cond.SolarFluxSFU, GeomagActivity: cond.GeomagActivity,
+			if err := a.retryStoreWriteLane(ctx, writeLaneBackground, "solar snapshot insert", func(writeCtx context.Context) error {
+				_, err := a.Store.InsertSolarSnapshot(writeCtx, store.SolarSnapshot{
+					FetchedAtMs: cond.FetchedAt, KpIndex: cond.KpIndex, SolarFluxSfu: cond.SolarFluxSFU, GeomagActivity: cond.GeomagActivity,
+				})
+				return err
 			}); err != nil {
 				a.Log.Warn("solar insert failed", "error", err)
 			}
-			_ = a.Store.TrimSolarSnapshots(ctx, 288)
+			_ = a.retryStoreWriteLane(ctx, writeLaneBackground, "solar snapshot trim", func(writeCtx context.Context) error {
+				return a.Store.TrimSolarSnapshots(writeCtx, 288)
+			})
 			return
 		}
 	}
@@ -1062,7 +1243,12 @@ func (a *Application) backfillPublicPacketPathsOnce(ctx context.Context, window 
 	start := time.Now()
 	backfillCtx, cancel := context.WithTimeout(ctx, publicBackfillBatchTimeout)
 	defer cancel()
-	result, err := a.Store.BackfillPublicPacketPaths(backfillCtx, now.Add(-window).UnixMilli(), now.UnixMilli(), batch)
+	var result store.PublicPacketPathBackfillResult
+	err := a.coordinateStoreWrite(backfillCtx, writeLaneBackground, func(writeCtx context.Context) error {
+		var err error
+		result, err = a.Store.BackfillPublicPacketPaths(writeCtx, now.Add(-window).UnixMilli(), now.UnixMilli(), batch)
+		return err
+	})
 	if err != nil {
 		a.Runtime.RecordPacketPathBackfill(time.Since(start), true, 0, 0, 0, 0, 0, true, true)
 		return true, err
@@ -1086,7 +1272,12 @@ func (a *Application) backfillPublicRouteSummariesOnce(ctx context.Context, wind
 	now := time.Now()
 	backfillCtx, cancel := context.WithTimeout(ctx, publicBackfillBatchTimeout)
 	defer cancel()
-	result, err := a.Store.BackfillPublicRouteSummaries(backfillCtx, now.Add(-window).UnixMilli(), now.UnixMilli(), batch)
+	var result store.PublicRouteSummaryBackfillResult
+	err := a.coordinateStoreWrite(backfillCtx, writeLaneBackground, func(writeCtx context.Context) error {
+		var err error
+		result, err = a.Store.BackfillPublicRouteSummaries(writeCtx, now.Add(-window).UnixMilli(), now.UnixMilli(), batch)
+		return err
+	})
 	if err != nil {
 		return true, err
 	}
@@ -1173,7 +1364,10 @@ func (a *Application) refreshPropagationOnce(ctx context.Context) {
 			a.Log.Warn("propagation weather fetch failed", "packet", packet.ID, "error", fetchErr)
 		} else {
 			weather = &sample
-			if _, insertErr := a.Store.InsertPropagationWeatherSnapshot(queryCtx, propagationWeatherSnapshot(sample)); insertErr != nil {
+			if insertErr := a.retryStoreWriteLane(queryCtx, writeLaneBackground, "propagation weather snapshot", func(writeCtx context.Context) error {
+				_, err := a.Store.InsertPropagationWeatherSnapshot(writeCtx, propagationWeatherSnapshot(sample))
+				return err
+			}); insertErr != nil {
 				a.Log.Warn("propagation weather snapshot insert failed", "error", insertErr)
 			}
 		}
@@ -1185,7 +1379,9 @@ func (a *Application) refreshPropagationOnce(ctx context.Context) {
 		if !ok {
 			continue
 		}
-		if err := a.Store.UpsertPropagationEvent(queryCtx, event); err != nil {
+		if err := a.retryStoreWriteLane(queryCtx, writeLaneBackground, "propagation event upsert", func(writeCtx context.Context) error {
+			return a.Store.UpsertPropagationEvent(writeCtx, event)
+		}); err != nil {
 			a.Log.Warn("propagation event insert failed", "event", event.ID, "error", err)
 			continue
 		}
@@ -1325,9 +1521,8 @@ func redactedURL(in string) string {
 const (
 	retentionPruneInitialDelay          = 30 * time.Second
 	retentionPruneInterval              = time.Minute
-	retentionPruneCycleBudget           = 45 * time.Second
-	retentionPruneBatchPause            = 10 * time.Millisecond
-	retentionPruneMaxRowsPerCycle int64 = 250_000
+	retentionPruneCycleBudget           = 55 * time.Second
+	retentionPruneMaxRowsPerCycle int64 = 2_000_000
 
 	// MeshCore permits up to 63 path hops. Allowing one route-summary row per
 	// segment plus the observation, edge/path projections, packet, and as many as
@@ -1403,7 +1598,12 @@ func (a *Application) pruneLoop(ctx context.Context) {
 				)
 				return
 			}
-			step, err := pruner.Step(cycleCtx)
+			var step store.RetentionPruneStep
+			err := a.coordinateStoreWrite(cycleCtx, writeLaneBackground, func(writeCtx context.Context) error {
+				var err error
+				step, err = pruner.Step(writeCtx)
+				return err
+			})
 			if err != nil {
 				if cycleCtx.Err() != nil {
 					a.Log.Warn("retention cleanup reached its bounded time budget", "rowsDeleted", rowsDeleted, "steps", steps)
@@ -1418,16 +1618,10 @@ func (a *Application) pruneLoop(ctx context.Context) {
 				a.Log.Debug("retention cleanup complete", "rowsDeleted", rowsDeleted, "steps", steps, "durationMs", time.Since(started).Milliseconds())
 				return
 			}
-			if step.RowsDeleted > 0 {
-				timer := time.NewTimer(retentionPruneBatchPause)
-				select {
-				case <-cycleCtx.Done():
-					timer.Stop()
-					a.Log.Warn("retention cleanup reached its bounded time budget", "rowsDeleted", rowsDeleted, "steps", steps)
-					return
-				case <-timer.C:
-				}
-			}
+			// Every step is already a 100-row background-lane transaction. The
+			// coordinator rechecks primary/live-core work before admitting the
+			// next step, so a fixed sleep only delays cleanup without improving
+			// live-lane fairness.
 		}
 		a.Log.Info("retention cleanup reached its bounded row budget", "rowsDeleted", rowsDeleted, "steps", steps, "durationMs", time.Since(started).Milliseconds())
 	}
@@ -1481,14 +1675,18 @@ func (a *Application) maintenanceLoop(ctx context.Context) {
 			}
 			maintenanceCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			if time.Since(lastOptimize) >= 24*time.Hour {
-				if err := a.Store.Optimize(maintenanceCtx, false); err != nil {
+				if err := a.coordinateStoreWrite(maintenanceCtx, writeLaneBackground, func(writeCtx context.Context) error {
+					return a.Store.Optimize(writeCtx, false)
+				}); err != nil {
 					a.Log.Warn("database optimize failed", "error", err)
 					cancel()
 					continue
 				}
 				lastOptimize = time.Now()
 			}
-			if err := a.Store.IncrementalVacuum(maintenanceCtx, 64); err != nil {
+			if err := a.coordinateStoreWrite(maintenanceCtx, writeLaneBackground, func(writeCtx context.Context) error {
+				return a.Store.IncrementalVacuum(writeCtx, 64)
+			}); err != nil {
 				a.Log.Warn("database incremental vacuum failed", "error", err)
 			} else {
 				a.Log.Info("database maintenance complete")

@@ -455,6 +455,11 @@ export interface RuntimeHealth {
   datasetState?: 'fresh_start' | 'warming' | 'live' | string;
   datasetStartedAt?: number;
   storagePressureState?: 'ok' | 'warn' | 'critical' | string;
+  primaryIngestState?: string;
+  liveProjectionState?: string;
+  primaryQueueOldestAgeMs?: number;
+  liveProjectionOldestAgeMs?: number;
+  lastBroadcastLatencyMs?: number;
 }
 
 export type Health = RuntimeHealth;

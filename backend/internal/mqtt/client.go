@@ -15,6 +15,16 @@ import (
 
 type Handler func(context.Context, NormalizedMessage)
 
+type HandleOutcome int
+
+const (
+	HandleProcessed HandleOutcome = iota
+	HandlePermanentReject
+	HandleFailed
+)
+
+type OutcomeHandler func(context.Context, NormalizedMessage) HandleOutcome
+
 type queuedMessage struct {
 	message    NormalizedMessage
 	enqueuedAt int64
@@ -33,6 +43,7 @@ type Client struct {
 	cfg                   ClientConfig
 	log                   *slog.Logger
 	handler               Handler
+	outcomeHandler        OutcomeHandler
 	queue                 chan queuedMessage
 	queueAgeMu            sync.Mutex
 	queueTimes            []int64
@@ -41,6 +52,8 @@ type Client struct {
 	total                 atomic.Int64
 	accepted              atomic.Int64
 	processed             atomic.Int64
+	permanentRejected     atomic.Int64
+	failed                atomic.Int64
 	dropped               atomic.Int64
 	reconnects            atomic.Int64
 	malformed             atomic.Int64
@@ -68,6 +81,12 @@ func NewClient(cfg ClientConfig, log *slog.Logger, handler Handler) *Client {
 		queue:         make(chan queuedMessage, cfg.QueueSize),
 		newPahoClient: paho.NewClient,
 	}
+}
+
+func NewClientWithOutcome(cfg ClientConfig, log *slog.Logger, handler OutcomeHandler) *Client {
+	client := NewClient(cfg, log, nil)
+	client.outcomeHandler = handler
+	return client
 }
 
 func (c *Client) Start(ctx context.Context) error {
@@ -276,6 +295,9 @@ func (c *Client) SubmitNormalized(normalized NormalizedMessage) bool {
 	if normalized.IngestID == "" {
 		normalized.IngestID = uuid.NewString()
 	}
+	if normalized.ReceivedAtMs <= 0 {
+		normalized.ReceivedAtMs = time.Now().UnixMilli()
+	}
 	c.total.Add(1)
 	c.lastMessageAt.Store(normalized.HeardAtMs)
 	now := time.Now().UnixMilli()
@@ -306,15 +328,29 @@ func (c *Client) dispatch(ctx context.Context) {
 			c.queueAgeMu.Lock()
 			c.popQueueTimestampLocked()
 			c.queueAgeMu.Unlock()
+			outcome := HandleProcessed
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
 						c.log.Error("mqtt dispatch panic", "panic", r)
+						outcome = HandleFailed
 					}
 				}()
-				c.handler(ctx, queued.message)
+				if c.outcomeHandler != nil {
+					outcome = c.outcomeHandler(ctx, queued.message)
+				} else if c.handler != nil {
+					c.handler(ctx, queued.message)
+				}
 			}()
-			c.processed.Add(1)
+			switch outcome {
+			case HandleProcessed:
+				c.processed.Add(1)
+			case HandlePermanentReject:
+				c.permanentRejected.Add(1)
+				c.processed.Add(1)
+			default:
+				c.failed.Add(1)
+			}
 		}
 	}
 }
@@ -343,6 +379,8 @@ type Status struct {
 	TotalMessages        int64 `json:"totalMessages"`
 	AcceptedMessages     int64 `json:"acceptedMessages"`
 	ProcessedMessages    int64 `json:"processedMessages"`
+	PermanentRejected    int64 `json:"permanentRejected"`
+	FailedMessages       int64 `json:"failedMessages"`
 	DroppedMessages      int64 `json:"droppedMessages"`
 	Reconnects           int64 `json:"reconnects"`
 	MalformedTopics      int64 `json:"malformedTopics"`
@@ -391,6 +429,8 @@ func (c *Client) Status(now time.Time) Status {
 		TotalMessages:        c.TotalMessages(),
 		AcceptedMessages:     c.accepted.Load(),
 		ProcessedMessages:    c.processed.Load(),
+		PermanentRejected:    c.permanentRejected.Load(),
+		FailedMessages:       c.failed.Load(),
 		DroppedMessages:      c.DroppedMessages(),
 		Reconnects:           c.reconnects.Load(),
 		MalformedTopics:      c.malformed.Load(),

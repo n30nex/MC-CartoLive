@@ -1,7 +1,7 @@
 param(
   [string]$BaseUrl = "https://carto.canadaverse.org",
   [string]$MetricsUrl = "http://127.0.0.1:39090/metrics",
-  [int]$DurationMinutes = 60,
+  [int]$DurationMinutes = 5,
   [int]$IntervalSeconds = 60,
   [int]$MaxBadSamples = 3,
   [string]$OutFile = ""

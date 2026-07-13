@@ -141,6 +141,8 @@ export default function PerfPanel({ onClose }: PerfPanelProps) {
           <PerfMetric label="Ready" value={formatReady(ready?.ready)} tone={readyTone(ready?.ready)} />
           <PerfMetric label="DB" value={formatReady(health?.dbReady)} tone={readyTone(health?.dbReady)} />
           <PerfMetric label="Public state" value={formatReady(ready?.publicStateReady ?? health?.publicStateReady)} tone={readyTone(ready?.publicStateReady ?? health?.publicStateReady)} />
+          <PerfMetric label="Primary ingest" value={ready?.primaryIngestState ?? health?.primaryIngestState ?? 'unknown'} tone={toneForState(ready?.primaryIngestState ?? health?.primaryIngestState)} />
+          <PerfMetric label="Writer wait" value={formatAge(ready?.primaryQueueOldestAgeMs ?? health?.primaryQueueOldestAgeMs)} tone={freshnessTone(ready?.primaryQueueOldestAgeMs ?? health?.primaryQueueOldestAgeMs, 500)} />
         </PerfLiveCard>
 
         <PerfLiveCard icon={<MonitorSmartphone size={18} />} label="Frontend" status={frontendStatus.value} tone={frontendStatus.tone}>
@@ -159,6 +161,9 @@ export default function PerfPanel({ onClose }: PerfPanelProps) {
           <PerfMetric label="Dataset" value={ready?.datasetState ?? health?.datasetState ?? 'unknown'} tone={toneForDataset(ready?.datasetState ?? health?.datasetState)} />
           <PerfMetric label="Packets" value={formatCount(state?.stats.packets)} />
           <PerfMetric label="Routes" value={formatCount(state?.stats.activeRoutes)} />
+          <PerfMetric label="Projection" value={ready?.liveProjectionState ?? health?.liveProjectionState ?? 'unknown'} tone={toneForState(ready?.liveProjectionState ?? health?.liveProjectionState)} />
+          <PerfMetric label="Projection wait" value={formatAge(ready?.liveProjectionOldestAgeMs ?? health?.liveProjectionOldestAgeMs)} tone={freshnessTone(ready?.liveProjectionOldestAgeMs ?? health?.liveProjectionOldestAgeMs, 1_000)} />
+          <PerfMetric label="Broadcast" value={formatAge(ready?.lastBroadcastLatencyMs ?? health?.lastBroadcastLatencyMs)} tone={freshnessTone(ready?.lastBroadcastLatencyMs ?? health?.lastBroadcastLatencyMs, 1_000)} />
         </PerfLiveCard>
       </div>
 

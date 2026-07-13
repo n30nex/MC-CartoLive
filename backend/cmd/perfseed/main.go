@@ -20,16 +20,38 @@ import (
 )
 
 type databaseStats struct {
-	ObservationRows    int64 `json:"observationRows"`
-	NonEmptyIngestIDs  int64 `json:"nonEmptyIngestIds"`
-	UniqueIngestIDs    int64 `json:"uniqueIngestIds"`
-	PacketRows         int64 `json:"packetRows"`
-	PublicPathRows     int64 `json:"publicPathRows"`
-	PublicEventRows    int64 `json:"publicEventRows"`
-	SchemaVersion      int   `json:"schemaVersion"`
-	DatabaseBytes      int64 `json:"databaseBytes"`
-	WriteAheadLogBytes int64 `json:"writeAheadLogBytes"`
-	SeedDurationMillis int64 `json:"seedDurationMs,omitempty"`
+	ObservationRows        int64 `json:"observationRows"`
+	ExpiredObservationRows int64 `json:"expiredObservationRows"`
+	NonEmptyIngestIDs      int64 `json:"nonEmptyIngestIds"`
+	UniqueIngestIDs        int64 `json:"uniqueIngestIds"`
+	PacketRows             int64 `json:"packetRows"`
+	PublicPathRows         int64 `json:"publicPathRows"`
+	PublicEventRows        int64 `json:"publicEventRows"`
+	EdgeRows               int64 `json:"edgeRows"`
+	MultiHopEdgeRows       int64 `json:"multiHopEdgeRows"`
+	NodeRows               int64 `json:"nodeRows"`
+	ObserverStatusRows     int64 `json:"observerStatusRows"`
+	PublicRouteRows        int64 `json:"publicRouteRows"`
+	PublicPathFTSRows      int64 `json:"publicPathFtsRows"`
+	SchemaVersion          int   `json:"schemaVersion"`
+	DatabaseBytes          int64 `json:"databaseBytes"`
+	WriteAheadLogBytes     int64 `json:"writeAheadLogBytes"`
+	SeedDurationMillis     int64 `json:"seedDurationMs,omitempty"`
+}
+
+type perfTopologyNode struct {
+	id, prefix, name, role, iata string
+	lat, lng                     float64
+}
+
+type perfTopologyRoute struct {
+	id       string
+	from, to perfTopologyNode
+	distance float64
+}
+
+func perfPublicKey(prefix string) string {
+	return strings.ToUpper(prefix) + strings.Repeat("0", 64-len(prefix))
 }
 
 func main() {
@@ -38,6 +60,9 @@ func main() {
 	observations := flag.Int64("observations", 5_000_000, "synthetic packet_observation rows")
 	paths := flag.Int64("paths", 10_000, "synthetic public packet paths")
 	events := flag.Int64("events", 20_000, "retained public events")
+	expiredObservations := flag.Int64("expired-observations", -1, "observation rows older than the retention window; -1 seeds 10% capped at 250000")
+	expiredAge := flag.Duration("expired-age", 30*24*time.Hour, "age of the controlled expired observation cohort")
+	topology := flag.Bool("topology", true, "seed resolvable observer/forwarder nodes plus one-hop and multi-hop routes")
 	fresh := flag.Bool("fresh", false, "remove the explicitly named gate database before seeding")
 	flag.Parse()
 
@@ -53,6 +78,19 @@ func main() {
 	if *paths > *observations {
 		fatalf("public path rows (%d) cannot exceed observation rows (%d)", *paths, *observations)
 	}
+	if *expiredObservations < -1 {
+		fatalf("expired observation count cannot be below -1")
+	}
+	expiredCount := *expiredObservations
+	if expiredCount < 0 {
+		expiredCount = min(*observations/10, 250_000)
+	}
+	if expiredCount > *observations {
+		fatalf("expired observation rows (%d) cannot exceed observation rows (%d)", expiredCount, *observations)
+	}
+	if *expiredAge < 24*time.Hour {
+		fatalf("-expired-age must be at least 24h")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Minute)
 	defer cancel()
@@ -61,7 +99,7 @@ func main() {
 		if *fresh {
 			removeDatabaseFiles(*dbPath)
 		}
-		if err := seed(ctx, *dbPath, *observations, *paths, *events); err != nil {
+		if err := seed(ctx, *dbPath, *observations, *paths, *events, expiredCount, *expiredAge, *topology); err != nil {
 			fatalf("seed performance database: %v", err)
 		}
 	}
@@ -79,7 +117,7 @@ func main() {
 	}
 }
 
-func seed(ctx context.Context, path string, observations, paths, events int64) error {
+func seed(ctx context.Context, path string, observations, paths, events, expiredObservations int64, expiredAge time.Duration, topology bool) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -114,29 +152,42 @@ INSERT OR REPLACE INTO packets (
 	if observations > 0 {
 		query := numberCTE(observations) + `
 INSERT INTO packet_observations (
-  ingest_id, packet_hash, topic, iata, observer_public_key, observer_name, raw_json,
+  id, ingest_id, packet_hash, topic, iata, observer_public_key, observer_name, raw_json,
   heard_at_ms, rssi, snr, score, route_type, route_type_name, payload_type,
   payload_type_name, payload_version, hash_size, hop_count, path_hex, payload_hex,
   resolution_status, resolution_reason, invalid_for_map, summary, message_sender,
   message_text, created_at_ms
 )
-SELECT '', ?, ?, 'YYZ', ?, 'Performance Observer', '{}',
-  ? - (n % ?), -72.0, 7.0, 1.0, 9, 'flood', 1, 'TXT', 1, 1, 1,
+SELECT n + 1, '', ?, ?, 'YYZ', ?, 'Performance Observer', '{}',
+	CASE WHEN n >= ? THEN ? - (n % 86400000) ELSE ? - (n % ?) END,
+	-72.0, 7.0, 1.0, 9, 'flood', 1, 'TXT', 1, 1,
+	CASE WHEN (n % 3) = 0 THEN 1 ELSE 2 END,
   'A1', '4869', 'high', 'synthetic_load_gate', 0, 'synthetic performance row',
-  'Performance Gate', 'Synthetic performance message', ? - (n % ?)
+	'Performance Gate', 'Synthetic performance message',
+	CASE WHEN n >= ? THEN ? - (n % 86400000) ELSE ? - (n % ?) END
 FROM numbers WHERE n < ?`
 		window := int64(6 * 24 * time.Hour / time.Millisecond)
+		expiredStart := observations - expiredObservations
+		expiredAt := now - expiredAge.Milliseconds()
 		if _, err := db.ExecContext(ctx, query,
 			strings.Repeat("A", 64),
 			"meshcore/YYZ/"+strings.Repeat("B", 64)+"/packets",
-			strings.Repeat("B", 64), now, window, now, window, observations,
+			strings.Repeat("C", 64),
+			expiredStart, expiredAt, now, window,
+			expiredStart, expiredAt, now, window,
+			observations,
 		); err != nil {
 			return fmt.Errorf("insert observations: %w", err)
 		}
 	}
 
 	if paths > 0 {
-		edgeSegments := `[{"from":{"nodeId":"node-perf-a","name":"Performance A","lat":43.6532,"lng":-79.3832,"pathHash3":"A1B2C3"},"to":{"nodeId":"node-perf-b","name":"Performance B","lat":43.7000,"lng":-79.2000,"pathHash3":"D4E5F6"},"distanceKm":15.4}]`
+		edgeSegmentsOne := `[{"from":{"nodeId":"node-perf-aa","name":"Toronto Core","lat":43.6532,"lng":-79.3832,"pathHash3":"AA0000"},"to":{"nodeId":"node-perf-bb","name":"Lakeshore Relay","lat":43.7000,"lng":-79.2000,"pathHash3":"BB0000"},"distanceKm":15.4}]`
+		edgeSegmentsMultiA := `[{"from":{"nodeId":"node-perf-aa","name":"Toronto Core","lat":43.6532,"lng":-79.3832,"pathHash3":"AA0000"},"to":{"nodeId":"node-perf-bb","name":"Lakeshore Relay","lat":43.7000,"lng":-79.2000,"pathHash3":"BB0000"},"distanceKm":15.4},{"from":{"nodeId":"node-perf-bb","name":"Lakeshore Relay","lat":43.7000,"lng":-79.2000,"pathHash3":"BB0000"},"to":{"nodeId":"node-perf-cc","name":"YYZ Observer","lat":43.6410,"lng":-79.3890,"pathHash3":"CC0000"},"distanceKm":17.1}]`
+		edgeSegmentsMultiB := `[{"from":{"nodeId":"node-perf-dd","name":"Ottawa Core","lat":45.4215,"lng":-75.6972,"pathHash3":"DD0000"},"to":{"nodeId":"node-perf-ee","name":"Gatineau Relay","lat":45.4765,"lng":-75.7013,"pathHash3":"EE0000"},"distanceKm":6.1},{"from":{"nodeId":"node-perf-ee","name":"Gatineau Relay","lat":45.4765,"lng":-75.7013,"pathHash3":"EE0000"},"to":{"nodeId":"node-perf-ff","name":"YOW Observer","lat":45.3500,"lng":-75.7500,"pathHash3":"FF0000"},"distanceKm":14.6}]`
+		if !topology {
+			edgeSegmentsMultiA, edgeSegmentsMultiB = edgeSegmentsOne, edgeSegmentsOne
+		}
 		query := numberCTE(paths) + `
 INSERT INTO live_edge_events (
   id, ingest_id, packet_hash, observation_id, payload_type, payload_type_name,
@@ -144,14 +195,17 @@ INSERT INTO live_edge_events (
   render_reason, created_at_ms
 )
 SELECT n + 1, '', ?, n + 1, 1, 'TXT', 'Performance Gate',
-  'Synthetic performance message', '', ? - (n % 3600000), ?,
+	'Synthetic performance message', '', ? - (n % 3600000),
+	CASE (n % 3) WHEN 0 THEN ? WHEN 1 THEN ? ELSE ? END,
   'resolved_path_high_confidence', ?
 FROM numbers WHERE n < ?`
-		if _, err := db.ExecContext(ctx, query, strings.Repeat("A", 64), now, edgeSegments, now, paths); err != nil {
+		if _, err := db.ExecContext(ctx, query, strings.Repeat("A", 64), now, edgeSegmentsOne, edgeSegmentsMultiA, edgeSegmentsMultiB, now, paths); err != nil {
 			return fmt.Errorf("insert edge events: %w", err)
 		}
 
-		publicSegments := `[{"routeId":"perf-route","from":{"nodeId":"node-perf-a","label":"Performance A","lat":43.6532,"lng":-79.3832,"pathHash3":"A1B2C3"},"to":{"nodeId":"node-perf-b","label":"Performance B","lat":43.7000,"lng":-79.2000,"pathHash3":"D4E5F6"},"distanceKm":15.4}]`
+		publicSegmentsOne := strings.ReplaceAll(edgeSegmentsOne, `"name":`, `"label":`)
+		publicSegmentsMultiA := strings.ReplaceAll(edgeSegmentsMultiA, `"name":`, `"label":`)
+		publicSegmentsMultiB := strings.ReplaceAll(edgeSegmentsMultiB, `"name":`, `"label":`)
 		query = numberCTE(paths) + `
 INSERT INTO public_packet_paths (
   edge_id, observation_id, mappable, heard_at_ms, iata, region, payload_type_name,
@@ -159,42 +213,88 @@ INSERT INTO public_packet_paths (
   route_ids_json, endpoint_labels_json, segments_json, search_text, created_at_ms
 )
 SELECT n + 1, n + 1, 1, ? - (n % 3600000), 'YYZ', 'YYZ', 'TXT',
-  'Performance Gate', 'Synthetic performance message', 1, 1, 15.4,
-  '["perf-route"]', '["Performance A","Performance B"]', ?,
+	'Performance Gate', 'Synthetic performance message',
+	CASE WHEN (n % 3) = 0 THEN 1 ELSE 2 END,
+	CASE WHEN (n % 3) = 0 THEN 1 ELSE 2 END,
+	CASE WHEN (n % 3) = 0 THEN 15.4 WHEN (n % 3) = 1 THEN 32.5 ELSE 20.7 END,
+	CASE (n % 3) WHEN 0 THEN '["perf-route-ab"]' WHEN 1 THEN '["perf-route-ab","perf-route-bc"]' ELSE '["perf-route-de","perf-route-ef"]' END,
+	CASE (n % 3) WHEN 0 THEN '["Toronto Core","Lakeshore Relay"]' WHEN 1 THEN '["Toronto Core","Lakeshore Relay","YYZ Observer"]' ELSE '["Ottawa Core","Gatineau Relay","YOW Observer"]' END,
+	CASE (n % 3) WHEN 0 THEN ? WHEN 1 THEN ? ELSE ? END,
   'performance gate synthetic route yyz txt', ?
 FROM numbers WHERE n < ?`
-		if _, err := db.ExecContext(ctx, query, now, publicSegments, now, paths); err != nil {
+		if _, err := db.ExecContext(ctx, query, now, publicSegmentsOne, publicSegmentsMultiA, publicSegmentsMultiB, now, paths); err != nil {
 			return fmt.Errorf("insert public paths: %w", err)
 		}
 	}
 
-	if _, err := db.ExecContext(ctx, `
+	topologyNodes := []perfTopologyNode{
+		{id: "node-perf-aa", prefix: "AA", name: "Toronto Core", role: "repeater", iata: "YYZ", lat: 43.6532, lng: -79.3832},
+		{id: "node-perf-bb", prefix: "BB", name: "Lakeshore Relay", role: "repeater", iata: "YYZ", lat: 43.7000, lng: -79.2000},
+		{id: "node-perf-cc", prefix: "CC", name: "YYZ Observer", role: "observer", iata: "YYZ", lat: 43.6410, lng: -79.3890},
+	}
+	if topology {
+		topologyNodes = append(topologyNodes,
+			perfTopologyNode{id: "node-perf-dd", prefix: "DD", name: "Ottawa Core", role: "repeater", iata: "YOW", lat: 45.4215, lng: -75.6972},
+			perfTopologyNode{id: "node-perf-ee", prefix: "EE", name: "Gatineau Relay", role: "repeater", iata: "YOW", lat: 45.4765, lng: -75.7013},
+			perfTopologyNode{id: "node-perf-ff", prefix: "FF", name: "YOW Observer", role: "observer", iata: "YOW", lat: 45.3500, lng: -75.7500},
+		)
+	}
+	for _, node := range topologyNodes {
+		publicKey := perfPublicKey(node.prefix)
+		if _, err := db.ExecContext(ctx, `
 INSERT OR REPLACE INTO nodes (
   node_id, public_key, name, node_type, role, latitude, longitude, location_source,
   first_seen_ms, last_seen_ms, observation_count, supports_multibyte
-) VALUES
-  ('node-perf-a', ?, 'Performance A', 2, 'repeater', 43.6532, -79.3832, 'synthetic', ?, ?, ?, 'unknown'),
-  ('node-perf-b', ?, 'Performance B', 2, 'repeater', 43.7000, -79.2000, 'synthetic', ?, ?, ?, 'unknown')`,
-		strings.Repeat("C", 64), now-86_400_000, now, observations,
-		strings.Repeat("D", 64), now-86_400_000, now, observations); err != nil {
-		return err
-	}
-	if _, err := db.ExecContext(ctx, `
+) VALUES (?, ?, ?, 2, ?, ?, ?, 'synthetic', ?, ?, ?, 'unknown')`,
+			node.id, publicKey, node.name, node.role, node.lat, node.lng, now-86_400_000, now, observations); err != nil {
+			return err
+		}
+		if _, err := db.ExecContext(ctx, `
 INSERT OR REPLACE INTO node_iatas (public_key, iata, first_seen_ms, last_seen_ms, observation_count)
-VALUES (?, 'YYZ', ?, ?, ?), (?, 'YYZ', ?, ?, ?)`,
-		strings.Repeat("C", 64), now-86_400_000, now, observations,
-		strings.Repeat("D", 64), now-86_400_000, now, observations); err != nil {
-		return err
+VALUES (?, ?, ?, ?, ?)`, publicKey, node.iata, now-86_400_000, now, observations); err != nil {
+			return err
+		}
+		if node.role == "repeater" {
+			if _, err := db.ExecContext(ctx, `
+INSERT OR REPLACE INTO node_short_ids (public_key, iata, hash_size, prefix_hex, role, updated_at_ms)
+VALUES (?, ?, 1, ?, ?, ?)`, publicKey, node.iata, node.prefix, node.role, now); err != nil {
+				return err
+			}
+		} else {
+			statusJSON := fmt.Sprintf(`{"origin":%q,"role":"observer","latitude":%.4f,"longitude":%.4f}`, node.name, node.lat, node.lng)
+			if _, err := db.ExecContext(ctx, `
+INSERT OR REPLACE INTO observers (public_key, iata, name, latitude, longitude, last_seen_ms, packet_count, status_json)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, publicKey, node.iata, node.name, node.lat, node.lng, now, observations, statusJSON); err != nil {
+				return err
+			}
+			if _, err := db.ExecContext(ctx, `
+INSERT INTO observer_status (public_key, iata, status_json, received_at_ms) VALUES (?, ?, ?, ?)`, publicKey, node.iata, statusJSON, now); err != nil {
+				return err
+			}
+		}
 	}
-	if _, err := db.ExecContext(ctx, `
+	routes := []perfTopologyRoute{
+		{id: "perf-route-ab", from: topologyNodes[0], to: topologyNodes[1], distance: 15.4},
+		{id: "perf-route-bc", from: topologyNodes[1], to: topologyNodes[2], distance: 17.1},
+	}
+	if topology {
+		routes = append(routes,
+			perfTopologyRoute{id: "perf-route-de", from: topologyNodes[3], to: topologyNodes[4], distance: 6.1},
+			perfTopologyRoute{id: "perf-route-ef", from: topologyNodes[4], to: topologyNodes[5], distance: 14.6},
+		)
+	}
+	for _, route := range routes {
+		if _, err := db.ExecContext(ctx, `
 INSERT OR REPLACE INTO public_route_summaries (
   route_id, from_node_id, from_label, from_lat, from_lng, from_path_hash3,
   to_node_id, to_label, to_lat, to_lng, to_path_hash3, distance_km,
   packet_count, last_heard_ms, payload_type_names_json, updated_at_ms
-) VALUES ('perf-route', 'node-perf-a', 'Performance A', 43.6532, -79.3832, 'A1B2C3',
-  'node-perf-b', 'Performance B', 43.7000, -79.2000, 'D4E5F6', 15.4, ?, ?, '["TXT"]', ?)`,
-		paths, now, now); err != nil {
-		return err
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '["TXT"]', ?)`,
+			route.id, route.from.id, route.from.name, route.from.lat, route.from.lng, route.from.prefix+"0000",
+			route.to.id, route.to.name, route.to.lat, route.to.lng, route.to.prefix+"0000", route.distance,
+			max(paths/int64(len(routes)), 1), now, now); err != nil {
+			return err
+		}
 	}
 
 	if events > 0 {
@@ -204,8 +304,8 @@ INSERT INTO public_events (
   payload_type_name, message_flag, route_ids_json, node_ids_json, public_json
 )
 SELECT '', 'activity', ? - (n % 82800000), ? - (n % 82800000), 'YYZ', 'YYZ',
-  'TXT', 1, '["perf-route"]', '["node-perf-a","node-perf-b"]',
-  '{"id":"activity-perf","kind":"packet","payloadTypeName":"TXT","region":"YYZ","iata":"YYZ","heardAt":1,"hopCount":1,"hasRoute":true,"animationState":"resolved","resolutionBucket":"high","routeIds":["perf-route"],"endpointLabels":["Performance A","Performance B"],"messageSender":"Performance Gate","messageText":"Synthetic performance message"}'
+	'TXT', 1, '["perf-route-ab"]', '["node-perf-aa","node-perf-bb"]',
+	'{"id":"activity-perf","kind":"packet","payloadTypeName":"TXT","region":"YYZ","iata":"YYZ","heardAt":1,"hopCount":1,"hasRoute":true,"animationState":"resolved","resolutionBucket":"high","routeIds":["perf-route-ab"],"endpointLabels":["Toronto Core","Lakeshore Relay"],"messageSender":"Performance Gate","messageText":"Synthetic performance message"}'
 FROM numbers WHERE n < ?`
 		if _, err := db.ExecContext(ctx, query, now, now, events); err != nil {
 			return fmt.Errorf("insert public events: %w", err)
@@ -230,19 +330,33 @@ func inspect(ctx context.Context, path string) (databaseStats, error) {
 	if err := db.QueryRowContext(ctx, `
 SELECT
   (SELECT COUNT(*) FROM packet_observations),
+  (SELECT COUNT(*) FROM packet_observations WHERE heard_at_ms < ?),
   (SELECT COUNT(*) FROM packet_observations WHERE ingest_id != ''),
   (SELECT COUNT(DISTINCT ingest_id) FROM packet_observations WHERE ingest_id != ''),
   (SELECT COUNT(*) FROM packets),
   (SELECT COUNT(*) FROM public_packet_paths),
   (SELECT COUNT(*) FROM public_events),
+  (SELECT COUNT(*) FROM live_edge_events),
+  (SELECT COUNT(*) FROM live_edge_events WHERE json_array_length(segments_json) > 1),
+  (SELECT COUNT(*) FROM nodes),
+  (SELECT COUNT(*) FROM observer_status),
+  (SELECT COUNT(*) FROM public_route_summaries),
+  (SELECT COUNT(*) FROM public_packet_paths_fts),
   (SELECT user_version FROM pragma_user_version)
-`).Scan(
+`, time.Now().Add(-7*24*time.Hour).UnixMilli()).Scan(
 		&stats.ObservationRows,
+		&stats.ExpiredObservationRows,
 		&stats.NonEmptyIngestIDs,
 		&stats.UniqueIngestIDs,
 		&stats.PacketRows,
 		&stats.PublicPathRows,
 		&stats.PublicEventRows,
+		&stats.EdgeRows,
+		&stats.MultiHopEdgeRows,
+		&stats.NodeRows,
+		&stats.ObserverStatusRows,
+		&stats.PublicRouteRows,
+		&stats.PublicPathFTSRows,
 		&stats.SchemaVersion,
 	); err != nil {
 		return databaseStats{}, err

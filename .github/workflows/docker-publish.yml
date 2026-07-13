@@ -50,16 +50,19 @@ jobs:
           mapfile -t candidate_world_digests < <(printf '%s\n' "$trailers" | sed -n 's/^Candidate-World-Digest:[[:space:]]*//p')
           mapfile -t candidate_canada_digests < <(printf '%s\n' "$trailers" | sed -n 's/^Candidate-Canada-Digest:[[:space:]]*//p')
           mapfile -t candidate_deployed_times < <(printf '%s\n' "$trailers" | sed -n 's/^Candidate-Deployed-At:[[:space:]]*//p')
+          mapfile -t release_verification_base64 < <(printf '%s\n' "$trailers" | sed -n 's/^Release-Verification-Base64:[[:space:]]*//p')
           test "${#candidate_run_ids[@]}" -eq 1
           test "${#candidate_run_attempts[@]}" -eq 1
           test "${#candidate_world_digests[@]}" -eq 1
           test "${#candidate_canada_digests[@]}" -eq 1
           test "${#candidate_deployed_times[@]}" -eq 1
+          test "${#release_verification_base64[@]}" -eq 1
           candidate_run_id="${candidate_run_ids[0]}"
           candidate_run_attempt="${candidate_run_attempts[0]}"
           candidate_world_digest="${candidate_world_digests[0]}"
           candidate_canada_digest="${candidate_canada_digests[0]}"
           candidate_deployed_at="${candidate_deployed_times[0]}"
+          verification_base64="${release_verification_base64[0]}"
           [[ "$candidate_run_id" =~ ^[1-9][0-9]*$ ]]
           [[ "$candidate_run_attempt" =~ ^[1-9][0-9]*$ ]]
           [[ "$candidate_world_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
@@ -69,7 +72,10 @@ jobs:
           tagger_epoch="$(git for-each-ref --format='%(taggerdate:unix)' "$tag_ref")"
           [[ "$deployed_epoch" =~ ^[0-9]+$ ]]
           [[ "$tagger_epoch" =~ ^[0-9]+$ ]]
-          test "$tagger_epoch" -ge $((deployed_epoch + 1800))
+          test "$tagger_epoch" -ge $((deployed_epoch + 300))
+
+          printf '%s' "$verification_base64" | base64 --decode > /tmp/release-verification.json
+          jq -e 'type == "object" and .formatVersion == 1' /tmp/release-verification.json >/dev/null
 
           node scripts/check-version-sync.mjs
           echo "merge_sha=$merge_sha" >> "$GITHUB_OUTPUT"
@@ -95,6 +101,7 @@ jobs:
             test "$count" -gt 0
           done
       - name: Load canonical full performance evidence
+        id: performance
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
@@ -124,10 +131,11 @@ jobs:
             --arg runId "$run_id" --arg version "$VERSION" --arg workflowRef "$workflow_ref" \
             '.version == $version and .profile == "full" and .canonicalReleaseProof == true and .passed == true and (.failures | length) == 0 and
              .github.sha == $sha and .github.ref == "refs/heads/main" and .github.repository == $repository and .github.event == "workflow_dispatch" and .github.workflow == "Release performance gate" and .github.workflowRef == $workflowRef and .github.runId == $runId and
-             .config == {sustainedRate:20,sustainedSeconds:1800,burstRate:100,burstSeconds:60,apiRows:5000000,apiPathRows:10000,apiEvents:20000,apiSamples:200,wsClients:250,wsSeconds:1800,wsQuietSeconds:70,wsIsolationEvents:1000,wsIsolationRate:100,wsIsolationBytes:4096,mqttQueueCapacity:4096,derivedQueueCapacity:1024,metricSampleMs:250,memoryLimitBytes:629145600} and
-             .phases.sustainedIngest.passed == true and .phases.sustainedIngest.reportedPrimaryQueueCapacities == [4096] and .phases.sustainedIngest.reportedDerivedQueueCapacities == [1024] and .phases.sustainedIngest.processRssSource == "linux-proc-status-vmrss" and .phases.sustainedIngest.processRssP95Bytes > 0 and .phases.sustainedIngest.processRssP95Bytes < 629145600 and
-             .phases.burstIngest.passed == true and .phases.burstIngest.reportedPrimaryQueueCapacities == [4096] and .phases.burstIngest.reportedDerivedQueueCapacities == [1024] and .phases.burstIngest.processRssSource == "linux-proc-status-vmrss" and .phases.burstIngest.processRssP95Bytes > 0 and .phases.burstIngest.processRssP95Bytes < 629145600 and
-             .phases.api.passed == true and .phases.api.seeded.observationRows >= 5000000 and .phases.websocket.passed == true and .phases.websocket.clients == 250' "$report" >/dev/null
+             .config == {sustainedRate:20,sustainedSeconds:300,burstRate:100,burstSeconds:60,apiRows:5000000,apiExpiredRows:500000,apiExpiredAgeHours:720,apiPathRows:10000,apiEvents:20000,apiSamples:200,wsClients:250,wsSeconds:300,wsQuietSeconds:70,wsIsolationEvents:1000,wsIsolationRate:100,wsIsolationBytes:4096,mqttQueueCapacity:4096,derivedQueueCapacity:1024,metricSampleMs:250,memoryLimitBytes:629145600} and
+             .phases.sustainedIngest.passed == true and .phases.sustainedIngest.reportedPrimaryQueueCapacities == [4096] and .phases.sustainedIngest.reportedDerivedQueueCapacities == [1024] and .phases.sustainedIngest.processRssSource == "linux-proc-status-vmrss" and .phases.sustainedIngest.processRssP95Bytes > 0 and .phases.sustainedIngest.processRssP95Bytes < 629145600 and .phases.sustainedIngest.queueOldestP99Ms < 500 and .phases.sustainedIngest.observationToBroadcastP95Ms < 1000 and .phases.sustainedIngest.observationToBroadcastMaxMs <= 5000 and .phases.sustainedIngest.primaryDeadlineFailures == 0 and .phases.sustainedIngest.derivedProjectionQueueDepth == 0 and .phases.sustainedIngest.derivedProjectionFailures == 0 and
+             .phases.burstIngest.passed == true and .phases.burstIngest.reportedPrimaryQueueCapacities == [4096] and .phases.burstIngest.reportedDerivedQueueCapacities == [1024] and .phases.burstIngest.processRssSource == "linux-proc-status-vmrss" and .phases.burstIngest.processRssP95Bytes > 0 and .phases.burstIngest.processRssP95Bytes < 629145600 and .phases.burstIngest.queueOldestP99Ms < 2000 and .phases.burstIngest.observationToBroadcastP95Ms < 2000 and .phases.burstIngest.observationToBroadcastMaxMs <= 5000 and .phases.burstIngest.primaryDeadlineFailures == 0 and .phases.burstIngest.derivedProjectionQueueDepth == 0 and .phases.burstIngest.derivedProjectionFailures == 0 and
+             .phases.api.passed == true and .phases.api.seeded.observationRows >= 5000000 and .phases.api.seeded.expiredObservationRows == 500000 and .phases.api.seeded.multiHopEdgeRows > 0 and .phases.api.seeded.observerStatusRows > 0 and .phases.api.postRetention.expiredObservationRows == 0 and .phases.api.browser.passed == true and (.phases.api.browser.releaseGates | length) == 2 and .phases.websocket.passed == true and .phases.websocket.clients == 250' "$report" >/dev/null
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
       - name: Load immutable candidate evidence
         id: evidence
         env:
@@ -138,6 +146,7 @@ jobs:
           CANDIDATE_RUN_ATTEMPT: ${{ steps.release.outputs.candidate_run_attempt }}
           CANDIDATE_WORLD_DIGEST: ${{ steps.release.outputs.candidate_world_digest }}
           CANDIDATE_CANADA_DIGEST: ${{ steps.release.outputs.candidate_canada_digest }}
+          MAIN_PERFORMANCE_RUN_ID: ${{ steps.performance.outputs.run_id }}
         run: |
           current_main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           test "$current_main_sha" = "$MERGE_SHA"
@@ -166,8 +175,8 @@ jobs:
           printf '%s' "$(cat "$manifest")" | jq -e \
             --arg sha "$MERGE_SHA" --arg version "$VERSION" --arg repository "${REGISTRY}/${IMAGE_NAME}" \
             --arg sourceRepository "$GITHUB_REPOSITORY" --arg candidateRunId "$CANDIDATE_RUN_ID" \
-            --arg candidateRunAttempt "$CANDIDATE_RUN_ATTEMPT" --arg worldCandidateTag "$world_candidate_tag" --arg canadaCandidateTag "$canada_candidate_tag" --arg releaseRef "$release_ref" \
-            '.gitSha == $sha and .sourceCiHeadSha == $sha and .sourceCiConclusion == "success" and .sourceCiBrowserSmokeConclusion == "success" and .sourceCiWorkflow == "CI" and .sourceCiEvent == "push" and .sourceCiHeadBranch == "main" and .sourceCiHeadRepository == $sourceRepository and .verifiedMainRef == "refs/heads/main" and .verifiedMainSha == $sha and .candidateWorkflowRunId == $candidateRunId and .candidateWorkflowRunAttempt == $candidateRunAttempt and .images.world.candidateTag == $worldCandidateTag and .images.world.assetPack == "world" and .images.canada.candidateTag == $canadaCandidateTag and .images.canada.assetPack == "canada" and .premergeHeadRef == $releaseRef and (.premergeHeadSha | test("^[0-9a-f]{40}$")) and (.premergeRunId | test("^[0-9]+$")) and (.premergeProofDeferred | type == "boolean") and .version == $version and .repository == $repository' >/dev/null
+            --arg candidateRunAttempt "$CANDIDATE_RUN_ATTEMPT" --arg worldCandidateTag "$world_candidate_tag" --arg canadaCandidateTag "$canada_candidate_tag" --arg releaseRef "$release_ref" --arg mainPerformanceRunId "$MAIN_PERFORMANCE_RUN_ID" \
+            '.gitSha == $sha and .sourceCiHeadSha == $sha and .sourceCiConclusion == "success" and .sourceCiBrowserSmokeConclusion == "success" and .sourceCiWorkflow == "CI" and .sourceCiEvent == "push" and .sourceCiHeadBranch == "main" and .sourceCiHeadRepository == $sourceRepository and .verifiedMainRef == "refs/heads/main" and .verifiedMainSha == $sha and .candidateWorkflowRunId == $candidateRunId and .candidateWorkflowRunAttempt == $candidateRunAttempt and .images.world.candidateTag == $worldCandidateTag and .images.world.assetPack == "world" and .images.canada.candidateTag == $canadaCandidateTag and .images.canada.assetPack == "canada" and .premergeHeadRef == $releaseRef and (.premergeHeadSha | test("^[0-9a-f]{40}$")) and (.premergeRunId | test("^[1-9][0-9]*$")) and .premergeCanonicalProof == true and .mainPerformanceRunId == $mainPerformanceRunId and .mainPerformanceCanonicalProof == true and .version == $version and .repository == $repository' >/dev/null
           source_ci_run_id="$(jq -r '.sourceCiRunId' "$manifest")"
           [[ "$source_ci_run_id" =~ ^[0-9]+$ ]]
           source_ci_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_ci_run_id")"
@@ -195,6 +204,102 @@ jobs:
           echo "world_candidate_tag=$world_candidate_tag" >> "$GITHUB_OUTPUT"
           echo "canada_candidate_tag=$canada_candidate_tag" >> "$GITHUB_OUTPUT"
           echo "build_time=$build_time" >> "$GITHUB_OUTPUT"
+          echo "premerge_run_id=$(jq -r '.premergeRunId' "$manifest")" >> "$GITHUB_OUTPUT"
+          echo "premerge_head_sha=$(jq -r '.premergeHeadSha' "$manifest")" >> "$GITHUB_OUTPUT"
+          echo "source_ci_run_id=$source_ci_run_id" >> "$GITHUB_OUTPUT"
+      - name: Load trusted live five-minute audit evidence
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.MC_CARTOLIVE_DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.MC_CARTOLIVE_DEPLOY_KNOWN_HOSTS }}
+          MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
+          CANADA_DIGEST: ${{ steps.evidence.outputs.canada_digest }}
+          DEPLOYED_AT: ${{ steps.release.outputs.candidate_deployed_at }}
+        run: |
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/mc-cartolive-release
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 0600 ~/.ssh/mc-cartolive-release ~/.ssh/known_hosts
+          ssh -i ~/.ssh/mc-cartolive-release -o BatchMode=yes -o IdentitiesOnly=yes \
+            root@134.122.45.228 bash -s -- "$MERGE_SHA" "$CANADA_DIGEST" "$DEPLOYED_AT" > /tmp/live-5m-audit.json <<'REMOTE'
+          set -euo pipefail
+          sha="$1"
+          digest="$2"
+          deployed_at="$3"
+          for result in /var/log/mc-cartolive-release-audit/*.5m.json; do
+            if jq -e --arg sha "$sha" --arg digest "$digest" --arg deployedAt "$deployed_at" \
+              '.phase == "5m" and .passed == true and .release.gitSha == $sha and .release.imageDigest == $digest and .release.deployedAt == $deployedAt' "$result" >/dev/null 2>&1; then
+              cat "$result"
+              exit 0
+            fi
+          done
+          exit 1
+          REMOTE
+          jq -e 'type == "object" and .phase == "5m" and .passed == true' /tmp/live-5m-audit.json >/dev/null
+      - name: Validate trusted five-minute release evidence
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          MERGE_SHA: ${{ steps.release.outputs.merge_sha }}
+          CANDIDATE_RUN_ID: ${{ steps.release.outputs.candidate_run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ steps.release.outputs.candidate_run_attempt }}
+          WORLD_DIGEST: ${{ steps.evidence.outputs.world_digest }}
+          CANADA_DIGEST: ${{ steps.evidence.outputs.canada_digest }}
+          DEPLOYED_AT: ${{ steps.release.outputs.candidate_deployed_at }}
+          PREMERGE_PERFORMANCE_RUN_ID: ${{ steps.evidence.outputs.premerge_run_id }}
+          PREMERGE_PERFORMANCE_SHA: ${{ steps.evidence.outputs.premerge_head_sha }}
+          MAIN_PERFORMANCE_RUN_ID: ${{ steps.performance.outputs.run_id }}
+          BROWSER_RUN_ID: ${{ steps.performance.outputs.run_id }}
+        run: |
+          performance_report=/tmp/mc-cartolive-performance-evidence/report.json
+          jq --argjson workflowRunId "$BROWSER_RUN_ID" '
+            [.phases.api.browser.releaseGates[].liveFlow] as $flows |
+            {workflowRunId:$workflowRunId,
+             receiveToStateP95Ms:([$flows[].metrics.receiveToStateP95Ms] | max),
+             receiveToAnimationP95Ms:([$flows[].metrics.receiveToAnimationP95Ms] | max),
+             maxVisualAgeMs:([$flows[].metrics.maxVisualAgeMs] | max),
+             eligibleAnimations:([$flows[].count] | add),
+             animationStarts:([$flows[].metrics.animationStarts] | add),
+             animationLoss:(([$flows[].count] | add) - ([$flows[].metrics.animationStarts] | add)),
+             emergencyActivations:([$flows[].metrics.emergencyActivations] | add),
+             frameP95Ms:([$flows[].metrics.frameP95Ms] | max),
+             repeatedLongTasks:([$flows[].metrics.repeatedLongTasks] | add)}' "$performance_report" > /tmp/trusted-browser.json
+          audit_sha="$(sha256sum /tmp/live-5m-audit.json | awk '{print $1}')"
+          jq --arg resultSha256 "$audit_sha" '
+            {phase:.phase,passed:.passed,resultSha256:$resultSha256,
+             snapshotIntegrityCheck:.database.integrityCheck,
+             snapshotForeignKeyCheck:.database.foreignKeyCheck,
+             snapshotSha256:.database.snapshotSha256,
+             backupVerificationSha256:.release.backupVerificationSha256,
+             schemaVersion:.database.schemaVersion,
+             freeGiB:(.filesystem.freeBytes / 1073741824),
+             freePercent:.filesystem.freePercent}' /tmp/live-5m-audit.json > /tmp/trusted-audit.json
+          jq --slurpfile browser /tmp/trusted-browser.json '
+            {"5m":{completedAt:.completedAt,passed:.passed,
+             acceptedDelta:.ingest.acceptedSinceDeployment,
+             processedDelta:.ingest.processedSinceDeployment,
+             publicEventDelta:.ingest.publicEventsSinceDeployment,
+             writeFailures:.ingest.writeFailuresTotal,
+             deadlineFailures:.ingest.primaryDeadlineFailuresTotal,
+             primaryDrops:.ingest.droppedTotal,
+             derivedDrops:.ingest.derivedDroppedTotal,
+             animationLoss:$browser[0].animationLoss,
+             emergencyActivations:$browser[0].emergencyActivations,
+             restarts:.process.containerRestartCount,
+             oomKills:(if .process.oomKilled == true then 1 else 0 end)}}' /tmp/live-5m-audit.json > /tmp/trusted-canary.json
+          jq -e --slurpfile browser /tmp/trusted-browser.json --slurpfile canary /tmp/trusted-canary.json --slurpfile audit /tmp/trusted-audit.json \
+            '.browser == $browser[0] and .canary == $canary[0] and .audit == $audit[0]' /tmp/release-verification.json >/dev/null
+          node scripts/release-verification.mjs \
+            --input /tmp/release-verification.json --output /tmp/release-verification.canonical.json \
+            --expect-version "$VERSION" --expect-git-sha "$MERGE_SHA" \
+            --expect-candidate-run-id "$CANDIDATE_RUN_ID" --expect-candidate-run-attempt "$CANDIDATE_RUN_ATTEMPT" \
+            --expect-world-digest "$WORLD_DIGEST" --expect-canada-digest "$CANADA_DIGEST" \
+            --expect-deployed-at "$DEPLOYED_AT" \
+            --expect-premerge-performance-run-id "$PREMERGE_PERFORMANCE_RUN_ID" \
+            --expect-premerge-performance-sha "$PREMERGE_PERFORMANCE_SHA" \
+            --expect-main-performance-run-id "$MAIN_PERFORMANCE_RUN_ID" \
+            --expect-browser-run-id "$BROWSER_RUN_ID"
+          mv /tmp/release-verification.canonical.json /tmp/release-verification.json
       - name: Set up Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - name: Log in to GHCR
@@ -354,6 +459,7 @@ jobs:
           tar -C artifacts/release/stage -czf "artifacts/release/assets/mc-cartolive-${{ steps.release.outputs.version }}-deploy.tar.gz" \
             "mc-cartolive-${{ steps.release.outputs.version }}"
           cp artifacts/release/release-manifest.json artifacts/release/assets/
+          cp /tmp/release-verification.json artifacts/release/assets/
           cp docs/public-api.openapi.json artifacts/release/assets/
           cp "docs/${{ steps.release.outputs.version }}/upgrade-and-rollback.md" artifacts/release/assets/ROLLBACK.md
           cp trivy-release-world.sarif trivy-release-canada.sarif artifacts/release/assets/
@@ -377,6 +483,7 @@ jobs:
           test -s "$assets/trivy-release-world.sarif"
           test -s "$assets/trivy-release-canada.sarif"
           test -s "$assets/release-manifest.json"
+          test -s "$assets/release-verification.json"
           test -s "$assets/public-api.openapi.json"
           test -s "$assets/ROLLBACK.md"
           test -s "$assets/SHA256SUMS"

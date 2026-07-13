@@ -1,9 +1,7 @@
 import type { PublicLiveEnvelope } from './types';
 
-export const LIVE_ENVELOPE_BATCH_WINDOW_MS = 28;
-export const LIVE_ENVELOPE_MAX_WAIT_MS = 240;
-export const LIVE_ENVELOPE_MAX_BATCH_SIZE = 18;
-export const LIVE_ENVELOPE_MAX_PENDING = 900;
+export const LIVE_ENVELOPE_MAX_BATCH_SIZE = 256;
+export const LIVE_ENVELOPE_MAX_PENDING = 4_096;
 
 export interface DueLiveEnvelopes {
   due: PublicLiveEnvelope[];
@@ -11,7 +9,9 @@ export interface DueLiveEnvelopes {
 }
 
 export function liveEnvelopeDisplayAt(message: PublicLiveEnvelope): number {
-  return message.displayAt ?? message.receivedAt ?? message.serverTime ?? 0;
+  // `displayAt` is advisory metadata. Semantic state and the durable cursor
+  // must never wait for cinematic server timing.
+  return message.receivedAt ?? message.serverTime ?? message.displayAt ?? 0;
 }
 
 export function sortLiveEnvelopes(messages: PublicLiveEnvelope[]): PublicLiveEnvelope[] {
@@ -25,31 +25,27 @@ export function capLiveEnvelopeQueue(messages: PublicLiveEnvelope[], limit = LIV
 
 export function takeDueLiveEnvelopes(
   messages: PublicLiveEnvelope[],
-  now: number,
-  batchWindowMs = LIVE_ENVELOPE_BATCH_WINDOW_MS,
+  _now: number,
+  _batchWindowMs = 0,
   maxBatchSize = LIVE_ENVELOPE_MAX_BATCH_SIZE
 ): DueLiveEnvelopes {
-  const cutoff = now + batchWindowMs;
-  const due: PublicLiveEnvelope[] = [];
-  const pending: PublicLiveEnvelope[] = [];
-
-  for (const message of sortLiveEnvelopes(messages)) {
-    if (due.length < maxBatchSize && liveEnvelopeDisplayAt(message) <= cutoff) {
-      due.push(message);
-    } else {
-      pending.push(message);
-    }
-  }
-
-  return { due, pending };
+  const ordered = sortLiveEnvelopes(messages);
+  const take = Math.max(1, Math.floor(maxBatchSize));
+  return { due: ordered.slice(0, take), pending: ordered.slice(take) };
 }
 
-export function nextLiveEnvelopeDelayMs(messages: PublicLiveEnvelope[], now: number): number | null {
+export function nextLiveEnvelopeDelayMs(messages: PublicLiveEnvelope[], _now: number): number | null {
   if (messages.length === 0) return null;
-  const nextDisplayAt = Math.min(...messages.map(liveEnvelopeDisplayAt));
-  return Math.max(0, Math.min(LIVE_ENVELOPE_MAX_WAIT_MS, nextDisplayAt - now));
+  return 0;
 }
 
 function compareLiveEnvelopes(a: PublicLiveEnvelope, b: PublicLiveEnvelope): number {
-  return liveEnvelopeDisplayAt(a) - liveEnvelopeDisplayAt(b) || (a.seq ?? 0) - (b.seq ?? 0);
+  const aSeq = durableSequence(a.seq);
+  const bSeq = durableSequence(b.seq);
+  if (aSeq > 0 && bSeq > 0) return aSeq - bSeq;
+  return liveEnvelopeDisplayAt(a) - liveEnvelopeDisplayAt(b) || aSeq - bSeq;
+}
+
+function durableSequence(value: number | undefined): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : 0;
 }

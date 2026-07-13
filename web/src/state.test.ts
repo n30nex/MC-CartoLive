@@ -3,11 +3,11 @@ import {
   ROUTE_TRACE_BIN_COUNT,
   ROUTE_TRACE_WINDOW_MS,
   SNAPSHOT_PULSE_REPLAY_LIMIT,
-  SNAPSHOT_PULSE_REPLAY_SPACING_MS,
   SNAPSHOT_PULSE_FUTURE_SKEW_MS,
   SNAPSHOT_PULSE_STALE_MS,
   applyPublicEvent,
   applyPublicEnvelope,
+  applyPublicEnvelopes,
   addObserverBurst,
   currentPacketRatePerMinute,
   filterNodes,
@@ -117,7 +117,7 @@ describe('public app state', () => {
     expect(hydrated.activity).toBe(current.activity);
   });
 
-  it('hydrates recent public pulses from state snapshots for polling fallback', () => {
+  it('hydrates snapshot history without replaying public pulses', () => {
     const state = initialAppState({
       ...publicState,
       recentPulses: [
@@ -139,14 +139,11 @@ describe('public app state', () => {
       ]
     });
 
-    expect(state.pulses[0].messageText).toBe('hello map');
-    expect(state.pulses[0].messageSender).toBe('Tree');
-    expect(state.pulses[0].receivedAt).toBe(publicState.serverTime);
-    expect(state.pulses[0].displayAt).toBe(publicState.serverTime);
+    expect(state.pulses).toEqual([]);
     expect(state.routeTraces).toHaveLength(1);
   });
 
-  it('hydrates recent observer-only message bursts from state snapshots', () => {
+  it('hydrates observer activity without replaying observer bursts', () => {
     const state = initialAppState({
       ...publicState,
       recentActivity: [
@@ -168,15 +165,8 @@ describe('public app state', () => {
       ]
     });
 
-    expect(state.observerBursts).toHaveLength(1);
-    expect(state.observerBursts[0]).toMatchObject({
-      id: 'observer-activity-message',
-      payloadTypeName: 'GROUP_TEXT',
-      messageSender: 'Tree',
-      messageText: 'hello public',
-      location: { label: 'YKF observer', lat: 43.44, lng: -80.48 }
-    });
-    expect(state.observerBursts[0].displayAt).toBe(publicState.serverTime);
+    expect(state.observerBursts).toEqual([]);
+    expect(state.activity[0].messageText).toBe('hello public');
   });
 
   it('ignores stale or unmapped activity when hydrating observer bursts', () => {
@@ -209,7 +199,7 @@ describe('public app state', () => {
     expect(bursts).toHaveLength(0);
   });
 
-  it('paces snapshot pulse replay and limits reconnect bursts', () => {
+  it('never turns snapshot pulses into reconnect animations', () => {
     const pulses = Array.from({ length: SNAPSHOT_PULSE_REPLAY_LIMIT + 5 }, (_, index) => ({
       id: `pulse-${index}`,
       payloadTypeName: 'ADVERT',
@@ -226,12 +216,10 @@ describe('public app state', () => {
 
     const hydrated = hydrateSnapshotPulses(pulses, publicState.serverTime);
 
-    expect(hydrated).toHaveLength(SNAPSHOT_PULSE_REPLAY_LIMIT);
-    expect(hydrated.at(-1)?.displayAt).toBe(publicState.serverTime);
-    expect(hydrated[0].displayAt).toBe(publicState.serverTime + (SNAPSHOT_PULSE_REPLAY_LIMIT - 1) * SNAPSHOT_PULSE_REPLAY_SPACING_MS);
+    expect(hydrated).toEqual([]);
   });
 
-  it('drops stale and far-future snapshot pulses before replaying packet comets', () => {
+  it('does not replay current, stale, or future snapshot pulses', () => {
     const goodPulse = {
       id: 'pulse-current',
       payloadTypeName: 'ADVERT',
@@ -258,7 +246,7 @@ describe('public app state', () => {
 
     const hydrated = hydrateSnapshotPulses([futurePulse, stalePulse, goodPulse], publicState.serverTime);
 
-    expect(hydrated.map((pulse) => pulse.id)).toEqual(['pulse-current']);
+    expect(hydrated).toEqual([]);
   });
 
   it('updates sanitized activity and packet stats from public websocket events', () => {
@@ -321,7 +309,7 @@ describe('public app state', () => {
     expect(next.routes[0].lastHeard).toBe(1_700_000_020_000);
     expect(next.pulses).toHaveLength(1);
     expect(next.pulses[0].receivedAt).toBe(1_700_000_030_000);
-    expect(next.pulses[0].displayAt).toBe(1_700_000_030_150);
+    expect(next.pulses[0].displayAt).toBe(1_700_000_030_000);
     expect(next.pulses[0].seq).toBe(42);
     expect(next.routeTraces).toHaveLength(1);
     expect(next.stats?.activeRoutes).toBe(1);
@@ -363,6 +351,122 @@ describe('public app state', () => {
     expect(next.routes[0]).not.toBe(withMultipleRoutes.routes[0]);
     expect(next.routes[1]).toBe(untouchedRoute);
     expect(next.routes.map((route) => route.id)).toEqual(['r-ab', 'r-max']);
+  });
+
+  it('batches route pulse updates through one indexed reducer pass', () => {
+    const state = initialAppState(publicState);
+    const routeEvent = (id: string, seq: number, payloadTypeName: string): PublicLiveEnvelope => ({
+      v: 1,
+      type: 'event',
+      event: 'routePulse',
+      seq,
+      receivedAt: 1_700_000_030_000,
+      data: {
+        id,
+        payloadTypeName,
+        heardAt: 1_700_000_020_000 + seq,
+        segments: [{
+          routeId: 'r-ab',
+          from: publicState.routes[0].from,
+          to: publicState.routes[0].to,
+          distanceKm: 93
+        }]
+      }
+    });
+
+    const next = applyPublicEnvelopes(state, [routeEvent('pulse-a', 41, 'ADVERT'), routeEvent('pulse-b', 42, 'PLAIN_TEXT')]);
+    expect(next.routes[0].packetCount).toBe(9);
+    expect(next.routes[0].payloadTypeNames).toEqual(['ADVERT', 'PLAIN_TEXT']);
+    expect(next.pulses.map((pulse) => pulse.id)).toEqual(['pulse-b', 'pulse-a']);
+  });
+
+  it('separates count-only route traffic from topology and map visual revisions', () => {
+    const maxRoute = {
+      ...publicState.routes[0],
+      id: 'r-max',
+      packetCount: 100,
+      from: publicState.routes[0].to,
+      to: publicState.routes[0].from
+    };
+    const state = initialAppState({ ...publicState, routes: [...publicState.routes, maxRoute] });
+    const next = applyPublicEnvelope(state, {
+      v: 1,
+      type: 'event',
+      event: 'routePulse',
+      seq: 50,
+      receivedAt: publicState.serverTime + 1_000,
+      data: {
+        id: 'count-only',
+        payloadTypeName: 'ADVERT',
+        heardAt: publicState.serverTime + 1_000,
+        segments: [{
+          routeId: 'r-ab',
+          from: publicState.routes[0].from,
+          to: publicState.routes[0].to,
+          distanceKm: 93
+        }]
+      }
+    });
+
+    expect(next.routes[0].packetCount).toBe(8);
+    expect(next.routeIndex.get('r-ab')).toBe(0);
+    expect(next.routeTrafficRevision).toBe(state.routeTrafficRevision + 1);
+    expect(next.routeTopologyRevision).toBe(state.routeTopologyRevision);
+    expect(next.routeVisualRevision).toBe(state.routeVisualRevision);
+  });
+
+  it('defers existing-route bucket styling to the bounded map refresh clock', () => {
+    const route = { ...publicState.routes[0], packetCount: 1, frequencyBucket: 0 };
+    const state = initialAppState({ ...publicState, routes: [route] });
+    const next = applyPublicEnvelope(state, {
+      v: 1,
+      type: 'event',
+      event: 'routePulse',
+      seq: 52,
+      receivedAt: publicState.serverTime + 1_000,
+      data: {
+        id: 'bucket-change',
+        payloadTypeName: 'ADVERT',
+        heardAt: publicState.serverTime + 1_000,
+        segments: [{
+          routeId: route.id,
+          from: route.from,
+          to: route.to,
+          distanceKm: route.distanceKm
+        }]
+      }
+    });
+
+    expect(next.routes[0].frequencyBucket).not.toBe(route.frequencyBucket);
+    expect(next.routeTrafficRevision).toBe(state.routeTrafficRevision + 1);
+    expect(next.routeTopologyRevision).toBe(state.routeTopologyRevision);
+    expect(next.routeVisualRevision).toBe(state.routeVisualRevision);
+  });
+
+  it('indexes newly discovered routes and advances topology exactly once', () => {
+    const state = initialAppState(publicState);
+    const next = applyPublicEnvelope(state, {
+      v: 1,
+      type: 'event',
+      event: 'routePulse',
+      seq: 51,
+      receivedAt: publicState.serverTime + 1_000,
+      data: {
+        id: 'new-topology',
+        payloadTypeName: 'ADVERT',
+        heardAt: publicState.serverTime + 1_000,
+        segments: [{
+          routeId: 'r-new',
+          from: publicState.routes[0].to,
+          to: { nodeId: 'node-c', label: 'New node', lat: 44, lng: -79 },
+          distanceKm: 40
+        }]
+      }
+    });
+
+    expect(next.routeIndex.get('r-new')).toBe(1);
+    expect(next.routeTopologyRevision).toBe(state.routeTopologyRevision + 1);
+    expect(next.routeVisualRevision).toBe(state.routeVisualRevision + 1);
   });
 
   it('dedupes live events after websocket reconnect recovery', () => {
@@ -436,6 +540,31 @@ describe('public app state', () => {
     expect(twice.activity.filter((item) => item.id === 'activity-backfill')).toHaveLength(1);
     expect(twice.latestSeq).toBe(99);
     expect(twice.seenSeqs).toContain(99);
+    expect(twice.observerBursts).toEqual([]);
+  });
+
+  it('applies recovered route truth without replaying historical comets', () => {
+    const next = applyPublicEvent(initialAppState(publicState), {
+      seq: 100,
+      type: 'routePulse',
+      at: 1_700_000_020_000,
+      receivedAt: 1_700_000_020_100,
+      data: {
+        id: 'recovered-route',
+        payloadTypeName: 'ADVERT',
+        heardAt: 1_700_000_020_000,
+        segments: [{
+          routeId: 'r-ab',
+          from: publicState.routes[0].from,
+          to: publicState.routes[0].to,
+          distanceKm: 93
+        }]
+      }
+    });
+
+    expect(next.routes[0].packetCount).toBe(8);
+    expect(next.routeTraces).toHaveLength(1);
+    expect(next.pulses).toEqual([]);
   });
 
   it('builds stable public snapshot signatures for replacement guards', () => {

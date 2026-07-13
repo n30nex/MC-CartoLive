@@ -22,19 +22,19 @@ const event = (id: string, displayAt: number, seq: number): PublicLiveEnvelope =
 });
 
 describe('live envelope pacing', () => {
-  it('sorts by display time and then websocket sequence', () => {
+  it('sorts durable traffic by cursor sequence instead of cinematic display time', () => {
     const messages = [event('late', 1200, 1), event('first', 1000, 9), event('tie', 1000, 3)];
 
-    expect(sortLiveEnvelopes(messages).map((message) => (message.type === 'event' ? message.data.id : message.type))).toEqual(['tie', 'first', 'late']);
+    expect(sortLiveEnvelopes(messages).map((message) => (message.type === 'event' ? message.data.id : message.type))).toEqual(['late', 'tie', 'first']);
   });
 
-  it('keeps future envelopes pending so bursts tick through the UI', () => {
+  it('makes all semantic events immediately due regardless of displayAt', () => {
     const messages = [event('ready', 1000, 1), event('near', 1024, 2), event('future', 1180, 3)];
 
     const { due, pending } = takeDueLiveEnvelopes(messages, 1000, 28, 18);
 
-    expect(due.map((message) => (message.type === 'event' ? message.data.id : message.type))).toEqual(['ready', 'near']);
-    expect(pending.map((message) => (message.type === 'event' ? message.data.id : message.type))).toEqual(['future']);
+    expect(due.map((message) => (message.type === 'event' ? message.data.id : message.type))).toEqual(['ready', 'near', 'future']);
+    expect(pending).toEqual([]);
   });
 
   it('caps a due batch to avoid one large websocket burst blocking the frame', () => {

@@ -23,6 +23,7 @@ export const SNAPSHOT_PULSE_FUTURE_SKEW_MS = 10_000;
 export const SNAPSHOT_OBSERVER_BURST_REPLAY_LIMIT = 32;
 export const SNAPSHOT_OBSERVER_BURST_REPLAY_SPACING_MS = 140;
 export const ROUTE_BUCKET_REBALANCE_FACTOR = 1.25;
+const ROUTE_VISUAL_FRESH_MS = 15 * 60_000;
 
 export interface RouteTraceHit {
   routeId: string;
@@ -59,6 +60,16 @@ export interface AppState {
   serverTime: number;
   latestSeq: number;
   seenSeqs: number[];
+  routeIndex: Map<string, number>;
+  routeMaxPacketCount: number;
+  routeTopologyRevision: number;
+  routeTrafficRevision: number;
+  routeVisualRevision: number;
+}
+
+export interface ApplyLiveOptions {
+  /** Only connected WebSocket traffic is eligible for map motion. */
+  animate?: boolean;
 }
 
 export const emptyState: AppState = {
@@ -71,32 +82,48 @@ export const emptyState: AppState = {
   stats: null,
   serverTime: 0,
   latestSeq: 0,
-  seenSeqs: []
+  seenSeqs: [],
+  routeIndex: new Map(),
+  routeMaxPacketCount: 1,
+  routeTopologyRevision: 0,
+  routeTrafficRevision: 0,
+  routeVisualRevision: 0
 };
 
 export function initialAppState(state: PublicLiveState): AppState {
-  const pulses = hydrateSnapshotPulses(state.recentPulses ?? [], state.serverTime);
-  const observerBursts = hydrateSnapshotObserverBursts(state.recentActivity ?? [], state.serverTime);
   const serverTime = state.serverTime;
+  const routes = normalizeRouteBuckets(state.routes ?? []);
   return {
     nodes: state.nodes ?? [],
-    routes: normalizeRouteBuckets(state.routes ?? []),
+    routes,
     activity: state.recentActivity ?? [],
-    pulses,
-    observerBursts,
-    routeTraces: pulses.reduce((traces, pulse) => addRouteTraceHits(traces, pulse, serverTime), [] as RouteTraceHit[]),
+    // Snapshots establish authoritative state but never replay stale motion.
+    pulses: [],
+    observerBursts: [],
+    routeTraces: (state.recentPulses ?? []).reduce((traces, pulse) => addRouteTraceHits(traces, pulse, serverTime), [] as RouteTraceHit[]),
     stats: state.stats ?? null,
     serverTime,
     latestSeq: state.stats?.latestSeq ?? 0,
-    seenSeqs: []
+    seenSeqs: [],
+    routeIndex: indexRoutes(routes),
+    routeMaxPacketCount: maxRoutePacketCount(routes),
+    routeTopologyRevision: 1,
+    routeTrafficRevision: 1,
+    routeVisualRevision: 1
   };
 }
 
 export function hydrateSnapshotTopology(current: AppState, snapshot: PublicLiveState): AppState {
+  const routes = mergeCurrentEntities(current.routes, normalizeRouteBuckets(snapshot.routes ?? []));
+  const topologyChanged = routes.length !== current.routes.length;
   return {
     ...current,
     nodes: mergeCurrentEntities(current.nodes, snapshot.nodes ?? []),
-    routes: mergeCurrentEntities(current.routes, normalizeRouteBuckets(snapshot.routes ?? [])),
+    routes,
+    routeIndex: topologyChanged ? indexRoutes(routes) : current.routeIndex,
+    routeMaxPacketCount: Math.max(current.routeMaxPacketCount, maxRoutePacketCount(routes)),
+    routeTopologyRevision: current.routeTopologyRevision + (topologyChanged ? 1 : 0),
+    routeVisualRevision: current.routeVisualRevision + (topologyChanged ? 1 : 0),
     stats: current.stats ?? snapshot.stats ?? null,
     serverTime: Math.max(current.serverTime, snapshot.serverTime),
     latestSeq: Math.max(current.latestSeq, snapshot.stats?.latestSeq ?? 0)
@@ -124,49 +151,78 @@ export function publicLiveStateSignature(state: PublicLiveState): string {
 }
 
 export function hydrateSnapshotPulses(pulses: PublicRoutePulse[], serverTime: number): PublicRoutePulse[] {
-  const maxHeardAt = serverTime + SNAPSHOT_PULSE_FUTURE_SKEW_MS;
-  const minHeardAt = serverTime - SNAPSHOT_PULSE_STALE_MS;
-  const recent = pulses
-    .filter((pulse) => pulse.heardAt >= minHeardAt && pulse.heardAt <= maxHeardAt)
-    .slice(0, SNAPSHOT_PULSE_REPLAY_LIMIT);
-  const oldestFirst = recent.slice().reverse();
-  const displayAtByID = new Map<string, number>();
-  oldestFirst.forEach((pulse, index) => {
-    displayAtByID.set(pulse.id, serverTime + index * SNAPSHOT_PULSE_REPLAY_SPACING_MS);
-  });
-  return recent.map((pulse) => ({
-    ...pulse,
-    receivedAt: pulse.receivedAt ?? serverTime,
-    displayAt: pulse.displayAt ?? displayAtByID.get(pulse.id) ?? serverTime
-  }));
+  void pulses;
+  void serverTime;
+  return [];
 }
 
 export function hydrateSnapshotObserverBursts(activity: PublicActivity[], serverTime: number): PublicObserverBurst[] {
-  const maxHeardAt = serverTime + SNAPSHOT_PULSE_FUTURE_SKEW_MS;
-  const minHeardAt = serverTime - SNAPSHOT_PULSE_STALE_MS;
-  const recent = activity
-    .filter((item) => item.animationState === 'observer' && item.observerLocation && item.heardAt >= minHeardAt && item.heardAt <= maxHeardAt)
-    .slice(0, SNAPSHOT_OBSERVER_BURST_REPLAY_LIMIT);
-  const oldestFirst = recent.slice().reverse();
-  const displayAtByID = new Map<string, number>();
-  oldestFirst.forEach((item, index) => {
-    displayAtByID.set(item.id, serverTime + index * SNAPSHOT_OBSERVER_BURST_REPLAY_SPACING_MS);
-  });
-  return recent.map((item) => ({
-    id: `observer-${item.id}`,
-    payloadTypeName: item.payloadTypeName,
-    heardAt: item.heardAt,
-    receivedAt: item.receivedAt ?? serverTime,
-    displayAt: item.displayAt ?? displayAtByID.get(item.id) ?? serverTime,
-    seq: item.seq,
-    location: item.observerLocation!,
-    messageSender: item.messageSender,
-    messageText: item.messageText,
-    messageAnchor: item.messageAnchor
-  }));
+  void activity;
+  void serverTime;
+  return [];
 }
 
 export function applyPublicEnvelope(state: AppState, message: PublicLiveEnvelope): AppState {
+  return applyPublicEnvelopes(state, [message], { animate: true });
+}
+
+export function applyPublicEnvelopes(state: AppState, messages: PublicLiveEnvelope[], options: ApplyLiveOptions = {}): AppState {
+  const animate = options.animate !== false;
+  const pulseIDs = new Set(state.pulses.map((pulse) => pulse.id));
+  const acceptedPulses: PublicRoutePulse[] = [];
+  let next = state;
+  for (const message of messages) {
+    if (message.type === 'event' && message.event === 'routePulse') {
+      if (message.seq && next.seenSeqs.includes(message.seq)) {
+        next = withLatestSeq(next, message.latestSeq ?? message.seq);
+        continue;
+      }
+      const pulse = withEnvelopeTiming(message.data, message);
+      if (pulseIDs.has(pulse.id)) {
+        next = rememberSeq(withLatestSeq(next, message.latestSeq ?? message.seq), message.seq);
+        continue;
+      }
+      pulseIDs.add(pulse.id);
+      acceptedPulses.push(pulse);
+      const serverTime = Math.max(next.serverTime, message.serverTime ?? pulse.heardAt);
+      next = rememberSeq(withLatestSeq({
+        ...next,
+        pulses: animate ? [pulse, ...next.pulses].slice(0, 2_000) : next.pulses,
+        routeTraces: addRouteTraceHits(next.routeTraces, pulse, serverTime),
+        serverTime
+      }, message.latestSeq ?? message.seq ?? next.latestSeq), message.seq);
+      continue;
+    }
+    next = applyNonRouteEnvelope(next, message, animate);
+  }
+  if (acceptedPulses.length === 0) return next;
+  const reducerStartedAt = performance.now();
+  const routeUpdate = upsertPulseRoutesBatch(
+    next.routes,
+    next.routeIndex,
+    next.routeMaxPacketCount,
+    acceptedPulses
+  );
+  recordRouteReducerDuration(performance.now() - reducerStartedAt);
+  return {
+    ...next,
+    routes: routeUpdate.routes,
+    routeIndex: routeUpdate.routeIndex,
+    routeMaxPacketCount: routeUpdate.maxPacketCount,
+    routeTopologyRevision: next.routeTopologyRevision + (routeUpdate.topologyChanged ? 1 : 0),
+    routeTrafficRevision: next.routeTrafficRevision + 1,
+    // Packet counts and buckets are authoritative immediately, but MapLibre
+    // route geometry/style refreshes on topology or the bounded freshness
+    // clock instead of rebuilding its source for each traffic increment.
+    routeVisualRevision: next.routeVisualRevision + (routeUpdate.topologyChanged ? 1 : 0),
+    stats: refreshStats(next.stats, {
+      activeRoutes: routeUpdate.routes.length,
+      serverTime: Math.max(next.stats?.serverTime ?? 0, next.serverTime)
+    })
+  };
+}
+
+function applyNonRouteEnvelope(state: AppState, message: PublicLiveEnvelope, animate: boolean): AppState {
   if (message.type === 'hello' || message.type === 'pong' || message.type === 'lagged') {
     return withLatestSeq(state, message.latestSeq ?? message.seq ?? state.latestSeq);
   }
@@ -189,25 +245,8 @@ export function applyPublicEnvelope(state: AppState, message: PublicLiveEnvelope
     return mark({
       ...state,
       activity: [activity, ...state.activity].slice(0, 240),
-      observerBursts: addObserverBurst(state.observerBursts, activity, serverTime),
+      observerBursts: animate ? addObserverBurst(state.observerBursts, activity, serverTime) : state.observerBursts,
       stats: refreshStats(state.stats, { packets, serverTime: Math.max(state.stats?.serverTime ?? 0, serverTime) }),
-      serverTime
-    });
-  }
-  if (message.event === 'routePulse') {
-    const pulse = withEnvelopeTiming(message.data, message);
-    if (state.pulses.some((item) => item.id === pulse.id)) return mark(state);
-    const reducerStartedAt = performance.now();
-    const routes = upsertPulseRoutes(state.routes, pulse);
-    recordRouteReducerDuration(performance.now() - reducerStartedAt);
-    const serverTime = Math.max(state.serverTime, message.serverTime ?? pulse.heardAt);
-    const routeTraces = addRouteTraceHits(state.routeTraces, pulse, serverTime);
-    return mark({
-      ...state,
-      routes,
-      pulses: [pulse, ...state.pulses].slice(0, 240),
-      routeTraces,
-      stats: refreshStats(state.stats, { activeRoutes: routes.length, serverTime: Math.max(state.stats?.serverTime ?? 0, serverTime) }),
       serverTime
     });
   }
@@ -218,7 +257,7 @@ export function applyPublicEvent(state: AppState, event: PublicEvent): AppState 
   if (event.type !== 'activity' && event.type !== 'routePulse' && event.type !== 'nodeUpdate') {
     return withLatestSeq(state, event.seq);
   }
-  return applyPublicEnvelope(state, {
+  return applyPublicEnvelopes(state, [{
     v: 1,
     type: 'event',
     event: event.type,
@@ -228,7 +267,30 @@ export function applyPublicEvent(state: AppState, event: PublicEvent): AppState 
     receivedAt: event.receivedAt ?? event.at,
     displayAt: event.receivedAt ?? event.at,
     data: event.data as never
-  });
+  }], { animate: false });
+}
+
+export function applyPublicEvents(state: AppState, events: PublicEvent[]): AppState {
+  const envelopes = events
+    .filter((event) => event.type === 'activity' || event.type === 'routePulse' || event.type === 'nodeUpdate')
+    .map((event) => ({
+      v: 1 as const,
+      type: 'event' as const,
+      event: event.type as 'activity' | 'routePulse' | 'nodeUpdate',
+      seq: event.seq,
+      latestSeq: event.seq,
+      serverTime: event.receivedAt ?? event.at,
+      receivedAt: event.receivedAt ?? event.at,
+      displayAt: event.receivedAt ?? event.at,
+      data: event.data as never
+    }));
+  let next = applyPublicEnvelopes(state, envelopes as PublicLiveEnvelope[], { animate: false });
+  for (const event of events) {
+    if (event.type !== 'activity' && event.type !== 'routePulse' && event.type !== 'nodeUpdate') {
+      next = withLatestSeq(next, event.seq);
+    }
+  }
+  return next;
 }
 
 export function filterNodes(nodes: PublicNode[], query: string): PublicNode[] {
@@ -250,66 +312,103 @@ export function filterRoutes(routes: PublicRoute[], visibleNodeIDs: Set<string>,
   );
 }
 
-function upsertPulseRoutes(routes: PublicRoute[], pulse: PublicRoutePulse): PublicRoute[] {
-  if (pulse.segments.length === 0) return routes;
+interface RouteBatchUpdate {
+  routes: PublicRoute[];
+  routeIndex: Map<string, number>;
+  maxPacketCount: number;
+  topologyChanged: boolean;
+  visualChanged: boolean;
+}
 
-  const touched = new Map<string, { segment: PublicRoutePulse['segments'][number]; hits: number }>();
-  for (const segment of pulse.segments) {
-    const existing = touched.get(segment.routeId);
-    touched.set(segment.routeId, { segment, hits: (existing?.hits ?? 0) + 1 });
+function upsertPulseRoutesBatch(
+  routes: PublicRoute[],
+  routeIndex: Map<string, number>,
+  maxPacketCount: number,
+  pulses: PublicRoutePulse[]
+): RouteBatchUpdate {
+  const touched = new Map<string, {
+    segment: PublicRoutePulse['segments'][number];
+    hits: number;
+    lastHeard: number;
+    payloadTypeNames: Set<string>;
+  }>();
+  for (const pulse of pulses) {
+    for (const segment of pulse.segments) {
+      const existing = touched.get(segment.routeId);
+      if (existing) {
+        existing.hits += 1;
+        existing.lastHeard = Math.max(existing.lastHeard, pulse.heardAt);
+        existing.payloadTypeNames.add(pulse.payloadTypeName);
+      } else {
+        touched.set(segment.routeId, {
+          segment,
+          hits: 1,
+          lastHeard: pulse.heardAt,
+          payloadTypeNames: new Set([pulse.payloadTypeName])
+        });
+      }
+    }
   }
+  if (touched.size === 0) return { routes, routeIndex, maxPacketCount, topologyChanged: false, visualChanged: false };
 
-  let maxBefore = 1;
-  let maxAfter = 1;
+  const maxBefore = Math.max(1, maxPacketCount);
+  let maxAfter = maxBefore;
   let changed = false;
   let next = routes;
-  for (let index = 0; index < routes.length; index += 1) {
+  let nextIndex = routeIndex;
+  let topologyChanged = false;
+  let visualChanged = false;
+  for (const [routeID, update] of touched) {
+    const index = routeIndex.get(routeID);
+    if (index === undefined) continue;
     const route = routes[index];
-    maxBefore = Math.max(maxBefore, route.packetCount);
-    const update = touched.get(route.id);
-    if (!update) {
-      maxAfter = Math.max(maxAfter, route.packetCount);
-      continue;
-    }
+    if (!route) continue;
     if (!changed) next = routes.slice();
     changed = true;
     const packetCount = route.packetCount + update.hits;
-    const payloadTypeNames = route.payloadTypeNames.includes(pulse.payloadTypeName)
-      ? route.payloadTypeNames
-      : [...route.payloadTypeNames, pulse.payloadTypeName].sort();
+    const payloadTypeNames = [...new Set([...route.payloadTypeNames, ...update.payloadTypeNames])].sort();
+    const nextBucket = frequencyBucket(packetCount, maxBefore);
+    if (nextBucket !== route.frequencyBucket || route.lastHeard < update.lastHeard - ROUTE_VISUAL_FRESH_MS) {
+      visualChanged = true;
+    }
     next[index] = {
       ...route,
       packetCount,
-      lastHeard: Math.max(route.lastHeard, pulse.heardAt),
-      frequencyBucket: frequencyBucket(packetCount, maxBefore),
+      lastHeard: Math.max(route.lastHeard, update.lastHeard),
+      frequencyBucket: nextBucket,
       payloadTypeNames
     };
     maxAfter = Math.max(maxAfter, packetCount);
-    touched.delete(route.id);
+    touched.delete(routeID);
   }
 
   if (touched.size > 0) {
     if (!changed) next = routes.slice();
     changed = true;
-    for (const { segment, hits } of touched.values()) {
+    nextIndex = new Map(routeIndex);
+    topologyChanged = true;
+    visualChanged = true;
+    for (const { segment, hits, lastHeard, payloadTypeNames } of touched.values()) {
       const route: PublicRoute = {
         id: segment.routeId,
         from: segment.from,
         to: segment.to,
         distanceKm: segment.distanceKm,
         packetCount: hits,
-        lastHeard: pulse.heardAt,
+        lastHeard,
         frequencyBucket: frequencyBucket(hits, Math.max(maxBefore, hits)),
-        payloadTypeNames: [pulse.payloadTypeName]
+        payloadTypeNames: [...payloadTypeNames].sort()
       };
+      nextIndex.set(route.id, next.length);
       next.push(route);
       maxAfter = Math.max(maxAfter, hits);
     }
   }
 
-  if (!changed) return routes;
-  if (maxAfter <= maxBefore * ROUTE_BUCKET_REBALANCE_FACTOR) return next;
-  return normalizeRouteBuckets(next);
+  if (!changed) return { routes, routeIndex, maxPacketCount: maxAfter, topologyChanged: false, visualChanged: false };
+  const rebalance = maxAfter > maxBefore * ROUTE_BUCKET_REBALANCE_FACTOR;
+  const normalized = rebalance ? normalizeRouteBuckets(next) : next;
+  return { routes: normalized, routeIndex: nextIndex, maxPacketCount: maxAfter, topologyChanged, visualChanged: visualChanged || rebalance };
 }
 
 function mergeCurrentEntities<T extends { id: string }>(current: T[], snapshot: T[]): T[] {
@@ -330,6 +429,14 @@ function normalizeRouteBuckets(routes: PublicRoute[]): PublicRoute[] {
     frequencyBucket: frequencyBucket(route.packetCount, max),
     payloadTypeNames: [...new Set(route.payloadTypeNames)].sort()
   }));
+}
+
+function indexRoutes(routes: PublicRoute[]): Map<string, number> {
+  return new Map(routes.map((route, index) => [route.id, index]));
+}
+
+function maxRoutePacketCount(routes: PublicRoute[]): number {
+  return Math.max(1, ...routes.map((route) => route.packetCount));
 }
 
 function frequencyBucket(count: number, maxCount: number): number {
@@ -459,10 +566,13 @@ function withEnvelopeTiming<T extends { receivedAt?: number; displayAt?: number;
   data: T,
   message: Extract<PublicLiveEnvelope, { type: 'event' }>
 ): T {
+  const receivedAt = message.receivedAt ?? message.serverTime ?? data.receivedAt;
   return {
     ...data,
-    receivedAt: message.receivedAt ?? message.serverTime ?? data.receivedAt,
-    displayAt: message.displayAt ?? message.receivedAt ?? message.serverTime ?? data.displayAt,
+    receivedAt,
+    // Preserve the field for wire compatibility, but make it immediate. The
+    // browser scheduler owns visual pacing and recovery never animates.
+    displayAt: receivedAt ?? data.displayAt,
     seq: message.seq ?? data.seq
   };
 }

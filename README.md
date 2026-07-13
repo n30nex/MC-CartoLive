@@ -1,4 +1,4 @@
-# MeshCore MQTT Live Map v3.2.1
+# MeshCore MQTT Live Map v3.2.2
 
 **MC-CartoLive** is a single-container public live map for MeshCore MQTT
 observations. It ingests broker traffic, stores normalized observations in
@@ -10,26 +10,21 @@ Public instance: [carto.canadaverse.org](https://carto.canadaverse.org/).
 
 ## Current Release
 
-Version 3.2.1 is the continuous-live-flow and release-integrity patch. It keeps
-the 3.2 public API and schema while fixing:
+Version 3.2.2 is the lossless live-flow stabilization patch. It keeps the 3.2
+public API, privacy boundary, RF route rules, and schema `32000` while adding:
 
-- sparse public event cursors that were incorrectly treated as dropped traffic,
-  repeatedly clearing browser animation queues and starting HTTP recovery
-- a default Watch view that hid packet comets and cluster activity at the
-  initial Canada/world zoom
-- storage-warning and startup-backfill behavior that could stop or starve the
-  only SQLite-derived projection worker
-- non-durable WebSocket fallback events that used a conflicting sequence space
-- bootstrap/full-state races that could leave a browser with incomplete map
-  topology
-- unbounded long-session map dedupe state, stale route-freshness styling, and
-  queued map-source work surviving teardown
-- Timeline/VCR and RF Replay Studio surfaces that could pause, compete with, or
-  distract from the always-live public map; both are removed in 3.2.1
-- browser smoke, release-audit, immutable candidate, and active-flow soak gates
-  that did not fail closed
-- generic GHCR tags incorrectly carrying the Canada asset pack; 3.2.1 publishes
-  separate attested world and Canada multi-platform digests
+- fair primary/live-core/background SQLite write coordination and retryable
+  ingest/projection outcomes instead of terminal five-second deadline loss
+- short ordered live commits and immediate public broadcasts without a global
+  cinematic `displayAt` reservation
+- immediate WebSocket state/PacketTV updates plus one adaptive animation-frame
+  scheduler that gives every safely mappable connected-live packet one visual
+- cursor recovery and snapshots that reconcile state without replaying stale
+  animation, plus indexed batch route updates under burst load
+- privacy-safe queue/projection/broadcast readiness and latency evidence
+- mandatory canonical release proof on release-branch and merged-main SHAs,
+  followed by an immutable Canada-digest five-minute canary and consistent-snapshot
+  integrity gate before publication
 
 Published releases run from an immutable GHCR digest through the production
 Compose package. The repository Compose file remains the local build path.
@@ -96,7 +91,7 @@ podman run --rm -p 8080:8080 \
   -e PUBLIC_MODE=true \
   -e PUBLIC_BASE_URL=http://localhost:8080 \
   -e FIXTURE_REPLAY_PATH=/app/examples/fixtures/synthetic-live.ndjson \
-  ghcr.io/n30nex/mc-cartolive:3.2.1
+  ghcr.io/n30nex/mc-cartolive:3.2.2
 ```
 
 For a persistent deployment:
@@ -106,7 +101,7 @@ podman run -d --name mc-cartolive \
   -p 8080:8080 \
   --env-file .env \
   -v mc-cartolive-data:/app/data \
-  ghcr.io/n30nex/mc-cartolive:3.2.1
+  ghcr.io/n30nex/mc-cartolive:3.2.2
 ```
 
 The production droplet currently uses Docker Compose; local release validation
@@ -127,13 +122,13 @@ Important variables:
 | `MESHCORE_CHANNEL_SECRETS` | Optional private extra channel keys for operators. |
 | `FIXTURE_REPLAY_PATH` | Synthetic fixture path for repeatable local demos. |
 | `MAP_REGION_PRESET` | `world`, `canada`, or `custom`. |
-| `VITE_APP_ASSET_PACK` | Build-time frontend asset preset. Generic tags (`3.2.1`, `3.2`, `sha-<main-sha>`, `latest`) are `world`; matching `*-canada` aliases and the hosted droplet are `canada`. |
+| `VITE_APP_ASSET_PACK` | Build-time frontend asset preset. Generic tags (`3.2.2`, `3.2`, `sha-<main-sha>`, `latest`) are `world`; matching `*-canada` aliases and the hosted droplet are `canada`. |
 | `MAP_BOUNDS` | Custom bounds as `minLat,minLng,maxLat,maxLng`. |
 | `PUBLIC_REGIONS` | Public-safe broker region allowlist. Empty allows safe labels. |
 | `DB_PATH` | SQLite path inside the container. |
 | `SQLITE_READ_OPEN_CONNS` | Read-only SQLite pool size. Production uses `2`; the writer remains a single connection. Legacy `SQLITE_MAX_OPEN_CONNS` is accepted only as a fallback. |
-| `SQLITE_BUSY_TIMEOUT_MS` | Per-attempt SQLite lock wait. Production fixes this to `750` ms inside the single five-second primary ingest deadline. |
-| `DERIVED_INGEST_QUEUE_SIZE` | Bounded lower-priority resolver/projection queue. Defaults to `1024`. |
+| `SQLITE_BUSY_TIMEOUT_MS` | Per-attempt SQLite lock wait. Production fixes this to `750` ms; transient failures retry with stable ingest identity and bounded backoff. |
+| `DERIVED_INGEST_QUEUE_SIZE` | Bounded live projection queue. Defaults to `1024`; queued work retries instead of being treated as successfully processed. |
 | `METRICS_LISTEN_ADDR` | Dedicated metrics listener. Defaults to `127.0.0.1:9090`; Docker publishes it only on host loopback port `39090`. |
 | `SQLITE_CACHE_SIZE_KB` | SQLite page cache budget in KiB. Defaults to `16000`. |
 | `SQLITE_MMAP_SIZE_BYTES` | SQLite mmap budget in bytes. Defaults to `67108864`. |
@@ -172,13 +167,13 @@ node scripts/check-asset-pack.mjs
 node scripts/check-frontend-budget.mjs
 node scripts/check-public-privacy.mjs http://127.0.0.1:39476
 podman build --format docker -t mc-cartolive-meshcore-live-map:latest .
-node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:3.2.1 --asset-pack world --pull
+node scripts/package-smoke.mjs --runtime podman --image ghcr.io/n30nex/mc-cartolive:3.2.2 --asset-pack world --pull
 ```
 
 Live post-deploy smoke:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.2.1 -ExpectedGitSha <full-sha> -SshTarget root@134.122.45.228 -DiagnoseRegion YTR
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.2.2 -ExpectedGitSha <full-sha> -SshTarget root@134.122.45.228 -DiagnoseRegion YTR
 ```
 
 ## Documentation
@@ -190,11 +185,12 @@ Live post-deploy smoke:
 - [Privacy model](docs/privacy.md)
 - [Roadmap](docs/roadmap.md)
 - [Changelog](CHANGELOG.md)
-- [3.2.1 release notes](docs/3.2.1/release_notes.md)
-- [3.2.1 validation checklist](docs/3.2.1/validation_checklist.md)
-- [3.2.1 storage and stability](docs/3.2.1/storage-and-stability.md)
-- [3.2.1 upgrade and rollback](docs/3.2.1/upgrade-and-rollback.md)
-- [3.2.1 public API notes](docs/3.2.1/public-api.md)
+- [3.2.2 release notes](docs/3.2.2/release_notes.md)
+- [3.2.2 validation checklist](docs/3.2.2/validation_checklist.md)
+- [3.2.2 storage and stability](docs/3.2.2/storage-and-stability.md)
+- [3.2.2 upgrade and rollback](docs/3.2.2/upgrade-and-rollback.md)
+- [3.2.2 public API notes](docs/3.2.2/public-api.md)
+- [3.2.2 release verification](docs/3.2.2/release-verification.md)
 - [3.2.0 release errata](docs/3.2.0/errata.md)
 - [3.0.2 release notes](docs/3.0.2/release_notes.md)
 - [3.0.2 validation checklist](docs/3.0.2/validation_checklist.md)

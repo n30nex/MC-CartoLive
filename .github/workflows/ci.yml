@@ -100,6 +100,7 @@ jobs:
           node scripts/test-websocket-flow-probe.mjs
           node scripts/test-public-privacy-retry.mjs
           node scripts/test-public-privacy-websocket.mjs
+          node scripts/test-release-verification.mjs
           node scripts/check-cloudflare-cidrs.mjs --online
       - name: Compose contracts
         run: |

@@ -5,8 +5,9 @@ After=docker.service network-online.target
 
 [Service]
 Type=oneshot
-TimeoutStartSec=12min
+TimeoutStartSec=6min
 EnvironmentFile=-/etc/default/mc-cartolive-release-audit
+ExecStart=/opt/MC-CartoLive/scripts/runtime-health-check.sh
 ExecStart=/opt/MC-CartoLive/scripts/post-release-audit.sh
 StateDirectory=mc-cartolive-release-audit
 LogsDirectory=mc-cartolive-release-audit
@@ -17,7 +18,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/mc-cartolive-release-audit /var/log/mc-cartolive-release-audit
+ReadWritePaths=/var/lib/mc-cartolive-release-audit /var/log/mc-cartolive-release-audit /mnt/mc-cartolive-audit-snapshots
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

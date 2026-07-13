@@ -62,6 +62,35 @@ describe('PacketsPanel', () => {
     expect(html).not.toContain('Resume live');
   });
 
+  it('renders sanitized live activity immediately before history reconciliation', () => {
+    const html = renderToStaticMarkup(
+      <PacketsPanel
+        mode="expanded"
+        selectedPacketID={null}
+        selectedPacket={null}
+        livePackets={[{
+          id: 'live-1',
+          at: Date.now(),
+          region: 'Ontario',
+          payloadTypeName: 'ADVERT',
+          hopCount: 0,
+          segmentCount: 0,
+          distanceKm: 0,
+          routeIds: [],
+          endpointLabels: [],
+          segments: []
+        }]}
+        onClose={() => undefined}
+        onExpand={() => undefined}
+        onSelectPacket={() => undefined}
+        onReplayPacket={() => undefined}
+      />
+    );
+    expect(html).toContain('Ontario');
+    expect(html).toContain('This packet has no public map geometry');
+    expect(html).not.toContain('packetHash');
+  });
+
   it('explains bounded packet scans without private wording', () => {
     expect(formatPacketScanStatus({ eventsScanned: 2500, scanLimit: 2500, filtered: true, partial: true })).toBe(
       'Searched 2.5k routes'

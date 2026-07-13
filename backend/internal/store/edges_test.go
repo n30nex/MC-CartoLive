@@ -153,6 +153,76 @@ func TestInsertEdgeEventSuppressesAmbiguousRetryByIngestID(t *testing.T) {
 	}
 }
 
+func TestCommitLiveEdgeAtomicallyOrdersPublicEventsAndDedupes(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if _, err := s.db.ExecContext(ctx, `PRAGMA foreign_keys=OFF`); err != nil {
+		t.Fatal(err)
+	}
+	edge := edgeEventForTest("live-core", time.Now().UnixMilli())
+	edge.IngestID = "live-core:edge"
+	request := LiveEdgeCommitRequest{
+		Edge: edge, ResolutionStatus: "high", ResolutionReason: "test",
+		PublishPublicEvents: true, ActivityDedupeKey: "live-core:activity",
+		RoutePulseDedupeKey: "live-core:pulse", ReceivedAtMs: time.Now().UnixMilli(),
+	}
+	first, err := s.CommitLiveEdge(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.EdgeInserted || len(first.PublicEvents) != 2 || !first.EventInserted[0] || !first.EventInserted[1] {
+		t.Fatalf("first=%#v", first)
+	}
+	if first.PublicEvents[0].Type != "activity" || first.PublicEvents[1].Type != "routePulse" || first.PublicEvents[1].Seq != first.PublicEvents[0].Seq+1 {
+		t.Fatalf("public events=%#v", first.PublicEvents)
+	}
+	second, err := s.CommitLiveEdge(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.EdgeInserted || second.EventInserted[0] || second.EventInserted[1] || second.Edge.ID != first.Edge.ID {
+		t.Fatalf("retry=%#v", second)
+	}
+}
+
+func TestCommitLiveEdgeRollsBackEdgeWhenPublicEventInsertFails(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if _, err := s.db.ExecContext(ctx, `
+PRAGMA foreign_keys=OFF;
+CREATE TRIGGER fail_live_core_public_event BEFORE INSERT ON public_events
+BEGIN SELECT RAISE(ABORT, 'forced public event failure'); END;`); err != nil {
+		t.Fatal(err)
+	}
+	edge := edgeEventForTest("rollback", time.Now().UnixMilli())
+	edge.IngestID = "rollback:edge"
+	_, err = s.CommitLiveEdge(ctx, LiveEdgeCommitRequest{
+		Edge: edge, ResolutionStatus: "high", PublishPublicEvents: true,
+		ActivityDedupeKey: "rollback:activity", RoutePulseDedupeKey: "rollback:pulse",
+	})
+	if err == nil {
+		t.Fatal("expected forced public event failure")
+	}
+	var edgeCount, eventCount int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM live_edge_events WHERE ingest_id='rollback:edge'`).Scan(&edgeCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM public_events`).Scan(&eventCount); err != nil {
+		t.Fatal(err)
+	}
+	if edgeCount != 0 || eventCount != 0 {
+		t.Fatalf("rollback left edge/events=%d/%d", edgeCount, eventCount)
+	}
+}
+
 func edgeEventForTest(packetHash string, heardAt int64) live.EdgeEvent {
 	return live.EdgeEvent{
 		PacketHash:      packetHash,

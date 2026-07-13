@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_PACKET_FILTERS, filterPackets, packetEndpointSummary, packetNodeIDs, packetRouteIDs, packetSearchFields, packetToPulse, packetWindowForScope } from './packets';
+import { DEFAULT_PACKET_FILTERS, filterPackets, livePacketsFromActivity, packetEndpointSummary, packetNodeIDs, packetRouteIDs, packetSearchFields, packetToPulse, packetWindowForScope } from './packets';
 import type { PublicPacketPath } from './types';
 import { dedupePackets } from './lib/dedupePackets';
 
@@ -66,6 +66,41 @@ describe('packet page helpers', () => {
   it('builds bounded fetch windows from timeline scopes', () => {
     expect(packetWindowForScope(100_000, 60_000)).toEqual({ from: 40_000, to: 100_000 });
     expect(packetWindowForScope(10_000, 60_000)).toEqual({ from: 0, to: 10_000 });
+  });
+
+  it('turns sanitized connected-live activity into immediate PacketTV rows', () => {
+    const items = livePacketsFromActivity([
+      {
+        id: 'observer-live',
+        seq: 42,
+        kind: 'packet',
+        payloadTypeName: 'ADVERT',
+        heardAt: 5_000,
+        hopCount: 0,
+        hasRoute: false,
+        animationState: 'observer',
+        resolutionBucket: 'observer_only'
+      }
+    ], [{
+      id: 'route-live',
+      seq: 43,
+      payloadTypeName: 'PLAIN_TEXT',
+      heardAt: 6_000,
+      segments: packet().segments
+    }]);
+
+    expect(items.map((item) => item.id)).toEqual(['live-pulse:43', 'live-activity:42']);
+    expect(items[0]).toMatchObject({ segmentCount: 2, routeIds: ['r-a', 'r-b'] });
+    expect(items[1]).toMatchObject({ segmentCount: 0, segments: [] });
+    expect(JSON.stringify(items)).not.toMatch(/publicKey|packetHash|pathHex|rawPayload/);
+  });
+
+  it('retains distinct same-millisecond live packets while reconciling matching history', () => {
+    const first = packet({ id: 'live-activity:41', at: 5_000, routeIds: [], endpointLabels: [], segments: [], segmentCount: 0 });
+    const second = packet({ id: 'live-activity:42', at: 5_000, routeIds: [], endpointLabels: [], segments: [], segmentCount: 0 });
+    const history = packet({ id: 'history-row', at: 5_000, routeIds: [], endpointLabels: [], segments: [], segmentCount: 0 });
+
+    expect(dedupePackets([first, second, history]).map((item) => item.id)).toEqual(['live-activity:41', 'live-activity:42']);
   });
 
   it('defensively handles malformed packet fields in search helpers', () => {

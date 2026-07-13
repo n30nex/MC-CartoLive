@@ -68,6 +68,12 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "# HELP meshcore_mqtt_messages_processed_total Normalized messages processed since process start\n")
 		fmt.Fprintf(w, "# TYPE meshcore_mqtt_messages_processed_total counter\n")
 		fmt.Fprintf(w, "meshcore_mqtt_messages_processed_total %d\n\n", status.ProcessedMessages)
+		fmt.Fprintf(w, "# HELP meshcore_mqtt_permanent_rejects_total Normalized messages durably classified as permanent decode rejects\n")
+		fmt.Fprintf(w, "# TYPE meshcore_mqtt_permanent_rejects_total counter\n")
+		fmt.Fprintf(w, "meshcore_mqtt_permanent_rejects_total %d\n\n", status.PermanentRejected)
+		fmt.Fprintf(w, "# HELP meshcore_mqtt_handler_failures_total Accepted messages that did not reach a durable or permanent-reject outcome\n")
+		fmt.Fprintf(w, "# TYPE meshcore_mqtt_handler_failures_total counter\n")
+		fmt.Fprintf(w, "meshcore_mqtt_handler_failures_total %d\n\n", status.FailedMessages)
 		fmt.Fprintf(w, "# HELP meshcore_mqtt_messages_dropped_total Primary queue drops since process start\n")
 		fmt.Fprintf(w, "# TYPE meshcore_mqtt_messages_dropped_total counter\n")
 		fmt.Fprintf(w, "meshcore_mqtt_messages_dropped_total %d\n\n", status.DroppedMessages)
@@ -131,6 +137,30 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "# HELP meshcore_derived_failures_total Projection jobs that exceeded their budget or observed a store failure\n")
 		fmt.Fprintf(w, "# TYPE meshcore_derived_failures_total counter\n")
 		fmt.Fprintf(w, "meshcore_derived_failures_total %d\n\n", snap.DerivedFailures)
+
+		for _, lane := range []struct {
+			name                               string
+			depth, oldestAt, lastWait, maxWait int64
+		}{
+			{"primary", snap.WriterPrimaryQueueDepth, snap.WriterPrimaryOldestAtMs, snap.WriterPrimaryLastWaitMs, snap.WriterPrimaryMaxWaitMs},
+			{"live_core", snap.WriterLiveCoreQueueDepth, snap.WriterLiveCoreOldestAtMs, snap.WriterLiveCoreLastWaitMs, snap.WriterLiveCoreMaxWaitMs},
+			{"background", snap.WriterBackgroundQueueDepth, snap.WriterBackgroundOldestAtMs, snap.WriterBackgroundLastWaitMs, snap.WriterBackgroundMaxWaitMs},
+		} {
+			fmt.Fprintf(w, "meshcore_writer_queue_depth{lane=%q} %d\n", lane.name, lane.depth)
+			fmt.Fprintf(w, "meshcore_writer_queue_oldest_age_ms{lane=%q} %d\n", lane.name, currentQueueAgeMs(time.Now().UnixMilli(), lane.oldestAt))
+			fmt.Fprintf(w, "meshcore_writer_last_wait_ms{lane=%q} %d\n", lane.name, lane.lastWait)
+			fmt.Fprintf(w, "meshcore_writer_max_wait_ms{lane=%q} %d\n", lane.name, lane.maxWait)
+		}
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "meshcore_primary_deadline_failures_total %d\n", snap.PrimaryDeadlineFailures)
+		fmt.Fprintf(w, "meshcore_primary_persisted_total %d\n", snap.PrimaryPersisted)
+		fmt.Fprintf(w, "meshcore_permanent_rejects_total %d\n", snap.PermanentRejects)
+		fmt.Fprintf(w, "meshcore_derived_projection_lag_ms %d\n", snap.DerivedProjectionLagMs)
+		fmt.Fprintf(w, "meshcore_derived_projection_failures_total %d\n", snap.DerivedProjectionFailures)
+		fmt.Fprintf(w, "meshcore_derived_projection_queue_depth %d\n", snap.DerivedProjectionQueueDepth)
+		fmt.Fprintf(w, "meshcore_derived_projection_queue_oldest_age_ms %d\n", currentQueueAgeMs(time.Now().UnixMilli(), snap.DerivedProjectionOldestAtMs))
+		fmt.Fprintf(w, "meshcore_observation_to_broadcast_latency_ms %d\n", snap.LastBroadcastLatencyMs)
+		fmt.Fprintf(w, "meshcore_observation_to_broadcast_max_latency_ms %d\n\n", snap.MaxBroadcastLatencyMs)
 	}
 	if s.Store != nil {
 		storage := s.Store.StorageInfo()

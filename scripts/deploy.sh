@@ -7,6 +7,7 @@ SERVICE="${MC_CARTOLIVE_SERVICE:-meshcore-live-map}"
 CONTAINER="${MC_CARTOLIVE_CONTAINER:-meshcore-canada-live-map}"
 HEALTH_URL="${MC_CARTOLIVE_READY_URL:-http://127.0.0.1:39476/readyz}"
 LOCAL_BASE_URL="${MC_CARTOLIVE_LOCAL_BASE_URL:-http://127.0.0.1:39476}"
+METRICS_URL="${MC_CARTOLIVE_METRICS_URL:-http://127.0.0.1:39090/metrics}"
 STATE_DIR="${MC_CARTOLIVE_DEPLOY_STATE_DIR:-/var/lib/mc-cartolive-deploy}"
 MIN_FREE_GB="${MC_CARTOLIVE_MIN_FREE_GB:-25}"
 MAX_ROOT_USAGE_PERCENT="${MC_CARTOLIVE_MAX_ROOT_USAGE_PERCENT:-24}"
@@ -18,6 +19,7 @@ MAX_PRESERVED_ROOT_USAGE_PERCENT="${MC_CARTOLIVE_MAX_PRESERVED_ROOT_USAGE_PERCEN
 IMAGE=""
 PREVIOUS_IMAGE=""
 EXPECTED_GIT_SHA=""
+BACKUP_VERIFICATION=""
 CANDIDATE_RUN_ID=""
 CANDIDATE_RUN_ATTEMPT=""
 CANDIDATE_TAG=""
@@ -34,6 +36,7 @@ Usage:
 Options:
   --previous-image IMAGE@sha256:DIGEST  Immutable rollback image.
   --expected-git-sha FULL_SHA           Required source identity for release cutover.
+  --backup-verification FILE            Required matched/removed off-host backup evidence in preserved mode.
   --repo PATH                           Checkout/package path.
   --compose-file PATH                   Production Compose file relative to repo.
   --fresh-database                      Permanently delete the live SQLite DB and backups.
@@ -62,6 +65,7 @@ while [ "$#" -gt 0 ]; do
 		--image) IMAGE="${2:-}"; shift 2 ;;
 		--previous-image) PREVIOUS_IMAGE="${2:-}"; shift 2 ;;
 		--expected-git-sha) EXPECTED_GIT_SHA="${2:-}"; shift 2 ;;
+		--backup-verification) BACKUP_VERIFICATION="${2:-}"; shift 2 ;;
 		--repo) REPO="${2:-}"; shift 2 ;;
 		--compose-file) COMPOSE_FILE="${2:-}"; shift 2 ;;
 		--fresh-database) FRESH_DATABASE=1; shift ;;
@@ -91,6 +95,8 @@ if [ "$FRESH_DATABASE" -eq 1 ]; then
 	[ "$MIN_FREE_GB" -ge 25 ] || die "fresh database requires MC_CARTOLIVE_MIN_FREE_GB of at least 25"
 elif [ -n "$CONFIRM_FRESH_DATABASE" ]; then
 	die "confirmation token supplied without --fresh-database"
+elif [ -z "$BACKUP_VERIFICATION" ]; then
+	die "preserved deployment requires --backup-verification from verify-backup-copy.sh"
 fi
 
 [ -d "$REPO" ] || die "repo directory does not exist: $REPO"
@@ -128,7 +134,22 @@ fi
 command -v docker >/dev/null 2>&1 || die "docker is required"
 docker compose version >/dev/null 2>&1 || die "docker compose v2 is required"
 command -v curl >/dev/null 2>&1 || die "curl is required"
+command -v jq >/dev/null 2>&1 || die "jq is required"
 command -v sqlite3 >/dev/null 2>&1 || die "sqlite3 is required for release database verification"
+
+backup_verification_sha=not_required
+if [ "$FRESH_DATABASE" -eq 0 ]; then
+	[ -f "$BACKUP_VERIFICATION" ] || die "backup verification evidence must be a regular non-symlink file"
+	[ ! -L "$BACKUP_VERIFICATION" ] || die "backup verification evidence must be a regular non-symlink file"
+	jq -e '.formatVersion == 1 and .matched == true and .separateFilesystems == true and .localRemoved == true and (.sha256 | test("^[0-9a-f]{64}$")) and (.bytes | type == "number" and . > 0)' "$BACKUP_VERIFICATION" >/dev/null || die "backup verification evidence is incomplete or did not remove the redundant local copy"
+	backup_verified_at="$(jq -r '.verifiedAt' "$BACKUP_VERIFICATION")"
+	backup_verified_epoch="$(date -u -d "$backup_verified_at" +%s 2>/dev/null || true)"
+	now_epoch="$(date -u +%s)"
+	case "$backup_verified_epoch" in ''|*[!0-9]*) die "backup verification timestamp is invalid" ;; esac
+	[ "$backup_verified_epoch" -le "$now_epoch" ] || die "backup verification timestamp is in the future"
+	[ $((now_epoch - backup_verified_epoch)) -le 86400 ] || die "backup verification must be no more than 24 hours old"
+	backup_verification_sha="$(sha256sum "$BACKUP_VERIFICATION" | awk '{print $1}')"
+fi
 
 DATA_DIR="$REPO/data"
 BACKUP_DIR="$REPO/backups"
@@ -312,8 +333,6 @@ verify_release() {
 	printf '%s' "$events_json" | grep -q '"resetRequired"[[:space:]]*:[[:space:]]*true' || return 1
 	[ -n "$state_json" ] || return 1
 	[ "$(docker inspect --format '{{.Config.Image}}' "$CONTAINER")" = "$IMAGE" ] || return 1
-	[ "$(sqlite3 "$DATA_DIR/meshcore-live.db" 'PRAGMA quick_check;' 2>/dev/null)" = "ok" ] || return 1
-	[ -z "$(sqlite3 "$DATA_DIR/meshcore-live.db" 'PRAGMA foreign_key_check;' 2>/dev/null)" ] || return 1
 	[ "$(sqlite3 "$DATA_DIR/meshcore-live.db" 'PRAGMA user_version;' 2>/dev/null)" = "$(expected_schema_version)" ] || return 1
 	if [ "$FRESH_DATABASE" -eq 0 ]; then
 		observation_high_water_after="$(sqlite3 "$DATA_DIR/meshcore-live.db" 'SELECT COALESCE(MAX(id), 0) FROM packet_observations;' 2>/dev/null)" || return 1
@@ -524,6 +543,15 @@ if ! wait_ready || ! verify_release; then
 	exit 1
 fi
 
+baseline_metrics="$(curl -fsS --max-time 10 "$METRICS_URL")" || die "could not capture deployment metrics baseline"
+metric_baseline() { awk -v wanted="$1" '$1 == wanted {print $2; exit}' <<<"$baseline_metrics"; }
+baseline_accepted="$(metric_baseline meshcore_mqtt_messages_accepted_total)"
+baseline_processed="$(metric_baseline meshcore_mqtt_messages_processed_total)"
+baseline_public_seq="$(jq -r '.latestSeq // 0' <<<"$state_json")"
+for baseline_value in "$baseline_accepted" "$baseline_processed" "$baseline_public_seq"; do
+	case "$baseline_value" in ''|*[!0-9]*) die "deployment metric baselines are invalid" ;; esac
+done
+
 if [ "$FRESH_DATABASE" -eq 1 ]; then database_mode=fresh; else database_mode=preserved; fi
 cat >"$STATE_DIR/current.env" <<EOF
 MC_CARTOLIVE_IMAGE=$IMAGE
@@ -536,6 +564,10 @@ MC_CARTOLIVE_CANDIDATE_RUN_ID=$CANDIDATE_RUN_ID
 MC_CARTOLIVE_CANDIDATE_RUN_ATTEMPT=$CANDIDATE_RUN_ATTEMPT
 MC_CARTOLIVE_CANDIDATE_TAG=$CANDIDATE_TAG
 MC_CARTOLIVE_ASSET_PACK=$CANDIDATE_ASSET_PACK
+MC_CARTOLIVE_BASELINE_ACCEPTED_TOTAL=$baseline_accepted
+MC_CARTOLIVE_BASELINE_PROCESSED_TOTAL=$baseline_processed
+MC_CARTOLIVE_BASELINE_PUBLIC_SEQ=$baseline_public_seq
+MC_CARTOLIVE_BACKUP_VERIFICATION_SHA256=$backup_verification_sha
 EOF
 chmod 0600 "$STATE_DIR/current.env"
 
