@@ -415,6 +415,34 @@ describe('public app state', () => {
     expect(next.routeVisualRevision).toBe(state.routeVisualRevision);
   });
 
+  it('defers existing-route bucket styling to the bounded map refresh clock', () => {
+    const route = { ...publicState.routes[0], packetCount: 1, frequencyBucket: 0 };
+    const state = initialAppState({ ...publicState, routes: [route] });
+    const next = applyPublicEnvelope(state, {
+      v: 1,
+      type: 'event',
+      event: 'routePulse',
+      seq: 52,
+      receivedAt: publicState.serverTime + 1_000,
+      data: {
+        id: 'bucket-change',
+        payloadTypeName: 'ADVERT',
+        heardAt: publicState.serverTime + 1_000,
+        segments: [{
+          routeId: route.id,
+          from: route.from,
+          to: route.to,
+          distanceKm: route.distanceKm
+        }]
+      }
+    });
+
+    expect(next.routes[0].frequencyBucket).not.toBe(route.frequencyBucket);
+    expect(next.routeTrafficRevision).toBe(state.routeTrafficRevision + 1);
+    expect(next.routeTopologyRevision).toBe(state.routeTopologyRevision);
+    expect(next.routeVisualRevision).toBe(state.routeVisualRevision);
+  });
+
   it('indexes newly discovered routes and advances topology exactly once', () => {
     const state = initialAppState(publicState);
     const next = applyPublicEnvelope(state, {

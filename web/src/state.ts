@@ -211,7 +211,10 @@ export function applyPublicEnvelopes(state: AppState, messages: PublicLiveEnvelo
     routeMaxPacketCount: routeUpdate.maxPacketCount,
     routeTopologyRevision: next.routeTopologyRevision + (routeUpdate.topologyChanged ? 1 : 0),
     routeTrafficRevision: next.routeTrafficRevision + 1,
-    routeVisualRevision: next.routeVisualRevision + (routeUpdate.visualChanged ? 1 : 0),
+    // Packet counts and buckets are authoritative immediately, but MapLibre
+    // route geometry/style refreshes on topology or the bounded freshness
+    // clock instead of rebuilding its source for each traffic increment.
+    routeVisualRevision: next.routeVisualRevision + (routeUpdate.topologyChanged ? 1 : 0),
     stats: refreshStats(next.stats, {
       activeRoutes: routeUpdate.routes.length,
       serverTime: Math.max(next.stats?.serverTime ?? 0, next.serverTime)
