@@ -998,6 +998,14 @@ async function smokeSparseLiveFlow(page) {
     const count = 200;
     const firstSeq = baselineSeq + 1;
     const finalSeq = baselineSeq + count;
+    return { source, baselineSeq, firstSeq, finalSeq, finalID: `browser-smoke-live-${count}`, count };
+  });
+  // Let the long-task observer deliver buffered entries from the preceding
+  // style/recovery stress before opening the live-flow measurement window.
+  await page.evaluate(() => new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  }));
+  await page.evaluate(() => {
     if (window.__mcCartoLivePerf) {
       window.__mcCartoLivePerf.packetActiveComets = 0;
       window.__mcCartoLivePerf.packetActiveCometIDs = [];
@@ -1014,7 +1022,6 @@ async function smokeSparseLiveFlow(page) {
       window.__mcCartoLivePerf.longTasks = 0;
       window.__mcCartoLivePerf.longestTaskMs = 0;
     }
-    return { source, baselineSeq, firstSeq, finalSeq, finalID: `browser-smoke-live-${count}`, count };
   });
   const batchSize = 10;
   const batchIntervalMs = 100;
