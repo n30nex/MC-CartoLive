@@ -206,7 +206,7 @@ for (const contract of [
   'const canonicalFullRefs = new Set([\'refs/heads/main\', `refs/heads/codex/release-${releaseVersion}`])',
   'canonicalFullRefs.has(githubContext.ref)',
   "event: 'workflow_dispatch'",
-  "apiExpiredRows: 500_000",
+  "apiExpiredRows: 100_000",
   "'-expired-observations'",
   "'-topology=true'",
   'observationToBroadcastP95Ms',

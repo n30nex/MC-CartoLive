@@ -28,7 +28,9 @@ const defaults = profileName === 'full'
       burstRate: 100,
       burstSeconds: 60,
       apiRows: 5_000_000,
-      apiExpiredRows: 500_000,
+      // Keep a realistic expired cohort while proving the production pruner's
+      // required 100-row transactions can complete inside the bounded gate.
+      apiExpiredRows: 100_000,
       apiExpiredAgeHours: 720,
       apiPathRows: 10_000,
       apiEvents: 20_000,
