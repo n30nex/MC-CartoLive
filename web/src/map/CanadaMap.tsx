@@ -1461,6 +1461,11 @@ function CanadaMap({
   const nodeLabelFrameRef = useRef<number | null>(null);
   const messageBubbleCleanupTimersRef = useRef<Map<string, number>>(new Map());
   const shownBubbleTextsRef = useRef(new RecentIdentityTracker(MESSAGE_BUBBLE_IDENTITY_LIMIT, MESSAGE_BUBBLE_DEDUPE_MS));
+  const reducedMotionRef = useRef(
+    typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
   const pageHiddenRef = useRef(typeof document !== 'undefined' ? document.hidden : false);
   const pausedRef = useRef(paused);
   const initialViewRef = useRef(initialView);
@@ -1661,7 +1666,7 @@ function CanadaMap({
       }
     }
 
-    addPulseNodeActivityBatch(map, nodeActivityRef.current, pulses);
+    if (normalPulses.length > 0) addPulseNodeActivityBatch(map, nodeActivityRef.current, normalPulses);
     for (const pulse of pulses) addPulseNodeMeshActivity(nodeMeshActivityAtRef.current, pulse);
     if (normalPulses.length > 0 && layerSettingsRef.current.activityHeatmap) {
       setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current);
@@ -1705,10 +1710,11 @@ function CanadaMap({
     if (!shouldAnimate || !layerSettingsRef.current.liveComets) return 'ineligible';
     const animator = animatorRef.current;
     if (!map || !animator) return 'retry';
+    const effectivePressure = reducedMotionRef.current ? 'minimal' : pressure;
     // Connected-live motion stays on the lossless canvas path. Manual replay
     // may still use 3D, but allocating a 3D object per live packet stalls RAF.
-    if (!animator.add(pulse, livePulseAnimationOptions(pressure))) return 'ineligible';
-    queueLivePulseEffects(pulse, pressure, shouldAnimate);
+    if (!animator.add(pulse, livePulseAnimationOptions(effectivePressure))) return 'ineligible';
+    queueLivePulseEffects(pulse, effectivePressure, shouldAnimate);
     return 'started';
   };
 
@@ -1719,9 +1725,10 @@ function CanadaMap({
     const shouldAnimate = shouldAnimateLiveEvent(visualReceivedAt(burst), now, pageHiddenRef.current);
     if (!shouldAnimate || !layerSettingsRef.current.observerBursts) return 'ineligible';
     if (!map || !animatorRef.current) return 'retry';
-    if (!animatorRef.current.addObserverBurst(burst, liveObserverAnimationOptions(pressure))) return 'ineligible';
+    const effectivePressure = reducedMotionRef.current ? 'minimal' : pressure;
+    if (!animatorRef.current.addObserverBurst(burst, liveObserverAnimationOptions(effectivePressure))) return 'ineligible';
     followTrafficObserverBurst(map, burst, followTrafficRef.current, followTrafficStateRef);
-    const overloaded = pressure !== 'normal';
+    const overloaded = effectivePressure !== 'normal';
     if (!overloaded && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(burst)) {
       const text = publicSafeMessage(burst);
       const anchorLabel = burst.messageAnchor?.label ?? burst.location.label ?? '';
