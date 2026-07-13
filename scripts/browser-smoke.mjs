@@ -592,7 +592,10 @@ async function smokeVisibilityRecovery(context, page, stateRequests, eventReques
   // DOM Page Lifecycle `resume` event in headless mode. Dispatch the standard
   // signal after the real frozen/active transition so the application path is
   // deterministic across desktop and mobile CI runners.
-  await page.evaluate(() => document.dispatchEvent(new Event('resume')));
+  await page.evaluate(() => {
+    document.dispatchEvent(new Event('freeze'));
+    document.dispatchEvent(new Event('resume'));
+  });
   const recovered = await waitForCondition(() => eventRequests.count > eventsBefore, 10_000, 100);
   if (!recovered) throw new Error(`visibility resume did not request cursor recovery (before=${eventsBefore}, after=${eventRequests.count})`);
   if (stateRequests.count !== stateBefore) throw new Error(`ordinary visibility resume replaced full state (before=${stateBefore}, after=${stateRequests.count})`);

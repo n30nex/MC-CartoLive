@@ -3,7 +3,7 @@ import { recordLiveAnimationEmergencyActivation, recordLiveAnimationStart, recor
 export const LIVE_VISUAL_QUEUE_LIMIT = 1_024;
 export const LIVE_VISUAL_MAX_STARTS_PER_FRAME = 8;
 export const LIVE_VISUAL_TARGET_AGE_MS = 2_000;
-export const LIVE_VISUAL_DRAIN_TARGET_FRAMES = 30;
+export const LIVE_VISUAL_DRAIN_TARGET_FRAMES = 15;
 export const LIVE_VISUAL_DEGRADED_ACTIVE = 48;
 export const LIVE_VISUAL_MINIMAL_ACTIVE = 120;
 

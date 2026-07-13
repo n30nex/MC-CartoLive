@@ -111,7 +111,7 @@ describe('LiveVisualScheduler', () => {
     expect(window.__mcCartoLivePerf?.liveAnimationEmergencyStarts).toBe(0);
   });
 
-  it('keeps a 100-per-second burst below two seconds at 30 frames per second', () => {
+  it('keeps a 100-per-second burst below two seconds at 20 frames per second', () => {
     let now = 300_000;
     let enqueued = 0;
     const ages: number[] = [];
@@ -124,9 +124,9 @@ describe('LiveVisualScheduler', () => {
         return 'started';
       }
     });
-    for (let frame = 1; frame <= 61; frame += 1) {
-      now = 300_000 + frame * 33;
-      const target = Math.min(200, Math.floor((frame * 33) / 10));
+    for (let frame = 1; frame <= 41; frame += 1) {
+      now = 300_000 + frame * 50;
+      const target = Math.min(200, Math.floor((frame * 50) / 10));
       const arrivals = Array.from({ length: target - enqueued }, (_, index) => {
         const marker = enqueued + index;
         return { id: `paced-${marker}`, marker, receivedAt: now };
@@ -136,7 +136,7 @@ describe('LiveVisualScheduler', () => {
       scheduler.drainFrame();
     }
     while (scheduler.size() > 0) {
-      now += 33;
+      now += 50;
       scheduler.drainFrame();
     }
 
