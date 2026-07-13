@@ -1028,9 +1028,8 @@ async function smokeSparseLiveFlow(page) {
     perf.longTaskWindowStartMs = performance.now();
   });
 
-  const runPhase = async ({ name, startOrdinal, count, batchIntervalMs, animationP95LimitMs }) => {
+  const runPhase = async ({ name, startOrdinal, count, batchSize, batchIntervalMs, animationP95LimitMs }) => {
     await resetMetrics();
-    const batchSize = 10;
     const finalOrdinal = startOrdinal + count - 1;
     const injectedCount = await page.evaluate(async ({ source, baselineSeq, startOrdinal, count, finalOrdinal, batchSize, batchIntervalMs }) => {
       let accepted = 0;
@@ -1112,8 +1111,8 @@ async function smokeSparseLiveFlow(page) {
     return { ...phase, metrics };
   };
 
-  const sustained = await runPhase({ name: 'sustained-20ps', startOrdinal: 1, count: 200, batchIntervalMs: 500, animationP95LimitMs: 2_000 });
-  const burst = await runPhase({ name: 'burst-100ps', startOrdinal: 201, count: 200, batchIntervalMs: 100, animationP95LimitMs: 5_000 });
+  const sustained = await runPhase({ name: 'sustained-20ps', startOrdinal: 1, count: 200, batchSize: 1, batchIntervalMs: 50, animationP95LimitMs: 2_000 });
+  const burst = await runPhase({ name: 'burst-100ps', startOrdinal: 201, count: 200, batchSize: 1, batchIntervalMs: 10, animationP95LimitMs: 5_000 });
   const metrics = {
     receiveToStateP95Ms: Math.max(sustained.metrics.receiveToStateP95Ms, burst.metrics.receiveToStateP95Ms),
     receiveToStateMaxMs: Math.max(sustained.metrics.receiveToStateMaxMs, burst.metrics.receiveToStateMaxMs),
