@@ -111,6 +111,43 @@ describe('LiveVisualScheduler', () => {
     expect(window.__mcCartoLivePerf?.liveAnimationEmergencyStarts).toBe(0);
   });
 
+  it('keeps a 100-per-second burst below two seconds at 30 frames per second', () => {
+    let now = 300_000;
+    let enqueued = 0;
+    const ages: number[] = [];
+    const scheduler = new LiveVisualScheduler<TestVisual>({
+      now: () => now,
+      requestFrame: () => 1,
+      cancelFrame: () => undefined,
+      start: (visual) => {
+        ages.push(now - visual.receivedAt);
+        return 'started';
+      }
+    });
+    for (let frame = 1; frame <= 61; frame += 1) {
+      now = 300_000 + frame * 33;
+      const target = Math.min(200, Math.floor((frame * 33) / 10));
+      const arrivals = Array.from({ length: target - enqueued }, (_, index) => {
+        const marker = enqueued + index;
+        return { id: `paced-${marker}`, marker, receivedAt: now };
+      });
+      enqueued = target;
+      scheduler.enqueue(arrivals);
+      scheduler.drainFrame();
+    }
+    while (scheduler.size() > 0) {
+      now += 33;
+      scheduler.drainFrame();
+    }
+
+    const ordered = ages.slice().sort((left, right) => left - right);
+    const p95 = ordered[Math.ceil(ordered.length * 0.95) - 1] ?? Number.POSITIVE_INFINITY;
+    expect(enqueued).toBe(200);
+    expect(ages).toHaveLength(200);
+    expect(p95).toBeLessThan(2_000);
+    expect(window.__mcCartoLivePerf?.liveAnimationEmergencyStarts).toBe(0);
+  });
+
   it('keeps eligible visuals queued until the renderer becomes available', () => {
     let ready = false;
     const admitted: string[] = [];

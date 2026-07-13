@@ -3,6 +3,7 @@ import { recordLiveAnimationEmergencyActivation, recordLiveAnimationStart, recor
 export const LIVE_VISUAL_QUEUE_LIMIT = 1_024;
 export const LIVE_VISUAL_MAX_STARTS_PER_FRAME = 8;
 export const LIVE_VISUAL_TARGET_AGE_MS = 2_000;
+export const LIVE_VISUAL_DRAIN_TARGET_FRAMES = 30;
 export const LIVE_VISUAL_DEGRADED_ACTIVE = 48;
 export const LIVE_VISUAL_MINIMAL_ACTIVE = 120;
 
@@ -83,7 +84,7 @@ export class LiveVisualScheduler<T extends SchedulableLiveVisual> {
     const oldestAge = Math.max(0, now - (this.queue[0]?.receivedAt ?? now));
     const catchUpStarts = oldestAge >= LIVE_VISUAL_TARGET_AGE_MS
       ? LIVE_VISUAL_MAX_STARTS_PER_FRAME
-      : Math.max(1, Math.ceil(this.queue.length / 60));
+      : Math.max(1, Math.ceil(this.queue.length / LIVE_VISUAL_DRAIN_TARGET_FRAMES));
     const starts = Math.min(this.queue.length, LIVE_VISUAL_MAX_STARTS_PER_FRAME, catchUpStarts);
     for (let index = 0; index < starts; index += 1) {
       const visual = this.queue.shift();

@@ -759,7 +759,10 @@ function PublicDashboardApp() {
       document,
       window,
       shouldRehydrate: () => true,
-      rehydrate: () => eventRecoveryRef.current?.(latestObservedSeqRef.current || undefined),
+      // An untargeted recovery polls after the durable applied cursor. Passing
+      // the already-observed cursor would make the recovery loop a no-op and
+      // could miss traffic received while the page was suspended.
+      rehydrate: () => eventRecoveryRef.current?.(),
       onSuspend: recordVisibilityPause
     });
   }, []);
