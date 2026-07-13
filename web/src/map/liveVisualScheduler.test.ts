@@ -37,7 +37,7 @@ describe('LiveVisualScheduler', () => {
     expect(new Set(starts.map((item) => item.id)).size).toBe(100);
   });
 
-  it('drains up to eight per frame when the oldest visual reaches the latency target', () => {
+  it('drains up to eight distinct visuals on every available frame', () => {
     const starts: string[] = [];
     const scheduler = new LiveVisualScheduler<TestVisual>({
       now: () => 12_100,
@@ -48,7 +48,7 @@ describe('LiveVisualScheduler', () => {
         return 'started';
       }
     });
-    scheduler.enqueue(Array.from({ length: 30 }, (_, marker) => ({ id: `v-${marker}`, marker, receivedAt: 10_000 })));
+    scheduler.enqueue(Array.from({ length: 30 }, (_, marker) => ({ id: `v-${marker}`, marker, receivedAt: 12_100 })));
     scheduler.drainFrame();
     expect(starts).toHaveLength(LIVE_VISUAL_MAX_STARTS_PER_FRAME);
   });
