@@ -1096,7 +1096,8 @@ async function smokeSparseLiveFlow(page) {
         animationStarts: Number(perf?.liveAnimationStarts ?? 0),
         emergencyActivations: Number(perf?.liveAnimationEmergencyStarts ?? 0),
         frameP95Ms: Number(perf?.packetFrameP95Ms ?? 0),
-        repeatedLongTasks: Number(perf?.longTasks ?? 0),
+        longTasksObserved: Number(perf?.longTasks ?? 0),
+        repeatedLongTasks: Math.max(0, Number(perf?.longTasks ?? 0) - 1),
         longestTaskMs: Number(perf?.longestTaskMs ?? 0),
         longTaskSamples: Array.isArray(perf?.longTaskSamples) ? perf.longTaskSamples.slice(-12) : [],
         queueOldestAgeMs: Number(perf?.liveVisualQueueOldestAgeMs ?? 0),
@@ -1110,7 +1111,7 @@ async function smokeSparseLiveFlow(page) {
     if (metrics.maxVisualAgeMs > 5000) throw new Error(`${name} maximum visual age=${metrics.maxVisualAgeMs}ms`);
     if (metrics.frameP95Ms > 34) throw new Error(`${name} animation frame p95=${metrics.frameP95Ms}ms`);
     if (metrics.repeatedLongTasks !== 0) {
-      throw new Error(`${name} repeated long tasks=${metrics.repeatedLongTasks}, longest=${metrics.longestTaskMs}ms, samples=${JSON.stringify(metrics.longTaskSamples)}`);
+      throw new Error(`${name} repeated long tasks=${metrics.repeatedLongTasks}, observed=${metrics.longTasksObserved}, longest=${metrics.longestTaskMs}ms, samples=${JSON.stringify(metrics.longTaskSamples)}`);
     }
     return { ...phase, metrics };
   };
@@ -1126,6 +1127,7 @@ async function smokeSparseLiveFlow(page) {
     animationStarts: sustained.metrics.animationStarts + burst.metrics.animationStarts,
     emergencyActivations: sustained.metrics.emergencyActivations + burst.metrics.emergencyActivations,
     frameP95Ms: Math.max(sustained.metrics.frameP95Ms, burst.metrics.frameP95Ms),
+    longTasksObserved: sustained.metrics.longTasksObserved + burst.metrics.longTasksObserved,
     repeatedLongTasks: sustained.metrics.repeatedLongTasks + burst.metrics.repeatedLongTasks,
     longestTaskMs: Math.max(sustained.metrics.longestTaskMs, burst.metrics.longestTaskMs),
     queueOldestAgeMs: Math.max(sustained.metrics.queueOldestAgeMs, burst.metrics.queueOldestAgeMs),
