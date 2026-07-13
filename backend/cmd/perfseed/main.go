@@ -152,13 +152,13 @@ INSERT OR REPLACE INTO packets (
 	if observations > 0 {
 		query := numberCTE(observations) + `
 INSERT INTO packet_observations (
-  ingest_id, packet_hash, topic, iata, observer_public_key, observer_name, raw_json,
+  id, ingest_id, packet_hash, topic, iata, observer_public_key, observer_name, raw_json,
   heard_at_ms, rssi, snr, score, route_type, route_type_name, payload_type,
   payload_type_name, payload_version, hash_size, hop_count, path_hex, payload_hex,
   resolution_status, resolution_reason, invalid_for_map, summary, message_sender,
   message_text, created_at_ms
 )
-SELECT '', ?, ?, 'YYZ', ?, 'Performance Observer', '{}',
+SELECT n + 1, '', ?, ?, 'YYZ', ?, 'Performance Observer', '{}',
 	CASE WHEN n >= ? THEN ? - (n % 86400000) ELSE ? - (n % ?) END,
 	-72.0, 7.0, 1.0, 9, 'flood', 1, 'TXT', 1, 1,
 	CASE WHEN (n % 3) = 0 THEN 1 ELSE 2 END,

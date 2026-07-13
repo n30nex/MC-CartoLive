@@ -30,6 +30,7 @@ type retentionPruneTarget struct {
 	table     string
 	column    string
 	beforeMs  int64
+	whereSQL  string
 	orphanSQL string
 }
 
@@ -57,7 +58,9 @@ func (s *Store) NewRetentionPruner(cutoffs RetentionCutoffs) *RetentionPruner {
 		{table: "public_route_summaries", column: "last_heard_ms", beforeMs: cutoffs.DataBeforeMs},
 		{table: "public_coverage_cells", column: "updated_at_ms", beforeMs: cutoffs.DataBeforeMs},
 		{table: "live_edge_events", column: "heard_at_ms", beforeMs: cutoffs.DataBeforeMs},
-		{table: "packet_observations", column: "heard_at_ms", beforeMs: cutoffs.DataBeforeMs},
+		{table: "packet_observations", column: "heard_at_ms", beforeMs: cutoffs.DataBeforeMs, whereSQL: `
+  AND NOT EXISTS (SELECT 1 FROM live_edge_events e WHERE e.observation_id = candidate.id)
+  AND NOT EXISTS (SELECT 1 FROM public_packet_paths p WHERE p.observation_id = candidate.id)`},
 		{table: "observer_status", column: "received_at_ms", beforeMs: cutoffs.DataBeforeMs},
 		{table: "solar_snapshots", column: "fetched_at_ms", beforeMs: cutoffs.DataBeforeMs},
 		{table: "propagation_weather_snapshots", column: "fetched_at_ms", beforeMs: propagationBeforeMs},
@@ -91,7 +94,7 @@ func (p *RetentionPruner) Step(ctx context.Context) (RetentionPruneStep, error) 
 		result, err = p.store.db.ExecContext(ctx, fmt.Sprintf(target.orphanSQL, pruneBatchSize))
 	} else {
 		result, err = p.store.db.ExecContext(ctx,
-			fmt.Sprintf("DELETE FROM %s WHERE rowid IN (SELECT rowid FROM %s WHERE %s < ? LIMIT %d)", target.table, target.table, target.column, pruneBatchSize),
+			fmt.Sprintf("DELETE FROM %s WHERE rowid IN (SELECT candidate.rowid FROM %s AS candidate WHERE candidate.%s < ?%s LIMIT %d)", target.table, target.table, target.column, target.whereSQL, pruneBatchSize),
 			target.beforeMs)
 	}
 	if err != nil {
