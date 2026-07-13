@@ -24,8 +24,10 @@ while [ "$#" -gt 0 ]; do
 done
 
 for dependency in date df dirname jq mkdir mv readlink rm sha256sum stat; do command -v "$dependency" >/dev/null 2>&1 || die "missing $dependency"; done
-[ -f "$LOCAL_COPY" ] && [ ! -L "$LOCAL_COPY" ] || die 'local copy must be a regular non-symlink file'
-[ -f "$OFFHOST_COPY" ] && [ ! -L "$OFFHOST_COPY" ] || die 'off-host copy must be a regular non-symlink file'
+[ -f "$LOCAL_COPY" ] || die 'local copy must be a regular non-symlink file'
+[ ! -L "$LOCAL_COPY" ] || die 'local copy must be a regular non-symlink file'
+[ -f "$OFFHOST_COPY" ] || die 'off-host copy must be a regular non-symlink file'
+[ ! -L "$OFFHOST_COPY" ] || die 'off-host copy must be a regular non-symlink file'
 [ -n "$EVIDENCE_FILE" ] || die '--evidence is required'
 local_path="$(readlink -f "$LOCAL_COPY")"
 offhost_path="$(readlink -f "$OFFHOST_COPY")"
@@ -35,7 +37,8 @@ offhost_device="$(stat -c %d "$offhost_path")"
 [ "$local_device" != "$offhost_device" ] || die 'off-host copy must be on a different mounted filesystem'
 local_bytes="$(stat -c %s "$local_path")"
 offhost_bytes="$(stat -c %s "$offhost_path")"
-[ "$local_bytes" -gt 0 ] && [ "$local_bytes" -eq "$offhost_bytes" ] || die 'backup sizes do not match'
+[ "$local_bytes" -gt 0 ] || die 'backup sizes do not match'
+[ "$local_bytes" -eq "$offhost_bytes" ] || die 'backup sizes do not match'
 local_sha="$(sha256sum "$local_path" | awk '{print $1}')"
 offhost_sha="$(sha256sum "$offhost_path" | awk '{print $1}')"
 [ "$local_sha" = "$offhost_sha" ] || die 'backup checksums do not match'

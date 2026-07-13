@@ -139,13 +139,15 @@ command -v sqlite3 >/dev/null 2>&1 || die "sqlite3 is required for release datab
 
 backup_verification_sha=not_required
 if [ "$FRESH_DATABASE" -eq 0 ]; then
-	[ -f "$BACKUP_VERIFICATION" ] && [ ! -L "$BACKUP_VERIFICATION" ] || die "backup verification evidence must be a regular non-symlink file"
+	[ -f "$BACKUP_VERIFICATION" ] || die "backup verification evidence must be a regular non-symlink file"
+	[ ! -L "$BACKUP_VERIFICATION" ] || die "backup verification evidence must be a regular non-symlink file"
 	jq -e '.formatVersion == 1 and .matched == true and .separateFilesystems == true and .localRemoved == true and (.sha256 | test("^[0-9a-f]{64}$")) and (.bytes | type == "number" and . > 0)' "$BACKUP_VERIFICATION" >/dev/null || die "backup verification evidence is incomplete or did not remove the redundant local copy"
 	backup_verified_at="$(jq -r '.verifiedAt' "$BACKUP_VERIFICATION")"
 	backup_verified_epoch="$(date -u -d "$backup_verified_at" +%s 2>/dev/null || true)"
 	now_epoch="$(date -u +%s)"
 	case "$backup_verified_epoch" in ''|*[!0-9]*) die "backup verification timestamp is invalid" ;; esac
-	[ "$backup_verified_epoch" -le "$now_epoch" ] && [ $((now_epoch - backup_verified_epoch)) -le 86400 ] || die "backup verification must be no more than 24 hours old"
+	[ "$backup_verified_epoch" -le "$now_epoch" ] || die "backup verification timestamp is in the future"
+	[ $((now_epoch - backup_verified_epoch)) -le 86400 ] || die "backup verification must be no more than 24 hours old"
 	backup_verification_sha="$(sha256sum "$BACKUP_VERIFICATION" | awk '{print $1}')"
 fi
 
