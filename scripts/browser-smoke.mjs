@@ -299,6 +299,7 @@ async function runReleaseGate(browser, viewport) {
   let commandPalette = null;
   let liveFlow = null;
   let cdp = null;
+  let tracing = true;
 
   await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
   await page.addInitScript(installBrowserSmokeInstrumentation);
@@ -391,6 +392,8 @@ async function runReleaseGate(browser, viewport) {
       if (hiddenExportSurfaces !== 0) throw new Error(`temporary export surfaces leaked after release gate: ${hiddenExportSurfaces}`);
     });
     if (topologyReady) {
+      await context.tracing.stop({ path: trace });
+      tracing = false;
       liveFlow = await runGateStep(errors, checks, 'sparse durable and seq-less fallback events visibly update the live map', () => smokeSparseLiveFlow(page));
     }
   } catch (error) {
@@ -403,9 +406,11 @@ async function runReleaseGate(browser, viewport) {
         errors.push(`release screenshot failed: ${error instanceof Error ? error.message : String(error)}`);
       });
     }
-    await context.tracing.stop({ path: trace }).catch((error) => {
-      errors.push(`trace write failed: ${error instanceof Error ? error.message : String(error)}`);
-    });
+    if (tracing) {
+      await context.tracing.stop({ path: trace }).catch((error) => {
+        errors.push(`trace write failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
     await cdp?.detach().catch(() => undefined);
     await context.setOffline(false).catch(() => undefined);
     await context.close();
@@ -1025,9 +1030,9 @@ async function smokeSparseLiveFlow(page) {
   });
   const batchSize = 10;
   const batchIntervalMs = 100;
-  let injectedCount = 0;
-  for (let offset = 0; offset < plan.count; offset += batchSize) {
-    injectedCount += await page.evaluate(({ source, baselineSeq, count, offset, batchSize }) => {
+  const injectedCount = await page.evaluate(async ({ source, baselineSeq, count, batchSize, batchIntervalMs }) => {
+    let accepted = 0;
+    for (let offset = 0; offset < count; offset += batchSize) {
       const receivedAt = Date.now();
       const pulse = (id) => ({ ...source, id, seq: undefined, heardAt: receivedAt, receivedAt, displayAt: receivedAt });
       const messages = Array.from({ length: Math.min(batchSize, count - offset) }, (_, index) => {
@@ -1046,10 +1051,11 @@ async function smokeSparseLiveFlow(page) {
           data: pulse(`browser-smoke-live-${ordinal}`)
         };
       });
-      return window.__mcBrowserSmoke.injectSocketMessages(messages);
-    }, { source: plan.source, baselineSeq: plan.baselineSeq, count: plan.count, offset, batchSize });
-    if (offset + batchSize < plan.count) await page.waitForTimeout(batchIntervalMs);
-  }
+      accepted += window.__mcBrowserSmoke.injectSocketMessages(messages);
+      if (offset + batchSize < count) await new Promise((resolve) => setTimeout(resolve, batchIntervalMs));
+    }
+    return accepted;
+  }, { source: plan.source, baselineSeq: plan.baselineSeq, count: plan.count, batchSize, batchIntervalMs });
   const injected = { ...plan, count: injectedCount };
 
   const applied = await page.waitForFunction(({ finalSeq, finalID }) => {
