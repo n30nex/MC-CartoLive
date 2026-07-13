@@ -1521,9 +1521,8 @@ func redactedURL(in string) string {
 const (
 	retentionPruneInitialDelay          = 30 * time.Second
 	retentionPruneInterval              = time.Minute
-	retentionPruneCycleBudget           = 45 * time.Second
-	retentionPruneBatchPause            = 10 * time.Millisecond
-	retentionPruneMaxRowsPerCycle int64 = 250_000
+	retentionPruneCycleBudget           = 55 * time.Second
+	retentionPruneMaxRowsPerCycle int64 = 2_000_000
 
 	// MeshCore permits up to 63 path hops. Allowing one route-summary row per
 	// segment plus the observation, edge/path projections, packet, and as many as
@@ -1619,16 +1618,10 @@ func (a *Application) pruneLoop(ctx context.Context) {
 				a.Log.Debug("retention cleanup complete", "rowsDeleted", rowsDeleted, "steps", steps, "durationMs", time.Since(started).Milliseconds())
 				return
 			}
-			if step.RowsDeleted > 0 {
-				timer := time.NewTimer(retentionPruneBatchPause)
-				select {
-				case <-cycleCtx.Done():
-					timer.Stop()
-					a.Log.Warn("retention cleanup reached its bounded time budget", "rowsDeleted", rowsDeleted, "steps", steps)
-					return
-				case <-timer.C:
-				}
-			}
+			// Every step is already a 100-row background-lane transaction. The
+			// coordinator rechecks primary/live-core work before admitting the
+			// next step, so a fixed sleep only delays cleanup without improving
+			// live-lane fairness.
 		}
 		a.Log.Info("retention cleanup reached its bounded row budget", "rowsDeleted", rowsDeleted, "steps", steps, "durationMs", time.Since(started).Milliseconds())
 	}

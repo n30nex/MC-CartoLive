@@ -23,6 +23,18 @@ func TestRetentionPruneConfiguredCapacityExceedsLockedLoad(t *testing.T) {
 	}
 }
 
+func TestRetentionPruneCycleCanClearCanonicalExpiredFixture(t *testing.T) {
+	const canonicalExpiredRows int64 = 500_000
+	// Expired observations can also orphan one packet row each. Keep enough
+	// headroom for the other bounded projection tables in the canonical seed.
+	if retentionPruneMaxRowsPerCycle < canonicalExpiredRows*2 {
+		t.Fatalf("retention row budget=%d must clear observations plus orphan packets=%d", retentionPruneMaxRowsPerCycle, canonicalExpiredRows*2)
+	}
+	if retentionPruneCycleBudget >= retentionPruneInterval {
+		t.Fatalf("retention cycle budget=%s must remain below interval=%s", retentionPruneCycleBudget, retentionPruneInterval)
+	}
+}
+
 func TestRetentionPrunePressurePolicyPrioritizesCriticalCleanup(t *testing.T) {
 	nowMs := int64(10_000)
 	healthyPrimary := imqtt.Status{QueueDepth: 0, QueueCapacity: 4096}
