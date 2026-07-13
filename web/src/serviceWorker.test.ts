@@ -90,6 +90,42 @@ describe('service worker release safety', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it('upgrades a 3.2.1-controlled tab to 3.2.2 once without stale cache identity or a reload loop', async () => {
+    const postMessage = vi.fn();
+    const reload = vi.fn();
+    const stored = new Map<string, string>();
+    let controllerChange: (() => void) | undefined;
+    const registration = { waiting: { state: 'installed', postMessage, addEventListener: vi.fn() }, unregister: vi.fn() };
+    const container = {
+      controller: { scriptURL: serviceWorkerScriptURL('3.2.1', 'old-build') },
+      getRegistrations: vi.fn(async () => []),
+      register: vi.fn(async () => registration),
+      addEventListener: vi.fn((_type: string, listener: () => void) => { controllerChange = listener; })
+    };
+    const win = {
+      document: { readyState: 'complete' },
+      navigator: { serviceWorker: container },
+      location: { reload },
+      sessionStorage: {
+        getItem: vi.fn((key: string) => stored.get(key) ?? null),
+        setItem: vi.fn((key: string, value: string) => { stored.set(key, value); })
+      },
+      dispatchEvent: vi.fn(),
+      setTimeout: vi.fn(() => 1)
+    } as unknown as ServiceWorkerWindowLike;
+
+    expect(serviceWorkerScriptURL('3.2.2', 'new-build')).not.toBe((container.controller as { scriptURL: string }).scriptURL);
+    configureServiceWorker(win);
+    await vi.waitFor(() => expect(container.register).toHaveBeenCalled());
+    expect(activateWaitingServiceWorker(registration as never, win)).toBe(true);
+    controllerChange?.();
+    controllerChange?.();
+
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(swSource).toContain('SHELL_CACHE = `${CACHE_PREFIX}-shell-${RELEASE_ID}`');
+  });
+
   it('reports updatefound only after the new worker reaches installed', async () => {
     let updateFound: (() => void) | undefined;
     let stateChange: (() => void) | undefined;

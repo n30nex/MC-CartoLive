@@ -72,6 +72,62 @@ WHERE id=?`, status, reason, id)
 	return err
 }
 
+type NonEdgeActivityCommitRequest struct {
+	ObservationID      int64
+	ResolutionStatus   string
+	ResolutionReason   string
+	PublishPublicEvent bool
+	Activity           live.PublicActivity
+	DedupeKey          string
+	ReceivedAtMs       int64
+}
+
+type NonEdgeActivityCommitResult struct {
+	PublicEvent   live.PublicEvent
+	EventPresent  bool
+	EventInserted bool
+}
+
+// CommitNonEdgeActivity atomically records the final non-route resolution and
+// the activity cursor row used by PacketTV/observer animation. Nothing may be
+// broadcast until this transaction succeeds.
+func (s *Store) CommitNonEdgeActivity(ctx context.Context, request NonEdgeActivityCommitRequest) (NonEdgeActivityCommitResult, error) {
+	result := NonEdgeActivityCommitResult{}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return result, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	if _, err := tx.ExecContext(ctx, `
+UPDATE packet_observations
+SET resolution_status=?, resolution_reason=?
+WHERE id=?`, request.ResolutionStatus, request.ResolutionReason, request.ObservationID); err != nil {
+		return result, err
+	}
+	if request.PublishPublicEvent {
+		event := live.PublicEventFromData("activity", request.Activity)
+		event.DedupeKey = strings.TrimSpace(request.DedupeKey)
+		event.ReceivedAt = request.ReceivedAtMs
+		stored, inserted, err := insertPublicEventOnceTx(ctx, tx, event)
+		if err != nil {
+			return result, err
+		}
+		result.PublicEvent = stored
+		result.EventPresent = true
+		result.EventInserted = inserted
+	}
+	if err := tx.Commit(); err != nil {
+		return result, err
+	}
+	committed = true
+	return result, nil
+}
+
 func (s *Store) ObservationByID(ctx context.Context, id int64) (live.PacketObservation, error) {
 	rows, err := s.reader().QueryContext(ctx, `
 SELECT id, packet_hash, payload_type, payload_type_name, route_type, route_type_name,

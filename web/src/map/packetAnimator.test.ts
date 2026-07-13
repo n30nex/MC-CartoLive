@@ -179,7 +179,7 @@ describe('packet animation timing', () => {
     };
 
     const animator = new PacketAnimator(map as any, canvas);
-    animator.add({
+    expect(animator.add({
       id: 'pulse-1',
       payloadTypeName: 'PLAIN_TEXT',
       heardAt: Date.now(),
@@ -191,16 +191,60 @@ describe('packet animation timing', () => {
           distanceKm: 93
         }
       ]
-    });
-    animator.addObserverBurst({
+    })).toBe(true);
+    expect(animator.addObserverBurst({
       id: 'observer-1',
       payloadTypeName: 'PLAIN_TEXT',
       heardAt: Date.now(),
       location: { label: 'YYZ observer', iata: 'YYZ', lat: 43.65, lng: -79.38 }
-    });
+    })).toBe(true);
 
     expect((animator as any).traceHits).toHaveLength(1);
     expect((animator as any).observerBurstHits).toHaveLength(1);
+    expect(animator.add({
+      id: 'invalid-route',
+      payloadTypeName: 'ADVERT',
+      heardAt: Date.now(),
+      segments: [{
+        routeId: 'invalid',
+        from: { nodeId: 'bad-a', label: 'Bad A', lat: Number.NaN, lng: -80 },
+        to: { nodeId: 'bad-b', label: 'Bad B', lat: 43, lng: Number.NaN },
+        distanceKm: 1
+      }]
+    })).toBe(false);
+    expect(animator.addObserverBurst({
+      id: 'invalid-observer',
+      payloadTypeName: 'ADVERT',
+      heardAt: Date.now(),
+      location: { label: 'Invalid', lat: 0, lng: 0 }
+    }, { forceDistinct: true })).toBe(false);
+    animator.destroy();
+    window.requestAnimationFrame = originalRAF;
+    window.cancelAnimationFrame = originalCancelRAF;
+  });
+
+  it('keeps every connected-live observer packet distinct in forced pressure modes', () => {
+    const originalRAF = window.requestAnimationFrame;
+    const originalCancelRAF = window.cancelAnimationFrame;
+    window.requestAnimationFrame = vi.fn(() => 1) as typeof window.requestAnimationFrame;
+    window.cancelAnimationFrame = vi.fn() as typeof window.cancelAnimationFrame;
+    const canvas = document.createElement('canvas');
+    Object.defineProperty(canvas, 'getBoundingClientRect', { value: () => ({ width: 120, height: 80 }) });
+    vi.spyOn(canvas, 'getContext').mockReturnValue({ clearRect: vi.fn(), setTransform: vi.fn() } as unknown as CanvasRenderingContext2D);
+    const map = { on: vi.fn(), off: vi.fn(), getLayer: vi.fn(() => false), getZoom: vi.fn(() => 8), queryRenderedFeatures: vi.fn(() => []) };
+    const animator = new PacketAnimator(map as any, canvas);
+    const burst = {
+      id: 'observer-1',
+      payloadTypeName: 'ADVERT',
+      heardAt: Date.now(),
+      location: { label: 'YYZ observer', iata: 'YYZ', lat: 43.65, lng: -79.38 }
+    };
+    expect(animator.addObserverBurst(burst, { forceDistinct: true, durationMs: 450, afterglowMs: 0 })).toBe(true);
+    expect(animator.addObserverBurst({ ...burst, id: 'observer-2' }, { forceDistinct: true, durationMs: 450, afterglowMs: 0 })).toBe(true);
+
+    expect((animator as any).observerBursts).toHaveLength(2);
+    expect((animator as any).observerBursts[0].duration).toBe(450);
+    expect(animator.activeVisualCount()).toBe(2);
     animator.destroy();
     window.requestAnimationFrame = originalRAF;
     window.cancelAnimationFrame = originalCancelRAF;
@@ -230,7 +274,7 @@ describe('packet animation timing', () => {
 
     const animator = new PacketAnimator(map as any, canvas);
     animator.setPaused(true);
-    animator.add({
+    expect(animator.add({
       id: 'pulse-skipped',
       payloadTypeName: 'PLAIN_TEXT',
       heardAt: Date.now(),
@@ -240,9 +284,9 @@ describe('packet animation timing', () => {
         to: { nodeId: 'node-b', label: 'B', lat: 43.65, lng: -79.38 },
         distanceKm: 93
       }]
-    });
+    })).toBe(false);
     expect((animator as any).pulses).toHaveLength(0);
-    animator.add({
+    expect(animator.add({
       id: 'pulse-forced',
       payloadTypeName: 'PLAIN_TEXT',
       heardAt: Date.now(),
@@ -252,7 +296,7 @@ describe('packet animation timing', () => {
         to: { nodeId: 'node-b', label: 'B', lat: 43.65, lng: -79.38 },
         distanceKm: 93
       }]
-    }, { force: true, travelDurationMs: 6000, brightness: 1.4, trailScale: 1.5, animationStyle: 'pulse' });
+    }, { force: true, travelDurationMs: 6000, brightness: 1.4, trailScale: 1.5, animationStyle: 'pulse' })).toBe(true);
     expect((animator as any).pulses).toHaveLength(1);
     expect((animator as any).pulses[0].travelDuration).toBe(6000);
     expect((animator as any).pulses[0].animationStyle).toBe('pulse');

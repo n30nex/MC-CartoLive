@@ -974,27 +974,50 @@ async function smokeSparseLiveFlow(page) {
     const shell = document.querySelector('.app-shell');
     if (!(shell instanceof HTMLElement)) throw new Error('app shell is unavailable');
     const baselineSeq = Number(shell.dataset.liveSeq ?? 0);
-    const firstSeq = baselineSeq + 2;
-    const finalSeq = baselineSeq + 5;
+    const count = 200;
+    const firstSeq = baselineSeq + 1;
+    const finalSeq = baselineSeq + count;
     const now = Date.now();
     if (window.__mcCartoLivePerf) {
       window.__mcCartoLivePerf.packetActiveComets = 0;
       window.__mcCartoLivePerf.packetActiveCometIDs = [];
+      window.__mcCartoLivePerf.packetFrameSamplesMs = [];
+      window.__mcCartoLivePerf.packetFrameP95Ms = 0;
+      window.__mcCartoLivePerf.liveStateLatencySamplesMs = [];
+      window.__mcCartoLivePerf.liveStateLatencyP95Ms = 0;
+      window.__mcCartoLivePerf.liveStateLatencyMaxMs = 0;
+      window.__mcCartoLivePerf.liveAnimationLatencySamplesMs = [];
+      window.__mcCartoLivePerf.liveAnimationLatencyP95Ms = 0;
+      window.__mcCartoLivePerf.liveAnimationLatencyMaxMs = 0;
+      window.__mcCartoLivePerf.liveAnimationStarts = 0;
+      window.__mcCartoLivePerf.liveAnimationEmergencyStarts = 0;
+      window.__mcCartoLivePerf.longTasks = 0;
+      window.__mcCartoLivePerf.longestTaskMs = 0;
     }
     const pulse = (id, heardAt) => ({ ...source, id, seq: undefined, heardAt, receivedAt: heardAt, displayAt: heardAt });
-    const messages = [
-      { v: 1, type: 'event', event: 'routePulse', seq: firstSeq, latestSeq: firstSeq, serverTime: now, receivedAt: now, displayAt: now, data: pulse('browser-smoke-sparse-a', now) },
-      { v: 1, type: 'event', event: 'routePulse', seq: 0, latestSeq: firstSeq, serverTime: now + 40, receivedAt: now + 40, displayAt: now + 40, data: pulse('browser-smoke-fallback-zero', now + 40) },
-      { v: 1, type: 'event', event: 'routePulse', seq: finalSeq, latestSeq: finalSeq, serverTime: now + 80, receivedAt: now + 80, displayAt: now + 80, data: pulse('browser-smoke-sparse-b', now + 80) },
-      { v: 1, type: 'event', event: 'routePulse', latestSeq: finalSeq, serverTime: now + 120, receivedAt: now + 120, displayAt: now + 120, data: pulse('browser-smoke-fallback-omitted', now + 120) }
-    ];
-    const count = window.__mcBrowserSmoke.injectSocketMessages(messages);
-    return { baselineSeq, firstSeq, finalSeq, fallbackID: 'browser-smoke-fallback-omitted', count };
+    const messages = Array.from({ length: count }, (_, index) => {
+      const ordinal = index + 1;
+      const seq = baselineSeq + ordinal;
+      const fallback = ordinal % 50 === 0 && ordinal !== count;
+      return {
+        v: 1,
+        type: 'event',
+        event: 'routePulse',
+        ...(fallback ? {} : { seq }),
+        latestSeq: fallback ? seq - 1 : seq,
+        serverTime: now,
+        receivedAt: now,
+        displayAt: now,
+        data: pulse(`browser-smoke-live-${ordinal}`, now)
+      };
+    });
+    const injectedCount = window.__mcBrowserSmoke.injectSocketMessages(messages);
+    return { baselineSeq, firstSeq, finalSeq, finalID: `browser-smoke-live-${count}`, count: injectedCount };
   });
 
-  const applied = await page.waitForFunction(({ finalSeq, fallbackID }) => {
+  const applied = await page.waitForFunction(({ finalSeq, finalID }) => {
     const shell = document.querySelector('.app-shell');
-    return shell instanceof HTMLElement && Number(shell.dataset.liveSeq) === finalSeq && shell.dataset.latestPulseId === fallbackID;
+    return shell instanceof HTMLElement && Number(shell.dataset.liveSeq) === finalSeq && shell.dataset.latestPulseId === finalID;
   }, injected, { timeout: 10_000 }).then(() => true, () => false);
   if (!applied) {
     const state = await page.evaluate(() => {
@@ -1006,20 +1029,36 @@ async function smokeSparseLiveFlow(page) {
         activeComets: Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0)
       };
     });
-    throw new Error(`injected live events were not applied: expected seq=${injected.finalSeq} pulse=${injected.fallbackID}; observed ${JSON.stringify(state)}`);
+    throw new Error(`injected live events were not applied: expected seq=${injected.finalSeq} pulse=${injected.finalID}; observed ${JSON.stringify(state)}`);
   }
-  const animated = await page.waitForFunction(({ fallbackID }) => {
-    return Array.isArray(window.__mcCartoLivePerf?.packetActiveCometIDs)
-      && window.__mcCartoLivePerf.packetActiveCometIDs.includes(fallbackID);
-  }, injected, { timeout: 10_000 }).then(() => true, () => false);
-  if (!animated) {
-    const active = await page.evaluate(() => ({
-      count: Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0),
-      ids: Array.isArray(window.__mcCartoLivePerf?.packetActiveCometIDs) ? window.__mcCartoLivePerf.packetActiveCometIDs : []
-    }));
-    throw new Error(`injected route pulse ${injected.fallbackID} did not start a visible comet: ${JSON.stringify(active)}`);
-  }
-  return injected;
+  await page.waitForFunction(({ count }) => {
+    const perf = window.__mcCartoLivePerf;
+    return Number(perf?.liveAnimationStarts ?? 0) >= count && Number(perf?.liveVisualQueueDepth ?? 0) === 0;
+  }, injected, { timeout: 10_000 });
+  const metrics = await page.evaluate(() => {
+    const perf = window.__mcCartoLivePerf;
+    return {
+      receiveToStateP95Ms: Number(perf?.liveStateLatencyP95Ms ?? 0),
+      receiveToStateMaxMs: Number(perf?.liveStateLatencyMaxMs ?? 0),
+      receiveToAnimationP95Ms: Number(perf?.liveAnimationLatencyP95Ms ?? 0),
+      maxVisualAgeMs: Number(perf?.liveAnimationLatencyMaxMs ?? 0),
+      animationStarts: Number(perf?.liveAnimationStarts ?? 0),
+      emergencyActivations: Number(perf?.liveAnimationEmergencyStarts ?? 0),
+      frameP95Ms: Number(perf?.packetFrameP95Ms ?? 0),
+      repeatedLongTasks: Number(perf?.longTasks ?? 0),
+      longestTaskMs: Number(perf?.longestTaskMs ?? 0),
+      queueOldestAgeMs: Number(perf?.liveVisualQueueOldestAgeMs ?? 0),
+      routeReducerMs: Number(perf?.routeReducerMs ?? 0)
+    };
+  });
+  if (metrics.animationStarts !== injected.count) throw new Error(`animation starts=${metrics.animationStarts}, eligible=${injected.count}`);
+  if (metrics.emergencyActivations !== 0) throw new Error(`emergency visual starts=${metrics.emergencyActivations}`);
+  if (metrics.receiveToStateP95Ms >= 1000) throw new Error(`receive-to-state p95=${metrics.receiveToStateP95Ms}ms`);
+  if (metrics.receiveToAnimationP95Ms >= 2000) throw new Error(`receive-to-animation p95=${metrics.receiveToAnimationP95Ms}ms`);
+  if (metrics.maxVisualAgeMs > 5000) throw new Error(`maximum visual age=${metrics.maxVisualAgeMs}ms`);
+  if (metrics.frameP95Ms > 34) throw new Error(`animation frame p95=${metrics.frameP95Ms}ms`);
+  if (metrics.repeatedLongTasks !== 0) throw new Error(`repeated long tasks=${metrics.repeatedLongTasks}, longest=${metrics.longestTaskMs}ms`);
+  return { ...injected, metrics };
 }
 
 async function smokeLiveMapControls(page, viewport) {

@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	pruneBatchSize  = 500
+	pruneBatchSize  = 100
 	pruneBatchPause = 25 * time.Millisecond
 	pruneMaxBatches = 200
 )

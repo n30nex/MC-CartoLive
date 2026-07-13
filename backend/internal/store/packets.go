@@ -137,6 +137,9 @@ INSERT INTO packet_observations (
 	if err != nil {
 		return 0, false, err
 	}
+	if err := incrementObserverPacket(ctx, tx, in.Message); err != nil {
+		return 0, false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return 0, false, err
 	}

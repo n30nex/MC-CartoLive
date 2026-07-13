@@ -5,7 +5,7 @@ import { activeAssetPack } from '../assets/v3/assetPacks';
 import { formatRelative } from '../lib/formatRelative';
 import { isAbortError } from '../lib/isAbortError';
 import { useDebouncedValue } from '../lib/useDebouncedValue';
-import { DEFAULT_PACKET_FILTERS, packetEndpointSummary, PACKETS_SCOPE_OPTIONS, packetRegion, packetWindowForScope, type PacketFilters } from '../packets';
+import { DEFAULT_PACKET_FILTERS, filterPackets, packetEndpointSummary, PACKETS_SCOPE_OPTIONS, packetRegion, packetWindowForScope, type PacketFilters } from '../packets';
 import { payloadLegendVisuals, payloadVisual } from '../payloadVisuals';
 import { dedupePackets } from '../lib/dedupePackets';
 import type { PublicHistoryWindow, PublicPacketPath, PublicPacketScan } from '../types';
@@ -18,6 +18,7 @@ interface PacketsPanelProps {
   mode: PacketsPanelMode;
   selectedPacketID: string | null;
   selectedPacket: PublicPacketPath | null;
+  livePackets?: PublicPacketPath[];
   presentation?: WorkspacePresentation;
   onClose: () => void;
   onExpand: () => void;
@@ -32,11 +33,13 @@ const PACKETS_FILTER_SCAN_PAGES = 3;
 const PACKET_ROW_HEIGHT = 112;
 const PACKET_LIST_OVERSCAN = 5;
 const PACKET_FILTER_DEBOUNCE_MS = 250;
+const PACKETS_RECONCILE_MS = 60_000;
 
 export default function PacketsPanel({
   mode,
   selectedPacketID,
   selectedPacket,
+  livePackets = [],
   presentation = 'side',
   onClose,
   onExpand,
@@ -47,6 +50,7 @@ export default function PacketsPanel({
   const [scopeMs, setScopeMs] = useState(PACKETS_SCOPE_OPTIONS[0].value);
   const [filters, setFilters] = useState<PacketFilters>(DEFAULT_PACKET_FILTERS);
   const [packets, setPackets] = useState<PublicPacketPath[]>([]);
+  const [livePacketBuffer, setLivePacketBuffer] = useState<PublicPacketPath[]>([]);
   const [windowInfo, setWindowInfo] = useState<PublicHistoryWindow | null>(null);
   const [scanInfo, setScanInfo] = useState<PublicPacketScan | null>(null);
   const [nextCursor, setNextCursor] = useState('');
@@ -65,7 +69,16 @@ export default function PacketsPanel({
   const filterGenerationRef = useRef(0);
   const initialLoadRef = useRef(true);
   const debouncedFilters = useDebouncedValue(filters, PACKET_FILTER_DEBOUNCE_MS);
-  const selectedFromList = useMemo(() => packets.find((packet) => packet.id === selectedPacketID) ?? null, [packets, selectedPacketID]);
+  useEffect(() => {
+    if (livePackets.length === 0) return;
+    setLivePacketBuffer((current) => capPackets([...livePackets, ...current]));
+  }, [livePackets]);
+  const displayPackets = useMemo(() => {
+    const window = packetWindowForScope(Date.now(), scopeMs);
+    const currentLive = filterPackets([...livePackets, ...livePacketBuffer], debouncedFilters).filter((packet) => packet.at >= window.from && packet.at <= window.to);
+    return capPackets([...currentLive, ...packets]);
+  }, [debouncedFilters, livePacketBuffer, livePackets, packets, scopeMs]);
+  const selectedFromList = useMemo(() => displayPackets.find((packet) => packet.id === selectedPacketID) ?? null, [displayPackets, selectedPacketID]);
   const activePacket = selectedPacket ?? selectedFromList;
 
   useEffect(() => {
@@ -158,7 +171,7 @@ export default function PacketsPanel({
 
   useEffect(() => {
     const cancelRefresh = refresh();
-    const interval = window.setInterval(refresh, 20_000);
+    const interval = window.setInterval(refresh, PACKETS_RECONCILE_MS);
     return () => {
       cancelRefresh?.();
       window.clearInterval(interval);
@@ -182,7 +195,7 @@ export default function PacketsPanel({
   }, [copyStatus]);
 
   const payloadOptions = useMemo(() => payloadLegendVisuals(), []);
-  const virtualRows = useMemo(() => virtualPacketRows(packets, scrollTop, listHeight), [listHeight, packets, scrollTop]);
+  const virtualRows = useMemo(() => virtualPacketRows(displayPackets, scrollTop, listHeight), [displayPackets, listHeight, scrollTop]);
 
   const copyRouteIDs = useCallback(async (packet: PublicPacketPath) => {
     const routeIds = Array.isArray(packet?.routeIds) ? packet.routeIds.filter((value): value is string => Boolean(value)) : [];
@@ -250,7 +263,7 @@ export default function PacketsPanel({
       </header>
 
       <div className="packets-summary-strip">
-        <PacketSummary icon={<Route size={15} />} label="Loaded" value={packets.length.toLocaleString()} />
+        <PacketSummary icon={<Route size={15} />} label="Loaded" value={displayPackets.length.toLocaleString()} />
         <PacketSummary icon={<Filter size={15} />} label="Scanned" value={scanInfo?.eventsScanned ? scanInfo.eventsScanned.toLocaleString() : windowInfo?.count.toLocaleString() ?? 'loading'} />
         <PacketSummary icon={<Clock3 size={15} />} label="Window" value={formatWindow(windowInfo)} />
         <PacketSummary icon={<MessageSquareText size={15} />} label="Updated" value={lastCheckedAt ? new Date(lastCheckedAt).toLocaleTimeString() : 'loading'} />
@@ -322,10 +335,10 @@ export default function PacketsPanel({
           aria-label="True path packet rows"
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         >
-          {loading && initialLoadRef.current ? (
+          {loading && initialLoadRef.current && displayPackets.length === 0 ? (
             <LoadingRows count={5} className="packets-loading-rows" />
           ) : (
-            <div style={{ height: packets.length * PACKET_ROW_HEIGHT, position: 'relative' }}>
+            <div style={{ height: displayPackets.length * PACKET_ROW_HEIGHT, position: 'relative' }}>
               <div style={{ transform: `translateY(${virtualRows.offset}px)` }}>
                 {virtualRows.items.map((packet) => (
                   <PacketRow
@@ -339,7 +352,7 @@ export default function PacketsPanel({
               </div>
             </div>
           )}
-          {!loading && packets.length === 0 && (
+          {!loading && displayPackets.length === 0 && (
             <div className="packets-empty">
               <img src={activeAssetPack.workspaces.packets} alt="" aria-hidden="true" />
               {scanInfo?.partial
@@ -417,7 +430,7 @@ function PacketRow({
           </span>
         )}
       </button>
-      <button type="button" className="packet-replay-button" onClick={() => onReplay(packet)} title="Replay this packet comet on the map">
+      <button type="button" className="packet-replay-button" disabled={packet.segments.length === 0} onClick={() => onReplay(packet)} title={packet.segments.length > 0 ? 'Replay this packet comet on the map' : 'This packet has no public map geometry'}>
         <Play size={15} />
         <span>Replay</span>
       </button>
@@ -471,7 +484,7 @@ function PacketDetail({
       )}
       <div className="packet-detail-actions">
         <button type="button" onClick={() => onFocus(packet)}>Show</button>
-        <button type="button" onClick={() => onReplay(packet)}><Play size={14} />Replay</button>
+        <button type="button" disabled={packet.segments.length === 0} onClick={() => onReplay(packet)}><Play size={14} />Replay</button>
         <button type="button" onClick={() => onCopyRouteIDs(packet)}><Copy size={14} />Copy route IDs</button>
       </div>
       {copyStatus && <span className="packet-copy-status">{copyStatus}</span>}

@@ -3,6 +3,11 @@ import {
   ensurePerfDiagnostics,
   perfDiagnosticsSnapshot,
   recordLivePendingQueueSize,
+  recordLiveAnimationStart,
+  recordLiveAnimationEmergencyActivation,
+  recordLiveStateApplied,
+  recordLiveVisualQueue,
+  recordLongTask,
   recordNetGraphDraw,
   recordNetGraphHitCandidates,
   recordNetGraphWorkerError,
@@ -38,6 +43,12 @@ describe('perf diagnostics', () => {
     recordPacketFrame(3, 2, 12.34, ['pulse-a', 'pulse-b', 'pulse-a']);
     recordPacketSkippedFrame();
     recordLivePendingQueueSize(87.1);
+    recordLiveStateApplied([{ receivedAt: 9_900 }, { receivedAt: 9_950 }], 10_000);
+    recordLiveVisualQueue(12, 345.67);
+    recordLiveAnimationStart(9_800, 'degraded', 10_000);
+    recordLiveAnimationEmergencyActivation();
+    recordLiveAnimationStart(9_900, 'emergency', 10_000);
+    recordLongTask(72.34);
     recordVisibilityPause();
     recordNetGraphWorkerTransform(true, 12.34, 5.67, 16);
     recordNetGraphWorkerTransform(false, 3.21, 0, 0);
@@ -60,6 +71,17 @@ describe('perf diagnostics', () => {
       packetFrameMs: 12.3,
       packetSkippedFrames: 1,
       livePendingQueueSize: 87,
+      liveStateLatencyP50Ms: 50,
+      liveStateLatencyP95Ms: 100,
+      liveStateLatencyMaxMs: 100,
+      liveVisualQueueDepth: 12,
+      liveVisualQueueOldestAgeMs: 345.7,
+      liveAnimationStarts: 2,
+      liveAnimationDegradedStarts: 1,
+      liveAnimationEmergencyStarts: 1,
+      liveAnimationLatencyP95Ms: 200,
+      longTasks: 1,
+      longestTaskMs: 72.3,
       visibilityPauses: 1,
       netGraphWorkerTransforms: 1,
       netGraphWorkerFallbacks: 1,

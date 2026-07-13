@@ -122,6 +122,33 @@ func TestDisabledClientDispatchesSubmittedNormalizedFixture(t *testing.T) {
 	}
 }
 
+func TestOutcomeHandlerCountsOnlyDurableOrPermanentOutcomesAsProcessed(t *testing.T) {
+	outcomes := make(chan HandleOutcome, 3)
+	outcomes <- HandleProcessed
+	outcomes <- HandlePermanentReject
+	outcomes <- HandleFailed
+	client := NewClientWithOutcome(ClientConfig{QueueSize: 4}, slog.New(slog.NewTextHandler(io.Discard, nil)), func(context.Context, NormalizedMessage) HandleOutcome {
+		return <-outcomes
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go client.dispatch(ctx)
+	for i := 0; i < 3; i++ {
+		if !client.SubmitNormalized(NormalizedMessage{HeardAtMs: time.Now().UnixMilli()}) {
+			t.Fatal("submit failed")
+		}
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		status := client.Status(time.Now())
+		if status.ProcessedMessages == 2 && status.PermanentRejected == 1 && status.FailedMessages == 1 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("status=%#v", client.Status(time.Now()))
+}
+
 func TestQueueOldestTracksCurrentFIFOHead(t *testing.T) {
 	client := NewClient(ClientConfig{QueueSize: 4}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 	client.queueAgeMu.Lock()

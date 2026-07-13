@@ -13,6 +13,7 @@ const maxAcceptedTimestampSkew = 5 * time.Minute
 
 type NormalizedMessage struct {
 	IngestID     string         `json:"-"`
+	ReceivedAtMs int64          `json:"-"`
 	Topic        string         `json:"topic"`
 	TopicInfo    TopicInfo      `json:"topicInfo"`
 	RawHex       string         `json:"rawHex,omitempty"`
@@ -33,9 +34,10 @@ func Normalize(topic string, payload []byte, receivedAt time.Time) (NormalizedMe
 	}
 
 	msg := NormalizedMessage{
-		Topic:     topic,
-		TopicInfo: info,
-		HeardAtMs: receivedAt.UnixMilli(),
+		Topic:        topic,
+		TopicInfo:    info,
+		ReceivedAtMs: receivedAt.UnixMilli(),
+		HeardAtMs:    receivedAt.UnixMilli(),
 	}
 
 	trimmed := bytes.TrimSpace(payload)

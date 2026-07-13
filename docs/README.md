@@ -14,17 +14,23 @@ is preserved by version.
 | [Privacy model](privacy.md) | Private inputs, public outputs, route truth, and test expectations. |
 | [Roadmap](roadmap.md) | Current baseline and active 3.x direction. |
 
-## 3.2.1 Release Package
+## 3.2.2 Release Package
 
 | Document | Purpose |
 | --- | --- |
-| [Release notes](3.2.1/release_notes.md) | Continuous live flow, backend stability, and world/Canada publication summary. |
-| [Validation checklist](3.2.1/validation_checklist.md) | Fail-closed source, browser, load, dual-image, cutover, soak, and publication gates. |
-| [Upgrade and rollback](3.2.1/upgrade-and-rollback.md) | Preserved Canada cutover, world image use, and digest rollback. |
-| [Storage and stability](3.2.1/storage-and-stability.md) | Writer priority, pressure behavior, retention, vacuum, and backfill controls. |
-| [Public API notes](3.2.1/public-api.md) | Sparse durable cursor and unsequenced live-fallback semantics. |
-| [Security and operations](3.2.1/security-and-operations.md) | Dual-image supply chain, host sandbox, metrics, alerts, and evidence. |
-| [Performance gate](3.2.1/performance-gate.md) | Exact load, queue, WebSocket, memory, API, and projection proof. |
+| [Release notes](3.2.2/release_notes.md) | Lossless immediate live flow, storage coordination, and release integrity. |
+| [Validation checklist](3.2.2/validation_checklist.md) | Fail-closed source, load, browser, canary, integrity, and publication gates. |
+| [Upgrade and rollback](3.2.2/upgrade-and-rollback.md) | Preserved Canada five-minute canary, publication, and digest rollback. |
+| [Storage and stability](3.2.2/storage-and-stability.md) | Writer lanes, retry posture, retention, and snapshot-only integrity checks. |
+| [Public API notes](3.2.2/public-api.md) | Immediate timing semantics and additive readiness fields. |
+| [Security and operations](3.2.2/security-and-operations.md) | Backup verification, immutable candidates, and canary evidence. |
+| [Performance gate](3.2.2/performance-gate.md) | Exact sustained/burst/database/browser lossless-flow proof. |
+| [Release verification](3.2.2/release-verification.md) | Required JSON evidence contract and annotated-tag binding. |
+
+## 3.2.1 Release Archive
+
+The [3.2.1 package](3.2.1/release_notes.md) remains the immediate rollback
+baseline for 3.2.2.
 
 ## 3.2.0 Release Archive And Errata
 

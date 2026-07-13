@@ -68,6 +68,7 @@ const schemas = {
   Error: object(['error'], { error: string() }),
   DatasetState: string({ enum: ['fresh_start', 'warming', 'live'] }),
   StoragePressureState: string({ enum: ['ok', 'warn', 'critical'] }),
+  LiveQueueState: string({ enum: ['idle', 'active', 'lagging', 'failed'] }),
   CoordinateBounds: object(['minLat', 'maxLat', 'minLng', 'maxLng'], {
     minLat: number({ minimum: -90, maximum: 90 }), maxLat: number({ minimum: -90, maximum: 90 }),
     minLng: number({ minimum: -180, maximum: 180 }), maxLng: number({ minimum: -180, maximum: 180 })
@@ -308,11 +309,16 @@ const schemas = {
   RuntimeReadinessStatus: object(
     [
       'ok', 'ready', 'reasons', 'dbReady', 'staticReady', 'publicStateReady', 'mqttSessionReady', 'datasetState', 'storagePressureState',
+      'primaryIngestState', 'liveProjectionState', 'primaryQueueOldestAgeMs', 'liveProjectionOldestAgeMs', 'lastBroadcastLatencyMs', 'maxBroadcastLatencyMs',
       'version', 'gitSha'
     ],
     {
       ok: boolean(), ready: boolean(), reasons: stringArray(), dbReady: boolean(), staticReady: boolean(), publicStateReady: boolean(),
-      mqttSessionReady: boolean(), datasetState: ref('DatasetState'), storagePressureState: ref('StoragePressureState'), version: string(), gitSha: string()
+      mqttSessionReady: boolean(), datasetState: ref('DatasetState'), storagePressureState: ref('StoragePressureState'),
+      primaryIngestState: ref('LiveQueueState'), liveProjectionState: ref('LiveQueueState'),
+      primaryQueueOldestAgeMs: int64({ minimum: 0 }), liveProjectionOldestAgeMs: int64({ minimum: 0 }), lastBroadcastLatencyMs: int64({ minimum: 0 }),
+      maxBroadcastLatencyMs: int64({ minimum: 0 }),
+      version: string(), gitSha: string()
     }
   ),
   PublicLiveState: object(['serverTime', 'map', 'stats', 'nodes', 'routes', 'recentActivity', 'updatedAt'], {
@@ -327,15 +333,15 @@ const schemas = {
   WebSocketClientSubscribe: object(['type'], { v: integer({ const: 1 }), type: string({ const: 'subscribe' }), id: string(), scope: ref('WebSocketSubscriptionScope') }),
   WebSocketClientUnsubscribe: object(['type'], { v: integer({ const: 1 }), type: string({ const: 'unsubscribe' }), id: string() }),
   WebSocketClientMessage: { oneOf: [ref('WebSocketClientPing'), ref('WebSocketClientResume'), ref('WebSocketClientSubscribe'), ref('WebSocketClientUnsubscribe')] },
-  WebSocketHello: object(['v', 'type', 'serverTime', 'receivedAt', 'displayAt', 'connectionId'], {
+  WebSocketHello: object(['v', 'type', 'serverTime', 'receivedAt', 'connectionId'], {
     v: integer({ const: 1 }), type: string({ const: 'hello' }), seq: int64({ minimum: 1 }), latestSeq: int64({ minimum: 1 }), fromSeq: int64({ minimum: 1 }),
     toSeq: int64({ minimum: 1 }), serverTime: timestamp(), receivedAt: timestamp(), displayAt: timestamp(), connectionId: string({ format: 'uuid' })
   }),
-  WebSocketPong: object(['v', 'type', 'serverTime', 'receivedAt', 'displayAt'], {
+  WebSocketPong: object(['v', 'type', 'serverTime', 'receivedAt'], {
     v: integer({ const: 1 }), type: string({ const: 'pong' }), seq: int64({ minimum: 1 }), latestSeq: int64({ minimum: 1 }),
     serverTime: timestamp(), receivedAt: timestamp(), displayAt: timestamp()
   }),
-  WebSocketLagged: object(['v', 'type', 'serverTime', 'receivedAt', 'displayAt', 'droppedCount', 'since'], {
+  WebSocketLagged: object(['v', 'type', 'serverTime', 'receivedAt', 'droppedCount', 'since'], {
     v: integer({ const: 1 }), type: string({ const: 'lagged' }), seq: int64({ minimum: 1 }), latestSeq: int64({ minimum: 1 }), fromSeq: int64({ minimum: 1 }),
     toSeq: int64({ minimum: 1 }), serverTime: timestamp(), receivedAt: timestamp(), displayAt: timestamp(), droppedCount: integer({ minimum: 1 }), since: timestamp()
   }),
@@ -509,7 +515,7 @@ if (check) {
 }
 
 function webSocketEventSchema(event, dataSchema) {
-  return object(['v', 'type', 'event', 'serverTime', 'displayAt', 'data'], {
+  return object(['v', 'type', 'event', 'serverTime', 'data'], {
     v: integer({ const: 1 }), type: string({ const: 'event' }), event: string({ const: event }),
     seq: int64({ minimum: 1, description: 'Sparse monotonic durable cursor when present. Omitted for live-only fallback events; consumers must not advance their durable cursor for an omitted value.' }),
     latestSeq: int64({ minimum: 1 }), serverTime: timestamp(), receivedAt: timestamp(), displayAt: timestamp(), data: ref(dataSchema)

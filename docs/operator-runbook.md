@@ -1,4 +1,4 @@
-# MC-CartoLive 3.2.1 Operator Runbook
+# MC-CartoLive 3.2.2 Operator Runbook
 
 ## Capacity first
 
@@ -48,9 +48,21 @@ MC_CARTOLIVE_REQUIRE_PRIVACY_SCAN=1 bash scripts/deploy.sh \
   --expected-git-sha <full-release-sha>
 ```
 
-The hosted 3.2.1 release uses this non-destructive path after a verified
+The hosted 3.2.2 release uses this non-destructive path after a verified
 off-root-disk backup and migration rehearsal. Do not pass the fresh-database
-flags; see [upgrade-and-rollback](3.2.1/upgrade-and-rollback.md).
+flags; see [upgrade-and-rollback](3.2.2/upgrade-and-rollback.md).
+
+Verify the redundant root backup against the off-host/block-volume copy before
+deploy. The removal token is accepted only after size/checksum equality and
+different mounted filesystems are proven:
+
+```bash
+scripts/verify-backup-copy.sh \
+  --local-copy /opt/MC-CartoLive/backups/<root-copy>.db \
+  --offhost-copy /mnt/<block-volume>/<offhost-copy>.db \
+  --evidence /var/lib/mc-cartolive-deploy/backup-verification.json \
+  --remove-local-after-match --confirm REMOVE-VERIFIED-LOCAL-BACKUP
+```
 
 From Windows:
 
@@ -58,7 +70,7 @@ From Windows:
 .\scripts\deploy-live.ps1 `
   -Image 'ghcr.io/n30nex/mc-cartolive@sha256:<candidate>' `
   -PreviousImage 'ghcr.io/n30nex/mc-cartolive@sha256:<previous>' `
-  -ExpectedVersion 3.2.1 -ExpectedGitSha <full-sha>
+  -ExpectedVersion 3.2.2 -ExpectedGitSha <full-sha>
 ```
 
 ## Smoke and release evidence
@@ -67,28 +79,29 @@ From Windows:
 scripts/release-check.sh
 node scripts/package-smoke.mjs \
   --image ghcr.io/n30nex/mc-cartolive@sha256:<canada-candidate> \
-  --version 3.2.1 --asset-pack canada --pull
+  --version 3.2.2 --asset-pack canada --pull
 ```
 
 ```powershell
 .\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org `
-  -ExpectedVersion 3.2.1 -ExpectedGitSha <full-sha> -DiagnoseRegion YTR `
+  -ExpectedVersion 3.2.2 -ExpectedGitSha <full-sha> -DiagnoseRegion YTR `
   -SshTarget root@134.122.45.228
 ```
 
 Always check event reset, bootstrap/state, WebSocket hello, privacy, compiled
 identity, Docker restart/OOM state, and disk space.
 
-After the 30-minute soak, create the annotated release tag with
+After the single five-minute checkpoint passes, validate
+`release-verification.json` and create the annotated release tag with
 `Candidate-Run-Id`, `Candidate-Run-Attempt`, `Candidate-World-Digest`,
 `Candidate-Canada-Digest`, and
-`Candidate-Deployed-At` trailers as
-shown in [upgrade and rollback](3.2.1/upgrade-and-rollback.md). The Canada digest must
+`Candidate-Deployed-At` and `Release-Verification-Base64` trailers as shown in
+[upgrade and rollback](3.2.2/upgrade-and-rollback.md). The Canada digest must
 come from `/var/lib/mc-cartolive-deploy/current.env` and match the running
 container; the same record captures the candidate run ID, run attempt, and
 run-specific tag from OCI labels verified before cutover. Promotion uses that
-  exact run-specific artifact and both digests. It publishes world tags `3.2.1`,
-  `3.2`, `sha-<merge-sha>`, and `latest`, plus Canada tags `3.2.1-canada`,
+  exact run-specific artifact and both digests. It publishes world tags `3.2.2`,
+  `3.2`, `sha-<merge-sha>`, and `latest`, plus Canada tags `3.2.2-canada`,
   `3.2-canada`, `sha-<merge-sha>-canada`, and `latest-canada`, and a standalone
   `ROLLBACK.md` asset.
 
@@ -126,15 +139,17 @@ cat /var/lib/mc-cartolive-watchdog/state.env
 df -h /opt/MC-CartoLive/data
 ```
 
-## Automated 3.2.1 release audits
+## Automated 3.2.2 release audits
 
 Install the post-release audit beside the watchdog before cutover. It is an
-hourly, persistent timer; each deployment is keyed by its
+minute-level, persistent timer; each deployment is keyed by its
 immutable digest, Git SHA, and deployment timestamp, so restarting the timer or
 re-running a completed phase cannot duplicate or overwrite evidence.
 
 ```bash
 apt-get install -y curl jq sqlite3 util-linux coreutils
+install -d -m 0700 /mnt/mc-cartolive-audit-snapshots
+install -m 0755 scripts/runtime-health-check.sh /opt/MC-CartoLive/scripts/
 install -m 0755 scripts/post-release-audit.sh /opt/MC-CartoLive/scripts/
 install -m 0644 deploy/systemd/mc-cartolive-release-audit.default /etc/default/mc-cartolive-release-audit
 install -m 0644 deploy/systemd/mc-cartolive-release-audit.service /etc/systemd/system/
@@ -143,14 +158,13 @@ systemctl daemon-reload
 systemctl enable --now mc-cartolive-release-audit.timer
 ```
 
-The 24-hour phase checks readiness, the loopback-only metrics listener, SQLite
-quick/foreign-key integrity, schema identity, queue and error counters, and the
-container/watchdog. A preserved database requires at least 9 GiB and 20% free;
-a destructive fresh start retains its 25 GiB gate. Day 8 additionally enforces
-seven days plus six hours for observations, 25 hours for public events, and a
-WAL below 256 MiB, then atomically records the database-plus-WAL baseline. Day
-14 repeats retention/WAL checks and requires growth from that day-8 baseline to
-be strictly below 10%. Each SQLite command has a 120-second ceiling.
+Each activation performs cheap readiness, metrics, container, queue, and error
+checks without opening SQLite. At five minutes the audit writes a consistent
+SQLite backup to the separately mounted audit snapshot filesystem, hashes it,
+runs full integrity/foreign-key/schema checks against that copy, and removes the
+temporary database. The gate requires at least 9 GiB and 20% free and at least
+1,000 accepted/processed messages since deployment. Snapshot creation and
+integrity have a five-minute ceiling.
 
 ```bash
 systemctl list-timers mc-cartolive-release-audit.timer
@@ -161,7 +175,7 @@ jq '{phase,passed,errors,release,database,filesystem,ingest,process,watchdog}' \
 ```
 
 Successful phases are immutable in normal operation. A failed phase writes one
-replaceable `latest-failure` file and is retried on the next hourly activation.
+replaceable `latest-failure` file and is retried on the next activation.
 The evidence contains aggregate ages, sizes, counters, and immutable release
 identity only—never rows, packet/key material, `.env`, or `data/config.yaml`.
 
@@ -179,8 +193,8 @@ maintenance is bounded and incremental; never run live full `VACUUM` or full
 `ANALYZE`.
 
 ```bash
-sqlite3 data/meshcore-live.db 'PRAGMA quick_check;'
-sqlite3 data/meshcore-live.db 'PRAGMA foreign_key_check;'
+# Do not run routine integrity scans against the active database. Use the
+# automated consistent-snapshot audit at the five-minute gate.
 sqlite3 data/meshcore-live.db 'PRAGMA user_version;'
 du -h data/meshcore-live.db*
 ```
@@ -189,13 +203,12 @@ du -h data/meshcore-live.db*
 
 ```bash
 BASE_URL=https://carto.canadaverse.org \
-  DURATION_MINUTES=1440 INTERVAL_SECONDS=60 scripts/soak-check.sh
+  DURATION_MINUTES=5 INTERVAL_SECONDS=30 scripts/soak-check.sh
 ```
 
 Normal quiet motion is not failure. Stop promotion for public 5xx, cache/session
 loss, OOM/restart, `SQLITE_FULL`, sustained busy/queue pressure, privacy output,
-or metadata mismatch. Complete day-8/day-14 checks from the 3.2.1 validation
-checklist.
+or metadata mismatch. Do not extend release soak beyond five minutes.
 
 ## Diagnose public inclusion
 
@@ -217,5 +230,5 @@ expose the raw packet/key material behind a diagnosis.
 3. Stop optional projection/propagation work before changing truth or privacy
    controls.
 4. Roll back by immutable digest; never reset branches or build on the droplet.
-5. Keep the pre-upgrade block-volume backup until the 24-hour audit is green;
+5. Keep the pre-upgrade block-volume backup until the five-minute audit is green;
    treat explicitly fresh-deleted data as unrecoverable.

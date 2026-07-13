@@ -28,8 +28,8 @@ docker compose -f docker-compose.production.yml pull
 docker compose -f docker-compose.production.yml up -d --no-build
 ```
 
-Generic tags `3.2.1`, `3.2`, `sha-<main-sha>`, and `latest` identify the world
-asset pack. Canada tags are `3.2.1-canada`, `3.2-canada`,
+Generic tags `3.2.2`, `3.2`, `sha-<main-sha>`, and `latest` identify the world
+asset pack. Canada tags are `3.2.2-canada`, `3.2-canada`,
 `sha-<main-sha>-canada`, and `latest-canada`. Deployment and rollback
 automation reject every tag and require the Canada image by full digest for
 `carto.canadaverse.org`.
@@ -53,25 +53,26 @@ Do not add `APP_VERSION`, `GIT_SHA`, `BUILD_TIME`, `VITE_GIT_SHA`, or
 secret in a `VITE_*` variable because Vite variables are browser-visible.
 
 Production Compose fixes seven-day observations, 24-hour public events, and
-disables unbounded retention. Each SQLite lock wait is 750 ms inside the single
-five-second primary-ingest budget.
+disables unbounded retention. Each SQLite lock wait is 750 ms; the write
+coordinator retries transient outcomes with stable ingest identity and bounded
+backoff rather than treating one deadline as terminal.
 
-## First-party 3.2.1 upgrade
+## First-party 3.2.2 upgrade
 
 The hosted release preserves and transactionally migrates the existing SQLite
 database. Before cutover, quiesce the writer and create a verified SQLite copy
 on separate block storage, snapshot it, and rehearse the migration against the
 volume copy. Follow
-[the exact upgrade/rollback procedure](3.2.1/upgrade-and-rollback.md) and
-[storage policy](3.2.1/storage-and-stability.md).
+[the exact upgrade/rollback procedure](3.2.2/upgrade-and-rollback.md) and
+[storage policy](3.2.2/storage-and-stability.md).
 
 Deploy without `--fresh-database`; that flag and its deletion token remain an
-explicit recovery/operator tool, not the hosted 3.2.1 procedure. Migrations are
+explicit recovery/operator tool, not the hosted 3.2.2 procedure. Migrations are
 forward-only, additive, and transactional. Node.js 18 or newer is staged for
 the bundled credential-free privacy/WebSocket validation.
 
 The original hosted 3.2.0 cutover started a fresh schema-32000 database; later
-candidate deploys preserved it. The supported 3.2.1 upgrade preserves that
+candidate deploys preserved it. The supported 3.2.2 upgrade preserves that
 running database. See the [3.2.0 erratum](3.2.0/errata.md).
 
 ## Readiness and dataset warming
@@ -79,9 +80,9 @@ running database. See the [3.2.0 erratum](3.2.0/errata.md).
 - `/healthz` is cheap liveness plus a coarse sanitized dependency summary; its
   `ready` field is informational, while `/readyz` is the authoritative
   fail-closed serving gate.
-- `/readyz` covers database/static/cache/session/writer state and reports
-  only sanitized readiness booleans/states/reasons plus compiled release
-  identity; queue and ingest details remain loopback metrics only.
+- `/readyz` covers database/static/cache/session/writer state and reports only
+  sanitized readiness booleans/states/reasons, queue age, broadcast latency,
+  and compiled release identity. Detailed counters remain loopback metrics only.
 - `/api/v1/public/bootstrap` is the compact first-view contract.
 - A new DB can be ready with `datasetState=fresh_start` or `warming`; it becomes
   `live` after real observations populate public state.
@@ -101,7 +102,7 @@ checks. Forwarded headers are ignored unless both `TRUST_PROXY_HEADERS=true` and
 
 Install firewall/alerts before treating a deployment as complete. The required
 rules and thresholds are in
-[3.2.1 security and operations](3.2.1/security-and-operations.md). Keep SSH
+[3.2.2 security and operations](3.2.2/security-and-operations.md). Keep SSH
 key-only, verify a second session before restricting source ranges, and never
 publish port 39476.
 

@@ -178,8 +178,10 @@ if [ "$(cat "$MOCK_CURRENT_IMAGE_FILE" 2>/dev/null)" = "$MOCK_PREVIOUS_IMAGE" ];
 	body='{"ready":true}'
 elif [ "$MOCK_SCENARIO" = "fresh_success" ] || [ "$MOCK_SCENARIO" = "preserve_success" ] || [ "$MOCK_SCENARIO" = "privacy_fail" ] || [ "$MOCK_SCENARIO" = "fresh_rollback_down_fail" ] || [ "$MOCK_SCENARIO" = "root_usage_high" ]; then
 	case "$url" in
+		*/metrics) body='meshcore_mqtt_messages_accepted_total 7
+meshcore_mqtt_messages_processed_total 6' ;;
 		*/api/v1/public/events*) body='{"resetRequired":true}' ;;
-		*/api/v1/public/state*) body='{"stats":{"packets":0,"activeNodes":0,"activeRoutes":0}}' ;;
+		*/api/v1/public/state*) body='{"latestSeq":5,"stats":{"packets":0,"activeNodes":0,"activeRoutes":0}}' ;;
 		*) body="{\"ready\":true,\"version\":\"$MOCK_VERSION\",\"gitSha\":\"$MOCK_MERGE_SHA\"}" ;;
 	esac
 else
@@ -252,6 +254,8 @@ EOF
 	printf 'operator-config\n' >"$repo/data/config.yaml"
 	printf 'old-db\n' >"$repo/data/meshcore-live.db"
 	printf 'old-backup\n' >"$repo/backups/legacy.db"
+	printf '{"formatVersion":1,"verifiedAt":"%s","matched":true,"sha256":"%s","bytes":1024,"separateFilesystems":true,"localRemoved":true,"freeBytesAfter":10737418240}\n' \
+	  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(printf 'a%.0s' {1..64})" >"$tmp/$name/backup-verification.json"
 	# Compose must receive the interpolation literally.
 	# shellcheck disable=SC2016
 	printf 'services:\n  meshcore-live-map:\n    image: ${MC_CARTOLIVE_IMAGE}\n' >"$repo/docker-compose.production.yml"
@@ -283,7 +287,7 @@ run_failed_deploy() {
 	  MC_CARTOLIVE_READY_TIMEOUT_SECONDS=1 \
 	  MC_CARTOLIVE_MIN_FREE_GB=25 \
 	  PATH="$tmp/bin:$PATH" \
-	  "$ROOT/scripts/deploy.sh" --repo "$repo" --image "$DIGEST" --previous-image "$PREVIOUS" --expected-git-sha "$MERGE_SHA" "$@" >/dev/null 2>&1; then
+	  "$ROOT/scripts/deploy.sh" --repo "$repo" --image "$DIGEST" --previous-image "$PREVIOUS" --expected-git-sha "$MERGE_SHA" --backup-verification "$tmp/$name/backup-verification.json" "$@" >/dev/null 2>&1; then
 		echo "deploy scenario $name unexpectedly succeeded" >&2
 		exit 1
 	fi
@@ -329,7 +333,7 @@ run_successful_preserved_deploy() {
 	  MC_CARTOLIVE_READY_TIMEOUT_SECONDS=1 \
 	  MC_CARTOLIVE_REQUIRE_PRIVACY_SCAN=1 \
 	  PATH="$tmp/bin:$PATH" \
-	  "$ROOT/scripts/deploy.sh" --repo "$repo" --image "$DIGEST" --previous-image "$PREVIOUS" --expected-git-sha "$MERGE_SHA" >/dev/null
+	  "$ROOT/scripts/deploy.sh" --repo "$repo" --image "$DIGEST" --previous-image "$PREVIOUS" --expected-git-sha "$MERGE_SHA" --backup-verification "$tmp/$name/backup-verification.json" >/dev/null
 }
 
 # A staged package whose source identity does not match the requested release
@@ -446,6 +450,10 @@ grep -q '^MC_CARTOLIVE_CANDIDATE_RUN_ID=123456789$' "$tmp/fresh_success/deploy-s
 grep -q '^MC_CARTOLIVE_CANDIDATE_RUN_ATTEMPT=1$' "$tmp/fresh_success/deploy-state/current.env"
 grep -q "^MC_CARTOLIVE_CANDIDATE_TAG=candidate-$MERGE_SHA-123456789-1-canada$" "$tmp/fresh_success/deploy-state/current.env"
 grep -q '^MC_CARTOLIVE_ASSET_PACK=canada$' "$tmp/fresh_success/deploy-state/current.env"
+grep -q '^MC_CARTOLIVE_BASELINE_ACCEPTED_TOTAL=7$' "$tmp/fresh_success/deploy-state/current.env"
+grep -q '^MC_CARTOLIVE_BASELINE_PROCESSED_TOTAL=6$' "$tmp/fresh_success/deploy-state/current.env"
+grep -q '^MC_CARTOLIVE_BASELINE_PUBLIC_SEQ=5$' "$tmp/fresh_success/deploy-state/current.env"
+grep -q '^MC_CARTOLIVE_BACKUP_VERIFICATION_SHA256=not_required$' "$tmp/fresh_success/deploy-state/current.env"
 grep -q -- '--entrypoint chown ' "$tmp/fresh_success/docker.log"
 grep -q -- '--entrypoint chmod ' "$tmp/fresh_success/docker.log"
 grep -q 'check-public-privacy.mjs http://127.0.0.1:39476 --origin https://carto.example.test' "$tmp/fresh_success/node.log"
@@ -459,6 +467,7 @@ grep -qx 'old-db' "$tmp/preserve_success/repo/data/meshcore-live.db"
 test -f "$tmp/preserve_success/repo/backups/legacy.db"
 test -f "$tmp/preserve_success/repo/data/config.yaml"
 grep -q '^MC_CARTOLIVE_DATABASE_MODE=preserved$' "$tmp/preserve_success/deploy-state/current.env"
+grep -Eq '^MC_CARTOLIVE_BACKUP_VERIFICATION_SHA256=[0-9a-f]{64}$' "$tmp/preserve_success/deploy-state/current.env"
 grep -q 'check-public-privacy.mjs http://127.0.0.1:39476 --origin https://carto.example.test' "$tmp/preserve_success/node.log"
 grep -qx 'SQLITE_BUSY_TIMEOUT_MS=750' "$tmp/preserve_success/repo/.env"
 

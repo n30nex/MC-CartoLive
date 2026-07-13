@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "MC-CartoLive Public API",
-    "version": "3.2.1",
+    "version": "3.2.2",
     "description": "Privacy-safe additive HTTP and WebSocket contract. Internal analyzer, metrics, and debug routes are intentionally excluded.",
     "license": {
       "name": "MIT",
@@ -1424,6 +1424,15 @@
           "ok",
           "warn",
           "critical"
+        ]
+      },
+      "LiveQueueState": {
+        "type": "string",
+        "enum": [
+          "idle",
+          "active",
+          "lagging",
+          "failed"
         ]
       },
       "CoordinateBounds": {
@@ -3683,6 +3692,12 @@
           "mqttSessionReady",
           "datasetState",
           "storagePressureState",
+          "primaryIngestState",
+          "liveProjectionState",
+          "primaryQueueOldestAgeMs",
+          "liveProjectionOldestAgeMs",
+          "lastBroadcastLatencyMs",
+          "maxBroadcastLatencyMs",
           "version",
           "gitSha"
         ],
@@ -3716,6 +3731,32 @@
           },
           "storagePressureState": {
             "$ref": "#/components/schemas/StoragePressureState"
+          },
+          "primaryIngestState": {
+            "$ref": "#/components/schemas/LiveQueueState"
+          },
+          "liveProjectionState": {
+            "$ref": "#/components/schemas/LiveQueueState"
+          },
+          "primaryQueueOldestAgeMs": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "liveProjectionOldestAgeMs": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "lastBroadcastLatencyMs": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "maxBroadcastLatencyMs": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           },
           "version": {
             "type": "string"
@@ -3926,7 +3967,6 @@
           "type",
           "serverTime",
           "receivedAt",
-          "displayAt",
           "connectionId"
         ],
         "properties": {
@@ -3986,8 +4026,7 @@
           "v",
           "type",
           "serverTime",
-          "receivedAt",
-          "displayAt"
+          "receivedAt"
         ],
         "properties": {
           "v": {
@@ -4033,7 +4072,6 @@
           "type",
           "serverTime",
           "receivedAt",
-          "displayAt",
           "droppedCount",
           "since"
         ],
@@ -4100,7 +4138,6 @@
           "type",
           "event",
           "serverTime",
-          "displayAt",
           "data"
         ],
         "properties": {
@@ -4155,7 +4192,6 @@
           "type",
           "event",
           "serverTime",
-          "displayAt",
           "data"
         ],
         "properties": {
@@ -4210,7 +4246,6 @@
           "type",
           "event",
           "serverTime",
-          "displayAt",
           "data"
         ],
         "properties": {

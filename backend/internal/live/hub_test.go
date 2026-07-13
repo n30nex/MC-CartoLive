@@ -41,6 +41,18 @@ func TestInternalBroadcastEnvelopeKeepsProcessLocalSequence(t *testing.T) {
 	}
 }
 
+func TestLiveEnvelopesAreImmediatelyDisplayable(t *testing.T) {
+	hub := NewHub(slog.New(slog.NewTextHandler(io.Discard, nil)), 4)
+	first := hub.eventEnvelope("activity", map[string]any{"id": "one"})
+	second := hub.eventEnvelope("routePulse", map[string]any{"id": "two"})
+	if first.DisplayAt != first.ServerTime || second.DisplayAt != second.ServerTime {
+		t.Fatalf("display/server first=%d/%d second=%d/%d", first.DisplayAt, first.ServerTime, second.DisplayAt, second.ServerTime)
+	}
+	if second.DisplayAt-first.DisplayAt > 100 {
+		t.Fatalf("live envelopes retained cinematic pacing: delta=%dms", second.DisplayAt-first.DisplayAt)
+	}
+}
+
 func TestWebsocketOriginAllowed(t *testing.T) {
 	allowedHosts := allowedOriginHosts([]string{"http://routes.canadaverse.org"})
 

@@ -31,8 +31,6 @@ type Hub struct {
 	totalDropped  atomic.Int64
 	queueHigh     atomic.Int64
 	pingFailures  atomic.Int64
-	displayMu     sync.Mutex
-	nextDisplayAt int64
 }
 
 type client struct {
@@ -208,7 +206,7 @@ func (h *Hub) publicEventEnvelope(event PublicEvent) Envelope {
 		Data:       event.Data,
 		ServerTime: now,
 		ReceivedAt: event.ReceivedAt,
-		DisplayAt:  h.reserveDisplayAt(now),
+		DisplayAt:  now,
 	}
 }
 
@@ -222,7 +220,7 @@ func (h *Hub) eventEnvelope(event string, data any) Envelope {
 		Data:       data,
 		ServerTime: now,
 		ReceivedAt: now,
-		DisplayAt:  h.reserveDisplayAt(now),
+		DisplayAt:  now,
 	}
 }
 
@@ -239,24 +237,8 @@ func (h *Hub) unsequencedEventEnvelope(event string, data any) Envelope {
 		Data:       data,
 		ServerTime: now,
 		ReceivedAt: now,
-		DisplayAt:  h.reserveDisplayAt(now),
+		DisplayAt:  now,
 	}
-}
-
-func (h *Hub) reserveDisplayAt(now int64) int64 {
-	const eventSpacingMs = 140
-	const maxPaceLagMs = 3500
-	h.displayMu.Lock()
-	defer h.displayMu.Unlock()
-	if h.nextDisplayAt < now {
-		h.nextDisplayAt = now
-	}
-	displayAt := h.nextDisplayAt
-	h.nextDisplayAt += eventSpacingMs
-	if h.nextDisplayAt-now > maxPaceLagMs {
-		h.nextDisplayAt = now + maxPaceLagMs
-	}
-	return displayAt
 }
 
 func (h *Hub) ClientCount() int {

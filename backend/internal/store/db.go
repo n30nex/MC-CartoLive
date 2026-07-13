@@ -104,7 +104,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	readConns := sqliteEnvInt("SQLITE_READ_OPEN_CONNS", sqliteEnvInt("SQLITE_MAX_OPEN_CONNS", 2))
+	readConns := sqliteEnvInt("SQLITE_READ_OPEN_CONNS", 2)
 	readDB.SetMaxOpenConns(readConns)
 	readDB.SetMaxIdleConns(readConns)
 	if err := readDB.PingContext(ctx); err != nil {

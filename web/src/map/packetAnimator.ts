@@ -109,6 +109,14 @@ export interface PacketAnimationOptions {
   animationStyle?: PacketAnimationStyle;
 }
 
+export interface ObserverAnimationOptions {
+  forceDistinct?: boolean;
+  durationMs?: number;
+  afterglowMs?: number;
+  brightness?: number;
+  residue?: boolean;
+}
+
 interface RenderedPointFeature {
   geometry?: { type?: string; coordinates?: [number, number] };
   properties?: Record<string, unknown>;
@@ -258,27 +266,33 @@ export class PacketAnimator {
     this.requestFrame();
   }
 
-  add(pulse: PublicRoutePulse, options: PacketAnimationOptions = {}) {
+  activeVisualCount(): number {
+    return this.pulses.length + this.observerBursts.length;
+  }
+
+  add(pulse: PublicRoutePulse, options: PacketAnimationOptions = {}): boolean {
     const pulseOptions = { ...pulse.replayOptions, ...options };
-    if ((this.paused && !pulseOptions.force) || pulse.segments.length === 0) return;
+    if ((this.paused && !pulseOptions.force) || pulse.segments.length === 0) return false;
     const validSegments = pulse.segments.filter((segment) => isMappableEndpoint(segment.from) && isMappableEndpoint(segment.to));
-    if (validSegments.length === 0) return;
+    if (validSegments.length === 0) return false;
     const now = performance.now();
     const color = payloadVisual(pulse.payloadTypeName).color;
     const brightness = clampRange(pulseOptions.brightness ?? this.visualSettings.brightness, 0.25, 2);
     const trailScale = clampRange(pulseOptions.trailScale ?? this.visualSettings.trail, 0, 2.5);
     const animationStyle = pulseOptions.animationStyle ?? this.visualSettings.animationStyle;
-    for (const segment of validSegments) {
-      this.traceHits.push({
-        routeId: segment.routeId,
-        color: color || this.routeColors.get(segment.routeId) || routeColorFromID(segment.routeId),
-        from: { lat: segment.from.lat, lng: segment.from.lng },
-        to: { lat: segment.to.lat, lng: segment.to.lng },
-        addedAt: now
-      });
+    if (trailScale > 0 && animationStyle !== 'minimal') {
+      for (const segment of validSegments) {
+        this.traceHits.push({
+          routeId: segment.routeId,
+          color: color || this.routeColors.get(segment.routeId) || routeColorFromID(segment.routeId),
+          from: { lat: segment.from.lat, lng: segment.from.lng },
+          to: { lat: segment.to.lat, lng: segment.to.lng },
+          addedAt: now
+        });
+      }
+      this.traceHits = this.traceHits.slice(-4000);
+      this.traceAggregatesDirty = true;
     }
-    this.traceHits = this.traceHits.slice(-4000);
-    this.traceAggregatesDirty = true;
     this.pulses.push({
       pulse,
       segments: validSegments,
@@ -291,42 +305,44 @@ export class PacketAnimator {
       animationStyle,
       force: pulseOptions.force === true
     });
-    this.pulses = this.pulses.slice(-240);
     this.requestFrame();
+    return true;
   }
 
-  addObserverBurst(burst: PublicObserverBurst) {
-    if (this.paused || !isMappableObserverLocation(burst.location)) return;
+  addObserverBurst(burst: PublicObserverBurst, options: ObserverAnimationOptions = {}): boolean {
+    if (this.paused || !isMappableObserverLocation(burst.location)) return false;
     const now = performance.now();
     this.observerBursts = this.observerBursts.filter(({ started, duration, afterglowDuration }) => now - started < duration + afterglowDuration);
     const locationKey = observerBurstKey(burst);
-    this.observerBurstHits.push({
-      key: locationKey,
-      color: payloadVisual(burst.payloadTypeName).color,
-      location: { lat: burst.location.lat, lng: burst.location.lng },
-      addedAt: now
-    });
-    this.observerBurstHits = this.observerBurstHits.slice(-4000);
-    this.observerAggregatesDirty = true;
-    const activeForLocation = this.observerBursts.filter((active) => observerBurstKey(active.burst) === locationKey).length;
-    if (activeForLocation > 0) {
-      this.requestFrame();
-      return;
+    if (options.residue !== false) {
+      this.observerBurstHits.push({
+        key: locationKey,
+        color: payloadVisual(burst.payloadTypeName).color,
+        location: { lat: burst.location.lat, lng: burst.location.lng },
+        addedAt: now
+      });
+      this.observerBurstHits = this.observerBurstHits.slice(-4000);
+      this.observerAggregatesDirty = true;
     }
-    if (!observerBurstAllowed(this.observerBursts.length, activeForLocation, this.observerBurstLastAtByLocation.get(locationKey), now)) {
+    const activeForLocation = this.observerBursts.filter((active) => observerBurstKey(active.burst) === locationKey).length;
+    if (!options.forceDistinct && activeForLocation > 0) {
       this.requestFrame();
-      return;
+      return false;
+    }
+    if (!options.forceDistinct && !observerBurstAllowed(this.observerBursts.length, activeForLocation, this.observerBurstLastAtByLocation.get(locationKey), now)) {
+      this.requestFrame();
+      return false;
     }
     this.observerBurstLastAtByLocation.set(locationKey, now);
     this.observerBursts.push({
       burst,
       started: now,
-      duration: OBSERVER_BURST_DURATION_MS,
-      afterglowDuration: OBSERVER_BURST_AFTERGLOW_MS,
-      brightness: this.visualSettings.brightness
+      duration: clampDuration(options.durationMs ?? OBSERVER_BURST_DURATION_MS),
+      afterglowDuration: clampRange(options.afterglowMs ?? OBSERVER_BURST_AFTERGLOW_MS, 0, 12_000),
+      brightness: clampRange(options.brightness ?? this.visualSettings.brightness, 0.25, 2)
     });
-    this.observerBursts = this.observerBursts.slice(-MAX_ACTIVE_OBSERVER_BURSTS);
     this.requestFrame();
+    return true;
   }
 
   clear() {
@@ -1217,5 +1233,5 @@ function clampRange(value: number, min: number, max: number): number {
 
 function clampDuration(value: number): number {
   if (!Number.isFinite(value)) return PACKET_SINGLE_HOP_DURATION_MS;
-  return Math.max(500, Math.min(12_000, Math.round(value)));
+  return Math.max(450, Math.min(12_000, Math.round(value)));
 }

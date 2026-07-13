@@ -1,11 +1,14 @@
 package live
 
 import (
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
 type RuntimeStats struct {
+	writerQueueMu                   sync.Mutex
+	writerQueuedAt                  map[string][]int64
 	publicStateRequests             atomic.Int64
 	publicStateErrors               atomic.Int64
 	publicStateLastLatencyMs        atomic.Int64
@@ -60,6 +63,21 @@ type RuntimeStats struct {
 	derivedQueueCapacity            atomic.Int64
 	derivedOldestAtMs               atomic.Int64
 	derivedLastLatencyMs            atomic.Int64
+	writerPrimaryLastWaitMs         atomic.Int64
+	writerLiveCoreLastWaitMs        atomic.Int64
+	writerBackgroundLastWaitMs      atomic.Int64
+	writerPrimaryMaxWaitMs          atomic.Int64
+	writerLiveCoreMaxWaitMs         atomic.Int64
+	writerBackgroundMaxWaitMs       atomic.Int64
+	primaryDeadlineFailures         atomic.Int64
+	primaryPersisted                atomic.Int64
+	permanentRejects                atomic.Int64
+	derivedProjectionLagMs          atomic.Int64
+	derivedProjectionFailures       atomic.Int64
+	derivedProjectionQueueDepth     atomic.Int64
+	derivedProjectionOldestAtMs     atomic.Int64
+	lastBroadcastLatencyMs          atomic.Int64
+	maxBroadcastLatencyMs           atomic.Int64
 }
 
 type RuntimeStatsSnapshot struct {
@@ -117,10 +135,134 @@ type RuntimeStatsSnapshot struct {
 	DerivedQueueCapacity            int64 `json:"derivedQueueCapacity"`
 	DerivedOldestAtMs               int64 `json:"derivedOldestAtMs"`
 	DerivedLastLatencyMs            int64 `json:"derivedLastLatencyMs"`
+	WriterPrimaryQueueDepth         int64 `json:"writerPrimaryQueueDepth"`
+	WriterPrimaryOldestAtMs         int64 `json:"writerPrimaryOldestAtMs"`
+	WriterPrimaryLastWaitMs         int64 `json:"writerPrimaryLastWaitMs"`
+	WriterPrimaryMaxWaitMs          int64 `json:"writerPrimaryMaxWaitMs"`
+	WriterLiveCoreQueueDepth        int64 `json:"writerLiveCoreQueueDepth"`
+	WriterLiveCoreOldestAtMs        int64 `json:"writerLiveCoreOldestAtMs"`
+	WriterLiveCoreLastWaitMs        int64 `json:"writerLiveCoreLastWaitMs"`
+	WriterLiveCoreMaxWaitMs         int64 `json:"writerLiveCoreMaxWaitMs"`
+	WriterBackgroundQueueDepth      int64 `json:"writerBackgroundQueueDepth"`
+	WriterBackgroundOldestAtMs      int64 `json:"writerBackgroundOldestAtMs"`
+	WriterBackgroundLastWaitMs      int64 `json:"writerBackgroundLastWaitMs"`
+	WriterBackgroundMaxWaitMs       int64 `json:"writerBackgroundMaxWaitMs"`
+	PrimaryDeadlineFailures         int64 `json:"primaryDeadlineFailures"`
+	PrimaryPersisted                int64 `json:"primaryPersisted"`
+	PermanentRejects                int64 `json:"permanentRejects"`
+	DerivedProjectionLagMs          int64 `json:"derivedProjectionLagMs"`
+	DerivedProjectionFailures       int64 `json:"derivedProjectionFailures"`
+	DerivedProjectionQueueDepth     int64 `json:"derivedProjectionQueueDepth"`
+	DerivedProjectionOldestAtMs     int64 `json:"derivedProjectionOldestAtMs"`
+	LastBroadcastLatencyMs          int64 `json:"lastBroadcastLatencyMs"`
+	MaxBroadcastLatencyMs           int64 `json:"maxBroadcastLatencyMs"`
 }
 
 func NewRuntimeStats() *RuntimeStats {
-	return &RuntimeStats{}
+	return &RuntimeStats{writerQueuedAt: map[string][]int64{}}
+}
+
+func (s *RuntimeStats) RecordWriterQueued(lane string, queuedAtMs int64) {
+	if s == nil {
+		return
+	}
+	s.writerQueueMu.Lock()
+	if s.writerQueuedAt == nil {
+		s.writerQueuedAt = map[string][]int64{}
+	}
+	s.writerQueuedAt[lane] = append(s.writerQueuedAt[lane], queuedAtMs)
+	s.writerQueueMu.Unlock()
+}
+
+func (s *RuntimeStats) RecordWriterCanceled(lane string, queuedAtMs int64) {
+	if s == nil {
+		return
+	}
+	s.removeWriterQueued(lane, queuedAtMs)
+}
+
+func (s *RuntimeStats) RecordWriterStarted(lane string, queuedAtMs int64, wait time.Duration) {
+	if s == nil {
+		return
+	}
+	s.removeWriterQueued(lane, queuedAtMs)
+	waitMs := max(wait.Milliseconds(), 0)
+	var last, maximum *atomic.Int64
+	switch lane {
+	case "primary":
+		last, maximum = &s.writerPrimaryLastWaitMs, &s.writerPrimaryMaxWaitMs
+	case "background":
+		last, maximum = &s.writerBackgroundLastWaitMs, &s.writerBackgroundMaxWaitMs
+	default:
+		last, maximum = &s.writerLiveCoreLastWaitMs, &s.writerLiveCoreMaxWaitMs
+	}
+	last.Store(waitMs)
+	storeAtomicMax(maximum, waitMs)
+}
+
+func (s *RuntimeStats) removeWriterQueued(lane string, queuedAtMs int64) {
+	s.writerQueueMu.Lock()
+	defer s.writerQueueMu.Unlock()
+	items := s.writerQueuedAt[lane]
+	for i, item := range items {
+		if item == queuedAtMs {
+			s.writerQueuedAt[lane] = append(items[:i], items[i+1:]...)
+			return
+		}
+	}
+}
+
+func storeAtomicMax(target *atomic.Int64, value int64) {
+	for {
+		current := target.Load()
+		if value <= current || target.CompareAndSwap(current, value) {
+			return
+		}
+	}
+}
+
+func (s *RuntimeStats) RecordPrimaryPersisted() {
+	if s != nil {
+		s.primaryPersisted.Add(1)
+	}
+}
+
+func (s *RuntimeStats) RecordPrimaryDeadlineFailure() {
+	if s != nil {
+		s.primaryDeadlineFailures.Add(1)
+	}
+}
+
+func (s *RuntimeStats) RecordPermanentReject() {
+	if s != nil {
+		s.permanentRejects.Add(1)
+	}
+}
+
+func (s *RuntimeStats) RecordDerivedProjection(lag time.Duration, failed bool) {
+	if s == nil {
+		return
+	}
+	s.derivedProjectionLagMs.Store(max(lag.Milliseconds(), 0))
+	if failed {
+		s.derivedProjectionFailures.Add(1)
+	}
+}
+
+func (s *RuntimeStats) RecordDerivedProjectionQueue(depth int, oldestAtMs int64) {
+	if s == nil {
+		return
+	}
+	s.derivedProjectionQueueDepth.Store(int64(max(depth, 0)))
+	s.derivedProjectionOldestAtMs.Store(max(oldestAtMs, 0))
+}
+
+func (s *RuntimeStats) RecordBroadcastLatency(latency time.Duration) {
+	if s != nil {
+		latencyMs := max(latency.Milliseconds(), 0)
+		s.lastBroadcastLatencyMs.Store(latencyMs)
+		storeAtomicMax(&s.maxBroadcastLatencyMs, latencyMs)
+	}
 }
 
 func (s *RuntimeStats) RecordPublicState(duration time.Duration, failed bool) {
@@ -335,6 +477,18 @@ func (s *RuntimeStats) Snapshot() RuntimeStatsSnapshot {
 	if s == nil {
 		return RuntimeStatsSnapshot{}
 	}
+	s.writerQueueMu.Lock()
+	writerDepth := func(lane string) int64 { return int64(len(s.writerQueuedAt[lane])) }
+	writerOldest := func(lane string) int64 {
+		if len(s.writerQueuedAt[lane]) == 0 {
+			return 0
+		}
+		return s.writerQueuedAt[lane][0]
+	}
+	primaryDepth, primaryOldest := writerDepth("primary"), writerOldest("primary")
+	liveDepth, liveOldest := writerDepth("live_core"), writerOldest("live_core")
+	backgroundDepth, backgroundOldest := writerDepth("background"), writerOldest("background")
+	s.writerQueueMu.Unlock()
 	return RuntimeStatsSnapshot{
 		PublicStateRequests:             s.publicStateRequests.Load(),
 		PublicStateErrors:               s.publicStateErrors.Load(),
@@ -390,5 +544,26 @@ func (s *RuntimeStats) Snapshot() RuntimeStatsSnapshot {
 		DerivedQueueCapacity:            s.derivedQueueCapacity.Load(),
 		DerivedOldestAtMs:               s.derivedOldestAtMs.Load(),
 		DerivedLastLatencyMs:            s.derivedLastLatencyMs.Load(),
+		WriterPrimaryQueueDepth:         primaryDepth,
+		WriterPrimaryOldestAtMs:         primaryOldest,
+		WriterPrimaryLastWaitMs:         s.writerPrimaryLastWaitMs.Load(),
+		WriterPrimaryMaxWaitMs:          s.writerPrimaryMaxWaitMs.Load(),
+		WriterLiveCoreQueueDepth:        liveDepth,
+		WriterLiveCoreOldestAtMs:        liveOldest,
+		WriterLiveCoreLastWaitMs:        s.writerLiveCoreLastWaitMs.Load(),
+		WriterLiveCoreMaxWaitMs:         s.writerLiveCoreMaxWaitMs.Load(),
+		WriterBackgroundQueueDepth:      backgroundDepth,
+		WriterBackgroundOldestAtMs:      backgroundOldest,
+		WriterBackgroundLastWaitMs:      s.writerBackgroundLastWaitMs.Load(),
+		WriterBackgroundMaxWaitMs:       s.writerBackgroundMaxWaitMs.Load(),
+		PrimaryDeadlineFailures:         s.primaryDeadlineFailures.Load(),
+		PrimaryPersisted:                s.primaryPersisted.Load(),
+		PermanentRejects:                s.permanentRejects.Load(),
+		DerivedProjectionLagMs:          s.derivedProjectionLagMs.Load(),
+		DerivedProjectionFailures:       s.derivedProjectionFailures.Load(),
+		DerivedProjectionQueueDepth:     s.derivedProjectionQueueDepth.Load(),
+		DerivedProjectionOldestAtMs:     s.derivedProjectionOldestAtMs.Load(),
+		LastBroadcastLatencyMs:          s.lastBroadcastLatencyMs.Load(),
+		MaxBroadcastLatencyMs:           s.maxBroadcastLatencyMs.Load(),
 	}
 }

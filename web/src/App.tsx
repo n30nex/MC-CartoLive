@@ -5,7 +5,8 @@ import { recoverPublicEventPages } from './eventRecovery';
 import { connectPublicSocket } from './ws';
 import {
   applyPublicEnvelope,
-  applyPublicEvent,
+  applyPublicEnvelopes,
+  applyPublicEvents,
   emptyState,
   hydrateSnapshotTopology,
   initialAppState,
@@ -53,11 +54,11 @@ import {
   type ChromeVisibilityState,
   type ViewportBounds
 } from './components/panelChrome';
-import { capLiveEnvelopeQueue, nextLiveEnvelopeDelayMs, takeDueLiveEnvelopes } from './livePacing';
+import { capLiveEnvelopeQueue, takeDueLiveEnvelopes } from './livePacing';
 import { classifyLiveEnvelopeSequence, helloRequiresCursorResetProbe, liveCursorResetTarget, retainLiveEnvelopesAfterCursor, shouldQueueDurableLiveSequence, takeIncreasingLiveEnvelopes } from './liveCursor';
 import { shortestPathBetween } from './connectivity';
 import { boundsFromPoints, meshcorePathCopyText, routesInBounds, type MapPoint } from './routeTools';
-import { packetToPulse } from './packets';
+import { livePacketsFromActivity, packetToPulse } from './packets';
 import { downloadRouteGifBlob, routeGifAnimationDurationMs, type RouteMapGifExportRequest } from './routeGifExport';
 import { buildSharedViewURL, parseSharedView, type MapViewState } from './shareView';
 import type { DashboardAction } from './uiActions';
@@ -65,7 +66,7 @@ import { SERVICE_WORKER_UPDATE_EVENT, activateWaitingServiceWorker, waitingServi
 import { useAccessibleDialog } from './lib/useAccessibleDialog';
 import { bootstrapToLiveState, publicStateSnapshotIsCurrent, startBootstrapFirstHydration } from './bootstrapHydration';
 import { installResumeRecovery } from './resumeRecovery';
-import { recordLivePendingQueueSize, recordSnapshotReplacement, recordVisibilityPause } from './perfDiagnostics';
+import { installLongTaskObserver, recordLivePendingQueueSize, recordLiveStateApplied, recordSnapshotReplacement, recordVisibilityPause } from './perfDiagnostics';
 import { useMapSelection } from './hooks/useMapSelection';
 import { useWorkspaceNavigation } from './hooks/useWorkspaceNavigation';
 import { beginOwnedPause, markOwnedPauseUserOverride, pausedAfterOwnedPause, type OwnedPauseSession } from './pauseOwnership';
@@ -214,6 +215,7 @@ function PublicDashboardApp() {
   const {
     visibleNodes,
     visibleRoutes,
+    routeViewRevision,
     selectedNodeID,
     selectedRouteID,
     selectedPacket,
@@ -258,7 +260,8 @@ function PublicDashboardApp() {
   const eventRecoveryRef = useRef<((latestSeq?: number) => void) | null>(null);
   const lastSnapshotSignatureRef = useRef('');
   const pendingMessagesRef = useRef<PublicLiveEnvelope[]>([]);
-  const flushMessagesTimerRef = useRef<number | null>(null);
+  const flushMessagesFrameRef = useRef<number | null>(null);
+  const initialNodesReceivedRef = useRef(false);
   const selectedThemePalette = useMemo(() => themePaletteByID(themePaletteID), [themePaletteID]);
   const resolvedThemeMode = useMemo(() => resolveThemeMode(themeMode), [themeMode]);
   const mapThemeMode = useMemo(() => themeModeForMapStyle(mapSettings.style.profileID, resolvedThemeMode), [mapSettings.style.profileID, resolvedThemeMode]);
@@ -270,6 +273,12 @@ function PublicDashboardApp() {
       latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, publicSequence(state.latestSeq));
     }
   }, [state]);
+
+  useEffect(() => {
+    initialNodesReceivedRef.current = initialNodesReceived;
+  }, [initialNodesReceived]);
+
+  useEffect(() => installLongTaskObserver(), []);
 
   const applyPublicSnapshot = useCallback((liveState: PublicLiveState, recoveryFloor?: number): boolean => {
     const requiredSeq = recoveryFloor === undefined
@@ -289,13 +298,16 @@ function PublicDashboardApp() {
     latestObservedSeqRef.current = Math.max(latestObservedSeqRef.current, snapshotSeq);
     latestInboundSeqRef.current = Math.max(latestInboundSeqRef.current, snapshotSeq);
     eventCursorGenerationRef.current += 1;
-    if (flushMessagesTimerRef.current !== null) {
-      window.clearTimeout(flushMessagesTimerRef.current);
-      flushMessagesTimerRef.current = null;
+    if (flushMessagesFrameRef.current !== null) {
+      window.cancelAnimationFrame(flushMessagesFrameRef.current);
+      flushMessagesFrameRef.current = null;
     }
     pendingMessagesRef.current = [];
     recordLivePendingQueueSize(0);
     const nextState = initialAppState(liveState);
+    nextState.routeTopologyRevision = stateRef.current.routeTopologyRevision + 1;
+    nextState.routeTrafficRevision = stateRef.current.routeTrafficRevision + 1;
+    nextState.routeVisualRevision = stateRef.current.routeVisualRevision + 1;
     stateRef.current = nextState;
     lastAppliedEventSeqRef.current = snapshotSeq;
     lastQueuedEventSeqRef.current = snapshotSeq;
@@ -320,23 +332,6 @@ function PublicDashboardApp() {
   useEffect(() => {
     setRouteGifExport((current) => (current.status === 'rendering' ? current : { ...current, status: 'idle', progress: 0 }));
   }, [selectedPacket?.id]);
-
-  const refreshLiveSnapshot = useCallback(() => {
-    return fetchPublicState()
-      .then((liveState) => {
-        setFullStateHydrated(true);
-        if (!applyPublicSnapshot(liveState)) return;
-        setPublicMapConfig(liveState.map ?? null);
-        if ((liveState.nodes?.length ?? 0) > 0) {
-          setInitialNodesReceived(true);
-          setNodeLoadFailed(false);
-        }
-      })
-      .catch(() => {
-        setSocketStatus('state-error');
-        if (!initialNodesReceived) setNodeLoadFailed(true);
-      });
-  }, [applyPublicSnapshot, initialNodesReceived]);
 
   const toggleChromeVisibility = useCallback(() => {
     setChromeVisibility((current) => reduceChromeVisibility(current, { type: current.chromeHidden ? 'show-all' : 'hide-all' }));
@@ -465,13 +460,11 @@ function PublicDashboardApp() {
     let stateRefreshIsCursorReset = false;
     let resetRecoveryActive = false;
     const scheduleMessagesFlush = () => {
-      if (flushMessagesTimerRef.current !== null) return;
-      const delay = nextLiveEnvelopeDelayMs(pendingMessagesRef.current, Date.now());
-      if (delay === null) return;
-      flushMessagesTimerRef.current = window.setTimeout(flushMessages, delay);
+      if (flushMessagesFrameRef.current !== null || pendingMessagesRef.current.length === 0) return;
+      flushMessagesFrameRef.current = window.requestAnimationFrame(flushMessages);
     };
     const flushMessages = () => {
-      flushMessagesTimerRef.current = null;
+      flushMessagesFrameRef.current = null;
       if (!active || pendingMessagesRef.current.length === 0) return;
       const { due, pending } = takeDueLiveEnvelopes(pendingMessagesRef.current, Date.now());
       const batch = takeIncreasingLiveEnvelopes(due, lastAppliedEventSeqRef.current);
@@ -489,7 +482,12 @@ function PublicDashboardApp() {
       }
       if (batch.accepted.length > 0) {
         lastAppliedEventSeqRef.current = batch.cursor;
-        setState((current) => batch.accepted.reduce((next, message) => applyPublicEnvelope(next, message), current));
+        recordLiveStateApplied(batch.accepted);
+        setState((current) => {
+          const next = applyPublicEnvelopes(current, batch.accepted, { animate: true });
+          stateRef.current = next;
+          return next;
+        });
       }
       pendingMessagesRef.current = retainLiveEnvelopesAfterCursor(pending, lastAppliedEventSeqRef.current);
       recordLivePendingQueueSize(pendingMessagesRef.current.length);
@@ -579,7 +577,7 @@ function PublicDashboardApp() {
       }).catch(() => {
         if (!active) return;
         setSocketStatus('state-error');
-        if (!initialNodesReceived) setNodeLoadFailed(true);
+        if (!initialNodesReceivedRef.current) setNodeLoadFailed(true);
         scheduleStateRefresh(PUBLIC_STATE_FALLBACK_POLL_MS);
       }).finally(() => {
         stateRefreshInFlight = false;
@@ -625,7 +623,11 @@ function PublicDashboardApp() {
                   ...pendingMessagesRef.current.map((message) => publicSequence(message.seq))
                 );
                 recordLivePendingQueueSize(pendingMessagesRef.current.length);
-                setState((current) => unapplied.reduce((next, event) => applyPublicEvent(next, event), current));
+                setState((current) => {
+                  const next = applyPublicEvents(current, unapplied);
+                  stateRef.current = next;
+                  return next;
+                });
               },
               isActive: () => active
             });
@@ -652,9 +654,9 @@ function PublicDashboardApp() {
             pendingMessagesRef.current = [];
             lastQueuedEventSeqRef.current = resetTarget;
             recordLivePendingQueueSize(0);
-            if (flushMessagesTimerRef.current !== null) {
-              window.clearTimeout(flushMessagesTimerRef.current);
-              flushMessagesTimerRef.current = null;
+            if (flushMessagesFrameRef.current !== null) {
+              window.cancelAnimationFrame(flushMessagesFrameRef.current);
+              flushMessagesFrameRef.current = null;
             }
             resetRecoveryActive = true;
             refreshState(resetTarget, true);
@@ -727,9 +729,9 @@ function PublicDashboardApp() {
         pendingMessagesRef.current = [];
         lastQueuedEventSeqRef.current = lastAppliedEventSeqRef.current;
         recordLivePendingQueueSize(0);
-        if (flushMessagesTimerRef.current !== null) {
-          window.clearTimeout(flushMessagesTimerRef.current);
-          flushMessagesTimerRef.current = null;
+        if (flushMessagesFrameRef.current !== null) {
+          window.cancelAnimationFrame(flushMessagesFrameRef.current);
+          flushMessagesFrameRef.current = null;
         }
         setState((current) => applyPublicEnvelope(current, message));
         const laggedTarget = Math.max(observedSeq, publicSequence(message.toSeq));
@@ -743,24 +745,24 @@ function PublicDashboardApp() {
       if (eventRecoveryRef.current === backfillOrRefresh) eventRecoveryRef.current = null;
       if (recoveryRetryTimer !== null) window.clearTimeout(recoveryRetryTimer);
       if (stateRefreshRetryTimer !== null) window.clearTimeout(stateRefreshRetryTimer);
-      if (flushMessagesTimerRef.current !== null) window.clearTimeout(flushMessagesTimerRef.current);
-      flushMessagesTimerRef.current = null;
+      if (flushMessagesFrameRef.current !== null) window.cancelAnimationFrame(flushMessagesFrameRef.current);
+      flushMessagesFrameRef.current = null;
       pendingMessagesRef.current = [];
       lastQueuedEventSeqRef.current = lastAppliedEventSeqRef.current;
       recordLivePendingQueueSize(0);
       socket.close();
     };
-  }, [applyPublicSnapshot, initialNodesReceived]);
+  }, [applyPublicSnapshot]);
 
   useEffect(() => {
     return installResumeRecovery({
       document,
       window,
       shouldRehydrate: () => true,
-      rehydrate: refreshLiveSnapshot,
+      rehydrate: () => eventRecoveryRef.current?.(latestObservedSeqRef.current || undefined),
       onSuspend: recordVisibilityPause
     });
-  }, [refreshLiveSnapshot]);
+  }, []);
 
   useEffect(() => {
     if (socketStatus === 'live') return;
@@ -856,6 +858,7 @@ function PublicDashboardApp() {
   );
   const coverage = useMemo(() => liveCoverageStats(state.activity, activityClockBucket), [state.activity, activityClockBucket]);
   const latestPacketActivity = useMemo(() => state.activity.find(isPacketActivity) ?? null, [state.activity]);
+  const livePackets = useMemo(() => livePacketsFromActivity(state.activity, state.pulses), [state.activity, state.pulses]);
   const loadingPositionedNodes = initialLoadGateOpen && (!initialNodesReceived || !positionedNodesRendered);
   const handlePositionedNodesRendered = useCallback(() => setPositionedNodesRendered(true), []);
   const handleViewChange = useCallback((view: MapViewState) => setMapView(view), []);
@@ -1269,6 +1272,9 @@ function PublicDashboardApp() {
         <CanadaMap
         nodes={visibleNodes}
         routes={visibleRoutes}
+        routeTopologyRevision={state.routeTopologyRevision}
+        routeVisualRevision={state.routeVisualRevision}
+        routeViewRevision={routeViewRevision}
         pulses={state.pulses}
         observerBursts={state.observerBursts}
         propagationEvents={propagationEvents}
@@ -1694,6 +1700,7 @@ function PublicDashboardApp() {
               mode={packetsPanelMode}
               selectedPacketID={selectedPacket?.id ?? null}
               selectedPacket={selectedPacket}
+              livePackets={livePackets}
               presentation={workspacePresentation}
               onClose={closePackets}
               onExpand={() => setPacketsPanelMode('expanded')}

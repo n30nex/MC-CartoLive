@@ -163,3 +163,31 @@ func TestPublicEventDedupeKeySuppressesAmbiguousRetry(t *testing.T) {
 		t.Fatalf("deduped event count=%d want 1", count)
 	}
 }
+
+func TestPublicEventBatchCommitsInOrderAndDedupesAsAUnit(t *testing.T) {
+	ctx := context.Background()
+	st, err := OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := time.Now().UnixMilli()
+	events := []live.PublicEvent{
+		{DedupeKey: "batch:activity", Type: "activity", At: now, Data: map[string]any{"id": "activity"}},
+		{DedupeKey: "batch:pulse", Type: "routePulse", At: now, Data: map[string]any{"id": "pulse"}},
+	}
+	stored, inserted, err := st.InsertPublicEventsOnce(ctx, events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !inserted[0] || !inserted[1] || stored[0].Seq <= 0 || stored[1].Seq != stored[0].Seq+1 {
+		t.Fatalf("stored=%#v inserted=%v", stored, inserted)
+	}
+	retried, inserted, err := st.InsertPublicEventsOnce(ctx, events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inserted[0] || inserted[1] || retried[0].Seq != stored[0].Seq || retried[1].Seq != stored[1].Seq {
+		t.Fatalf("retried=%#v inserted=%v", retried, inserted)
+	}
+}

@@ -90,8 +90,8 @@ func TestPublicBackfillWorkIsBoundedBelowPrimaryDeadline(t *testing.T) {
 	if got := boundedPublicBackfillBatch(500); got != publicBackfillBatchLimit || got >= 500 {
 		t.Fatalf("bounded batch=%d limit=%d", got, publicBackfillBatchLimit)
 	}
-	if publicBackfillBatchTimeout >= primaryIngestBudget {
-		t.Fatalf("backfill timeout=%v must stay below primary budget=%v", publicBackfillBatchTimeout, primaryIngestBudget)
+	if publicBackfillBatchTimeout > 2*time.Second {
+		t.Fatalf("backfill timeout=%v must keep background slices short", publicBackfillBatchTimeout)
 	}
 	if publicBackfillStartupQuietDelay < 30*time.Second {
 		t.Fatalf("startup quiet delay=%v is too short", publicBackfillStartupQuietDelay)

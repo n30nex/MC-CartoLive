@@ -2,7 +2,7 @@ name: Build release candidate
 
 on:
   workflow_run:
-    workflows: [CI]
+    workflows: [CI, Release performance gate]
     types: [completed]
 
 permissions: {}
@@ -20,7 +20,8 @@ jobs:
     name: Authorize trusted main CI source
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
+      ((github.event.workflow_run.name == 'CI' && github.event.workflow_run.event == 'push') ||
+       (github.event.workflow_run.name == 'Release performance gate' && github.event.workflow_run.event == 'workflow_dispatch')) &&
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
@@ -44,29 +45,40 @@ jobs:
       verified_main_sha: ${{ steps.trust.outputs.verified_main_sha }}
       premerge_head_sha: ${{ steps.premerge.outputs.head_sha }}
       premerge_run_id: ${{ steps.premerge.outputs.run_id }}
-      premerge_proof_deferred: ${{ steps.premerge.outputs.proof_deferred }}
+      main_performance_run_id: ${{ steps.premerge.outputs.main_run_id }}
     steps:
       - name: Verify successful push CI is current repository main
         id: trust
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          TRIGGER_WORKFLOW: ${{ github.event.workflow_run.name }}
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
+          TRIGGER_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          TRIGGER_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
-          SOURCE_CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          SOURCE_CI_EVENT: ${{ github.event.workflow_run.event }}
-          SOURCE_CI_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          SOURCE_CI_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
         run: |
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TRIGGER_RUN_ID" =~ ^[0-9]+$ ]]
+          test "$TRIGGER_HEAD_BRANCH" = "main"
+          test "$TRIGGER_HEAD_REPOSITORY" = "$GITHUB_REPOSITORY"
+          if [ "$TRIGGER_WORKFLOW" = "CI" ]; then
+            test "$TRIGGER_EVENT" = "push"
+            SOURCE_CI_RUN_ID="$TRIGGER_RUN_ID"
+          else
+            test "$TRIGGER_WORKFLOW" = "Release performance gate"
+            test "$TRIGGER_EVENT" = "workflow_dispatch"
+            ci_runs="$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" -f head_sha="$SOURCE_SHA" -f status=completed -f per_page=100)"
+            SOURCE_CI_RUN_ID="$(printf '%s' "$ci_runs" | jq -r --arg repository "$GITHUB_REPOSITORY" '[.workflow_runs[] | select(.conclusion == "success" and .event == "push" and .head_branch == "main" and .head_repository.full_name == $repository)] | sort_by(.id) | last | .id // empty')"
+          fi
           [[ "$SOURCE_CI_RUN_ID" =~ ^[0-9]+$ ]]
-          test "$SOURCE_CI_CONCLUSION" = "success"
-          test "$SOURCE_CI_EVENT" = "push"
-          test "$SOURCE_CI_HEAD_BRANCH" = "main"
-          test "$SOURCE_CI_HEAD_REPOSITORY" = "$GITHUB_REPOSITORY"
           source_run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_CI_RUN_ID")"
           printf '%s' "$source_run" | jq -e \
             --arg sha "$SOURCE_SHA" --arg repository "$GITHUB_REPOSITORY" \
             '.name == "CI" and .path == ".github/workflows/ci.yml" and .conclusion == "success" and .event == "push" and .head_branch == "main" and .head_sha == $sha and .head_repository.full_name == $repository' >/dev/null
+          SOURCE_CI_EVENT="$(printf '%s' "$source_run" | jq -r '.event')"
+          SOURCE_CI_HEAD_BRANCH="$(printf '%s' "$source_run" | jq -r '.head_branch')"
+          SOURCE_CI_HEAD_REPOSITORY="$(printf '%s' "$source_run" | jq -r '.head_repository.full_name')"
           current_main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
           [[ "$current_main_sha" =~ ^[0-9a-f]{40}$ ]]
           test "$SOURCE_SHA" = "$current_main_sha"
@@ -88,7 +100,7 @@ jobs:
           echo "source_ci_head_branch=$SOURCE_CI_HEAD_BRANCH" >> "$GITHUB_OUTPUT"
           echo "source_ci_head_repository=$SOURCE_CI_HEAD_REPOSITORY" >> "$GITHUB_OUTPUT"
           echo "verified_main_sha=$current_main_sha" >> "$GITHUB_OUTPUT"
-      - name: Authorize canonical proof or exact-SHA fast track
+      - name: Authorize exact release-branch canonical proof
         id: premerge
         env:
           GH_TOKEN: ${{ github.token }}
@@ -96,7 +108,6 @@ jobs:
           RELEASE_VERSION: ${{ steps.trust.outputs.release_version }}
           RELEASE_BRANCH: ${{ steps.trust.outputs.release_branch }}
           RELEASE_REF: ${{ steps.trust.outputs.release_ref }}
-          FAST_TRACK_SHA: ${{ vars.MC_CARTOLIVE_RELEASE_FAST_TRACK_SHA }}
         run: |
           prs_json="$(gh api --method GET -H "Accept: application/vnd.github+json" \
             "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/pulls")"
@@ -112,17 +123,6 @@ jobs:
           test "$release_pr_count" -eq 1
           head_sha="$(printf '%s' "$release_pr" | jq -r '.[0].head.sha')"
           [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
-
-          if [ -n "$FAST_TRACK_SHA" ]; then
-            [[ "$FAST_TRACK_SHA" =~ ^[0-9a-f]{40}$ ]]
-            test "$FAST_TRACK_SHA" = "$head_sha"
-            echo "::warning::Canonical full proof explicitly deferred for reviewed PR head $head_sha"
-            echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
-            echo "run_id=0" >> "$GITHUB_OUTPUT"
-            echo "proof_deferred=true" >> "$GITHUB_OUTPUT"
-            echo "authorized=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
 
           artifact_name="release-performance-full-$head_sha"
           artifact_json="$(gh api --method GET \
@@ -158,11 +158,54 @@ jobs:
             --arg runId "$run_id" --arg workflowRef "$workflow_ref" --arg releaseRef "$RELEASE_REF" --arg version "$RELEASE_VERSION" \
             '.profile == "full" and .canonicalReleaseProof == true and .passed == true and (.failures | length) == 0 and
              .version == $version and .github.sha == $sha and .github.ref == $releaseRef and .github.repository == $repository and .github.event == "workflow_dispatch" and .github.workflow == "Release performance gate" and .github.workflowRef == $workflowRef and .github.runId == $runId and
-             .config.sustainedRate == 20 and .config.sustainedSeconds == 1800 and .config.burstRate == 100 and .config.burstSeconds == 60 and .config.apiRows == 5000000 and .config.wsClients == 250 and .config.wsSeconds == 1800 and .config.mqttQueueCapacity == 4096 and .config.derivedQueueCapacity == 1024 and .config.memoryLimitBytes == 629145600 and
-             .phases.sustainedIngest.passed == true and .phases.burstIngest.passed == true and .phases.api.passed == true and .phases.websocket.passed == true' "$report" >/dev/null
+             .config.sustainedRate == 20 and .config.sustainedSeconds == 300 and .config.burstRate == 100 and .config.burstSeconds == 60 and .config.apiRows == 5000000 and .config.apiExpiredRows == 500000 and .config.apiExpiredAgeHours == 720 and .config.wsClients == 250 and .config.wsSeconds == 300 and .config.mqttQueueCapacity == 4096 and .config.derivedQueueCapacity == 1024 and .config.memoryLimitBytes == 629145600 and
+             .phases.sustainedIngest.passed == true and .phases.sustainedIngest.queueOldestP99Ms < 500 and .phases.sustainedIngest.observationToBroadcastP95Ms < 1000 and .phases.sustainedIngest.observationToBroadcastMaxMs <= 5000 and .phases.sustainedIngest.primaryDeadlineFailures == 0 and .phases.sustainedIngest.derivedProjectionQueueDepth == 0 and .phases.sustainedIngest.derivedProjectionFailures == 0 and
+             .phases.burstIngest.passed == true and .phases.burstIngest.queueOldestP99Ms < 2000 and .phases.burstIngest.observationToBroadcastP95Ms < 2000 and .phases.burstIngest.observationToBroadcastMaxMs <= 5000 and .phases.burstIngest.primaryDeadlineFailures == 0 and .phases.burstIngest.derivedProjectionQueueDepth == 0 and .phases.burstIngest.derivedProjectionFailures == 0 and
+             .phases.api.passed == true and .phases.api.seeded.expiredObservationRows == 500000 and .phases.api.seeded.multiHopEdgeRows > 0 and .phases.api.seeded.observerStatusRows > 0 and .phases.api.postRetention.expiredObservationRows == 0 and .phases.api.browser.passed == true and (.phases.api.browser.releaseGates | length) == 2 and
+             .phases.websocket.passed == true' "$report" >/dev/null
+
+          main_artifact_name="release-performance-full-$SOURCE_SHA"
+          main_artifact_json="$(gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/actions/artifacts" \
+            -f name="$main_artifact_name" -f per_page=100)"
+          main_artifact_id=""
+          main_run_id=""
+          while read -r candidate_id candidate_run_id; do
+            [[ "$candidate_id" =~ ^[0-9]+$ ]] || continue
+            [[ "$candidate_run_id" =~ ^[0-9]+$ ]] || continue
+            run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$candidate_run_id")"
+            if printf '%s' "$run_json" | jq -e \
+              --arg sha "$SOURCE_SHA" --arg repository "$GITHUB_REPOSITORY" \
+              '.name == "Release performance gate" and .path == ".github/workflows/release-performance.yml" and .conclusion == "success" and .event == "workflow_dispatch" and .head_branch == "main" and .head_sha == $sha and .head_repository.full_name == $repository' >/dev/null; then
+              main_artifact_id="$candidate_id"
+              main_run_id="$candidate_run_id"
+            fi
+          done < <(printf '%s' "$main_artifact_json" | jq -r '.artifacts | map(select(.expired == false)) | sort_by(.id)[] | [.id,.workflow_run.id] | @tsv')
+          if [ -z "$main_artifact_id" ] || [ -z "$main_run_id" ]; then
+            echo "authorized=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          rm -rf /tmp/mc-cartolive-main-proof
+          mkdir -p /tmp/mc-cartolive-main-proof
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$main_artifact_id/zip" > /tmp/mc-cartolive-main-proof.zip
+          unzip -q /tmp/mc-cartolive-main-proof.zip -d /tmp/mc-cartolive-main-proof
+          main_report=/tmp/mc-cartolive-main-proof/report.json
+          test -f "$main_report"
+          main_workflow_ref="$GITHUB_REPOSITORY/.github/workflows/release-performance.yml@refs/heads/main"
+          jq -e \
+            --arg sha "$SOURCE_SHA" --arg repository "$GITHUB_REPOSITORY" \
+            --arg runId "$main_run_id" --arg workflowRef "$main_workflow_ref" --arg version "$RELEASE_VERSION" \
+            '.profile == "full" and .canonicalReleaseProof == true and .passed == true and (.failures | length) == 0 and
+             .version == $version and .github.sha == $sha and .github.ref == "refs/heads/main" and .github.repository == $repository and .github.event == "workflow_dispatch" and .github.workflow == "Release performance gate" and .github.workflowRef == $workflowRef and .github.runId == $runId and
+             .config.sustainedRate == 20 and .config.sustainedSeconds == 300 and .config.burstRate == 100 and .config.burstSeconds == 60 and .config.apiRows == 5000000 and .config.apiExpiredRows == 500000 and .config.apiExpiredAgeHours == 720 and .config.wsClients == 250 and .config.wsSeconds == 300 and .config.mqttQueueCapacity == 4096 and .config.derivedQueueCapacity == 1024 and .config.memoryLimitBytes == 629145600 and
+             .phases.sustainedIngest.passed == true and .phases.sustainedIngest.queueOldestP99Ms < 500 and .phases.sustainedIngest.observationToBroadcastP95Ms < 1000 and .phases.sustainedIngest.observationToBroadcastMaxMs <= 5000 and .phases.sustainedIngest.primaryDeadlineFailures == 0 and .phases.sustainedIngest.derivedProjectionQueueDepth == 0 and .phases.sustainedIngest.derivedProjectionFailures == 0 and
+             .phases.burstIngest.passed == true and .phases.burstIngest.queueOldestP99Ms < 2000 and .phases.burstIngest.observationToBroadcastP95Ms < 2000 and .phases.burstIngest.observationToBroadcastMaxMs <= 5000 and .phases.burstIngest.primaryDeadlineFailures == 0 and .phases.burstIngest.derivedProjectionQueueDepth == 0 and .phases.burstIngest.derivedProjectionFailures == 0 and
+             .phases.api.passed == true and .phases.api.seeded.expiredObservationRows == 500000 and .phases.api.seeded.multiHopEdgeRows > 0 and .phases.api.seeded.observerStatusRows > 0 and .phases.api.postRetention.expiredObservationRows == 0 and .phases.api.browser.passed == true and (.phases.api.browser.releaseGates | length) == 2 and
+             .phases.websocket.passed == true' "$main_report" >/dev/null
           echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-          echo "proof_deferred=false" >> "$GITHUB_OUTPUT"
+          echo "main_run_id=$main_run_id" >> "$GITHUB_OUTPUT"
           echo "authorized=true" >> "$GITHUB_OUTPUT"
 
   candidate:
@@ -360,7 +403,7 @@ jobs:
           SOURCE_CI_BROWSER_SMOKE: ${{ needs.authorize.outputs.source_ci_browser_smoke }}
           PREMERGE_HEAD_SHA: ${{ needs.authorize.outputs.premerge_head_sha }}
           PREMERGE_RUN_ID: ${{ needs.authorize.outputs.premerge_run_id }}
-          PREMERGE_PROOF_DEFERRED: ${{ needs.authorize.outputs.premerge_proof_deferred }}
+          MAIN_PERFORMANCE_RUN_ID: ${{ needs.authorize.outputs.main_performance_run_id }}
         run: |
           jq -n \
             --arg repository "${REGISTRY}/${IMAGE_NAME}" \
@@ -374,9 +417,8 @@ jobs:
             --arg sourceCiHeadRepository "$SOURCE_CI_HEAD_REPOSITORY" --arg verifiedMainSha "$VERIFIED_MAIN_SHA" \
             --arg sourceCiBrowserSmokeConclusion "$SOURCE_CI_BROWSER_SMOKE" --arg releaseRef "$RELEASE_REF" \
             --arg candidateWorkflowRunId "$CANDIDATE_WORKFLOW_RUN_ID" --arg candidateWorkflowRunAttempt "$CANDIDATE_WORKFLOW_RUN_ATTEMPT" \
-            --arg premergeHeadSha "$PREMERGE_HEAD_SHA" --arg premergeRunId "$PREMERGE_RUN_ID" \
-            --argjson premergeProofDeferred "$PREMERGE_PROOF_DEFERRED" \
-            '{repository:$repository,images:{world:{image:$worldImage,digest:$worldDigest,candidateTag:$worldTag,assetPack:"world"},canada:{image:$canadaImage,digest:$canadaDigest,candidateTag:$canadaTag,assetPack:"canada"}},gitSha:$gitSha,version:$version,buildTime:$buildTime,platforms:["linux/amd64","linux/arm64"],sourceCiRunId:$sourceCiRunId,sourceCiHeadSha:$sourceCiHeadSha,sourceCiConclusion:$sourceCiConclusion,sourceCiBrowserSmokeConclusion:$sourceCiBrowserSmokeConclusion,sourceCiWorkflow:$sourceCiWorkflow,sourceCiEvent:$sourceCiEvent,sourceCiHeadBranch:$sourceCiHeadBranch,sourceCiHeadRepository:$sourceCiHeadRepository,verifiedMainRef:"refs/heads/main",verifiedMainSha:$verifiedMainSha,candidateWorkflowRunId:$candidateWorkflowRunId,candidateWorkflowRunAttempt:$candidateWorkflowRunAttempt,premergeHeadRef:$releaseRef,premergeHeadSha:$premergeHeadSha,premergeRunId:$premergeRunId,premergeProofDeferred:$premergeProofDeferred}' \
+            --arg premergeHeadSha "$PREMERGE_HEAD_SHA" --arg premergeRunId "$PREMERGE_RUN_ID" --arg mainPerformanceRunId "$MAIN_PERFORMANCE_RUN_ID" \
+            '{repository:$repository,images:{world:{image:$worldImage,digest:$worldDigest,candidateTag:$worldTag,assetPack:"world"},canada:{image:$canadaImage,digest:$canadaDigest,candidateTag:$canadaTag,assetPack:"canada"}},gitSha:$gitSha,version:$version,buildTime:$buildTime,platforms:["linux/amd64","linux/arm64"],sourceCiRunId:$sourceCiRunId,sourceCiHeadSha:$sourceCiHeadSha,sourceCiConclusion:$sourceCiConclusion,sourceCiBrowserSmokeConclusion:$sourceCiBrowserSmokeConclusion,sourceCiWorkflow:$sourceCiWorkflow,sourceCiEvent:$sourceCiEvent,sourceCiHeadBranch:$sourceCiHeadBranch,sourceCiHeadRepository:$sourceCiHeadRepository,verifiedMainRef:"refs/heads/main",verifiedMainSha:$verifiedMainSha,candidateWorkflowRunId:$candidateWorkflowRunId,candidateWorkflowRunAttempt:$candidateWorkflowRunAttempt,premergeHeadRef:$releaseRef,premergeHeadSha:$premergeHeadSha,premergeRunId:$premergeRunId,premergeCanonicalProof:true,mainPerformanceRunId:$mainPerformanceRunId,mainPerformanceCanonicalProof:true}' \
             > candidate-manifest.json
       - name: Upload candidate evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

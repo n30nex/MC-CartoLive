@@ -10,6 +10,7 @@ param(
   [string]$Service = "meshcore-live-map",
   [string]$DiagnoseRegion = "YTR",
   [string]$ExpectedVersion = "",
+  [string]$BackupVerification = "/var/lib/mc-cartolive-deploy/backup-verification.json",
   [Parameter(Mandatory = $true)]
   [ValidatePattern('^[0-9a-f]{40}$')]
   [string]$ExpectedGitSha,
@@ -26,6 +27,7 @@ $confirmationToken = 'DELETE-MC-CARTOLIVE-PRODUCTION-DATA'
 if ($Image -notmatch $digestPattern) { throw "Image must be an immutable @sha256 reference" }
 if ($PreviousImage -notmatch $digestPattern) { throw "PreviousImage must be an immutable @sha256 reference" }
 if ($RepoPath -notmatch '^/[a-zA-Z0-9._/-]+$') { throw "RepoPath contains unsupported characters" }
+if ($BackupVerification -notmatch '^/[a-zA-Z0-9._/-]+$') { throw "BackupVerification contains unsupported characters" }
 if ($FreshDatabase -and $FreshDatabaseConfirmation -ne $confirmationToken) {
   throw "FreshDatabase requires -FreshDatabaseConfirmation $confirmationToken"
 }
@@ -46,6 +48,8 @@ try {
   )
   if ($FreshDatabase) {
     $args += @("--fresh-database", "--confirm-fresh-database", $confirmationToken)
+  } else {
+    $args += @("--backup-verification", $BackupVerification)
   }
   # Every remote argument is either validated by a strict image/SHA/path regex
   # above or is the fixed confirmation token, so single-quote wrapping is safe.

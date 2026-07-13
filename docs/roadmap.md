@@ -2,7 +2,7 @@
 
 ## Current baseline
 
-Version `3.2.1` is the supported continuous-live-flow, bounded-storage,
+Version `3.2.2` is the supported lossless-live-flow, bounded-storage,
 compact-bootstrap, accessible UI, and dual world/Canada release baseline.
 Unreleased 3.1 work was folded into 3.2; it is not an upgrade waypoint.
 
@@ -16,12 +16,13 @@ broker material in public HTTP or WebSocket data.
   event windows.
 - Treat public event sequences as sparse monotonic cursors and keep the default
   Watch view visibly live at low zoom.
-- Prove queue, WAL, cache, MQTT session, disk, and watchdog behavior through the
-  24-hour and day-8/day-14 gates.
+- Prove queue, write-coordinator, broadcast/animation latency, WAL, cache, MQTT
+  session, disk, and watchdog behavior through canonical load and the single
+  five-minute release gate.
 - Keep production on the tested Canada GHCR digest, generic tags on the world
   digest, and prevent on-host builds or branch-reset rollback.
 - Keep the public map on the current live stream by default; Timeline/VCR and RF
-  Replay Studio are not part of the supported 3.2.1 surface.
+  Replay Studio are not part of the supported 3.2.2 surface.
 - Expand browser/accessibility coverage using synthetic public fixtures only.
 
 ## Later 3.x candidates

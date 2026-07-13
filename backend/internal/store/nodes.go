@@ -165,7 +165,15 @@ ON CONFLICT(public_key) DO UPDATE SET
 }
 
 func (s *Store) IncrementObserverPacket(ctx context.Context, msg mq.NormalizedMessage) error {
-	_, err := s.db.ExecContext(ctx, `
+	return incrementObserverPacket(ctx, s.db, msg)
+}
+
+type sqliteExecer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func incrementObserverPacket(ctx context.Context, exec sqliteExecer, msg mq.NormalizedMessage) error {
+	_, err := exec.ExecContext(ctx, `
 INSERT INTO observers (public_key, iata, name, last_seen_ms, packet_count, status_json)
 VALUES (?, ?, ?, ?, 1, '')
 ON CONFLICT(public_key, iata) DO UPDATE SET

@@ -184,12 +184,12 @@ curl "http://localhost:39476/api/v1/public/chat?limit=10"
 Run a short local soak when validating release automation:
 
 ```powershell
-.\scripts\soak-check.ps1 -BaseUrl http://127.0.0.1:39476 -DurationMinutes 10 -IntervalSeconds 30
+.\scripts\soak-check.ps1 -BaseUrl http://127.0.0.1:39476 -DurationMinutes 5 -IntervalSeconds 30
 ```
 
 ## Map Modes And Offline Tiles
 
-3.2.1 keeps the Map Studio style registry and optional PMTiles profiles. Leave
+3.2.2 keeps the Map Studio style registry and optional PMTiles profiles. Leave
 `VITE_PMTILES_BASEMAP_URL` blank for normal development; the Offline PMTiles and
 Field Offline profiles will fall back to a local low-detail map. To test a real
 archive, host it from the same origin or another CSP-allowed HTTPS endpoint and
@@ -213,14 +213,14 @@ Use overrides when testing a branch, alternate host, expected build, or another
 diagnostic region:
 
 ```powershell
-.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.2.1 -ExpectedGitSha <full-sha> -DiagnoseRegion YTR -SshTarget root@134.122.45.228
+.\scripts\live-smoke.ps1 -BaseUrl https://carto.canadaverse.org -ExpectedVersion 3.2.2 -ExpectedGitSha <full-sha> -DiagnoseRegion YTR -SshTarget root@134.122.45.228
 ```
 
 For the documented production droplet, `scripts/deploy-live.ps1` wraps the
 remote deploy script and then runs the same live smoke:
 
 ```powershell
-.\scripts\deploy-live.ps1 -Image 'ghcr.io/n30nex/mc-cartolive@sha256:<canada-candidate>' -PreviousImage 'ghcr.io/n30nex/mc-cartolive@sha256:<previous>' -ExpectedVersion 3.2.1 -ExpectedGitSha <full-sha>
+.\scripts\deploy-live.ps1 -Image 'ghcr.io/n30nex/mc-cartolive@sha256:<canada-candidate>' -PreviousImage 'ghcr.io/n30nex/mc-cartolive@sha256:<previous>' -ExpectedVersion 3.2.2 -ExpectedGitSha <full-sha>
 ```
 
 Append `-SkipSmoke` only when workstation smoke automation is intentionally

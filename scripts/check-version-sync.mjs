@@ -86,6 +86,9 @@ for (const proof of [
   'Candidate-World-Digest:',
   'Candidate-Canada-Digest:',
   'Candidate-Deployed-At:',
+  'Release-Verification-Base64:',
+  'release-verification.mjs',
+  'release-verification.json',
   'release-candidate-$MERGE_SHA-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT',
   '.run_attempt == $attempt',
   'candidate="$image:$tag"',
@@ -101,7 +104,7 @@ for (const proof of [
   '.buildTime == $buildTime and .gitSha == $gitSha',
   '--asset-pack world',
   '--asset-pack canada',
-  'test "$tagger_epoch" -ge $((deployed_epoch + 1800))',
+  'test "$tagger_epoch" -ge $((deployed_epoch + 300))',
   'upgrade-and-rollback.md" artifacts/release/assets/ROLLBACK.md',
 ]) {
   if (!publishWorkflow.includes(proof)) errors.push(`tag workflow does not reverify candidate trust proof: ${proof}`);
@@ -122,6 +125,9 @@ for (const gate of [
   '.config == {sustainedRate:20',
   'reportedDerivedQueueCapacities == [1024]',
   'processRssP95Bytes < 629145600',
+  '--expect-main-performance-run-id',
+  '--expect-premerge-performance-run-id',
+  '--expect-browser-run-id',
 ]) {
   if (!publishWorkflow.includes(gate)) errors.push(`tag workflow does not require exact release-gate evidence: ${gate}`);
 }
@@ -139,11 +145,15 @@ for (const boundary of [
   'verifiedMainSha:$verifiedMainSha',
   'candidate-$SOURCE_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT',
   'release-candidate-${{ steps.source.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}',
-  'Authorize canonical proof or exact-SHA fast track',
+  'Authorize exact release-branch canonical proof',
   'release_branch="codex/release-$version"',
   'sourceCiBrowserSmokeConclusion:$sourceCiBrowserSmokeConclusion',
   '.canonicalReleaseProof == true',
   'candidateWorkflowRunAttempt:$candidateWorkflowRunAttempt',
+  'workflows: [CI, Release performance gate]',
+  'mainPerformanceRunId:$mainPerformanceRunId',
+  'mainPerformanceCanonicalProof:true',
+  'release-performance-full-$SOURCE_SHA',
   'org.mc-cartolive.candidate.workflow-run-id=${{ github.run_id }}',
   'org.mc-cartolive.candidate.workflow-run-attempt=${{ github.run_attempt }}',
   'org.mc-cartolive.candidate.tag=${{ steps.source.outputs.world_tag }}',
@@ -155,10 +165,16 @@ for (const boundary of [
 ]) {
   if (!candidateWorkflow.includes(boundary)) errors.push(`candidate workflow trust boundary is missing: ${boundary}`);
 }
+if (candidateWorkflow.includes('MC_CARTOLIVE_RELEASE_FAST_TRACK_SHA') || candidateWorkflow.includes('proof_deferred') || candidateWorkflow.includes('premergeProofDeferred')) {
+  errors.push('candidate workflow must not contain a release performance fast-track or deferred-proof path');
+}
 
 const releaseBundle = read('scripts/build-release-bundle.mjs');
 for (const alias of ['`sha-${gitSha}`', '`sha-${gitSha}-canada`']) {
   if (!releaseBundle.includes(alias)) errors.push(`release manifest is missing promoted alias ${alias}`);
+}
+for (const releaseFile of ['scripts/runtime-health-check.sh', 'scripts/release-verification.mjs', 'scripts/verify-backup-copy.sh', '`docs/${version}/release-verification.md`']) {
+  if (!releaseBundle.includes(releaseFile)) errors.push(`release bundle is missing ${releaseFile}`);
 }
 const currentChecklist = read(`docs/${version}/validation_checklist.md`);
 if (!currentChecklist.includes('`sha-<main-sha>-canada`')) {
@@ -190,6 +206,13 @@ for (const contract of [
   'const canonicalFullRefs = new Set([\'refs/heads/main\', `refs/heads/codex/release-${releaseVersion}`])',
   'canonicalFullRefs.has(githubContext.ref)',
   "event: 'workflow_dispatch'",
+  "apiExpiredRows: 500_000",
+  "'-expired-observations'",
+  "'-topology=true'",
+  'observationToBroadcastP95Ms',
+  'derivedProjectionQueueDepth === 0',
+  'runBrowserProof(baseURL)',
+  'meshcore_observation_to_broadcast_max_latency_ms',
 ]) {
   if (!performanceGate.includes(contract)) errors.push(`canonical performance contract is missing: ${contract}`);
 }
@@ -197,6 +220,9 @@ for (const contract of [
 const ciWorkflow = read('.github/workflows/ci.yml');
 if (!ciWorkflow.includes("github.event_name == 'push' && github.ref == 'refs/heads/main'")) {
   errors.push('browser smoke must run on protected main pushes');
+}
+if (!ciWorkflow.includes('node scripts/test-release-verification.mjs')) {
+  errors.push('CI must validate the release-verification evidence contract');
 }
 
 const liveSmoke = read('scripts/live-smoke.ps1');
@@ -208,6 +234,12 @@ for (const soakScript of ['scripts/soak-check.sh', 'scripts/soak-check.ps1']) {
   for (const contract of ['websocket-flow-probe.mjs', 'derived_accepted_total', 'derived_processed_total', 'derived_failures_total']) {
     if (!source.toLowerCase().includes(contract.toLowerCase())) errors.push(`${soakScript} active-flow contract is missing: ${contract}`);
   }
+}
+if (!read('scripts/soak-check.sh').includes('DURATION_MINUTES="${DURATION_MINUTES:-5}"')) {
+  errors.push('shell soak default must not exceed the five-minute release policy');
+}
+if (!read('scripts/soak-check.ps1').includes('[int]$DurationMinutes = 5')) {
+  errors.push('PowerShell soak default must not exceed the five-minute release policy');
 }
 if (existsSync(join(root, '.github', 'workflows', 'complete-v3.2.0-release.yml'))) {
   errors.push('retired one-off 3.2.0 completion workflow must be removed');
@@ -233,6 +265,8 @@ for (const deployGate of [
   'stop_compose_and_verify_absent',
   'docker ps --all --quiet --filter',
   '[ "$MIN_FREE_GB" -ge 25 ]',
+  'preserved deployment requires --backup-verification',
+  '.localRemoved == true',
   '[ "$actual_root_usage" -gt "$MAX_ROOT_USAGE_PERCENT" ]',
   'MC_CARTOLIVE_CANDIDATE_RUN_ID=$CANDIDATE_RUN_ID',
   'MC_CARTOLIVE_CANDIDATE_RUN_ATTEMPT=$CANDIDATE_RUN_ATTEMPT',

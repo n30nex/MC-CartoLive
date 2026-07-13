@@ -47,9 +47,21 @@ export function useMapSelection({
   const visibleNodes = useMemo(() => filterNodes(state.nodes, debouncedQuery), [state.nodes, debouncedQuery]);
   const visibleNodeIDs = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes]);
   const visibleRoutes = useMemo(() => filterRoutes(state.routes, visibleNodeIDs, debouncedQuery), [state.routes, visibleNodeIDs, debouncedQuery]);
+  const routeViewRevision = useMemo(
+    () => debouncedQuery
+      ? `${state.routeTopologyRevision}:${debouncedQuery}:${visibleRoutes.map((route) => route.id).join(',')}`
+      : String(state.routeTopologyRevision),
+    [debouncedQuery, state.routeTopologyRevision, visibleRoutes]
+  );
   const selectedNode = useMemo(() => state.nodes.find((node) => node.id === selectedNodeID) ?? null, [state.nodes, selectedNodeID]);
   const selectedRoute = useMemo(() => state.routes.find((route) => route.id === selectedRouteID) ?? null, [state.routes, selectedRouteID]);
-  const connectivityGraph = useMemo(() => buildConnectivityGraph(visibleNodes, visibleRoutes), [visibleNodes, visibleRoutes]);
+  // Packet counts update frequently but do not change graph topology. Keep the
+  // expensive connectivity model stable until nodes, route membership, or the
+  // active filter actually changes.
+  const connectivityGraph = useMemo(
+    () => buildConnectivityGraph(visibleNodes, visibleRoutes),
+    [visibleNodes, state.routeTopologyRevision, debouncedQuery]
+  );
   const selectedConnectivity = useMemo(() => directConnectivity(connectivityGraph, selectedNodeID), [connectivityGraph, selectedNodeID]);
   const phonebookGroups = useMemo(() => phonebookGroupsForNode(connectivityGraph, selectedNodeID), [connectivityGraph, selectedNodeID]);
   const highlightedPath = useMemo(() => highlightedPathForTarget(phonebookGroups, highlightedPathTargetID), [phonebookGroups, highlightedPathTargetID]);
@@ -112,6 +124,7 @@ export function useMapSelection({
   return {
     visibleNodes,
     visibleRoutes,
+    routeViewRevision,
     selectedNodeID,
     selectedRouteID,
     selectedPacket,

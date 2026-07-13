@@ -197,7 +197,7 @@ func TestStoragePressureThresholds(t *testing.T) {
 	}
 }
 
-func TestReadPoolConfigPrefersNewKeyWithLegacyFallback(t *testing.T) {
+func TestReadPoolConfigIsTwoByDefaultAndHonorsDedicatedOverride(t *testing.T) {
 	ctx := context.Background()
 	t.Run("new key", func(t *testing.T) {
 		t.Setenv("SQLITE_READ_OPEN_CONNS", "2")
@@ -211,7 +211,7 @@ func TestReadPoolConfigPrefersNewKeyWithLegacyFallback(t *testing.T) {
 			t.Fatalf("read pool=%d want 2", got)
 		}
 	})
-	t.Run("legacy fallback", func(t *testing.T) {
+	t.Run("legacy writer key does not expand readers", func(t *testing.T) {
 		t.Setenv("SQLITE_READ_OPEN_CONNS", "")
 		t.Setenv("SQLITE_MAX_OPEN_CONNS", "3")
 		st, err := Open(ctx, t.TempDir()+"/legacy-key.db")
@@ -219,8 +219,8 @@ func TestReadPoolConfigPrefersNewKeyWithLegacyFallback(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer st.Close()
-		if got := st.RuntimeInfo(ctx).ReadMaxOpenConns; got != 3 {
-			t.Fatalf("legacy read pool=%d want 3", got)
+		if got := st.RuntimeInfo(ctx).ReadMaxOpenConns; got != 2 {
+			t.Fatalf("default read pool=%d want 2", got)
 		}
 	})
 }

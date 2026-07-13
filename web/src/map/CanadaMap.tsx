@@ -21,7 +21,7 @@ import {
 } from './clusterActivity';
 import { nodeFocusFromRoutes, type NodeFocus } from './nodeFocus';
 import { nodeSourceSignature } from './nodeSource';
-import { PacketAnimator } from './packetAnimator';
+import { PacketAnimator, type ObserverAnimationOptions, type PacketAnimationOptions } from './packetAnimator';
 import { DEFAULT_MAP_LAYER_SETTINGS, DEFAULT_MAP_STYLE_SETTINGS, DEFAULT_PACKET_VISUAL_SETTINGS, normalizeStyleSettings, type MapLayerSettings, type MapStyleSettings, type PacketVisualSettings } from '../mapSettings';
 import {
   compactNodeLabel,
@@ -80,9 +80,10 @@ import { installPMTilesProtocol } from './styles/pmtiles';
 import { mapStyleProfileByID, type MapStyleProfileID } from './styles/styleRegistry';
 import { createBrowserGeoJSONClient } from '../workers/geojsonWorkerClient';
 import { transformGeoJSON } from '../workers/geojsonTransforms';
-import { recordGeoJSONWorkerError, recordGeoJSONWorkerFallback, recordGeoJSONWorkerTransform } from '../perfDiagnostics';
+import { recordGeoJSONWorkerError, recordGeoJSONWorkerFallback, recordGeoJSONWorkerTransform, type LiveAnimationPressure } from '../perfDiagnostics';
 import { onceRouteExportCleanup, type RouteExportSurface } from '../routeExportSurface';
 import { RecentIdentityTracker, rememberFreshLiveIdentity } from './recentIdentityTracker';
+import { LiveVisualScheduler, type LiveVisualStartResult, type SchedulableLiveVisual } from './liveVisualScheduler';
 
 export type MapAction =
   | { type: 'reset'; token: number }
@@ -99,6 +100,9 @@ const geoJSONClient = createBrowserGeoJSONClient(transformGeoJSON);
 interface Props {
   nodes: PublicNode[];
   routes: PublicRoute[];
+  routeTopologyRevision: number;
+  routeVisualRevision: number;
+  routeViewRevision: string;
   pulses: PublicRoutePulse[];
   observerBursts: PublicObserverBurst[];
   propagationEvents: PublicPropagationEvent[];
@@ -138,6 +142,11 @@ type NodeTelemetry = {
   lastSeen: number;
   activityCount: number;
 };
+
+type LiveMapVisual = SchedulableLiveVisual & (
+  | { kind: 'pulse'; pulse: PublicRoutePulse }
+  | { kind: 'observer'; burst: PublicObserverBurst }
+);
 
 type HoveredNodeToast = {
   node: PublicNode;
@@ -221,10 +230,6 @@ const MESSAGE_BUBBLE_MAX_WIDTH_PX = 440;
 const MESSAGE_BUBBLE_EDGE_PADDING_PX = 16;
 const ROUTE_PAYLOAD_GLOW_MS = 5_200;
 const ROUTE_PAYLOAD_GLOW_UPDATE_MS = 160;
-const ROUTE_VISUAL_CADENCE_MS = 125;
-const OBSERVER_VISUAL_CADENCE_MS = 95;
-const MAX_PENDING_ROUTE_VISUALS = 220;
-const MAX_PENDING_OBSERVER_VISUALS = 360;
 const LIVE_VISUAL_IDENTITY_TTL_MS = 30 * 60_000;
 const LIVE_VISUAL_IDENTITY_LIMIT = 2_048;
 const ROUTE_FRESHNESS_UPDATE_MS = 60_000;
@@ -1373,6 +1378,9 @@ function defaultMapViewFromConfig(config?: PublicMapConfig | null): MapViewState
 function CanadaMap({
   nodes,
   routes,
+  routeTopologyRevision,
+  routeVisualRevision,
+  routeViewRevision,
   pulses,
   observerBursts,
   propagationEvents,
@@ -1412,7 +1420,7 @@ function CanadaMap({
   const routeFreshnessClock = Math.floor(nodeLabelClock / ROUTE_FRESHNESS_UPDATE_MS) * ROUTE_FRESHNESS_UPDATE_MS;
   const nodeFocus = useMemo(
     () => nodeFocusFromRoutes(selectedNodeID, routes, highlightedPathRouteIDs, highlightedPathNodeIDs),
-    [selectedNodeID, routes, highlightedPathRouteIDs, highlightedPathNodeIDs]
+    [selectedNodeID, routeViewRevision, highlightedPathRouteIDs, highlightedPathNodeIDs]
   );
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1428,13 +1436,10 @@ function CanadaMap({
   const positionedNodesReadyRef = useRef(false);
   const seenPulseIDsRef = useRef(new RecentIdentityTracker(LIVE_VISUAL_IDENTITY_LIMIT, LIVE_VISUAL_IDENTITY_TTL_MS));
   const seenObserverBurstIDsRef = useRef(new RecentIdentityTracker(LIVE_VISUAL_IDENTITY_LIMIT, LIVE_VISUAL_IDENTITY_TTL_MS));
-  const pendingPulsesRef = useRef<PublicRoutePulse[]>([]);
-  const pendingObserverBurstsRef = useRef<PublicObserverBurst[]>([]);
+  const liveVisualSchedulerRef = useRef<LiveVisualScheduler<LiveMapVisual> | null>(null);
   const followTrafficRef = useRef(followTraffic);
   const followTrafficStateRef = useRef<FollowTrafficState>({ lastAt: 0, lastID: '' });
   const themeModeRef = useRef<MapThemeMode>(themeMode);
-  const pulseSchedulerTimerRef = useRef<number | null>(null);
-  const observerSchedulerTimerRef = useRef<number | null>(null);
   const nodeActivityRef = useRef<Map<string, NodeActivity>>(new Map());
   const nodeTelemetryRef = useRef<Map<string, NodeTelemetry>>(new Map());
   const nodeMeshActivityAtRef = useRef<Map<string, number>>(new Map());
@@ -1621,17 +1626,27 @@ function CanadaMap({
     messageBubbleCleanupTimersRef.current.set(bubble.id, timer);
   };
 
-  const renderScheduledPulse = (pulse: PublicRoutePulse) => {
+  const renderScheduledPulse = (pulse: PublicRoutePulse, pressure: LiveAnimationPressure = 'normal'): LiveVisualStartResult => {
     const map = mapRef.current;
-    if (pausedRef.current) return;
+    if (pausedRef.current || pageHiddenRef.current) return 'ineligible';
     const now = Date.now();
     const shouldAnimate = shouldAnimateLiveEvent(visualReceivedAt(pulse), now, pageHiddenRef.current);
-    if (!map) return;
-    if (shouldAnimate) followTrafficPulse(map, pulse, followTrafficRef.current, followTrafficStateRef);
+    const overloaded = pressure !== 'normal';
+    if (!shouldAnimate || !layerSettingsRef.current.liveComets) return 'ineligible';
+    if (!map) return 'retry';
     const renderComet = shouldAnimate
-      && layerSettingsRef.current.liveComets
-      && (packetVisualSettingsRef.current.showLiveCometsAtAllZooms || isDetailMode(map));
-    if (shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(pulse)) {
+      && layerSettingsRef.current.liveComets;
+    let admitted = false;
+    if (renderComet && !overloaded) admitted = addPulseTo3D(map, pulse);
+    if (!admitted) {
+      const animator = animatorRef.current;
+      if (!animator) return 'retry';
+      admitted = animator.add(pulse, livePulseAnimationOptions(pressure));
+    }
+    if (!admitted) return 'ineligible';
+
+    followTrafficPulse(map, pulse, followTrafficRef.current, followTrafficStateRef);
+    if (!overloaded && shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(pulse)) {
       const text = publicSafeMessage(pulse);
       const anchorId = pulse.messageAnchor?.nodeId ?? pulse.segments[0]?.from.nodeId ?? '';
       const key = `pulse:${anchorId}:${hashBubbleText(text)}`;
@@ -1641,30 +1656,33 @@ function CanadaMap({
     }
     addPulseNodeActivity(map, nodeActivityRef.current, pulse);
     addPulseNodeMeshActivity(nodeMeshActivityAtRef.current, pulse);
-    if (layerSettingsRef.current.activityHeatmap) setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current);
+    if (!overloaded && layerSettingsRef.current.activityHeatmap) setActivityHeatmapSource(map, nodesRef.current, nodeActivityRef.current, nodeMeshActivityAtRef.current);
     if (isClusterMode(map)) {
-      if (renderComet && !addPulseTo3D(map, pulse)) animatorRef.current?.add(pulse);
-      if (shouldAnimate && layerSettingsRef.current.observerBursts && addPulseClusterActivityGlow(map, clusterActivityGlowRef.current, pulse)) {
+      if (!overloaded && shouldAnimate && layerSettingsRef.current.observerBursts && addPulseClusterActivityGlow(map, clusterActivityGlowRef.current, pulse)) {
         startClusterActivityGlowTimer(map, clusterActivityGlowRef, clusterActivityGlowTimerRef);
       }
-      return;
+      return 'started';
     }
-    if (renderComet && !addPulseTo3D(map, pulse)) animatorRef.current?.add(pulse);
-    if (shouldAnimate && layerSettingsRef.current.analysisPaths) {
+    if (!overloaded && shouldAnimate && layerSettingsRef.current.analysisPaths) {
       addPulseRoutePayloadGlow(routePayloadGlowRef.current, pulse);
       setRoutePayloadGlowSource(map, routesRef.current, routePayloadGlowRef.current, selectedRouteIDRef.current, nodeFocusRef.current);
       startRoutePayloadGlowTimer(map, routesRef, routePayloadGlowRef, selectedRouteIDRef, nodeFocusRef, routePayloadGlowTimerRef);
     }
     startNodeActivityTimer(map, nodeActivityRef, nodeActivityTimerRef, nodesRef, nodeMeshActivityAtRef);
+    return 'started';
   };
 
-  const renderScheduledObserverBurst = (burst: PublicObserverBurst) => {
+  const renderScheduledObserverBurst = (burst: PublicObserverBurst, pressure: LiveAnimationPressure = 'normal'): LiveVisualStartResult => {
     const map = mapRef.current;
-    if (pausedRef.current) return;
+    if (pausedRef.current || pageHiddenRef.current) return 'ineligible';
     const now = Date.now();
     const shouldAnimate = shouldAnimateLiveEvent(visualReceivedAt(burst), now, pageHiddenRef.current);
-    if (map && shouldAnimate) followTrafficObserverBurst(map, burst, followTrafficRef.current, followTrafficStateRef);
-    if (map && shouldAnimate && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(burst)) {
+    if (!shouldAnimate || !layerSettingsRef.current.observerBursts) return 'ineligible';
+    if (!map || !animatorRef.current) return 'retry';
+    if (!animatorRef.current.addObserverBurst(burst, liveObserverAnimationOptions(pressure))) return 'ineligible';
+    followTrafficObserverBurst(map, burst, followTrafficRef.current, followTrafficStateRef);
+    const overloaded = pressure !== 'normal';
+    if (!overloaded && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(burst)) {
       const text = publicSafeMessage(burst);
       const anchorLabel = burst.messageAnchor?.label ?? burst.location.label ?? '';
       const key = `burst:${anchorLabel}:${hashBubbleText(text)}`;
@@ -1672,36 +1690,24 @@ function CanadaMap({
         showMessageBubble(map, messageBubbleFromObserverBurst(map, burst));
       }
     }
-    if (map && isClusterMode(map)) {
-      if (shouldAnimate && layerSettingsRef.current.observerBursts && addObserverBurstClusterActivityGlow(map, clusterActivityGlowRef.current, burst)) {
+    if (isClusterMode(map)) {
+      if (!overloaded && addObserverBurstClusterActivityGlow(map, clusterActivityGlowRef.current, burst)) {
         startClusterActivityGlowTimer(map, clusterActivityGlowRef, clusterActivityGlowTimerRef);
       }
-      return;
+      return 'started';
     }
-    if (shouldAnimate && layerSettingsRef.current.observerBursts && !(baseModeRef.current === 'openfreemap' && openFreeMap3DRef.current?.addObserverBurst(burst))) {
-      animatorRef.current?.addObserverBurst(burst);
-    }
+    return 'started';
   };
 
-  const schedulePulseDrain = () => {
-    if (pulseSchedulerTimerRef.current !== null) return;
-    pulseSchedulerTimerRef.current = window.setTimeout(() => {
-      pulseSchedulerTimerRef.current = null;
-      const next = pendingPulsesRef.current.shift();
-      if (next) renderScheduledPulse(next);
-      if (pendingPulsesRef.current.length > 0) schedulePulseDrain();
-    }, ROUTE_VISUAL_CADENCE_MS);
-  };
-
-  const scheduleObserverBurstDrain = () => {
-    if (observerSchedulerTimerRef.current !== null) return;
-    observerSchedulerTimerRef.current = window.setTimeout(() => {
-      observerSchedulerTimerRef.current = null;
-      const next = pendingObserverBurstsRef.current.shift();
-      if (next) renderScheduledObserverBurst(next);
-      if (pendingObserverBurstsRef.current.length > 0) scheduleObserverBurstDrain();
-    }, OBSERVER_VISUAL_CADENCE_MS);
-  };
+  if (!liveVisualSchedulerRef.current) {
+    liveVisualSchedulerRef.current = new LiveVisualScheduler<LiveMapVisual>({
+      activeCount: () => animatorRef.current?.activeVisualCount() ?? 0,
+      start: (visual, pressure) => {
+        if (visual.kind === 'pulse') return renderScheduledPulse(visual.pulse, pressure);
+        return renderScheduledObserverBurst(visual.burst, pressure);
+      }
+    });
+  }
 
   useEffect(() => {
     nodesRef.current = nodes;
@@ -1974,17 +1980,12 @@ function CanadaMap({
       layerEventsBoundRef.current = false;
       if (nodeLabelFrameRef.current !== null) window.cancelAnimationFrame(nodeLabelFrameRef.current);
       nodeLabelFrameRef.current = null;
-      if (pulseSchedulerTimerRef.current !== null) window.clearTimeout(pulseSchedulerTimerRef.current);
-      if (observerSchedulerTimerRef.current !== null) window.clearTimeout(observerSchedulerTimerRef.current);
+      liveVisualSchedulerRef.current?.clear();
       if (replayActionTimerRef.current !== null) window.clearTimeout(replayActionTimerRef.current);
       routeGifExportCleanupRef.current?.();
       routeGifExportCleanupRef.current = null;
       stopReplayChaseCamera();
-      pulseSchedulerTimerRef.current = null;
-      observerSchedulerTimerRef.current = null;
       replayActionTimerRef.current = null;
-      pendingPulsesRef.current = [];
-      pendingObserverBurstsRef.current = [];
       for (const timer of messageBubbleCleanupTimersRef.current.values()) window.clearTimeout(timer);
       messageBubbleCleanupTimersRef.current.clear();
       stopNodeActivityTimer(nodeActivityTimerRef);
@@ -2129,12 +2130,17 @@ function CanadaMap({
     const map = mapRef.current;
     if (!map) return;
     if (loadedRef.current) {
-      updateRouteRendering(map, routes, selectedRouteID, nodeFocus, routeSourceSignatureRef, routeColorSignatureRef, animatorRef, themeModeRef.current);
-      updateAnalysisRouteRendering(map, routes, selectedRouteID, nodeFocus, analysisSegments, analysisRouteSignatureRef, themeModeRef.current);
-      setRoutePayloadGlowSource(map, routes, routePayloadGlowRef.current, selectedRouteID, nodeFocus);
-      updateOpenFreeMap3D();
+      updateRouteRendering(map, routesRef.current, selectedRouteID, nodeFocus, routeSourceSignatureRef, routeColorSignatureRef, animatorRef, themeModeRef.current);
     }
-  }, [routes, selectedRouteID, nodeFocus, analysisSegments]);
+  }, [routeVisualRevision, routeViewRevision, selectedRouteID, nodeFocus]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current) return;
+    updateAnalysisRouteRendering(map, routesRef.current, selectedRouteID, nodeFocus, analysisSegments, analysisRouteSignatureRef, themeModeRef.current);
+    setRoutePayloadGlowSource(map, routesRef.current, routePayloadGlowRef.current, selectedRouteID, nodeFocus);
+    updateOpenFreeMap3D();
+  }, [routeTopologyRevision, routeViewRevision, selectedRouteID, nodeFocus, analysisSegments]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2204,13 +2210,8 @@ function CanadaMap({
     seenPulseIDsRef.current.clear();
     seenObserverBurstIDsRef.current.clear();
     shownBubbleTextsRef.current.clear();
-    pendingPulsesRef.current = [];
-    pendingObserverBurstsRef.current = [];
-    if (pulseSchedulerTimerRef.current !== null) window.clearTimeout(pulseSchedulerTimerRef.current);
-    if (observerSchedulerTimerRef.current !== null) window.clearTimeout(observerSchedulerTimerRef.current);
+    liveVisualSchedulerRef.current?.clear();
     if (replayActionTimerRef.current !== null) window.clearTimeout(replayActionTimerRef.current);
-    pulseSchedulerTimerRef.current = null;
-    observerSchedulerTimerRef.current = null;
     replayActionTimerRef.current = null;
     updateOpenFreeMap3D();
   }, [clearToken]);
@@ -2218,39 +2219,37 @@ function CanadaMap({
   useEffect(() => {
     const epochNow = Date.now();
     const monotonicNow = performance.now();
+    const fresh: LiveMapVisual[] = [];
     for (const pulse of pulses.slice().reverse()) {
+      const identity = liveVisualIdentity('pulse', pulse.id, pulse.seq);
       if (!rememberFreshLiveIdentity(
         seenPulseIDsRef.current,
-        pulse.id,
+        identity,
         visualReceivedAt(pulse),
         epochNow,
         monotonicNow
       )) continue;
-      pendingPulsesRef.current.push(pulse);
+      fresh.push({ kind: 'pulse', id: identity, receivedAt: visualReceivedAt(pulse), pulse });
     }
-    if (pendingPulsesRef.current.length > MAX_PENDING_ROUTE_VISUALS) {
-      pendingPulsesRef.current = pendingPulsesRef.current.slice(-MAX_PENDING_ROUTE_VISUALS);
-    }
-    if (pendingPulsesRef.current.length > 0) schedulePulseDrain();
+    liveVisualSchedulerRef.current?.enqueue(fresh);
   }, [pulses]);
 
   useEffect(() => {
     const epochNow = Date.now();
     const monotonicNow = performance.now();
+    const fresh: LiveMapVisual[] = [];
     for (const burst of observerBursts.slice().reverse()) {
+      const identity = liveVisualIdentity('observer', burst.id, burst.seq);
       if (!rememberFreshLiveIdentity(
         seenObserverBurstIDsRef.current,
-        burst.id,
+        identity,
         visualReceivedAt(burst),
         epochNow,
         monotonicNow
       )) continue;
-      pendingObserverBurstsRef.current.push(burst);
+      fresh.push({ kind: 'observer', id: identity, receivedAt: visualReceivedAt(burst), burst });
     }
-    if (pendingObserverBurstsRef.current.length > MAX_PENDING_OBSERVER_VISUALS) {
-      pendingObserverBurstsRef.current = pendingObserverBurstsRef.current.slice(-MAX_PENDING_OBSERVER_VISUALS);
-    }
-    if (pendingObserverBurstsRef.current.length > 0) scheduleObserverBurstDrain();
+    liveVisualSchedulerRef.current?.enqueue(fresh);
   }, [observerBursts]);
 
   useEffect(() => {
@@ -3430,7 +3429,25 @@ function messageBubbleFromPulse(map: maplibregl.Map, pulse: PublicRoutePulse): M
 }
 
 function visualReceivedAt(item: { heardAt: number; receivedAt?: number; displayAt?: number }): number {
-  return item.displayAt ?? item.receivedAt ?? item.heardAt;
+  return item.receivedAt ?? item.heardAt;
+}
+
+function liveVisualIdentity(kind: 'pulse' | 'observer', id: string, seq?: number): string {
+  return Number.isSafeInteger(seq) && (seq ?? 0) > 0 ? `${kind}:seq:${seq}` : `${kind}:id:${id}`;
+}
+
+function livePulseAnimationOptions(pressure: LiveAnimationPressure): PacketAnimationOptions {
+  if (pressure === 'normal') return {};
+  if (pressure === 'degraded') {
+    return { travelDurationMs: 900, trailScale: 0, animationStyle: 'minimal' };
+  }
+  return { travelDurationMs: 450, trailScale: 0, animationStyle: 'minimal' };
+}
+
+function liveObserverAnimationOptions(pressure: LiveAnimationPressure): ObserverAnimationOptions {
+  if (pressure === 'normal') return { forceDistinct: true };
+  if (pressure === 'degraded') return { forceDistinct: true, durationMs: 900, afterglowMs: 0, residue: false };
+  return { forceDistinct: true, durationMs: 450, afterglowMs: 0, residue: false };
 }
 
 function messageBubbleFromObserverBurst(map: maplibregl.Map, burst: PublicObserverBurst): MessageBubble | null {

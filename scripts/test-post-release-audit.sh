@@ -5,7 +5,7 @@ ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 TEST_VERSION="$(tr -d '\r\n' < "$ROOT/VERSION")"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/bin" "$tmp/app/data" "$tmp/deploy" "$tmp/state" "$tmp/results" "$tmp/watchdog"
+mkdir -p "$tmp/bin" "$tmp/app/data" "$tmp/deploy" "$tmp/state" "$tmp/results" "$tmp/watchdog" "$tmp/snapshots"
 
 cat >"$tmp/bin/curl" <<'EOF'
 #!/usr/bin/env bash
@@ -28,8 +28,8 @@ case "$url" in
 meshcore_mqtt_session_ready 1
 meshcore_mqtt_queue_depth 0
 meshcore_mqtt_queue_oldest_item_age_ms 0
-meshcore_mqtt_messages_accepted_total 500
-meshcore_mqtt_messages_processed_total 500
+meshcore_mqtt_messages_accepted_total 1500
+meshcore_mqtt_messages_processed_total 1500
 meshcore_mqtt_messages_dropped_total 0
 meshcore_store_write_retries_total 0
 meshcore_store_write_failures_total 0
@@ -44,8 +44,17 @@ meshcore_derived_accepted_total 500
 meshcore_derived_processed_total 500
 meshcore_derived_failures_total 0
 meshcore_cache_refresh_failures_total 0
+meshcore_primary_deadline_failures_total 0
+meshcore_derived_projection_failures_total 0
+meshcore_derived_projection_queue_depth 0
+meshcore_derived_projection_queue_oldest_age_ms 0
+meshcore_observation_to_broadcast_latency_ms 25
+meshcore_observation_to_broadcast_max_latency_ms 45
 meshcore_uptime_seconds 90000
 METRICS
+		;;
+	*/api/v1/public/state)
+		printf '{"latestSeq":1200}\n' >"$output"
 		;;
 	*) exit 22 ;;
 esac
@@ -56,13 +65,27 @@ cat >"$tmp/bin/sqlite3" <<'EOF'
 set -euo pipefail
 query="${*: -1}"
 case "$query" in
-	*'quick_check'*) printf 'ok\n' ;;
+	*'.backup '*)
+		target="${query#*.backup \'}"
+		target="${target%\'}"
+		cp "$MOCK_DATABASE" "$target"
+		;;
+	*'integrity_check'*) printf 'ok\n' ;;
 	*'foreign_key_check'*) ;;
 	*'user_version'*) printf '32000\n' ;;
 	*'packet_observations'*) printf '%s\n' "$((MOCK_NOW_EPOCH * 1000 - MOCK_OBSERVATION_AGE_MS))" ;;
 	*'public_events'*) printf '%s\n' "$((MOCK_NOW_EPOCH * 1000 - MOCK_EVENT_AGE_MS))" ;;
 	*) exit 1 ;;
 esac
+EOF
+
+cat >"$tmp/bin/stat" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = -c ] && [ "${2:-}" = %d ]; then
+	case "${3:-}" in *snapshots*) printf '222\n' ;; *) printf '111\n' ;; esac
+	exit 0
+fi
+exec /usr/bin/stat "$@"
 EOF
 
 cat >"$tmp/bin/df" <<'EOF'
@@ -103,6 +126,10 @@ MC_CARTOLIVE_DEPLOYED_AT=$deployed_at
 MC_CARTOLIVE_VERSION=$TEST_VERSION
 MC_CARTOLIVE_GIT_SHA=0123456789abcdef0123456789abcdef01234567
 MC_CARTOLIVE_DATABASE_MODE=preserved
+MC_CARTOLIVE_BASELINE_ACCEPTED_TOTAL=0
+MC_CARTOLIVE_BASELINE_PROCESSED_TOTAL=0
+MC_CARTOLIVE_BASELINE_PUBLIC_SEQ=0
+MC_CARTOLIVE_BACKUP_VERIFICATION_SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 EOF
 
 run_audit() {
@@ -119,68 +146,47 @@ run_audit() {
 	MC_CARTOLIVE_AUDIT_STATE_DIR="$tmp/state" \
 	MC_CARTOLIVE_AUDIT_RESULT_DIR="$tmp/results" \
 	MC_CARTOLIVE_DATABASE="$database" \
+	MOCK_DATABASE="$database" \
+	MC_CARTOLIVE_AUDIT_SNAPSHOT_DIR="$tmp/snapshots" \
 	MC_CARTOLIVE_WATCHDOG_STATE="$tmp/watchdog/state.env" \
 	MC_CARTOLIVE_AUDIT_NOW_EPOCH="$now" \
 	bash "$ROOT/scripts/post-release-audit.sh"
 }
 
 grep -qx 'CapabilityBoundingSet=CAP_DAC_READ_SEARCH' "$ROOT/deploy/systemd/mc-cartolive-release-audit.service"
+grep -qx 'ExecStart=/opt/MC-CartoLive/scripts/runtime-health-check.sh' "$ROOT/deploy/systemd/mc-cartolive-release-audit.service"
+grep -q '/mnt/mc-cartolive-audit-snapshots' "$ROOT/deploy/systemd/mc-cartolive-release-audit.service"
 if grep -qx 'CapabilityBoundingSet=' "$ROOT/deploy/systemd/mc-cartolive-release-audit.service"; then
 	echo 'release audit service accidentally has an empty capability bounding set' >&2
 	exit 1
 fi
 
+# The hourly check proves runtime health without opening SQLite.
+PATH="$tmp/bin:$PATH" MOCK_READY_VERSION="$TEST_VERSION" \
+	MC_CARTOLIVE_AUDIT_RESULT_DIR="$tmp/results" \
+	bash "$ROOT/scripts/runtime-health-check.sh"
+jq -e '.passed == true and .databaseIntegrity == "deferred_to_consistent_5m_snapshot"' "$tmp/results/runtime-health.latest.json" >/dev/null
+
 # Readiness is not sufficient unless it identifies the deployed release.
-if MOCK_READY_VERSION=9.9.9 run_audit "$((deployed_epoch + 86460))" >/dev/null 2>&1; then
+if MOCK_READY_VERSION=9.9.9 run_audit "$((deployed_epoch + 360))" >/dev/null 2>&1; then
 	echo 'audit accepted a readiness response from a different release' >&2
 	exit 1
 fi
-identity_failure="$(find "$tmp/results" -name '*.24h.latest-failure.json' -print -quit)"
+identity_failure="$(find "$tmp/results" -name '*.5m.latest-failure.json' -print -quit)"
 jq -e '(.errors | index("ready_version_identity_mismatch") != null) and .readiness.versionMatchesDeployment == false' "$identity_failure" >/dev/null
 
-# The 24-hour evidence is written once and contains only aggregate fields.
-run_audit "$((deployed_epoch + 86460))"
-result_24h="$(find "$tmp/results" -name '*.24h.json' -print -quit)"
-jq -e '.passed == true and .phase == "24h" and .release.databaseMode == "preserved" and .readiness.versionMatchesDeployment == true and .readiness.gitShaMatchesDeployment == true and .filesystem.min24hFreeGiB == 9 and .filesystem.freeBytes >= 9 * 1024 * 1024 * 1024 and .filesystem.freeBytes < 25 * 1024 * 1024 * 1024' "$result_24h" >/dev/null
+# The five-minute evidence is written once and contains only aggregate fields.
+run_audit "$((deployed_epoch + 360))"
+result_5m="$(find "$tmp/results" -name '*.5m.json' -print -quit)"
+jq -e '.passed == true and .formatVersion == 2 and .phase == "5m" and .release.databaseMode == "preserved" and .readiness.versionMatchesDeployment == true and .readiness.gitShaMatchesDeployment == true and .database.integritySource == "consistent_sqlite_backup" and .database.integrityCheck == "ok" and .database.foreignKeyCheck == "ok" and (.database.snapshotSha256 | test("^[0-9a-f]{64}$")) and .ingest.acceptedSinceDeployment == 1500 and .ingest.processedSinceDeployment == 1500 and .ingest.publicEventsSinceDeployment == 1200 and .filesystem.minGateFreeGiB == 9 and .filesystem.freeBytes >= 9 * 1024 * 1024 * 1024' "$result_5m" >/dev/null
+test -z "$(find "$tmp/snapshots" -type f -print -quit)"
 
-# Day 8 rejects over-retention values and does not create a growth baseline.
-if run_audit "$((deployed_epoch + 691260))" 626400001 90000001 >/dev/null 2>&1; then
-	echo 'day-8 audit accepted expired hot data' >&2
-	exit 1
-fi
-failure_day8="$(find "$tmp/results" -name '*.day8.latest-failure.json' -print -quit)"
-jq -e '(.errors | index("observation_retention_out_of_bounds") != null) and (.errors | index("public_event_retention_out_of_bounds") != null)' "$failure_day8" >/dev/null
-test -z "$(find "$tmp/state" -name '*.day8-baseline.env' -print -quit)"
-
-# A valid day-8 sample records the database-plus-WAL baseline atomically.
-run_audit "$((deployed_epoch + 691260))"
-result_day8="$(find "$tmp/results" -name '*.day8.json' -print -quit)"
-baseline="$(find "$tmp/state" -name '*.day8-baseline.env' -print -quit)"
-jq -e '.passed == true and .database.databaseAndWalBytes == 1100' "$result_day8" >/dev/null
-grep -qx 'database_and_wal_bytes=1100' "$baseline"
-
-# Day 14 fails closed at 10% or greater growth, then passes below 10%.
-truncate -s 1300 "$database"
-truncate -s 100 "$database-wal"
-if run_audit "$((deployed_epoch + 1209660))" >/dev/null 2>&1; then
-	echo 'day-14 audit accepted excessive database growth' >&2
-	exit 1
-fi
-failure_day14="$(find "$tmp/results" -name '*.day14.latest-failure.json' -print -quit)"
-jq -e '.errors | index("database_growth_at_or_above_10_percent") != null' "$failure_day14" >/dev/null
-
-truncate -s 1100 "$database"
-truncate -s 90 "$database-wal"
-run_audit "$((deployed_epoch + 1209660))"
-result_day14="$(find "$tmp/results" -name '*.day14.json' -print -quit)"
-jq -e '.passed == true and .database.day8BaselineBytes == 1100 and .database.growthBasisPoints < 1000' "$result_day14" >/dev/null
-
-# Re-running the hourly job is idempotent once every due phase has passed.
-before="$(sha256sum "$result_day14")"
-run_audit "$((deployed_epoch + 1209660))"
-after="$(sha256sum "$result_day14")"
+# Re-running the timer is idempotent once the gate has passed.
+before="$(sha256sum "$result_5m")"
+run_audit "$((deployed_epoch + 600))"
+after="$(sha256sum "$result_5m")"
 [ "$before" = "$after" ]
-test "$(find "$tmp/results" -name '*.json' ! -name '*.latest-failure.json' | wc -l)" -eq 3
+test "$(find "$tmp/results" -name '*.json' ! -name '*.latest-failure.json' ! -name 'runtime-health.latest.json' | wc -l)" -eq 1
 if grep -R -q 'must-never-appear' "$tmp/results" "$tmp/state"; then
 	echo 'audit evidence contains a runtime secret' >&2
 	exit 1

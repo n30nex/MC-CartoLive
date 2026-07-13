@@ -1,4 +1,4 @@
-import type { PublicPacketPath, PublicRoutePulse } from './types';
+import type { PublicActivity, PublicPacketPath, PublicRoutePulse } from './types';
 
 export const PACKETS_SCOPE_OPTIONS = [
   { label: '1h', value: 60 * 60_000 },
@@ -72,6 +72,59 @@ export function packetToPulse(packet: PublicPacketPath, now = Date.now(), replay
     segments: packet.segments,
     replayOptions
   };
+}
+
+export function livePacketsFromActivity(activity: PublicActivity[], pulses: PublicRoutePulse[]): PublicPacketPath[] {
+  const output: PublicPacketPath[] = [];
+  const pulseKeys = new Set<string>();
+  for (const pulse of pulses) {
+    if (pulse.segments.length === 0) continue;
+    const routeIds = pulse.segments.map((segment) => segment.routeId);
+    const endpointLabels = pulse.segments.length > 0
+      ? [pulse.segments[0]?.from.label ?? '', ...pulse.segments.map((segment) => segment.to.label)].filter(Boolean)
+      : [];
+    pulseKeys.add(livePacketKey(pulse.heardAt, pulse.payloadTypeName, routeIds));
+    output.push({
+      id: `live-pulse:${pulse.seq ?? pulse.id}`,
+      at: pulse.heardAt,
+      iata: pulse.iata,
+      region: pulse.region,
+      payloadTypeName: pulse.payloadTypeName,
+      messageSender: pulse.messageSender,
+      messageText: pulse.messageText,
+      hopCount: pulse.segments.length,
+      segmentCount: pulse.segments.length,
+      distanceKm: pulse.segments.reduce((total, segment) => total + Math.max(0, segment.distanceKm), 0),
+      routeIds,
+      endpointLabels,
+      segments: pulse.segments
+    });
+  }
+  for (const item of activity) {
+    if (item.kind !== 'packet' && item.kind !== 'route') continue;
+    const routeIds = item.routeIds ?? [];
+    if (pulseKeys.has(livePacketKey(item.heardAt, item.payloadTypeName, routeIds))) continue;
+    output.push({
+      id: `live-activity:${item.seq ?? item.id}`,
+      at: item.heardAt,
+      iata: item.iata,
+      region: item.region,
+      payloadTypeName: item.payloadTypeName,
+      messageSender: item.messageSender,
+      messageText: item.messageText,
+      hopCount: Math.max(0, item.hopCount),
+      segmentCount: 0,
+      distanceKm: 0,
+      routeIds,
+      endpointLabels: item.endpointLabels ?? [],
+      segments: []
+    });
+  }
+  return output.sort((left, right) => right.at - left.at);
+}
+
+function livePacketKey(at: number, payloadTypeName: string, routeIds: readonly string[]): string {
+  return `${at}:${payloadTypeName}:${routeIds.join('|')}`;
 }
 
 export function packetRegion(packet: Pick<PublicPacketPath, 'region' | 'iata'>): string {

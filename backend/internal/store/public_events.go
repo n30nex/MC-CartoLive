@@ -13,6 +13,7 @@ import (
 
 type PublicEventStore interface {
 	InsertPublicEvent(ctx context.Context, event live.PublicEvent) (live.PublicEvent, error)
+	InsertPublicEventsOnce(ctx context.Context, events []live.PublicEvent) ([]live.PublicEvent, []bool, error)
 	ListPublicEventsAfter(ctx context.Context, filter PublicEventFilter) ([]live.PublicEvent, int64, error)
 	LatestPublicSeq(ctx context.Context) (int64, error)
 	PublicSeqBounds(ctx context.Context) (int64, int64, error)
@@ -40,9 +41,49 @@ func (s *Store) InsertPublicEvent(ctx context.Context, event live.PublicEvent) (
 // A false inserted result means the dedupe key already existed, which lets the
 // live publisher suppress a retry instead of rebroadcasting an older sequence.
 func (s *Store) InsertPublicEventOnce(ctx context.Context, event live.PublicEvent) (live.PublicEvent, bool, error) {
-	if s == nil || s.db == nil {
-		return event, false, fmt.Errorf("store unavailable")
+	events, inserted, err := s.InsertPublicEventsOnce(ctx, []live.PublicEvent{event})
+	if err != nil {
+		return event, false, err
 	}
+	return events[0], inserted[0], nil
+}
+
+// InsertPublicEventsOnce commits the ordered public activity/pulse set for one
+// observation in a single short transaction. Dedupe keys preserve exactly-once
+// cursor semantics when a live-core job is retried after an ambiguous commit.
+func (s *Store) InsertPublicEventsOnce(ctx context.Context, events []live.PublicEvent) ([]live.PublicEvent, []bool, error) {
+	if s == nil || s.db == nil {
+		return events, nil, fmt.Errorf("store unavailable")
+	}
+	if len(events) == 0 {
+		return []live.PublicEvent{}, []bool{}, nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return events, nil, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	inserted := make([]bool, len(events))
+	for i := range events {
+		event, wasInserted, err := insertPublicEventOnceTx(ctx, tx, events[i])
+		if err != nil {
+			return events, nil, err
+		}
+		events[i], inserted[i] = event, wasInserted
+	}
+	if err := tx.Commit(); err != nil {
+		return events, nil, err
+	}
+	committed = true
+	return events, inserted, nil
+}
+
+func insertPublicEventOnceTx(ctx context.Context, tx *sql.Tx, event live.PublicEvent) (live.PublicEvent, bool, error) {
 	now := time.Now().UnixMilli()
 	if event.At <= 0 {
 		event.At = now
@@ -69,7 +110,7 @@ func (s *Store) InsertPublicEventOnce(ctx context.Context, event live.PublicEven
 	}
 	routeIDsJSON, _ := json.Marshal(event.RouteIDs)
 	nodeIDsJSON, _ := json.Marshal(event.NodeIDs)
-	result, err := s.db.ExecContext(ctx, `
+	result, err := tx.ExecContext(ctx, `
 INSERT INTO public_events (
   dedupe_key, event_type, occurred_at_ms, received_at_ms, region, iata, payload_type_name,
   message_flag, route_ids_json, node_ids_json, public_json
@@ -95,7 +136,7 @@ ON CONFLICT(dedupe_key) WHERE dedupe_key != '' DO NOTHING`,
 		return event, false, err
 	}
 	if affected == 0 && event.DedupeKey != "" {
-		if err := s.db.QueryRowContext(ctx, publicEventByDedupeKeySQL, event.DedupeKey).Scan(&event.Seq); err != nil {
+		if err := tx.QueryRowContext(ctx, publicEventByDedupeKeySQL, event.DedupeKey).Scan(&event.Seq); err != nil {
 			return event, false, err
 		}
 		return event, false, nil
