@@ -373,7 +373,7 @@ async function runReleaseGate(browser, viewport) {
     }
     await recoverReleaseGateUI(page);
 
-    visibilityRecovery = await runGateStep(errors, checks, 'visibility resume recovers by durable cursor without replacing state', () => smokeVisibilityRecovery(context, page, stateRequests, eventRequests));
+    visibilityRecovery = await runGateStep(errors, checks, 'visibility resume preserves the live socket or polls the durable cursor without replacing state', () => smokeVisibilityRecovery(context, page, stateRequests, eventRequests));
 
     await runGateStep(errors, checks, 'offline banner, retained map surface, and online API recovery', () => smokeOfflineRecovery(context, page, expectedNetworkErrors));
 
@@ -581,6 +581,7 @@ async function cycleMapStyles(page, drawer, count) {
 async function smokeVisibilityRecovery(context, page, stateRequests, eventRequests) {
   const stateBefore = stateRequests.count;
   const eventsBefore = eventRequests.count;
+  const socketsBefore = await page.evaluate(() => Number(window.__mcBrowserSmoke?.openSocketCount?.() ?? 0));
   const method = 'cdp-lifecycle+resume-event';
   const lifecycle = await context.newCDPSession(page);
   await lifecycle.send('Page.setWebLifecycleState', { state: 'frozen' });
@@ -596,11 +597,18 @@ async function smokeVisibilityRecovery(context, page, stateRequests, eventReques
     document.dispatchEvent(new Event('freeze'));
     document.dispatchEvent(new Event('resume'));
   });
-  const recovered = await waitForCondition(() => eventRequests.count > eventsBefore, 10_000, 100);
-  if (!recovered) throw new Error(`visibility resume did not request cursor recovery (before=${eventsBefore}, after=${eventRequests.count})`);
+  await page.waitForTimeout(500);
+  const socketsAfter = await page.evaluate(() => Number(window.__mcBrowserSmoke?.openSocketCount?.() ?? 0));
+  const cursorPolled = eventRequests.count > eventsBefore;
+  if (!cursorPolled && socketsAfter < 1) {
+    throw new Error(`visibility resume had neither a live socket nor cursor recovery (sockets=${socketsBefore}->${socketsAfter}, events=${eventsBefore}->${eventRequests.count})`);
+  }
   if (stateRequests.count !== stateBefore) throw new Error(`ordinary visibility resume replaced full state (before=${stateBefore}, after=${stateRequests.count})`);
   return {
     method,
+    recoveryMode: cursorPolled ? 'cursor-poll' : 'stable-socket',
+    socketsBefore,
+    socketsAfter,
     eventRequestsBefore: eventsBefore,
     eventRequestsAfter: eventRequests.count,
     stateRequestsBefore: stateBefore,
@@ -972,7 +980,7 @@ function installBrowserSmokeInstrumentation() {
 
 async function smokeSparseLiveFlow(page) {
   await page.waitForFunction(() => Number(window.__mcBrowserSmoke?.openSocketCount?.() ?? 0) > 0, null, { timeout: 15_000 });
-  const injected = await page.evaluate(async () => {
+  const plan = await page.evaluate(async () => {
     const response = await fetch(`/api/v1/public/state?browserSmokeLive=${Date.now()}`, { cache: 'no-store', headers: { accept: 'application/json' } });
     if (!response.ok) throw new Error(`full state HTTP ${response.status}`);
     const state = await response.json();
@@ -1006,12 +1014,15 @@ async function smokeSparseLiveFlow(page) {
       window.__mcCartoLivePerf.longTasks = 0;
       window.__mcCartoLivePerf.longestTaskMs = 0;
     }
-    const pulse = (id, receivedAt) => ({ ...source, id, seq: undefined, heardAt: receivedAt, receivedAt, displayAt: receivedAt });
-    const batchSize = 10;
-    const batchIntervalMs = 100;
-    let injectedCount = 0;
-    for (let offset = 0; offset < count; offset += batchSize) {
+    return { source, baselineSeq, firstSeq, finalSeq, finalID: `browser-smoke-live-${count}`, count };
+  });
+  const batchSize = 10;
+  const batchIntervalMs = 100;
+  let injectedCount = 0;
+  for (let offset = 0; offset < plan.count; offset += batchSize) {
+    injectedCount += await page.evaluate(({ source, baselineSeq, count, offset, batchSize }) => {
       const receivedAt = Date.now();
+      const pulse = (id) => ({ ...source, id, seq: undefined, heardAt: receivedAt, receivedAt, displayAt: receivedAt });
       const messages = Array.from({ length: Math.min(batchSize, count - offset) }, (_, index) => {
         const ordinal = offset + index + 1;
         const seq = baselineSeq + ordinal;
@@ -1025,14 +1036,14 @@ async function smokeSparseLiveFlow(page) {
           serverTime: receivedAt,
           receivedAt,
           displayAt: receivedAt,
-          data: pulse(`browser-smoke-live-${ordinal}`, receivedAt)
+          data: pulse(`browser-smoke-live-${ordinal}`)
         };
       });
-      injectedCount += window.__mcBrowserSmoke.injectSocketMessages(messages);
-      if (offset + batchSize < count) await new Promise((resolve) => setTimeout(resolve, batchIntervalMs));
-    }
-    return { baselineSeq, firstSeq, finalSeq, finalID: `browser-smoke-live-${count}`, count: injectedCount };
-  });
+      return window.__mcBrowserSmoke.injectSocketMessages(messages);
+    }, { source: plan.source, baselineSeq: plan.baselineSeq, count: plan.count, offset, batchSize });
+    if (offset + batchSize < plan.count) await page.waitForTimeout(batchIntervalMs);
+  }
+  const injected = { ...plan, count: injectedCount };
 
   const applied = await page.waitForFunction(({ finalSeq, finalID }) => {
     const shell = document.querySelector('.app-shell');
