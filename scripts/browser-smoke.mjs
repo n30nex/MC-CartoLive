@@ -1026,6 +1026,7 @@ async function smokeSparseLiveFlow(page) {
     perf.longTasks = 0;
     perf.longestTaskMs = 0;
     perf.longTaskWindowStartMs = performance.now();
+    perf.longTaskSamples = [];
   });
 
   const runPhase = async ({ name, startOrdinal, count, batchSize, batchIntervalMs, animationP95LimitMs }) => {
@@ -1097,6 +1098,7 @@ async function smokeSparseLiveFlow(page) {
         frameP95Ms: Number(perf?.packetFrameP95Ms ?? 0),
         repeatedLongTasks: Number(perf?.longTasks ?? 0),
         longestTaskMs: Number(perf?.longestTaskMs ?? 0),
+        longTaskSamples: Array.isArray(perf?.longTaskSamples) ? perf.longTaskSamples.slice(-12) : [],
         queueOldestAgeMs: Number(perf?.liveVisualQueueOldestAgeMs ?? 0),
         routeReducerMs: Number(perf?.routeReducerMs ?? 0)
       };
@@ -1107,7 +1109,9 @@ async function smokeSparseLiveFlow(page) {
     if (metrics.receiveToAnimationP95Ms >= animationP95LimitMs) throw new Error(`${name} receive-to-animation p95=${metrics.receiveToAnimationP95Ms}ms`);
     if (metrics.maxVisualAgeMs > 5000) throw new Error(`${name} maximum visual age=${metrics.maxVisualAgeMs}ms`);
     if (metrics.frameP95Ms > 34) throw new Error(`${name} animation frame p95=${metrics.frameP95Ms}ms`);
-    if (metrics.repeatedLongTasks !== 0) throw new Error(`${name} repeated long tasks=${metrics.repeatedLongTasks}, longest=${metrics.longestTaskMs}ms`);
+    if (metrics.repeatedLongTasks !== 0) {
+      throw new Error(`${name} repeated long tasks=${metrics.repeatedLongTasks}, longest=${metrics.longestTaskMs}ms, samples=${JSON.stringify(metrics.longTaskSamples)}`);
+    }
     return { ...phase, metrics };
   };
 

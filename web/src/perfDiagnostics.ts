@@ -33,6 +33,7 @@ export interface PerfCounters {
   longTasks: number;
   longestTaskMs: number;
   longTaskWindowStartMs: number;
+  longTaskSamples: Array<{ startTimeMs: number; durationMs: number; name: string; attribution: string[] }>;
   visibilityPauses: number;
   geoJSONWorkerTransforms: number;
   geoJSONWorkerFallbacks: number;
@@ -116,6 +117,7 @@ export function ensurePerfDiagnostics(): PerfCounters | null {
     longTasks: 0,
     longestTaskMs: 0,
     longTaskWindowStartMs: 0,
+    longTaskSamples: [],
     visibilityPauses: 0,
     geoJSONWorkerTransforms: 0,
     geoJSONWorkerFallbacks: 0,
@@ -246,19 +248,35 @@ export function recordLiveAnimationEmergencyActivation(): void {
   counters.liveAnimationEmergencyStarts += 1;
 }
 
-export function recordLongTask(durationMs: number, startTimeMs = typeof performance === 'undefined' ? 0 : performance.now()): void {
+export function recordLongTask(
+  durationMs: number,
+  startTimeMs = typeof performance === 'undefined' ? 0 : performance.now(),
+  name = '',
+  attribution: string[] = []
+): void {
   const counters = ensurePerfDiagnostics();
   if (!counters || !Number.isFinite(durationMs) || durationMs < 50) return;
   if (Number.isFinite(startTimeMs) && startTimeMs < counters.longTaskWindowStartMs) return;
   counters.longTasks += 1;
   counters.longestTaskMs = Math.max(counters.longestTaskMs, roundedMs(durationMs));
+  counters.longTaskSamples.push({
+    startTimeMs: roundedMs(startTimeMs),
+    durationMs: roundedMs(durationMs),
+    name,
+    attribution: attribution.slice(0, 4)
+  });
+  counters.longTaskSamples = counters.longTaskSamples.slice(-64);
 }
 
 export function installLongTaskObserver(): () => void {
   if (typeof PerformanceObserver !== 'function' || !ensurePerfDiagnostics()) return () => undefined;
   try {
     const observer = new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) recordLongTask(entry.duration, entry.startTime);
+      for (const entry of list.getEntries()) {
+        const attributed = entry as PerformanceEntry & { attribution?: Array<{ name?: string; containerType?: string }> };
+        const attribution = (attributed.attribution ?? []).map((item) => `${item.containerType ?? ''}:${item.name ?? ''}`);
+        recordLongTask(entry.duration, entry.startTime, entry.name, attribution);
+      }
     });
     observer.observe({ entryTypes: ['longtask'] });
     return () => observer.disconnect();
