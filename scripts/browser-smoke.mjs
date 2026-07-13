@@ -284,6 +284,7 @@ async function runReleaseGate(browser, viewport) {
   const pageErrors = [];
   const downloads = [];
   const stateRequests = { count: 0 };
+  const eventRequests = { count: 0 };
   const expectedNetworkErrors = { offline: false };
   let ignoredFailedResourceCount = 0;
   let ignoredFailedResourceConsoleCount = 0;
@@ -305,6 +306,7 @@ async function runReleaseGate(browser, viewport) {
   page.on('request', (request) => {
     const url = new URL(request.url());
     if (url.origin === new URL(baseUrl).origin && url.pathname === '/api/v1/public/state') stateRequests.count += 1;
+    if (url.origin === new URL(baseUrl).origin && url.pathname === '/api/v1/public/events') eventRequests.count += 1;
   });
   page.on('response', (response) => {
     if (isIgnoredFailedResource(response.status(), response.url())) ignoredFailedResourceCount += 1;
@@ -371,7 +373,7 @@ async function runReleaseGate(browser, viewport) {
     }
     await recoverReleaseGateUI(page);
 
-    visibilityRecovery = await runGateStep(errors, checks, 'visibility resume rehydrates the public snapshot', () => smokeVisibilityRecovery(context, page, stateRequests));
+    visibilityRecovery = await runGateStep(errors, checks, 'visibility resume recovers by durable cursor without replacing state', () => smokeVisibilityRecovery(context, page, stateRequests, eventRequests));
 
     await runGateStep(errors, checks, 'offline banner, retained map surface, and online API recovery', () => smokeOfflineRecovery(context, page, expectedNetworkErrors));
 
@@ -576,8 +578,9 @@ async function cycleMapStyles(page, drawer, count) {
   if (canvases !== 1) throw new Error(`style cycling left ${canvases} MapLibre canvases mounted`);
 }
 
-async function smokeVisibilityRecovery(context, page, stateRequests) {
-  const before = stateRequests.count;
+async function smokeVisibilityRecovery(context, page, stateRequests, eventRequests) {
+  const stateBefore = stateRequests.count;
+  const eventsBefore = eventRequests.count;
   const method = 'cdp-lifecycle+resume-event';
   const lifecycle = await context.newCDPSession(page);
   await lifecycle.send('Page.setWebLifecycleState', { state: 'frozen' });
@@ -590,9 +593,16 @@ async function smokeVisibilityRecovery(context, page, stateRequests) {
   // signal after the real frozen/active transition so the application path is
   // deterministic across desktop and mobile CI runners.
   await page.evaluate(() => document.dispatchEvent(new Event('resume')));
-  const refreshed = await waitForCondition(() => stateRequests.count > before, 10_000, 100);
-  if (!refreshed) throw new Error(`visibility resume did not request a fresh public snapshot (before=${before}, after=${stateRequests.count})`);
-  return { method, stateRequestsBefore: before, stateRequestsAfter: stateRequests.count };
+  const recovered = await waitForCondition(() => eventRequests.count > eventsBefore, 10_000, 100);
+  if (!recovered) throw new Error(`visibility resume did not request cursor recovery (before=${eventsBefore}, after=${eventRequests.count})`);
+  if (stateRequests.count !== stateBefore) throw new Error(`ordinary visibility resume replaced full state (before=${stateBefore}, after=${stateRequests.count})`);
+  return {
+    method,
+    eventRequestsBefore: eventsBefore,
+    eventRequestsAfter: eventRequests.count,
+    stateRequestsBefore: stateBefore,
+    stateRequestsAfter: stateRequests.count
+  };
 }
 
 async function smokeOfflineRecovery(context, page, expectedNetworkErrors) {
@@ -977,7 +987,6 @@ async function smokeSparseLiveFlow(page) {
     const count = 200;
     const firstSeq = baselineSeq + 1;
     const finalSeq = baselineSeq + count;
-    const now = Date.now();
     if (window.__mcCartoLivePerf) {
       window.__mcCartoLivePerf.packetActiveComets = 0;
       window.__mcCartoLivePerf.packetActiveCometIDs = [];
@@ -994,24 +1003,31 @@ async function smokeSparseLiveFlow(page) {
       window.__mcCartoLivePerf.longTasks = 0;
       window.__mcCartoLivePerf.longestTaskMs = 0;
     }
-    const pulse = (id, heardAt) => ({ ...source, id, seq: undefined, heardAt, receivedAt: heardAt, displayAt: heardAt });
-    const messages = Array.from({ length: count }, (_, index) => {
-      const ordinal = index + 1;
-      const seq = baselineSeq + ordinal;
-      const fallback = ordinal % 50 === 0 && ordinal !== count;
-      return {
-        v: 1,
-        type: 'event',
-        event: 'routePulse',
-        ...(fallback ? {} : { seq }),
-        latestSeq: fallback ? seq - 1 : seq,
-        serverTime: now,
-        receivedAt: now,
-        displayAt: now,
-        data: pulse(`browser-smoke-live-${ordinal}`, now)
-      };
-    });
-    const injectedCount = window.__mcBrowserSmoke.injectSocketMessages(messages);
+    const pulse = (id, receivedAt) => ({ ...source, id, seq: undefined, heardAt: receivedAt, receivedAt, displayAt: receivedAt });
+    const batchSize = 10;
+    const batchIntervalMs = 100;
+    let injectedCount = 0;
+    for (let offset = 0; offset < count; offset += batchSize) {
+      const receivedAt = Date.now();
+      const messages = Array.from({ length: Math.min(batchSize, count - offset) }, (_, index) => {
+        const ordinal = offset + index + 1;
+        const seq = baselineSeq + ordinal;
+        const fallback = ordinal % 50 === 0 && ordinal !== count;
+        return {
+          v: 1,
+          type: 'event',
+          event: 'routePulse',
+          ...(fallback ? {} : { seq }),
+          latestSeq: fallback ? seq - 1 : seq,
+          serverTime: receivedAt,
+          receivedAt,
+          displayAt: receivedAt,
+          data: pulse(`browser-smoke-live-${ordinal}`, receivedAt)
+        };
+      });
+      injectedCount += window.__mcBrowserSmoke.injectSocketMessages(messages);
+      if (offset + batchSize < count) await new Promise((resolve) => setTimeout(resolve, batchIntervalMs));
+    }
     return { baselineSeq, firstSeq, finalSeq, finalID: `browser-smoke-live-${count}`, count: injectedCount };
   });
 
@@ -1315,7 +1331,7 @@ async function assertCanvasHasPixels(page, selector, label) {
 }
 
 async function waitForPacketRow(page, requireRow = true) {
-  const row = page.locator('.packet-row').first();
+  const row = page.locator('.packet-row').filter({ has: page.locator('.packet-replay-button:not([disabled])') }).first();
   if (await waitForVisible(row, 120_000)) return row;
 
   const refresh = page.getByRole('button', { name: /Refresh packets/i }).first();
