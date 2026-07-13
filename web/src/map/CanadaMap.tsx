@@ -1445,6 +1445,7 @@ function CanadaMap({
   const liveVisualSchedulerRef = useRef<LiveVisualScheduler<LiveMapVisual> | null>(null);
   const pendingLivePulseEffectsRef = useRef<PendingLivePulseEffect[]>([]);
   const livePulseEffectsFrameRef = useRef<number | null>(null);
+  const lastLiveVisualAtRef = useRef(0);
   const followTrafficRef = useRef(followTraffic);
   const followTrafficStateRef = useRef<FollowTrafficState>({ lastAt: 0, lastID: '' });
   const themeModeRef = useRef<MapThemeMode>(themeMode);
@@ -1714,6 +1715,7 @@ function CanadaMap({
     // Connected-live motion stays on the lossless canvas path. Manual replay
     // may still use 3D, but allocating a 3D object per live packet stalls RAF.
     if (!animator.add(pulse, livePulseAnimationOptions(effectivePressure))) return 'ineligible';
+    lastLiveVisualAtRef.current = now;
     queueLivePulseEffects(pulse, effectivePressure, shouldAnimate);
     return 'started';
   };
@@ -1727,6 +1729,7 @@ function CanadaMap({
     if (!map || !animatorRef.current) return 'retry';
     const effectivePressure = reducedMotionRef.current ? 'minimal' : pressure;
     if (!animatorRef.current.addObserverBurst(burst, liveObserverAnimationOptions(effectivePressure))) return 'ineligible';
+    lastLiveVisualAtRef.current = now;
     followTrafficObserverBurst(map, burst, followTrafficRef.current, followTrafficStateRef);
     const overloaded = effectivePressure !== 'normal';
     if (!overloaded && layerSettingsRef.current.messageBubbles && shouldShowMessageBubble(burst)) {
@@ -2129,7 +2132,11 @@ function CanadaMap({
   }, [styleProfileID, styleSettings, themeMode]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => setNodeLabelClock(Date.now()), NODE_LABEL_UPDATE_MS);
+    const interval = window.setInterval(() => {
+      const now = Date.now();
+      if (now - lastLiveVisualAtRef.current < 2_000) return;
+      setNodeLabelClock(now);
+    }, NODE_LABEL_UPDATE_MS);
     return () => window.clearInterval(interval);
   }, []);
 
