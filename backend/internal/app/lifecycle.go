@@ -1521,6 +1521,7 @@ func redactedURL(in string) string {
 const (
 	retentionPruneInitialDelay          = 30 * time.Second
 	retentionPruneInterval              = time.Minute
+	retentionPruneRetryDelay            = 5 * time.Second
 	retentionPruneCycleBudget           = 55 * time.Second
 	retentionPruneMaxRowsPerCycle int64 = 2_000_000
 
@@ -1562,7 +1563,7 @@ func (a *Application) pruneLoop(ctx context.Context) {
 	if retentionDays < 0 {
 		return
 	}
-	runPrune := func() {
+	runPrune := func() bool {
 		started := time.Now()
 		publicEventHours := a.Config.PublicEventRetentionHours
 		if publicEventHours <= 0 {
@@ -1596,7 +1597,7 @@ func (a *Application) pruneLoop(ctx context.Context) {
 					"derivedQueueDepth", runtimeStatus.DerivedQueueDepth, "derivedQueueCapacity", runtimeStatus.DerivedQueueCapacity,
 					"storagePressureState", storageState,
 				)
-				return
+				return false
 			}
 			var step store.RetentionPruneStep
 			err := a.coordinateStoreWrite(cycleCtx, writeLaneBackground, func(writeCtx context.Context) error {
@@ -1607,16 +1608,16 @@ func (a *Application) pruneLoop(ctx context.Context) {
 			if err != nil {
 				if cycleCtx.Err() != nil {
 					a.Log.Warn("retention cleanup reached its bounded time budget", "rowsDeleted", rowsDeleted, "steps", steps)
-					return
+					return false
 				}
 				a.Log.Warn("retention cleanup batch failed", "error", err, "rowsDeleted", rowsDeleted, "steps", steps)
-				return
+				return false
 			}
 			steps++
 			rowsDeleted += step.RowsDeleted
 			if step.Done {
 				a.Log.Debug("retention cleanup complete", "rowsDeleted", rowsDeleted, "steps", steps, "durationMs", time.Since(started).Milliseconds())
-				return
+				return true
 			}
 			// Every step is already a 100-row background-lane transaction. The
 			// coordinator rechecks primary/live-core work before admitting the
@@ -1624,21 +1625,31 @@ func (a *Application) pruneLoop(ctx context.Context) {
 			// live-lane fairness.
 		}
 		a.Log.Info("retention cleanup reached its bounded row budget", "rowsDeleted", rowsDeleted, "steps", steps, "durationMs", time.Since(started).Milliseconds())
+		return false
 	}
 	select {
 	case <-ctx.Done():
 		return
 	case <-time.After(retentionPruneInitialDelay):
 	}
-	runPrune()
-	ticker := time.NewTicker(retentionPruneInterval)
-	defer ticker.Stop()
+	nextDelay := time.Duration(0)
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			runPrune()
+		if nextDelay > 0 {
+			timer := time.NewTimer(nextDelay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+		}
+		if runPrune() {
+			nextDelay = retentionPruneInterval
+		} else {
+			// A bounded cycle, transient error, or live-lane pressure left work
+			// pending. Retry soon; every individual slice still re-enters the
+			// background lane and therefore yields to primary/live-core work.
+			nextDelay = retentionPruneRetryDelay
 		}
 	}
 }

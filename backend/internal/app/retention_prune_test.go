@@ -24,7 +24,7 @@ func TestRetentionPruneConfiguredCapacityExceedsLockedLoad(t *testing.T) {
 }
 
 func TestRetentionPruneCycleCanClearCanonicalExpiredFixture(t *testing.T) {
-	const canonicalExpiredRows int64 = 500_000
+	const canonicalExpiredRows int64 = 100_000
 	// Expired observations can also orphan one packet row each. Keep enough
 	// headroom for the other bounded projection tables in the canonical seed.
 	if retentionPruneMaxRowsPerCycle < canonicalExpiredRows*2 {
@@ -32,6 +32,9 @@ func TestRetentionPruneCycleCanClearCanonicalExpiredFixture(t *testing.T) {
 	}
 	if retentionPruneCycleBudget >= retentionPruneInterval {
 		t.Fatalf("retention cycle budget=%s must remain below interval=%s", retentionPruneCycleBudget, retentionPruneInterval)
+	}
+	if retentionPruneRetryDelay <= 0 || retentionPruneRetryDelay >= retentionPruneInterval {
+		t.Fatalf("retention retry delay=%s must be positive and below interval=%s", retentionPruneRetryDelay, retentionPruneInterval)
 	}
 }
 

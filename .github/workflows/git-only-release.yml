@@ -1,0 +1,375 @@
+name: Publish Git-only release
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful Build release candidate workflow run ID
+        required: true
+        type: string
+      candidate_run_attempt:
+        description: Successful candidate workflow run attempt
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: git-only-release-v3.2.2
+  cancel-in-progress: false
+
+env:
+  EXPECTED_VERSION: 3.2.2
+  REGISTRY: ghcr.io
+  IMAGE_NAME: n30nex/mc-cartolive
+
+jobs:
+  publish:
+    name: Verify and publish exact source and candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout exact dispatch source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Require exact current main and 3.2.2
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          current_main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          test "$current_main_sha" = "$GITHUB_SHA"
+          version="$(tr -d '\r\n' < VERSION)"
+          test "$version" = "$EXPECTED_VERSION"
+          node scripts/check-version-sync.mjs
+          jq -e --arg version "$version" '.info.version == $version' docs/public-api.openapi.json >/dev/null
+          tag="v$version"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "tag $tag already exists" >&2
+            exit 1
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $tag already exists" >&2
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY" --jq '.full_name' | grep -Fx "$GITHUB_REPOSITORY"
+          echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Verify canonical proofs and immutable candidate evidence
+        id: evidence
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          VERSION: ${{ steps.source.outputs.version }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ inputs.candidate_run_attempt }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$CANDIDATE_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+
+          candidate_run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN_ID/attempts/$CANDIDATE_RUN_ATTEMPT")"
+          printf '%s' "$candidate_run" | jq -e \
+            --arg sha "$SOURCE_SHA" --arg repository "$GITHUB_REPOSITORY" --argjson attempt "$CANDIDATE_RUN_ATTEMPT" \
+            '.name == "Build release candidate" and .path == ".github/workflows/image-candidate.yml" and
+             .conclusion == "success" and .event == "workflow_run" and .run_attempt == $attempt and
+             .head_branch == "main" and .head_sha == $sha and .head_repository.full_name == $repository' >/dev/null
+
+          artifact_name="release-candidate-$SOURCE_SHA-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT"
+          artifacts="$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/artifacts" -f name="$artifact_name" -f per_page=100)"
+          artifact_id="$(printf '%s' "$artifacts" | jq -r \
+            --arg name "$artifact_name" --argjson runId "$CANDIDATE_RUN_ID" \
+            '[.artifacts[] | select(.expired == false and .name == $name and .workflow_run.id == $runId)] |
+             if length == 1 then .[0].id else empty end')"
+          test -n "$artifact_id"
+          rm -rf /tmp/mc-cartolive-git-only
+          mkdir -p /tmp/mc-cartolive-git-only/candidate
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > /tmp/mc-cartolive-git-only/candidate.zip
+          unzip -q /tmp/mc-cartolive-git-only/candidate.zip -d /tmp/mc-cartolive-git-only/candidate
+          manifest=/tmp/mc-cartolive-git-only/candidate/candidate-manifest.json
+          test -s "$manifest"
+
+          release_branch="codex/release-$VERSION"
+          release_ref="refs/heads/$release_branch"
+          candidate_tag_base="candidate-$SOURCE_SHA-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT"
+          printf '%s' "$(cat "$manifest")" | jq -e \
+            --arg sha "$SOURCE_SHA" --arg version "$VERSION" --arg repository "$GITHUB_REPOSITORY" \
+            --arg sourceRepository "$GITHUB_REPOSITORY" --arg candidateRunId "$CANDIDATE_RUN_ID" \
+            --arg candidateRunAttempt "$CANDIDATE_RUN_ATTEMPT" --arg releaseRef "$release_ref" \
+            --arg worldTag "$candidate_tag_base-world" --arg canadaTag "$candidate_tag_base-canada" \
+            '.repository == $repository and .version == $version and .gitSha == $sha and
+             .verifiedMainRef == "refs/heads/main" and .verifiedMainSha == $sha and
+             .sourceCiHeadSha == $sha and .sourceCiConclusion == "success" and
+             .sourceCiBrowserSmokeConclusion == "success" and .sourceCiWorkflow == "CI" and
+             .sourceCiEvent == "push" and .sourceCiHeadBranch == "main" and
+             .sourceCiHeadRepository == $sourceRepository and
+             .candidateWorkflowRunId == $candidateRunId and .candidateWorkflowRunAttempt == $candidateRunAttempt and
+             .premergeHeadRef == $releaseRef and (.premergeHeadSha | test("^[0-9a-f]{40}$")) and
+             (.premergeRunId | test("^[1-9][0-9]*$")) and .premergeCanonicalProof == true and
+             (.mainPerformanceRunId | test("^[1-9][0-9]*$")) and .mainPerformanceCanonicalProof == true and
+             .images.world.assetPack == "world" and .images.world.candidateTag == $worldTag and
+             .images.canada.assetPack == "canada" and .images.canada.candidateTag == $canadaTag and
+             .platforms == ["linux/amd64","linux/arm64"]' >/dev/null
+
+          world_digest="$(jq -r '.images.world.digest' "$manifest")"
+          canada_digest="$(jq -r '.images.canada.digest' "$manifest")"
+          [[ "$world_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$canada_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$world_digest" != "$canada_digest"
+          world_image="${REGISTRY}/${IMAGE_NAME}@$world_digest"
+          canada_image="${REGISTRY}/${IMAGE_NAME}@$canada_digest"
+          test "$(jq -r '.images.world.image' "$manifest")" = "$world_image"
+          test "$(jq -r '.images.canada.image' "$manifest")" = "$canada_image"
+
+          source_ci_run_id="$(jq -r '.sourceCiRunId' "$manifest")"
+          [[ "$source_ci_run_id" =~ ^[1-9][0-9]*$ ]]
+          source_ci="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_ci_run_id")"
+          printf '%s' "$source_ci" | jq -e --arg sha "$SOURCE_SHA" --arg repository "$GITHUB_REPOSITORY" \
+            '.name == "CI" and .path == ".github/workflows/ci.yml" and .conclusion == "success" and
+             .event == "push" and .head_branch == "main" and .head_sha == $sha and
+             .head_repository.full_name == $repository' >/dev/null
+          source_ci_jobs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_ci_run_id/jobs?filter=latest&per_page=100")"
+          test "$(printf '%s' "$source_ci_jobs" | jq '[.jobs[] | select(.name == "Desktop and mobile browser smoke" and .conclusion == "success")] | length')" -eq 1
+
+          verify_performance() {
+            local run_id="$1" expected_sha="$2" expected_branch="$3" expected_ref="$4" destination="$5"
+            [[ "$run_id" =~ ^[1-9][0-9]*$ ]]
+            local run_json run_attempt proof_name proof_artifacts proof_id report workflow_ref
+            run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id")"
+            printf '%s' "$run_json" | jq -e \
+              --arg sha "$expected_sha" --arg branch "$expected_branch" --arg repository "$GITHUB_REPOSITORY" \
+              '.name == "Release performance gate" and .path == ".github/workflows/release-performance.yml" and
+               .conclusion == "success" and .event == "workflow_dispatch" and .head_branch == $branch and
+               .head_sha == $sha and .head_repository.full_name == $repository' >/dev/null
+            run_attempt="$(printf '%s' "$run_json" | jq -r '.run_attempt')"
+            [[ "$run_attempt" =~ ^[1-9][0-9]*$ ]]
+            proof_name="release-performance-full-$expected_sha"
+            proof_artifacts="$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/artifacts" -f name="$proof_name" -f per_page=100)"
+            proof_id="$(printf '%s' "$proof_artifacts" | jq -r \
+              --arg name "$proof_name" --argjson runId "$run_id" \
+              '[.artifacts[] | select(.expired == false and .name == $name and .workflow_run.id == $runId)] |
+               sort_by(.created_at) | last | .id // empty')"
+            test -n "$proof_id"
+            mkdir -p "$destination"
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$proof_id/zip" > "$destination.zip"
+            unzip -q "$destination.zip" -d "$destination"
+            report="$destination/report.json"
+            test -s "$report"
+            workflow_ref="$GITHUB_REPOSITORY/.github/workflows/release-performance.yml@$expected_ref"
+            jq -e \
+              --arg sha "$expected_sha" --arg ref "$expected_ref" --arg repository "$GITHUB_REPOSITORY" \
+              --arg runId "$run_id" --arg runAttempt "$run_attempt" --arg version "$VERSION" --arg workflowRef "$workflow_ref" \
+              '.version == $version and .profile == "full" and .canonicalReleaseProof == true and
+               .passed == true and (.failures | length) == 0 and
+               .github.sha == $sha and .github.ref == $ref and .github.repository == $repository and
+               .github.event == "workflow_dispatch" and .github.workflow == "Release performance gate" and
+               .github.workflowRef == $workflowRef and .github.runId == $runId and .github.runAttempt == $runAttempt and
+               .config == {sustainedRate:20,sustainedSeconds:300,burstRate:100,burstSeconds:60,apiRows:5000000,apiExpiredRows:100000,apiExpiredAgeHours:720,apiPathRows:10000,apiEvents:20000,apiSamples:200,wsClients:250,wsSeconds:300,wsQuietSeconds:70,wsIsolationEvents:1000,wsIsolationRate:100,wsIsolationBytes:4096,mqttQueueCapacity:4096,derivedQueueCapacity:1024,metricSampleMs:250,memoryLimitBytes:629145600} and
+               .phases.sustainedIngest.passed == true and .phases.sustainedIngest.reportedPrimaryQueueCapacities == [4096] and .phases.sustainedIngest.reportedDerivedQueueCapacities == [1024] and .phases.sustainedIngest.processRssSource == "linux-proc-status-vmrss" and .phases.sustainedIngest.processRssP95Bytes > 0 and .phases.sustainedIngest.processRssP95Bytes < 629145600 and .phases.sustainedIngest.queueOldestP99Ms < 500 and .phases.sustainedIngest.observationToBroadcastP95Ms < 1000 and .phases.sustainedIngest.observationToBroadcastMaxMs <= 5000 and .phases.sustainedIngest.primaryDeadlineFailures == 0 and .phases.sustainedIngest.derivedProjectionQueueDepth == 0 and .phases.sustainedIngest.derivedProjectionFailures == 0 and
+               .phases.burstIngest.passed == true and .phases.burstIngest.reportedPrimaryQueueCapacities == [4096] and .phases.burstIngest.reportedDerivedQueueCapacities == [1024] and .phases.burstIngest.processRssSource == "linux-proc-status-vmrss" and .phases.burstIngest.processRssP95Bytes > 0 and .phases.burstIngest.processRssP95Bytes < 629145600 and .phases.burstIngest.queueOldestP99Ms < 2000 and .phases.burstIngest.observationToBroadcastP95Ms < 2000 and .phases.burstIngest.observationToBroadcastMaxMs <= 5000 and .phases.burstIngest.primaryDeadlineFailures == 0 and .phases.burstIngest.derivedProjectionQueueDepth == 0 and .phases.burstIngest.derivedProjectionFailures == 0 and
+               .phases.api.passed == true and .phases.api.seeded.observationRows >= 5000000 and .phases.api.seeded.expiredObservationRows == 100000 and .phases.api.seeded.multiHopEdgeRows > 0 and .phases.api.seeded.observerStatusRows > 0 and .phases.api.postRetention.expiredObservationRows == 0 and .phases.api.browser.passed == true and (.phases.api.browser.releaseGates | length) == 2 and
+               .phases.websocket.passed == true and .phases.websocket.clients == 250' "$report" >/dev/null
+          }
+
+          premerge_head_sha="$(jq -r '.premergeHeadSha' "$manifest")"
+          premerge_run_id="$(jq -r '.premergeRunId' "$manifest")"
+          main_performance_run_id="$(jq -r '.mainPerformanceRunId' "$manifest")"
+          merged_prs="$(gh api -H "Accept: application/vnd.github+json" "repos/$GITHUB_REPOSITORY/commits/$SOURCE_SHA/pulls")"
+          test "$(printf '%s' "$merged_prs" | jq \
+            --arg sha "$SOURCE_SHA" --arg headSha "$premerge_head_sha" --arg releaseBranch "$release_branch" --arg repository "$GITHUB_REPOSITORY" \
+            '[.[] | select(.merged_at != null and .merge_commit_sha == $sha and .base.ref == "main" and
+                           .head.ref == $releaseBranch and .head.sha == $headSha and .head.repo.full_name == $repository)] | length')" -eq 1
+          verify_performance "$premerge_run_id" "$premerge_head_sha" "$release_branch" "$release_ref" /tmp/mc-cartolive-git-only/premerge-proof
+          verify_performance "$main_performance_run_id" "$SOURCE_SHA" main refs/heads/main /tmp/mc-cartolive-git-only/main-proof
+
+          cp "$manifest" /tmp/mc-cartolive-git-only/candidate-manifest.json
+          echo "source_ci_run_id=$source_ci_run_id" >> "$GITHUB_OUTPUT"
+          echo "premerge_head_sha=$premerge_head_sha" >> "$GITHUB_OUTPUT"
+          echo "premerge_run_id=$premerge_run_id" >> "$GITHUB_OUTPUT"
+          echo "main_performance_run_id=$main_performance_run_id" >> "$GITHUB_OUTPUT"
+          echo "world_digest=$world_digest" >> "$GITHUB_OUTPUT"
+          echo "canada_digest=$canada_digest" >> "$GITHUB_OUTPUT"
+          echo "world_image=$world_image" >> "$GITHUB_OUTPUT"
+          echo "canada_image=$canada_image" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify exact candidate manifests and publication preflight
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          VERSION: ${{ steps.source.outputs.version }}
+          MINOR: ${{ steps.source.outputs.minor }}
+          TAG: ${{ steps.source.outputs.tag }}
+          WORLD_IMAGE: ${{ steps.evidence.outputs.world_image }}
+          CANADA_IMAGE: ${{ steps.evidence.outputs.canada_image }}
+          WORLD_DIGEST: ${{ steps.evidence.outputs.world_digest }}
+          CANADA_DIGEST: ${{ steps.evidence.outputs.canada_digest }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$SOURCE_SHA"
+          ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1
+          ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
+          image="${REGISTRY}/${IMAGE_NAME}"
+          test "$(docker buildx imagetools inspect "$WORLD_IMAGE" | awk '$1 == "Digest:" {print $2; exit}')" = "$WORLD_DIGEST"
+          test "$(docker buildx imagetools inspect "$CANADA_IMAGE" | awk '$1 == "Digest:" {print $2; exit}')" = "$CANADA_DIGEST"
+
+      - name: Build source-only release evidence and assets
+        id: assets
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          VERSION: ${{ steps.source.outputs.version }}
+          MINOR: ${{ steps.source.outputs.minor }}
+          TAG: ${{ steps.source.outputs.tag }}
+          SOURCE_CI_RUN_ID: ${{ steps.evidence.outputs.source_ci_run_id }}
+          PREMERGE_HEAD_SHA: ${{ steps.evidence.outputs.premerge_head_sha }}
+          PREMERGE_RUN_ID: ${{ steps.evidence.outputs.premerge_run_id }}
+          MAIN_PERFORMANCE_RUN_ID: ${{ steps.evidence.outputs.main_performance_run_id }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ inputs.candidate_run_attempt }}
+          WORLD_IMAGE: ${{ steps.evidence.outputs.world_image }}
+          CANADA_IMAGE: ${{ steps.evidence.outputs.canada_image }}
+          WORLD_DIGEST: ${{ steps.evidence.outputs.world_digest }}
+          CANADA_DIGEST: ${{ steps.evidence.outputs.canada_digest }}
+        run: |
+          set -euo pipefail
+          assets=artifacts/git-only-release
+          mkdir -p "$assets"
+          cp /tmp/mc-cartolive-git-only/candidate-manifest.json "$assets/candidate-manifest.json"
+          cp docs/public-api.openapi.json "$assets/public-api.openapi.json"
+          cp "docs/$VERSION/release_notes.md" "$assets/RELEASE_NOTES.md"
+          cp "docs/$VERSION/upgrade-and-rollback.md" "$assets/ROLLBACK.md"
+          generated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          jq -n \
+            --arg generatedAt "$generated_at" --arg repository "$GITHUB_REPOSITORY" \
+            --arg version "$VERSION" --arg sha "$SOURCE_SHA" --arg tag "$TAG" \
+            --arg sourceCiRunId "$SOURCE_CI_RUN_ID" \
+            --arg premergeHeadSha "$PREMERGE_HEAD_SHA" --arg premergeRunId "$PREMERGE_RUN_ID" \
+            --arg mainPerformanceRunId "$MAIN_PERFORMANCE_RUN_ID" \
+            --arg candidateRunId "$CANDIDATE_RUN_ID" --arg candidateRunAttempt "$CANDIDATE_RUN_ATTEMPT" \
+            --arg worldImage "$WORLD_IMAGE" --arg worldDigest "$WORLD_DIGEST" \
+            --arg canadaImage "$CANADA_IMAGE" --arg canadaDigest "$CANADA_DIGEST" \
+            --arg image "${REGISTRY}/${IMAGE_NAME}" --arg minor "$MINOR" \
+            '{formatVersion:1,verificationType:"source-only",releaseMode:"git-only",generatedAt:$generatedAt,
+              repository:$repository,release:{version:$version,gitSha:$sha,tag:$tag},
+              verifiedScope:["source-identity","main-ci","browser-smoke","canonical-release-branch-performance","canonical-main-performance","immutable-world-candidate","immutable-canada-candidate","registry-aliases"],
+              excludedClaims:["live-deployment","live-canary","live-database-audit"],
+              sourceCi:{runId:$sourceCiRunId,headSha:$sha,conclusion:"success",browserSmokeConclusion:"success"},
+              performance:{releaseBranch:{runId:$premergeRunId,headSha:$premergeHeadSha,profile:"full",canonicalReleaseProof:true,passed:true},mergedMain:{runId:$mainPerformanceRunId,headSha:$sha,profile:"full",canonicalReleaseProof:true,passed:true}},
+              candidate:{runId:$candidateRunId,runAttempt:$candidateRunAttempt,world:{image:$worldImage,digest:$worldDigest,assetPack:"world"},canada:{image:$canadaImage,digest:$canadaDigest,assetPack:"canada"}},
+              registry:{worldAliases:[($image+":"+$version),($image+":"+$minor),($image+":sha-"+$sha),($image+":latest")],canadaAliases:[($image+":"+$version+"-canada"),($image+":"+$minor+"-canada"),($image+":sha-"+$sha+"-canada"),($image+":latest-canada")]}}' \
+            > "$assets/release-verification-source-only.json"
+          jq -e \
+            --arg version "$VERSION" --arg sha "$SOURCE_SHA" --arg world "$WORLD_DIGEST" --arg canada "$CANADA_DIGEST" \
+            '.formatVersion == 1 and .verificationType == "source-only" and .releaseMode == "git-only" and
+             .release.version == $version and .release.gitSha == $sha and
+             .excludedClaims == ["live-deployment","live-canary","live-database-audit"] and
+             .performance.releaseBranch.canonicalReleaseProof == true and .performance.releaseBranch.passed == true and
+             .performance.mergedMain.canonicalReleaseProof == true and .performance.mergedMain.passed == true and
+             .candidate.world.digest == $world and .candidate.canada.digest == $canada and
+             .candidate.world.assetPack == "world" and .candidate.canada.assetPack == "canada" and $world != $canada' \
+            "$assets/release-verification-source-only.json" >/dev/null
+          jq -e --arg version "$VERSION" '.info.version == $version' "$assets/public-api.openapi.json" >/dev/null
+          (cd "$assets" && sha256sum candidate-manifest.json public-api.openapi.json RELEASE_NOTES.md ROLLBACK.md release-verification-source-only.json > SHA256SUMS)
+          (cd "$assets" && sha256sum -c SHA256SUMS)
+          verification_sha256="$(sha256sum "$assets/release-verification-source-only.json" | awk '{print $1}')"
+          echo "verification_sha256=$verification_sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Promote exact tested world and Canada manifests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          VERSION: ${{ steps.source.outputs.version }}
+          MINOR: ${{ steps.source.outputs.minor }}
+          TAG: ${{ steps.source.outputs.tag }}
+          WORLD_IMAGE: ${{ steps.evidence.outputs.world_image }}
+          CANADA_IMAGE: ${{ steps.evidence.outputs.canada_image }}
+          WORLD_DIGEST: ${{ steps.evidence.outputs.world_digest }}
+          CANADA_DIGEST: ${{ steps.evidence.outputs.canada_digest }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$SOURCE_SHA"
+          ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1
+          ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
+          image="${REGISTRY}/${IMAGE_NAME}"
+          docker buildx imagetools create \
+            --tag "$image:$VERSION" \
+            --tag "$image:$MINOR" \
+            --tag "$image:sha-$SOURCE_SHA" \
+            --tag "$image:latest" \
+            "$WORLD_IMAGE"
+          docker buildx imagetools create \
+            --tag "$image:$VERSION-canada" \
+            --tag "$image:$MINOR-canada" \
+            --tag "$image:sha-$SOURCE_SHA-canada" \
+            --tag "$image:latest-canada" \
+            "$CANADA_IMAGE"
+          for alias in "$VERSION" "$MINOR" "sha-$SOURCE_SHA" latest; do
+            promoted="$(docker buildx imagetools inspect "$image:$alias" | awk '$1 == "Digest:" {print $2; exit}')"
+            test "$promoted" = "$WORLD_DIGEST"
+          done
+          for alias in "$VERSION-canada" "$MINOR-canada" "sha-$SOURCE_SHA-canada" latest-canada; do
+            promoted="$(docker buildx imagetools inspect "$image:$alias" | awk '$1 == "Digest:" {print $2; exit}')"
+            test "$promoted" = "$CANADA_DIGEST"
+          done
+
+      - name: Create annotated tag and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          VERSION: ${{ steps.source.outputs.version }}
+          TAG: ${{ steps.source.outputs.tag }}
+          CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          CANDIDATE_RUN_ATTEMPT: ${{ inputs.candidate_run_attempt }}
+          WORLD_DIGEST: ${{ steps.evidence.outputs.world_digest }}
+          CANADA_DIGEST: ${{ steps.evidence.outputs.canada_digest }}
+          VERIFICATION_SHA256: ${{ steps.assets.outputs.verification_sha256 }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$SOURCE_SHA"
+          ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1
+          ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cat > /tmp/mc-cartolive-tag-message.txt <<EOF
+          MC-CartoLive $VERSION
+
+          Release-Mode: Git-only
+          Source-SHA: $SOURCE_SHA
+          Candidate-Run-Id: $CANDIDATE_RUN_ID
+          Candidate-Run-Attempt: $CANDIDATE_RUN_ATTEMPT
+          Candidate-World-Digest: $WORLD_DIGEST
+          Candidate-Canada-Digest: $CANADA_DIGEST
+          Source-Only-Verification-SHA256: $VERIFICATION_SHA256
+          EOF
+          git tag -a "$TAG" "$SOURCE_SHA" -F /tmp/mc-cartolive-tag-message.txt
+          # References created with GITHUB_TOKEN do not recursively trigger the
+          # existing tag-push publication workflow.
+          git push origin "refs/tags/$TAG"
+          gh release create "$TAG" artifacts/git-only-release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "MC-CartoLive $VERSION" \
+            --notes-file "docs/$VERSION/release_notes.md"

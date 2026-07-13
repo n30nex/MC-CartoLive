@@ -132,6 +132,38 @@ for (const gate of [
   if (!publishWorkflow.includes(gate)) errors.push(`tag workflow does not require exact release-gate evidence: ${gate}`);
 }
 
+const gitOnlyWorkflow = read('.github/workflows/git-only-release.yml');
+if (gitOnlyWorkflow.includes('docker/build-push-action@')) {
+  errors.push('Git-only workflow must promote tested candidates, never rebuild');
+}
+for (const boundary of [
+  `EXPECTED_VERSION: ${version}`,
+  'candidate_run_id:',
+  'candidate_run_attempt:',
+  'test "$GITHUB_REF" = "refs/heads/main"',
+  'Desktop and mobile browser smoke',
+  'release-performance-full-$expected_sha',
+  '.github.runAttempt == $runAttempt',
+  '.merge_commit_sha == $sha',
+  'release-candidate-$SOURCE_SHA-$CANDIDATE_RUN_ID-$CANDIDATE_RUN_ATTEMPT',
+  '.candidateWorkflowRunId == $candidateRunId',
+  'test "$world_digest" != "$canada_digest"',
+  'docker buildx imagetools create',
+  'release-verification-source-only.json',
+  'excludedClaims:["live-deployment","live-canary","live-database-audit"]',
+  'git tag -a "$TAG" "$SOURCE_SHA"',
+  'gh release create "$TAG"',
+]) {
+  if (!gitOnlyWorkflow.includes(boundary)) errors.push(`Git-only workflow trust boundary is missing: ${boundary}`);
+}
+const gitOnlyEvidenceIndex = gitOnlyWorkflow.indexOf('- name: Verify canonical proofs and immutable candidate evidence');
+const gitOnlyPromotionIndex = gitOnlyWorkflow.indexOf('- name: Promote exact tested world and Canada manifests');
+const gitOnlyAssetsIndex = gitOnlyWorkflow.indexOf('- name: Build source-only release evidence and assets');
+const gitOnlyReleaseIndex = gitOnlyWorkflow.indexOf('- name: Create annotated tag and GitHub release');
+if (!(gitOnlyEvidenceIndex >= 0 && gitOnlyEvidenceIndex < gitOnlyAssetsIndex && gitOnlyAssetsIndex < gitOnlyPromotionIndex && gitOnlyPromotionIndex < gitOnlyReleaseIndex)) {
+  errors.push('Git-only workflow must verify evidence and prepare source-only assets before alias promotion and tagging');
+}
+
 const candidateWorkflow = read('.github/workflows/image-candidate.yml');
 for (const boundary of [
   'permissions: {}',
@@ -206,7 +238,7 @@ for (const contract of [
   'const canonicalFullRefs = new Set([\'refs/heads/main\', `refs/heads/codex/release-${releaseVersion}`])',
   'canonicalFullRefs.has(githubContext.ref)',
   "event: 'workflow_dispatch'",
-  "apiExpiredRows: 500_000",
+  "apiExpiredRows: 100_000",
   "'-expired-observations'",
   "'-topology=true'",
   'observationToBroadcastP95Ms',
@@ -247,6 +279,7 @@ if (existsSync(join(root, '.github', 'workflows', 'complete-v3.2.0-release.yml')
 for (const genericReleaseFile of [
   '.github/workflows/image-candidate.yml',
   '.github/workflows/docker-publish.yml',
+  '.github/workflows/git-only-release.yml',
   '.github/workflows/release-performance.yml',
   'scripts/build-release-bundle.mjs',
   'scripts/performance-gate.mjs',

@@ -100,6 +100,7 @@ const LIVE_CLOCK_IDLE_MS = 5_000;
 const DERIVED_ACTIVITY_BUCKET_MS = 5_000;
 const EMPTY_ROUTE_ACTIVITY = new Map<string, RouteActivitySummary>();
 const EMPTY_HOT_ROUTES: PublicRoute[] = [];
+const EMPTY_LIVE_PACKETS: PublicPacketPath[] = [];
 
 function publicSequence(value: unknown): number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : 0;
@@ -855,13 +856,20 @@ function PublicDashboardApp() {
   const chromeHidden = chromeVisibility.chromeHidden;
   const chromePanelsMounted = !packetsOpen && !netGraphOpen && !chatOpen && !labOpen && !setupOpen && !propagationOpen;
   const hotRoutesPanelActive = chromePanelsMounted && !chromeHidden && chromeVisibility.panels.hotRoutes;
+  const routeActivitySampleRef = useRef({ bucket: Number.NaN, traces: state.routeTraces });
+  if (routeActivitySampleRef.current.bucket !== activityClockBucket) {
+    routeActivitySampleRef.current = { bucket: activityClockBucket, traces: state.routeTraces };
+  }
   const routeActivityByID = useMemo(
-    () => hotRoutesPanelActive ? summarizeRouteActivity(state.routeTraces, activityClockBucket) : EMPTY_ROUTE_ACTIVITY,
-    [activityClockBucket, hotRoutesPanelActive, state.routeTraces]
+    () => hotRoutesPanelActive ? summarizeRouteActivity(routeActivitySampleRef.current.traces, activityClockBucket) : EMPTY_ROUTE_ACTIVITY,
+    [activityClockBucket, hotRoutesPanelActive]
   );
   const coverage = useMemo(() => liveCoverageStats(state.activity, activityClockBucket), [state.activity, activityClockBucket]);
   const latestPacketActivity = useMemo(() => state.activity.find(isPacketActivity) ?? null, [state.activity]);
-  const livePackets = useMemo(() => livePacketsFromActivity(state.activity, state.pulses), [state.activity, state.pulses]);
+  const livePackets = useMemo(
+    () => packetsOpen ? livePacketsFromActivity(state.activity, state.pulses) : EMPTY_LIVE_PACKETS,
+    [packetsOpen, state.activity, state.pulses]
+  );
   const loadingPositionedNodes = initialLoadGateOpen && (!initialNodesReceived || !positionedNodesRendered);
   const handlePositionedNodesRendered = useCallback(() => setPositionedNodesRendered(true), []);
   const handleViewChange = useCallback((view: MapViewState) => setMapView(view), []);

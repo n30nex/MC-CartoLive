@@ -394,6 +394,10 @@ async function runReleaseGate(browser, viewport) {
     if (topologyReady) {
       await context.tracing.stop({ path: trace });
       tracing = false;
+      // Trace serialization/compression can continue contending with Chromium
+      // briefly after stop resolves. Let that harness-only work settle before
+      // the live-flow helper resets its long-task measurement window.
+      await page.waitForTimeout(1_500);
       liveFlow = await runGateStep(errors, checks, 'sparse durable and seq-less fallback events visibly update the live map', () => smokeSparseLiveFlow(page));
     }
   } catch (error) {

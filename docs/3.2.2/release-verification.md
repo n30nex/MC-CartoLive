@@ -1,7 +1,9 @@
 # 3.2.2 Release Verification Contract
 
-`release-verification.json` is privacy-safe aggregate evidence generated after
-the exact Canada candidate completes its five-minute canary. Validate it with:
+3.2.2 supports two explicit, mutually exclusive publication modes. A hosted
+deployment uses `release-verification.json`, the privacy-safe aggregate
+evidence generated after the exact Canada candidate completes its five-minute
+canary. Validate hosted evidence with:
 
 ```bash
 node scripts/release-verification.mjs --input release-verification.json --output release-verification.canonical.json
@@ -51,3 +53,19 @@ Release-Verification-Base64: <single-line-base64>
 
 The validated JSON is included in `SHA256SUMS`, attested with the other release
 assets, and attached to the GitHub release.
+
+## Operator-selected Git-only publication
+
+When the operator explicitly chooses not to deploy a candidate, dispatch
+`Publish Git-only release` from the exact current `main` SHA with the successful
+candidate run ID and attempt. The workflow verifies successful main CI and its
+browser job, both canonical full performance artifacts, the successful
+candidate workflow and manifest, and distinct immutable world/Canada digests
+before promoting registry aliases.
+
+This mode creates an annotated tag with `Release-Mode: Git-only` and attaches
+`release-verification-source-only.json`. That file covers source, CI, browser,
+performance, candidate, and registry identity only. Its `excludedClaims` are
+`live-deployment`, `live-canary`, and `live-database-audit`; it contains no
+invented deployment counters or audit results and must not be passed off as
+hosted canary evidence.
