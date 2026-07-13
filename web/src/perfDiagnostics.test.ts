@@ -108,4 +108,15 @@ describe('perf diagnostics', () => {
       routeSourceUpdates: 0
     });
   });
+
+  it('ignores buffered long-task entries from before an explicit measurement window', () => {
+    const counters = ensurePerfDiagnostics();
+    expect(counters).toBeTruthy();
+    counters!.longTaskWindowStartMs = 500;
+
+    recordLongTask(90, 499);
+    recordLongTask(70, 500);
+
+    expect(counters).toMatchObject({ longTasks: 1, longestTaskMs: 70 });
+  });
 });

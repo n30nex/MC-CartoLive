@@ -32,6 +32,7 @@ export interface PerfCounters {
   liveAnimationEmergencyStarts: number;
   longTasks: number;
   longestTaskMs: number;
+  longTaskWindowStartMs: number;
   visibilityPauses: number;
   geoJSONWorkerTransforms: number;
   geoJSONWorkerFallbacks: number;
@@ -114,6 +115,7 @@ export function ensurePerfDiagnostics(): PerfCounters | null {
     liveAnimationEmergencyStarts: 0,
     longTasks: 0,
     longestTaskMs: 0,
+    longTaskWindowStartMs: 0,
     visibilityPauses: 0,
     geoJSONWorkerTransforms: 0,
     geoJSONWorkerFallbacks: 0,
@@ -244,9 +246,10 @@ export function recordLiveAnimationEmergencyActivation(): void {
   counters.liveAnimationEmergencyStarts += 1;
 }
 
-export function recordLongTask(durationMs: number): void {
+export function recordLongTask(durationMs: number, startTimeMs = typeof performance === 'undefined' ? 0 : performance.now()): void {
   const counters = ensurePerfDiagnostics();
   if (!counters || !Number.isFinite(durationMs) || durationMs < 50) return;
+  if (Number.isFinite(startTimeMs) && startTimeMs < counters.longTaskWindowStartMs) return;
   counters.longTasks += 1;
   counters.longestTaskMs = Math.max(counters.longestTaskMs, roundedMs(durationMs));
 }
@@ -255,7 +258,7 @@ export function installLongTaskObserver(): () => void {
   if (typeof PerformanceObserver !== 'function' || !ensurePerfDiagnostics()) return () => undefined;
   try {
     const observer = new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) recordLongTask(entry.duration);
+      for (const entry of list.getEntries()) recordLongTask(entry.duration, entry.startTime);
     });
     observer.observe({ entryTypes: ['longtask'] });
     return () => observer.disconnect();

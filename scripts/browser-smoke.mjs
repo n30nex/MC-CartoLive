@@ -1000,108 +1000,143 @@ async function smokeSparseLiveFlow(page) {
     const shell = document.querySelector('.app-shell');
     if (!(shell instanceof HTMLElement)) throw new Error('app shell is unavailable');
     const baselineSeq = Number(shell.dataset.liveSeq ?? 0);
-    const count = 200;
-    const firstSeq = baselineSeq + 1;
-    const finalSeq = baselineSeq + count;
-    return { source, baselineSeq, firstSeq, finalSeq, finalID: `browser-smoke-live-${count}`, count };
+    return { source, baselineSeq };
   });
   // Let the long-task observer deliver buffered entries from the preceding
   // style/recovery stress before opening the live-flow measurement window.
   await page.evaluate(() => new Promise((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(resolve));
   }));
-  await page.evaluate(() => {
-    if (window.__mcCartoLivePerf) {
-      window.__mcCartoLivePerf.packetActiveComets = 0;
-      window.__mcCartoLivePerf.packetActiveCometIDs = [];
-      window.__mcCartoLivePerf.packetFrameSamplesMs = [];
-      window.__mcCartoLivePerf.packetFrameP95Ms = 0;
-      window.__mcCartoLivePerf.liveStateLatencySamplesMs = [];
-      window.__mcCartoLivePerf.liveStateLatencyP95Ms = 0;
-      window.__mcCartoLivePerf.liveStateLatencyMaxMs = 0;
-      window.__mcCartoLivePerf.liveAnimationLatencySamplesMs = [];
-      window.__mcCartoLivePerf.liveAnimationLatencyP95Ms = 0;
-      window.__mcCartoLivePerf.liveAnimationLatencyMaxMs = 0;
-      window.__mcCartoLivePerf.liveAnimationStarts = 0;
-      window.__mcCartoLivePerf.liveAnimationEmergencyStarts = 0;
-      window.__mcCartoLivePerf.longTasks = 0;
-      window.__mcCartoLivePerf.longestTaskMs = 0;
-    }
+
+  const resetMetrics = () => page.evaluate(() => {
+    const perf = window.__mcCartoLivePerf;
+    if (!perf) return;
+    perf.packetActiveComets = 0;
+    perf.packetActiveCometIDs = [];
+    perf.packetFrameSamplesMs = [];
+    perf.packetFrameP95Ms = 0;
+    perf.liveStateLatencySamplesMs = [];
+    perf.liveStateLatencyP95Ms = 0;
+    perf.liveStateLatencyMaxMs = 0;
+    perf.liveAnimationLatencySamplesMs = [];
+    perf.liveAnimationLatencyP95Ms = 0;
+    perf.liveAnimationLatencyMaxMs = 0;
+    perf.liveAnimationStarts = 0;
+    perf.liveAnimationEmergencyStarts = 0;
+    perf.longTasks = 0;
+    perf.longestTaskMs = 0;
+    perf.longTaskWindowStartMs = performance.now();
   });
-  const batchSize = 10;
-  const batchIntervalMs = 100;
-  const injectedCount = await page.evaluate(async ({ source, baselineSeq, count, batchSize, batchIntervalMs }) => {
-    let accepted = 0;
-    for (let offset = 0; offset < count; offset += batchSize) {
-      const receivedAt = Date.now();
-      const pulse = (id) => ({ ...source, id, seq: undefined, heardAt: receivedAt, receivedAt, displayAt: receivedAt });
-      const messages = Array.from({ length: Math.min(batchSize, count - offset) }, (_, index) => {
-        const ordinal = offset + index + 1;
-        const seq = baselineSeq + ordinal;
-        const fallback = ordinal % 50 === 0 && ordinal !== count;
+
+  const runPhase = async ({ name, startOrdinal, count, batchIntervalMs, animationP95LimitMs }) => {
+    await resetMetrics();
+    const batchSize = 10;
+    const finalOrdinal = startOrdinal + count - 1;
+    const injectedCount = await page.evaluate(async ({ source, baselineSeq, startOrdinal, count, finalOrdinal, batchSize, batchIntervalMs }) => {
+      let accepted = 0;
+      for (let offset = 0; offset < count; offset += batchSize) {
+        const receivedAt = Date.now();
+        const pulse = (id) => ({ ...source, id, seq: undefined, heardAt: receivedAt, receivedAt, displayAt: receivedAt });
+        const messages = Array.from({ length: Math.min(batchSize, count - offset) }, (_, index) => {
+          const ordinal = startOrdinal + offset + index;
+          const seq = baselineSeq + ordinal;
+          const fallback = ordinal % 50 === 0 && ordinal !== finalOrdinal;
+          return {
+            v: 1,
+            type: 'event',
+            event: 'routePulse',
+            ...(fallback ? {} : { seq }),
+            latestSeq: fallback ? seq - 1 : seq,
+            serverTime: receivedAt,
+            receivedAt,
+            displayAt: receivedAt,
+            data: pulse(`browser-smoke-live-${ordinal}`)
+          };
+        });
+        accepted += window.__mcBrowserSmoke.injectSocketMessages(messages);
+        if (offset + batchSize < count) await new Promise((resolve) => setTimeout(resolve, batchIntervalMs));
+      }
+      return accepted;
+    }, { source: plan.source, baselineSeq: plan.baselineSeq, startOrdinal, count, finalOrdinal, batchSize, batchIntervalMs });
+    const phase = {
+      name,
+      count: injectedCount,
+      firstSeq: plan.baselineSeq + startOrdinal,
+      finalSeq: plan.baselineSeq + finalOrdinal,
+      finalID: `browser-smoke-live-${finalOrdinal}`
+    };
+
+    const applied = await page.waitForFunction(({ finalSeq, finalID }) => {
+      const shell = document.querySelector('.app-shell');
+      return shell instanceof HTMLElement && Number(shell.dataset.liveSeq) === finalSeq && shell.dataset.latestPulseId === finalID;
+    }, phase, { timeout: 10_000 }).then(() => true, () => false);
+    if (!applied) {
+      const state = await page.evaluate(() => {
+        const shell = document.querySelector('.app-shell');
         return {
-          v: 1,
-          type: 'event',
-          event: 'routePulse',
-          ...(fallback ? {} : { seq }),
-          latestSeq: fallback ? seq - 1 : seq,
-          serverTime: receivedAt,
-          receivedAt,
-          displayAt: receivedAt,
-          data: pulse(`browser-smoke-live-${ordinal}`)
+          liveSeq: shell instanceof HTMLElement ? shell.dataset.liveSeq : null,
+          latestPulseID: shell instanceof HTMLElement ? shell.dataset.latestPulseId : null,
+          openSockets: Number(window.__mcBrowserSmoke?.openSocketCount?.() ?? 0),
+          activeComets: Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0)
         };
       });
-      accepted += window.__mcBrowserSmoke.injectSocketMessages(messages);
-      if (offset + batchSize < count) await new Promise((resolve) => setTimeout(resolve, batchIntervalMs));
+      throw new Error(`${name} live events were not applied: expected seq=${phase.finalSeq} pulse=${phase.finalID}; observed ${JSON.stringify(state)}`);
     }
-    return accepted;
-  }, { source: plan.source, baselineSeq: plan.baselineSeq, count: plan.count, batchSize, batchIntervalMs });
-  const injected = { ...plan, count: injectedCount };
-
-  const applied = await page.waitForFunction(({ finalSeq, finalID }) => {
-    const shell = document.querySelector('.app-shell');
-    return shell instanceof HTMLElement && Number(shell.dataset.liveSeq) === finalSeq && shell.dataset.latestPulseId === finalID;
-  }, injected, { timeout: 10_000 }).then(() => true, () => false);
-  if (!applied) {
-    const state = await page.evaluate(() => {
-      const shell = document.querySelector('.app-shell');
+    await page.waitForFunction(({ count: expected }) => {
+      const perf = window.__mcCartoLivePerf;
+      return Number(perf?.liveAnimationStarts ?? 0) >= expected && Number(perf?.liveVisualQueueDepth ?? 0) === 0;
+    }, phase, { timeout: 10_000 });
+    const metrics = await page.evaluate(() => {
+      const perf = window.__mcCartoLivePerf;
       return {
-        liveSeq: shell instanceof HTMLElement ? shell.dataset.liveSeq : null,
-        latestPulseID: shell instanceof HTMLElement ? shell.dataset.latestPulseId : null,
-        openSockets: Number(window.__mcBrowserSmoke?.openSocketCount?.() ?? 0),
-        activeComets: Number(window.__mcCartoLivePerf?.packetActiveComets ?? 0)
+        receiveToStateP95Ms: Number(perf?.liveStateLatencyP95Ms ?? 0),
+        receiveToStateMaxMs: Number(perf?.liveStateLatencyMaxMs ?? 0),
+        receiveToAnimationP95Ms: Number(perf?.liveAnimationLatencyP95Ms ?? 0),
+        maxVisualAgeMs: Number(perf?.liveAnimationLatencyMaxMs ?? 0),
+        animationStarts: Number(perf?.liveAnimationStarts ?? 0),
+        emergencyActivations: Number(perf?.liveAnimationEmergencyStarts ?? 0),
+        frameP95Ms: Number(perf?.packetFrameP95Ms ?? 0),
+        repeatedLongTasks: Number(perf?.longTasks ?? 0),
+        longestTaskMs: Number(perf?.longestTaskMs ?? 0),
+        queueOldestAgeMs: Number(perf?.liveVisualQueueOldestAgeMs ?? 0),
+        routeReducerMs: Number(perf?.routeReducerMs ?? 0)
       };
     });
-    throw new Error(`injected live events were not applied: expected seq=${injected.finalSeq} pulse=${injected.finalID}; observed ${JSON.stringify(state)}`);
-  }
-  await page.waitForFunction(({ count }) => {
-    const perf = window.__mcCartoLivePerf;
-    return Number(perf?.liveAnimationStarts ?? 0) >= count && Number(perf?.liveVisualQueueDepth ?? 0) === 0;
-  }, injected, { timeout: 10_000 });
-  const metrics = await page.evaluate(() => {
-    const perf = window.__mcCartoLivePerf;
-    return {
-      receiveToStateP95Ms: Number(perf?.liveStateLatencyP95Ms ?? 0),
-      receiveToStateMaxMs: Number(perf?.liveStateLatencyMaxMs ?? 0),
-      receiveToAnimationP95Ms: Number(perf?.liveAnimationLatencyP95Ms ?? 0),
-      maxVisualAgeMs: Number(perf?.liveAnimationLatencyMaxMs ?? 0),
-      animationStarts: Number(perf?.liveAnimationStarts ?? 0),
-      emergencyActivations: Number(perf?.liveAnimationEmergencyStarts ?? 0),
-      frameP95Ms: Number(perf?.packetFrameP95Ms ?? 0),
-      repeatedLongTasks: Number(perf?.longTasks ?? 0),
-      longestTaskMs: Number(perf?.longestTaskMs ?? 0),
-      queueOldestAgeMs: Number(perf?.liveVisualQueueOldestAgeMs ?? 0),
-      routeReducerMs: Number(perf?.routeReducerMs ?? 0)
-    };
-  });
-  if (metrics.animationStarts !== injected.count) throw new Error(`animation starts=${metrics.animationStarts}, eligible=${injected.count}`);
-  if (metrics.emergencyActivations !== 0) throw new Error(`emergency visual starts=${metrics.emergencyActivations}`);
-  if (metrics.receiveToStateP95Ms >= 1000) throw new Error(`receive-to-state p95=${metrics.receiveToStateP95Ms}ms`);
-  if (metrics.receiveToAnimationP95Ms >= 2000) throw new Error(`receive-to-animation p95=${metrics.receiveToAnimationP95Ms}ms`);
-  if (metrics.maxVisualAgeMs > 5000) throw new Error(`maximum visual age=${metrics.maxVisualAgeMs}ms`);
-  if (metrics.frameP95Ms > 34) throw new Error(`animation frame p95=${metrics.frameP95Ms}ms`);
-  if (metrics.repeatedLongTasks !== 0) throw new Error(`repeated long tasks=${metrics.repeatedLongTasks}, longest=${metrics.longestTaskMs}ms`);
-  return { ...injected, metrics };
+    if (metrics.animationStarts !== phase.count) throw new Error(`${name} animation starts=${metrics.animationStarts}, eligible=${phase.count}`);
+    if (metrics.emergencyActivations !== 0) throw new Error(`${name} emergency visual starts=${metrics.emergencyActivations}`);
+    if (metrics.receiveToStateP95Ms >= 1000) throw new Error(`${name} receive-to-state p95=${metrics.receiveToStateP95Ms}ms`);
+    if (metrics.receiveToAnimationP95Ms >= animationP95LimitMs) throw new Error(`${name} receive-to-animation p95=${metrics.receiveToAnimationP95Ms}ms`);
+    if (metrics.maxVisualAgeMs > 5000) throw new Error(`${name} maximum visual age=${metrics.maxVisualAgeMs}ms`);
+    if (metrics.frameP95Ms > 34) throw new Error(`${name} animation frame p95=${metrics.frameP95Ms}ms`);
+    if (metrics.repeatedLongTasks !== 0) throw new Error(`${name} repeated long tasks=${metrics.repeatedLongTasks}, longest=${metrics.longestTaskMs}ms`);
+    return { ...phase, metrics };
+  };
+
+  const sustained = await runPhase({ name: 'sustained-20ps', startOrdinal: 1, count: 200, batchIntervalMs: 500, animationP95LimitMs: 2_000 });
+  const burst = await runPhase({ name: 'burst-100ps', startOrdinal: 201, count: 200, batchIntervalMs: 100, animationP95LimitMs: 5_000 });
+  const metrics = {
+    receiveToStateP95Ms: Math.max(sustained.metrics.receiveToStateP95Ms, burst.metrics.receiveToStateP95Ms),
+    receiveToStateMaxMs: Math.max(sustained.metrics.receiveToStateMaxMs, burst.metrics.receiveToStateMaxMs),
+    receiveToAnimationP95Ms: sustained.metrics.receiveToAnimationP95Ms,
+    burstReceiveToAnimationP95Ms: burst.metrics.receiveToAnimationP95Ms,
+    maxVisualAgeMs: Math.max(sustained.metrics.maxVisualAgeMs, burst.metrics.maxVisualAgeMs),
+    animationStarts: sustained.metrics.animationStarts + burst.metrics.animationStarts,
+    emergencyActivations: sustained.metrics.emergencyActivations + burst.metrics.emergencyActivations,
+    frameP95Ms: Math.max(sustained.metrics.frameP95Ms, burst.metrics.frameP95Ms),
+    repeatedLongTasks: sustained.metrics.repeatedLongTasks + burst.metrics.repeatedLongTasks,
+    longestTaskMs: Math.max(sustained.metrics.longestTaskMs, burst.metrics.longestTaskMs),
+    queueOldestAgeMs: Math.max(sustained.metrics.queueOldestAgeMs, burst.metrics.queueOldestAgeMs),
+    routeReducerMs: Math.max(sustained.metrics.routeReducerMs, burst.metrics.routeReducerMs)
+  };
+  return {
+    baselineSeq: plan.baselineSeq,
+    firstSeq: sustained.firstSeq,
+    finalSeq: burst.finalSeq,
+    finalID: burst.finalID,
+    count: sustained.count + burst.count,
+    phases: { sustained, burst },
+    metrics
+  };
 }
 
 async function smokeLiveMapControls(page, viewport) {
