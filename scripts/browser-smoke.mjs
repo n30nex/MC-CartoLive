@@ -395,8 +395,10 @@ async function runReleaseGate(browser, viewport) {
       await context.tracing.stop({ path: trace });
       tracing = false;
       // Trace serialization/compression can continue contending with Chromium
-      // briefly after stop resolves. Let that harness-only work settle before
-      // the live-flow helper resets its long-task measurement window.
+      // and leaves the synthetic 40-style stress allocations pending. Collect
+      // that harness-only garbage and let compression settle before the
+      // live-flow helper resets its independent long-task window.
+      await cdp?.send('HeapProfiler.collectGarbage').catch(() => undefined);
       await page.waitForTimeout(1_500);
       liveFlow = await runGateStep(errors, checks, 'sparse durable and seq-less fallback events visibly update the live map', () => smokeSparseLiveFlow(page));
     }
