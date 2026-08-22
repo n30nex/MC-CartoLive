@@ -165,7 +165,7 @@ This repo may have active uncommitted work. Check `git status --short` before ed
 
 - Inspect `git status --short --branch` and recent commits before editing; preserve unrelated and concurrent work.
 - Use a scoped `codex/<task>` branch or isolated worktree. Never force-push or reset shared work.
-- Keep builds, caches, worktrees, and temporary files on `F:`; do not commit generated caches, logs, device backups, or downloaded artifacts.
+- On the shared Windows workstation, keep builds, caches, worktrees, and temporary files on `F:`; use the platform workspace elsewhere. Do not commit generated caches, logs, device backups, or downloaded artifacts.
 - Never commit credentials, `.env` files, Wi-Fi/MQTT passwords, API keys, Cloudflare tokens, MeshCore private keys, live databases, packet captures, or user messages.
 - Resolve the exact device, build environment, artifact, offset, host, service, and rollback boundary before hardware or deployment work.
 - Preserve firmware identity/settings and unrelated Pi services by default.
