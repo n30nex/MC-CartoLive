@@ -39,7 +39,7 @@ COPY web/ ./
 RUN npm run build
 
 # backend build
-FROM golang:1.25.12-alpine@sha256:56961d79ea8129efddcc0b8643fd8a5416b4e6228cfd477e3fd61deb2672c587 AS gobuild
+FROM golang:1.27.0-alpine@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS gobuild
 WORKDIR /src
 ARG APP_VERSION=3.2.2
 ARG GIT_SHA=dev
