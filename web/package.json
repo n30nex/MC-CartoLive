@@ -13,17 +13,17 @@
   "dependencies": {
     "d3-force": "^3.0.0",
     "gifenc": "^1.0.3",
-    "lucide-react": "^0.468.0",
-    "maplibre-gl": "^5.19.0",
-    "pmtiles": "^4.3.0",
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
-    "three": "^0.184.0"
+    "lucide-react": "^1.33.0",
+    "maplibre-gl": "^6.5.0",
+    "pmtiles": "^4.5.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@types/d3-force": "^3.0.10",
-    "@types/react": "19.2.17",
-    "@types/react-dom": "^19.2.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "^19.2.4",
     "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^5.0.0",
     "jsdom": "^25.0.1",
